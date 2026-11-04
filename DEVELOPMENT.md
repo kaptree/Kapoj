@@ -135,7 +135,7 @@ kapoj/
 - **删除策略**：已有提交记录的题目、比赛不做物理删除，改为下线（`is_public=false`）或归档。
 - **接口前缀**：业务接口统一挂在 `/api` 下（如 `/api/auth/login`），`/health` 不加前缀。本文档各模块「关键接口」表中的路径省略了 `/api`。
 - **字段命名**：接口 JSON 字段使用 camelCase（如 `avatarUrl`、`createdAt`），数据库列使用 snake_case。
-- **请求体大小**：JSON 请求默认上限 1 MiB；测试数据上传接口上限 40 MiB（单个输入/输出文件 16 MiB，checker 256 KiB），题包、图片等上传接口在各自里程碑单独放宽。
+- **请求体大小**：JSON 请求默认上限 1 MiB；题目创建/更新因为题面与样例可能较大，单独放宽到 4 MiB；测试数据上传接口上限 40 MiB（单个输入/输出文件 16 MiB，checker 256 KiB）。题包、图片等上传接口在各自里程碑单独放宽。
 
 **错误码**（M0 已实现，见 `apps/server/internal/httpx/errors.go`；新模块在此表追加）：
 
@@ -209,7 +209,8 @@ problem_testcases (
 
 -- 实现差异（M1-A）：
 -- 存储：M1 使用本地文件系统（KAPOJ_STORAGE_DIR，默认 data），通过 storage.Storage 接口抽象，MinIO 实现推迟到 M3/M5；
---   checker_path 与测试点的 input_file / output_file 均为存储键（如 problems/<id>/testcases/<hex>.in），不返回给前端。
+--   checker_path 与测试点的 input_file / output_file 均为存储键（测试点如 problems/<id>/testcases/<hex>.in，
+--   checker 如 problems/<id>/checkers/<hex>.cpp），不返回给前端；重新上传 checker 会写新键并在成功后删除旧文件。
 -- problem_testcases 增加 input_size、output_size（字节数，供管理页展示）；
 -- 唯一索引名为 uniq_testcases_problem_order，problems.slug 唯一索引名为 uniq_problems_slug，
 -- tags_json 建 GIN 索引 idx_problems_tags，外键名为 fk_problems_testcases（ON DELETE CASCADE）。
@@ -524,7 +525,8 @@ user_ai_configs (
 
 - 后端题目 CRUD、测试数据管理、checker 上传与前端题目列表、详情、编辑页已完成；提交与评测在 M1-B，测评记录与提交页在 M1-C。
 - 权限：写接口需要 `problem_admin` 或 `super_admin`（`super_admin` 总是放行）；`contest_admin` 不能管理题目。未公开题目对非管理员返回 40400，与不存在一致。
-- 创建时忽略 `isPublic`，新题一律未公开；发布需至少 1 个测试点，特判题还需已上传 checker；公开题目不能删除最后一个测试点。
+- 创建时忽略 `isPublic`，新题一律未公开；发布需至少 1 个测试点，特判题还需已上传 checker；公开题目不能删除最后一个测试点。发布校验与删除保护都在题目行锁事务内完成，并发删除测试点不会让公开题目变成 0 个测试点。
+- **更新是整体替换**：`PUT /problems/:id` 必须提交全部可编辑字段；未提交的字符串/数组会清空，`isPublic` 缺省为 `false`（即下线）。前端编辑页会先加载完整题目再提交。题目创建/更新的 JSON 请求体上限为 4 MiB。
 - 难度为整数 1–5（入门、普及、提高、省选、NOI）。
 - 列表筛选：`keyword` 同时匹配标题与 slug（不区分大小写、按字面量匹配，`%`/`_` 不作通配符）；`tag` 精确匹配整个标签；`difficulty` 精确匹配；`includeHidden` 仅对题目管理员有效。
 - 题解可见性（实现差异）：`solutionMd`、`solutionCode`、`checkerUploaded`、`createdBy` 只返回给题目管理员，普通用户的详情页暂不显示「解题思路」「解题代码」；M1-C 起改为本人通过该题后可见。`hintMd` 对所有人生效。

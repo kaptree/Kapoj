@@ -37,8 +37,11 @@ services:
       KAPOJ_DATABASE_URL: postgres://kapoj:kapoj@postgres:5432/kapoj?sslmode=disable
       KAPOJ_REDIS_ADDR: redis:6379
       KAPOJ_JWT_SECRET: ${KAPOJ_JWT_SECRET:-}
+      KAPOJ_STORAGE_DIR: /data
     ports:
       - "8080:8080"
+    volumes:
+      - storage:/data
     depends_on:
       postgres:
         condition: service_healthy
@@ -47,3 +50,4 @@ services:
 
 volumes:
   pgdata:
+  storage:
