@@ -191,6 +191,50 @@ func TestContestDetailRegistrationAndProblems(t *testing.T) {
 	assert.Contains(t, participants[0].(map[string]any)["username"], "user")
 }
 
+func TestAnnouncementPermissionsAndCrud(t *testing.T) {
+	f := newFx(t)
+	p1, p2 := f.problem("sum"), f.problem("product")
+	b := body(p1.ID, p2.ID)
+	w, resp := f.do(http.MethodPost, "/api/contests", f.token("contest_admin"), b)
+	require.Equal(t, http.StatusCreated, w.Code)
+	id := idOf(resp)
+
+	w, _ = f.do(http.MethodPost, fmt.Sprintf("/api/contests/%d/announcements", id), f.token("user"),
+		map[string]any{"title": "Notice", "contentMd": "body"})
+	assert.Equal(t, http.StatusForbidden, w.Code)
+
+	w, resp = f.do(http.MethodPost, fmt.Sprintf("/api/contests/%d/announcements", id), f.token("contest_admin"),
+		map[string]any{"title": "Notice", "contentMd": "body"})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	aid := idOf(resp)
+
+	w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/contests/%d/announcements", id), "", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Len(t, resp["data"].([]any), 1)
+
+	w, _ = f.do(http.MethodPut, fmt.Sprintf("/api/contests/%d/announcements/%d", id, aid),
+		f.token("contest_admin"), map[string]any{"title": "Fixed", "contentMd": "new"})
+	assert.Equal(t, http.StatusOK, w.Code)
+	_, resp = f.do(http.MethodGet, fmt.Sprintf("/api/contests/%d/announcements", id), "", nil)
+	assert.Equal(t, "Fixed", resp["data"].([]any)[0].(map[string]any)["title"])
+
+	w, _ = f.do(http.MethodDelete, fmt.Sprintf("/api/contests/%d/announcements/%d", id, aid),
+		f.token("contest_admin"), nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	private := body(p1.ID, p2.ID)
+	private["title"] = "Private announcements"
+	private["isPublic"] = false
+	_, resp = f.do(http.MethodPost, "/api/contests", f.token("contest_admin"), private)
+	privateID := idOf(resp)
+	w, _ = f.do(http.MethodGet, fmt.Sprintf("/api/contests/%d/announcements", privateID), "", nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	w, _ = f.do(http.MethodPost, fmt.Sprintf("/api/contests/%d/register", privateID), f.token("user"), map[string]any{})
+	require.Equal(t, http.StatusOK, w.Code)
+	w, _ = f.do(http.MethodGet, fmt.Sprintf("/api/contests/%d/announcements", privateID), f.token("user"), nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
 func TestContestListFilters(t *testing.T) {
 	f := newFx(t)
 	p1, p2 := f.problem("sum"), f.problem("product")

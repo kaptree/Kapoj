@@ -620,6 +620,153 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/contests/{id}/announcements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** 比赛公告列表；非公开比赛对非报名者/非管理员返回 40400 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 公告列表，按 id 倒序 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AnnouncementListResponse"];
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        /** 发布公告（比赛管理员） */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AnnouncementInput"];
+                };
+            };
+            responses: {
+                /** @description 已发布 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AnnouncementResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/contests/{id}/announcements/{aid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                aid: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** 修改公告（比赛管理员） */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                    aid: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AnnouncementInput"];
+                };
+            };
+            responses: {
+                /** @description 已修改 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        /** 删除公告（比赛管理员） */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                    aid: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已删除 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/problems": {
         parameters: {
             query?: never;
@@ -1256,6 +1403,20 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AnnouncementInput: {
+            title: string;
+            contentMd: string;
+        };
+        AnnouncementItem: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            contestId: number;
+            title: string;
+            contentMd: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
         /** @enum {string} */
         ContestMode: "icpc" | "ioi" | "oi";
         /** @enum {string} */
@@ -1638,6 +1799,12 @@ export interface components {
                 total: number;
                 items: components["schemas"]["SubmissionListItem"][];
             };
+        };
+        AnnouncementListResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AnnouncementItem"][];
+        };
+        AnnouncementResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AnnouncementItem"];
         };
         ContestPageResponse: components["schemas"]["Envelope"] & {
             data: {

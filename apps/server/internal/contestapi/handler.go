@@ -26,6 +26,10 @@ func RegisterRoutes(r gin.IRouter, s *contest.Service) {
 	r.POST("/contests/:id/clone", with(h.clone)...)
 	r.POST("/contests/:id/register", middleware.RequireAuth(), h.register)
 	r.GET("/contests/:id/participants", with(h.participants)...)
+	r.GET("/contests/:id/announcements", h.announcements)
+	r.POST("/contests/:id/announcements", with(h.createAnnouncement)...)
+	r.PUT("/contests/:id/announcements/:aid", with(h.updateAnnouncement)...)
+	r.DELETE("/contests/:id/announcements/:aid", with(h.deleteAnnouncement)...)
 }
 
 type handler struct{ svc *contest.Service }
@@ -188,4 +192,81 @@ func (h *handler) participants(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, items)
+}
+
+func (h *handler) announcements(c *gin.Context) {
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	items, err := h.svc.Announcements(c.Request.Context(), viewer(c), id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, items)
+}
+
+func announcementInput(c *gin.Context) (title, content string, ok bool) {
+	in, ok := httpx.BindJSON[struct {
+		Title     string `json:"title"`
+		ContentMD string `json:"contentMd"`
+	}](c)
+	if !ok {
+		return "", "", false
+	}
+	return in.Title, in.ContentMD, true
+}
+
+func (h *handler) createAnnouncement(c *gin.Context) {
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	title, content, ok := announcementInput(c)
+	if !ok {
+		return
+	}
+	item, err := h.svc.CreateAnnouncement(c.Request.Context(), viewer(c), id, title, content)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.Created(c, item)
+}
+
+func (h *handler) updateAnnouncement(c *gin.Context) {
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	aid, ok := pathID(c, "aid")
+	if !ok {
+		return
+	}
+	title, content, ok := announcementInput(c)
+	if !ok {
+		return
+	}
+	if err := h.svc.UpdateAnnouncement(c.Request.Context(), viewer(c), id, aid, title, content); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, nil)
+}
+
+func (h *handler) deleteAnnouncement(c *gin.Context) {
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	aid, ok := pathID(c, "aid")
+	if !ok {
+		return
+	}
+	if err := h.svc.DeleteAnnouncement(c.Request.Context(), viewer(c), id, aid); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, nil)
 }

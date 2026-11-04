@@ -1,5 +1,7 @@
 import { http } from './client'
 import type {
+  AnnouncementInput,
+  AnnouncementItem,
   CloneContestRequest,
   ContestDetail,
   ContestInput,
@@ -50,3 +52,18 @@ export const registerContest = (
 
 export const listContestParticipants = (id: number | string) =>
   http.get<ContestParticipant[]>(`/contests/${id}/participants`)
+
+export const listAnnouncements = (id: number | string) =>
+  http.get<AnnouncementItem[]>(`/contests/${id}/announcements`)
+
+export const createAnnouncement = (id: number | string, input: AnnouncementInput) =>
+  http.post<AnnouncementItem>(`/contests/${id}/announcements`, input)
+
+export const updateAnnouncement = (
+  id: number | string,
+  aid: number | string,
+  input: AnnouncementInput,
+) => http.put<null>(`/contests/${id}/announcements/${aid}`, input)
+
+export const deleteAnnouncement = (id: number | string, aid: number | string) =>
+  http.delete<null>(`/contests/${id}/announcements/${aid}`)

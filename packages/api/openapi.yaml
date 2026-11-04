@@ -262,6 +262,71 @@ paths:
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
+  /contests/{id}/announcements:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      summary: 比赛公告列表；非公开比赛对非报名者/非管理员返回 40400
+      security: [{}, { bearer: [] }]
+      responses:
+        '200':
+          description: 公告列表，按 id 倒序
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnnouncementListResponse' }
+        '404': { $ref: '#/components/responses/Error' }
+    post:
+      summary: 发布公告（比赛管理员）
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnnouncementInput' }
+      responses:
+        '201':
+          description: 已发布
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnnouncementResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /contests/{id}/announcements/{aid}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      - { name: aid, in: path, required: true, schema: { type: integer, format: int64 } }
+    put:
+      summary: 修改公告（比赛管理员）
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnnouncementInput' }
+      responses:
+        '200':
+          description: 已修改
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+    delete:
+      summary: 删除公告（比赛管理员）
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 已删除
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
   /problems:
     get:
       summary: 题目列表（游客可访问，只返回已公开题目）
@@ -557,6 +622,21 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
   schemas:
+    AnnouncementInput:
+      type: object
+      required: [title, contentMd]
+      properties:
+        title: { type: string, maxLength: 100 }
+        contentMd: { type: string, maxLength: 50000 }
+    AnnouncementItem:
+      type: object
+      required: [id, contestId, title, contentMd, createdAt]
+      properties:
+        id: { type: integer, format: int64 }
+        contestId: { type: integer, format: int64 }
+        title: { type: string }
+        contentMd: { type: string }
+        createdAt: { type: string, format: date-time }
     ContestMode:
       type: string
       enum: [icpc, ioi, oi]
@@ -1074,6 +1154,22 @@ components:
                 items:
                   type: array
                   items: { $ref: '#/components/schemas/SubmissionListItem' }
+    AnnouncementListResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items: { $ref: '#/components/schemas/AnnouncementItem' }
+    AnnouncementResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/AnnouncementItem' }
     ContestPageResponse:
       allOf:
         - $ref: '#/components/schemas/Envelope'

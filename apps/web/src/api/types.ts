@@ -35,6 +35,8 @@ export type ContestListItem = Schemas['ContestListItem']
 export type ContestDetail = Schemas['ContestDetail']
 export type ContestProblemItem = Schemas['ContestProblemItem']
 export type ContestParticipant = Schemas['ContestParticipant']
+export type AnnouncementInput = Schemas['AnnouncementInput']
+export type AnnouncementItem = Schemas['AnnouncementItem']
 
 export interface Page<T> {
   total: number
