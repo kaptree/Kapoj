@@ -132,40 +132,49 @@ func (s *Service) CreateTask(ctx context.Context, v Viewer, in TaskInput) (*Task
 	return task, nil
 }
 
-// UpdateTask 更新任务；已有领取记录后冻结题目与奖励，其余字段仍可修改。
+// UpdateTask 更新任务。已有领取记录后冻结题目与奖励：先校验冻结字段是否
+// 被修改，再只校验标题、描述、时间与上下架等可编辑字段。题目即使后来被
+// 下线，也不影响已领取任务的其余字段编辑。
 func (s *Service) UpdateTask(ctx context.Context, v Viewer, id int64, in TaskInput) (*Task, error) {
 	if !v.IsAdmin {
 		return nil, httpx.ErrForbidden
 	}
-	existing, err := s.repo.FindTask(ctx, id)
+	in, err := normalizeTaskEditableInput(in)
 	if err != nil {
 		return nil, err
 	}
-	in, err = s.normalizeTaskInput(ctx, in)
-	if err != nil {
-		return nil, err
-	}
-	hasRecords, err := s.repo.TaskHasRecords(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	if hasRecords && (!sameInt64s(existing.ProblemIDs, in.ProblemIDs) || existing.RewardCoins != in.RewardCoins) {
-		return nil, httpx.ErrValidation("任务已有领取记录，不能修改题目或奖励")
-	}
+	return s.repo.UpdateTaskLocked(ctx, id, func(task *Task, hasRecords bool) error {
+		if hasRecords {
+			if !sameInt64s(task.ProblemIDs, in.ProblemIDs) || task.RewardCoins != in.RewardCoins {
+				return httpx.ErrValidation("任务已有领取记录，不能修改题目或奖励")
+			}
+		} else {
+			if err := validateTaskProblemInput(in.ProblemIDs); err != nil {
+				return err
+			}
+			count, err := s.repo.CountPublicProblems(ctx, in.ProblemIDs)
+			if err != nil {
+				return err
+			}
+			if count != int64(len(in.ProblemIDs)) {
+				return httpx.ErrValidation("任务题目不存在或未公开")
+			}
+			if err := validateTaskReward(in.RewardCoins); err != nil {
+				return err
+			}
+		}
 
-	existing.Title = in.Title
-	existing.DescriptionMD = in.DescriptionMD
-	existing.ProblemIDs = dbtypes.List[int64](in.ProblemIDs)
-	existing.RewardCoins = in.RewardCoins
-	existing.StartTime = in.StartTime
-	existing.EndTime = in.EndTime
-	if in.IsActive != nil {
-		existing.IsActive = *in.IsActive
-	}
-	if err := s.repo.UpdateTask(ctx, existing); err != nil {
-		return nil, err
-	}
-	return existing, nil
+		task.Title = in.Title
+		task.DescriptionMD = in.DescriptionMD
+		task.ProblemIDs = dbtypes.List[int64](in.ProblemIDs)
+		task.RewardCoins = in.RewardCoins
+		task.StartTime = in.StartTime
+		task.EndTime = in.EndTime
+		if in.IsActive != nil {
+			task.IsActive = *in.IsActive
+		}
+		return nil
+	})
 }
 
 // DeleteTask 软删除任务，已领取用户仍可在截止前完成并照常发奖。
@@ -180,62 +189,31 @@ func (s *Service) DeleteTask(ctx context.Context, v Viewer, id int64) error {
 }
 
 // ClaimTask 领取任务。任务必须上架且在领取窗口内；已领取返回原记录，
-// 已完成返回 40001。
+// 已完成返回 40001。任务行锁与 UpdateTask 串行化，保证冻结字段一致。
 func (s *Service) ClaimTask(ctx context.Context, userID, id int64) (*TaskItem, error) {
 	if userID <= 0 {
 		return nil, httpx.ErrUnauthorized
 	}
-	task, err := s.repo.FindTask(ctx, id)
+	task, record, err := s.repo.ClaimTaskLocked(ctx, userID, id, func(task *Task) (time.Time, error) {
+		now := time.Now()
+		if !task.IsActive {
+			return time.Time{}, httpx.ErrValidation("任务已下线，不能领取")
+		}
+		if now.Before(task.StartTime) {
+			return time.Time{}, httpx.ErrValidation("任务尚未开始")
+		}
+		if !now.Before(task.EndTime) {
+			return time.Time{}, httpx.ErrValidation("任务已截止，不能领取")
+		}
+		return now, nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now()
-	if !task.IsActive {
-		return nil, httpx.ErrValidation("任务已下线，不能领取")
-	}
-	if now.Before(task.StartTime) {
-		return nil, httpx.ErrValidation("任务尚未开始")
-	}
-	if !now.Before(task.EndTime) {
-		return nil, httpx.ErrValidation("任务已截止，不能领取")
-	}
-
-	record, err := s.repo.FindTaskRecord(ctx, userID, id)
-	if err != nil {
-		return nil, err
-	}
-	if record == nil {
-		created, err := s.repo.CreateTaskRecord(ctx, &UserTaskRecord{
-			UserID:    userID,
-			TaskID:    id,
-			Status:    TaskRecordClaimed,
-			ClaimedAt: now,
-		})
-		if err != nil {
-			return nil, err
-		}
-		if !created {
-			// 并发领取时重新读取先写入的记录。
-			record, err = s.repo.FindTaskRecord(ctx, userID, id)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			record = &UserTaskRecord{
-				UserID:    userID,
-				TaskID:    id,
-				Status:    TaskRecordClaimed,
-				ClaimedAt: now,
-			}
-		}
-	}
-	if record != nil && record.Status == TaskRecordCompleted {
+	if record.Status == TaskRecordCompleted {
 		return nil, httpx.ErrValidation("任务已完成，不能再次领取")
 	}
-	if record == nil {
-		return nil, httpx.ErrInternal
-	}
-	item, err := s.taskItem(ctx, *task, record, now)
+	item, err := s.taskItem(ctx, *task, record, time.Now())
 	if err != nil {
 		return nil, err
 	}
@@ -351,8 +329,30 @@ func taskStatus(task Task, record *UserTaskRecord, now time.Time) TaskStatus {
 	return TaskStatusActive
 }
 
-// normalizeTaskInput 校验并规范化管理员输入，题目必须全部存在且公开。
+// normalizeTaskInput 校验并规范化创建任务的全部输入，题目必须全部存在且公开。
 func (s *Service) normalizeTaskInput(ctx context.Context, in TaskInput) (TaskInput, error) {
+	in, err := normalizeTaskEditableInput(in)
+	if err != nil {
+		return in, err
+	}
+	if err := validateTaskProblemInput(in.ProblemIDs); err != nil {
+		return in, err
+	}
+	count, err := s.repo.CountPublicProblems(ctx, in.ProblemIDs)
+	if err != nil {
+		return in, err
+	}
+	if count != int64(len(in.ProblemIDs)) {
+		return in, httpx.ErrValidation("任务题目不存在或未公开")
+	}
+	if err := validateTaskReward(in.RewardCoins); err != nil {
+		return in, err
+	}
+	return in, nil
+}
+
+// normalizeTaskEditableInput 只校验领取后仍可修改的字段，不访问题目表。
+func normalizeTaskEditableInput(in TaskInput) (TaskInput, error) {
 	in.Title = strings.TrimSpace(in.Title)
 	in.DescriptionMD = strings.TrimSpace(in.DescriptionMD)
 	if err := validateText("任务标题", in.Title, 1, 100); err != nil {
@@ -361,36 +361,37 @@ func (s *Service) normalizeTaskInput(ctx context.Context, in TaskInput) (TaskInp
 	if err := validateText("任务描述", in.DescriptionMD, 0, 50000); err != nil {
 		return in, err
 	}
-	if len(in.ProblemIDs) < 1 || len(in.ProblemIDs) > 20 {
-		return in, httpx.ErrValidation("任务题目必须为 1-20 个")
-	}
-	seen := make(map[int64]struct{}, len(in.ProblemIDs))
-	for _, id := range in.ProblemIDs {
-		if id <= 0 {
-			return in, httpx.ErrValidation("任务题目 ID 必须为正数")
-		}
-		if _, ok := seen[id]; ok {
-			return in, httpx.ErrValidation("任务题目不能重复")
-		}
-		seen[id] = struct{}{}
-	}
-	count, err := s.repo.CountPublicProblems(ctx, in.ProblemIDs)
-	if err != nil {
-		return in, err
-	}
-	if count != int64(len(seen)) {
-		return in, httpx.ErrValidation("任务题目不存在或未公开")
-	}
-	if in.RewardCoins < 0 {
-		return in, httpx.ErrValidation("任务奖励金币不能为负数")
-	}
-	if in.RewardCoins > maxTaskRewardCoins {
-		return in, httpx.ErrValidation("任务奖励金币不能超过 " + strconv.Itoa(maxTaskRewardCoins))
-	}
 	if !in.StartTime.Before(in.EndTime) {
 		return in, httpx.ErrValidation("任务开始时间必须早于结束时间")
 	}
 	return in, nil
+}
+
+func validateTaskProblemInput(ids []int64) error {
+	if len(ids) < 1 || len(ids) > 20 {
+		return httpx.ErrValidation("任务题目必须为 1-20 个")
+	}
+	seen := make(map[int64]struct{}, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			return httpx.ErrValidation("任务题目 ID 必须为正数")
+		}
+		if _, ok := seen[id]; ok {
+			return httpx.ErrValidation("任务题目不能重复")
+		}
+		seen[id] = struct{}{}
+	}
+	return nil
+}
+
+func validateTaskReward(reward int64) error {
+	if reward < 0 {
+		return httpx.ErrValidation("任务奖励金币不能为负数")
+	}
+	if reward > maxTaskRewardCoins {
+		return httpx.ErrValidation("任务奖励金币不能超过 " + strconv.Itoa(maxTaskRewardCoins))
+	}
+	return nil
 }
 
 func sameInt64s(a, b []int64) bool {

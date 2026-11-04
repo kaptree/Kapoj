@@ -38,9 +38,39 @@ func (r *Repository) CreateTask(ctx context.Context, task *Task) error {
 	return r.db.WithContext(ctx).Create(task).Error
 }
 
-// UpdateTask 覆盖保存任务；冻结字段由服务层保证。
-func (r *Repository) UpdateTask(ctx context.Context, task *Task) error {
-	return r.db.WithContext(ctx).Save(task).Error
+// UpdateTaskLocked 锁定任务行后执行 mutate 并保存。hasRecords 与保存读取在
+// 同一事务内完成，并与 ClaimTaskLocked 的任务行锁配合，保证领取后冻结字段
+// 不会再被修改。
+func (r *Repository) UpdateTaskLocked(
+	ctx context.Context, id int64, mutate func(task *Task, hasRecords bool) error,
+) (*Task, error) {
+	var result *Task
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var task Task
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&task, id).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return httpx.ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		hasRecords, err := taskHasRecords(tx, task.ID)
+		if err != nil {
+			return err
+		}
+		if err := mutate(&task, hasRecords); err != nil {
+			return err
+		}
+		if err := tx.Save(&task).Error; err != nil {
+			return err
+		}
+		result = &task
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // DeactivateTask 软删除任务。
@@ -56,10 +86,9 @@ func (r *Repository) DeactivateTask(ctx context.Context, id int64) error {
 	return nil
 }
 
-// TaskHasRecords 判断任务是否已有用户领取记录。
-func (r *Repository) TaskHasRecords(ctx context.Context, taskID int64) (bool, error) {
+func taskHasRecords(db *gorm.DB, taskID int64) (bool, error) {
 	var count int64
-	if err := r.db.WithContext(ctx).Model(&UserTaskRecord{}).
+	if err := db.Model(&UserTaskRecord{}).
 		Where("task_id = ?", taskID).Count(&count).Error; err != nil {
 		return false, err
 	}
@@ -92,11 +121,9 @@ func (r *Repository) TaskRecordsForUser(ctx context.Context, userID int64) (map[
 	return records, nil
 }
 
-// FindTaskRecord 按用户与任务读取记录；不存在时返回 nil, nil。
-func (r *Repository) FindTaskRecord(ctx context.Context, userID, taskID int64) (*UserTaskRecord, error) {
+func findTaskRecord(db *gorm.DB, userID, taskID int64) (*UserTaskRecord, error) {
 	var record UserTaskRecord
-	err := r.db.WithContext(ctx).
-		Where("user_id = ? AND task_id = ?", userID, taskID).
+	err := db.Where("user_id = ? AND task_id = ?", userID, taskID).
 		Take(&record).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
@@ -107,15 +134,69 @@ func (r *Repository) FindTaskRecord(ctx context.Context, userID, taskID int64) (
 	return &record, nil
 }
 
-// CreateTaskRecord 幂等写入领取记录，第二个返回值表示本次是否真正插入。
-func (r *Repository) CreateTaskRecord(ctx context.Context, record *UserTaskRecord) (bool, error) {
-	res := r.db.WithContext(ctx).
-		Clauses(clause.OnConflict{DoNothing: true}).
-		Create(record)
+func createTaskRecord(db *gorm.DB, record *UserTaskRecord) (bool, error) {
+	res := db.Clauses(clause.OnConflict{DoNothing: true}).Create(record)
 	if res.Error != nil {
 		return false, res.Error
 	}
 	return res.RowsAffected > 0, nil
+}
+
+// ClaimTaskLocked 锁定任务行后执行 validate 并幂等写入领取记录。任务行锁使
+// 领取与 UpdateTaskLocked 串行化：要么领取先落库、更新随后被冻结字段校验
+// 拒绝，要么更新先完成、领取看到新的冻结值。
+func (r *Repository) ClaimTaskLocked(
+	ctx context.Context, userID, taskID int64,
+	validate func(task *Task) (time.Time, error),
+) (*Task, *UserTaskRecord, error) {
+	var taskResult *Task
+	var recordResult *UserTaskRecord
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var task Task
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&task, taskID).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return httpx.ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		claimedAt, err := validate(&task)
+		if err != nil {
+			return err
+		}
+		record, err := findTaskRecord(tx, userID, taskID)
+		if err != nil {
+			return err
+		}
+		if record == nil {
+			record = &UserTaskRecord{
+				UserID:    userID,
+				TaskID:    taskID,
+				Status:    TaskRecordClaimed,
+				ClaimedAt: claimedAt,
+			}
+			created, err := createTaskRecord(tx, record)
+			if err != nil {
+				return err
+			}
+			if !created {
+				record, err = findTaskRecord(tx, userID, taskID)
+				if err != nil {
+					return err
+				}
+				if record == nil {
+					return httpx.ErrInternal
+				}
+			}
+		}
+		taskResult = &task
+		recordResult = record
+		return nil
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return taskResult, recordResult, nil
 }
 
 // ListClaimedTaskRecords 返回用户所有待完成的任务记录。

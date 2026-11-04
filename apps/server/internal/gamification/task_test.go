@@ -2,6 +2,7 @@ package gamification_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -453,6 +454,123 @@ func TestTaskCompletesAfterDeadlineForPreDeadlineACs(t *testing.T) {
 	require.NoError(t, e.db.Model(&gamification.CoinTransaction{}).
 		Where("user_id = ?", e.user.ID).Count(&txCount).Error)
 	assert.EqualValues(t, 1, txCount)
+}
+
+func TestUpdateTaskAfterProblemUnpublished(t *testing.T) {
+	ctx := context.Background()
+	e := newTaskEnv(t)
+	p1 := e.addProblem(t, "unpublished-p1", true)
+	p2 := e.addProblem(t, "unpublished-p2", true)
+	now := time.Now()
+	task := e.createTask(t, taskInput("题目下线任务", []int64{p1.ID}, 50,
+		now.Add(-time.Hour), now.Add(time.Hour)))
+	e.claim(t, task.ID)
+
+	// 题目在领取后被下线：冻结题目不可改，但标题、描述与结束时间仍可编辑。
+	require.NoError(t, e.db.Model(&problem.Problem{}).Where("id = ?", p1.ID).
+		Update("is_public", false).Error)
+
+	editable := taskInput("题目下线后改名", []int64{p1.ID}, 50,
+		now.Add(-time.Hour), now.Add(2*time.Hour))
+	editable.DescriptionMD = "下线后的新描述"
+	updated, err := e.svc.UpdateTask(ctx, adminViewer(e.user.ID), task.ID, editable)
+	require.NoError(t, err)
+	assert.Equal(t, "题目下线后改名", updated.Title)
+	assert.Equal(t, "下线后的新描述", updated.DescriptionMD)
+	assert.WithinDuration(t, now.Add(2*time.Hour), updated.EndTime, time.Second)
+
+	changedProblems := taskInput("题目下线任务", []int64{p2.ID}, 50,
+		now.Add(-time.Hour), now.Add(time.Hour))
+	_, err = e.svc.UpdateTask(ctx, adminViewer(e.user.ID), task.ID, changedProblems)
+	assertCode(t, err, 40001)
+
+	changedReward := taskInput("题目下线任务", []int64{p1.ID}, 60,
+		now.Add(-time.Hour), now.Add(time.Hour))
+	_, err = e.svc.UpdateTask(ctx, adminViewer(e.user.ID), task.ID, changedReward)
+	assertCode(t, err, 40001)
+}
+
+func TestTaskClaimUpdateConcurrentFreeze(t *testing.T) {
+	ctx := context.Background()
+	e := newTaskEnv(t)
+	p1 := e.addProblem(t, "freeze-race-p1", true)
+	p2 := e.addProblem(t, "freeze-race-p2", true)
+
+	const iterations = 20
+	for i := 0; i < iterations; i++ {
+		now := time.Now()
+		originalProblems := []int64{p1.ID}
+		newProblems := []int64{p2.ID}
+		task := e.createTask(t, taskInput(fmt.Sprintf("并发冻结任务 %d", i),
+			originalProblems, 10, now.Add(-time.Hour), now.Add(time.Hour)))
+
+		var (
+			wg        sync.WaitGroup
+			updateErr error
+			claimErr  error
+			claimed   *gamification.TaskItem
+		)
+		start := make(chan struct{})
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, updateErr = e.svc.UpdateTask(ctx, adminViewer(e.user.ID), task.ID,
+				taskInput(task.Title, newProblems, 20, now.Add(-time.Hour), now.Add(time.Hour)))
+		}()
+		go func() {
+			defer wg.Done()
+			<-start
+			claimed, claimErr = e.svc.ClaimTask(ctx, e.user.ID, task.ID)
+		}()
+		close(start)
+		wg.Wait()
+
+		require.NoError(t, claimErr)
+		require.NotNil(t, claimed)
+		if updateErr != nil {
+			assertCode(t, updateErr, 40001)
+		}
+
+		final, err := e.repo.FindTask(ctx, task.ID)
+		require.NoError(t, err)
+
+		// 领取结果必须与最终冻结值一致：更新先完成则领取看到新值；
+		// 领取先完成则更新失败并保持旧值。
+		assert.Equal(t, []int64(final.ProblemIDs), claimed.ProblemIDs)
+		assert.EqualValues(t, final.RewardCoins, claimed.RewardCoins)
+		if updateErr == nil {
+			assert.Equal(t, newProblems, []int64(final.ProblemIDs))
+			assert.EqualValues(t, 20, final.RewardCoins)
+		} else {
+			assert.Equal(t, originalProblems, []int64(final.ProblemIDs))
+			assert.EqualValues(t, 10, final.RewardCoins)
+		}
+
+		var recordCount int64
+		require.NoError(t, e.db.Model(&gamification.UserTaskRecord{}).
+			Where("user_id = ? AND task_id = ?", e.user.ID, task.ID).
+			Count(&recordCount).Error)
+		assert.EqualValues(t, 1, recordCount)
+
+		// 并发结束后补齐题目 AC：按最终冻结奖励只结算一次。
+		e.addAC(t, p1.ID, time.Now().Add(time.Second))
+		e.addAC(t, p2.ID, time.Now().Add(2*time.Second))
+		require.NoError(t, e.svc.EvaluateUser(ctx, e.user.ID))
+
+		var txCount int64
+		require.NoError(t, e.db.Model(&gamification.CoinTransaction{}).
+			Where("user_id = ? AND reason = ? AND ref_type = ? AND ref_id = ?",
+				e.user.ID, "task", "task", task.ID).
+			Count(&txCount).Error)
+		assert.EqualValues(t, 1, txCount)
+		var tx gamification.CoinTransaction
+		require.NoError(t, e.db.
+			Where("user_id = ? AND reason = ? AND ref_type = ? AND ref_id = ?",
+				e.user.ID, "task", "task", task.ID).
+			First(&tx).Error)
+		assert.EqualValues(t, final.RewardCoins, tx.Amount)
+	}
 }
 
 func TestTaskValidation(t *testing.T) {
