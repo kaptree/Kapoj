@@ -285,6 +285,7 @@ func TestUpdateKeepsCredentials(t *testing.T) {
 
 	update := baseInput(e)
 	update.Title = "Password renamed"
+	update.StartTime, update.EndTime = c.StartTime, c.EndTime
 	update.RegisterType = contest.RegisterPassword
 	update.Password = ""
 	_, err = e.svc.Update(context.Background(), manager(), c.ID, update)
@@ -300,6 +301,7 @@ func TestUpdateKeepsCredentials(t *testing.T) {
 	require.NoError(t, err)
 	update = baseInput(e)
 	update.Title = "Invite renamed"
+	update.StartTime, update.EndTime = ic.StartTime, ic.EndTime
 	update.RegisterType = contest.RegisterInvite
 	update.InviteCode = ""
 	_, err = e.svc.Update(context.Background(), manager(), ic.ID, update)
@@ -342,6 +344,36 @@ func TestContestWithSubmissionsCannotBeDeleted(t *testing.T) {
 	assertCode(t, e.svc.Delete(context.Background(), manager(), c.ID), 40001)
 }
 
+func TestStartAndModeFrozenAfterStart(t *testing.T) {
+	e := newEnv(t)
+	in := baseInput(e)
+	c, err := e.svc.Create(context.Background(), manager(), in)
+	require.NoError(t, err)
+
+	moved := baseInput(e)
+	moved.StartTime = in.StartTime.Add(30 * time.Minute)
+	moved.EndTime = in.EndTime.Add(30 * time.Minute)
+	_, err = e.svc.Update(context.Background(), manager(), c.ID, moved)
+	assertCode(t, err, 40001)
+
+	mode := baseInput(e)
+	mode.StartTime, mode.EndTime = c.StartTime, c.EndTime
+	mode.Mode = contest.ModeIOI
+	_, err = e.svc.Update(context.Background(), manager(), c.ID, mode)
+	assertCode(t, err, 40001)
+
+	future := baseInput(e)
+	future.Title = "Future mode"
+	future.StartTime = time.Now().Add(time.Hour)
+	future.EndTime = time.Now().Add(2 * time.Hour)
+	fc, err := e.svc.Create(context.Background(), manager(), future)
+	require.NoError(t, err)
+	future.StartTime, future.EndTime = fc.StartTime, fc.EndTime
+	future.Mode = contest.ModeOI
+	_, err = e.svc.Update(context.Background(), manager(), fc.ID, future)
+	require.NoError(t, err)
+}
+
 func TestProblemListIsFrozenAfterStart(t *testing.T) {
 	e := newEnv(t)
 	in := baseInput(e)
@@ -350,12 +382,14 @@ func TestProblemListIsFrozenAfterStart(t *testing.T) {
 
 	changed := baseInput(e)
 	changed.Title = "Changed"
+	changed.StartTime, changed.EndTime = c.StartTime, c.EndTime
 	changed.Problems[0].Score = 50
 	_, err = e.svc.Update(context.Background(), manager(), c.ID, changed)
 	assertCode(t, err, 40001)
 
 	same := baseInput(e)
 	same.Title = "Renamed"
+	same.StartTime, same.EndTime = c.StartTime, c.EndTime
 	_, err = e.svc.Update(context.Background(), manager(), c.ID, same)
 	require.NoError(t, err)
 
@@ -365,6 +399,7 @@ func TestProblemListIsFrozenAfterStart(t *testing.T) {
 	future.EndTime = time.Now().Add(2 * time.Hour)
 	fc, err := e.svc.Create(context.Background(), manager(), future)
 	require.NoError(t, err)
+	future.StartTime, future.EndTime = fc.StartTime, fc.EndTime
 	future.Problems[1].DisplayID = "C"
 	_, err = e.svc.Update(context.Background(), manager(), fc.ID, future)
 	require.NoError(t, err)

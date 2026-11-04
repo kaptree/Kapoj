@@ -1469,7 +1469,7 @@ export interface components {
             title: string;
         };
         ContestRankCell: {
-            /** @description 该题最近/最佳状态 */
+            /** @description 该题最近一次未通过状态；有 AC 时为 accepted */
             status?: string;
             attempts: number;
             /** Format: date-time */
@@ -1801,7 +1801,7 @@ export interface components {
             problemId: number;
             /**
              * Format: int64
-             * @description 0 表示练习提交；大于 0 时必须是已报名且进行中的比赛
+             * @description 0 表示练习提交；大于 0 时必须是已报名且进行中的比赛（比赛管理员可测试）
              */
             contestId?: number;
             language: components["schemas"]["SubmissionLanguage"];
@@ -1845,7 +1845,7 @@ export interface components {
             judgedAt?: string;
         };
         SubmissionDetail: components["schemas"]["SubmissionListItem"] & {
-            /** @description contestId 非空的提交对非本人/非管理员不返回（M2 赛时保护） */
+            /** @description 比赛进行中对他人的提交不返回；本人/管理员/赛后恢复 */
             code?: string;
             codeHidden: boolean;
             errorMessage?: string;

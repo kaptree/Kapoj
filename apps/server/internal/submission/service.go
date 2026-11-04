@@ -175,7 +175,10 @@ func (s *Service) Create(ctx context.Context, v Viewer, userID int64, in Input) 
 			}
 		}
 		if _, err := s.contests.FindProblem(ctx, c.ID, p.ID); err != nil {
-			return nil, httpx.ErrValidation("题目不属于该比赛")
+			if errors.Is(err, contest.ErrProblemNotInContest) {
+				return nil, httpx.ErrValidation("题目不属于该比赛")
+			}
+			return nil, err
 		}
 		id := c.ID
 		contestID = &id
@@ -212,7 +215,7 @@ func (s *Service) Create(ctx context.Context, v Viewer, userID int64, in Input) 
 		Status: StatusPending, JudgeResult: dbtypes.List[JudgeCaseResult]{},
 	}
 	if err := s.repo.Create(ctx, sub); err != nil {
-		if errors.Is(err, problem.ErrNotFound) {
+		if errors.Is(err, problem.ErrNotFound) || errors.Is(err, contest.ErrNotFound) {
 			return nil, httpx.ErrNotFound
 		}
 		return nil, err

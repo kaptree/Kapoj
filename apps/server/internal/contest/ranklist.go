@@ -61,6 +61,12 @@ func (s *Service) Ranklist(ctx context.Context, v Viewer, id int64) (*Ranklist, 
 	}
 	now := time.Now()
 	status := StatusAt(c.StartTime, c.EndTime, now)
+	if status == StatusUpcoming && !v.CanManage {
+		return &Ranklist{
+			ContestID: id, Mode: c.Mode, Status: status, GeneratedAt: now,
+			Problems: []RankProblem{}, Rows: []RankRow{}, SelfOnly: false,
+		}, nil
+	}
 	problems, err := s.repo.FindProblems(ctx, id)
 	if err != nil {
 		return nil, err
@@ -82,17 +88,25 @@ func (s *Service) Ranklist(ctx context.Context, v Viewer, id int64) (*Ranklist, 
 	}
 	states := make(map[int64]*rankState, len(participants))
 	order := make([]int64, 0, len(participants))
+	registerAt := make(map[int64]time.Time, len(participants))
 	for _, p := range participants {
 		cells := make([]RankCell, len(problems))
 		states[p.UserID] = &rankState{row: RankRow{
 			UserID: p.UserID, Username: p.Username, Nickname: p.Nickname, Problems: cells,
 		}}
+		registerAt[p.UserID] = p.RegisterTime
 		order = append(order, p.UserID)
 	}
 
 	bySubmission := make(map[int64][]RankSubmission)
 	for _, sub := range submissions {
 		if _, ok := states[sub.UserID]; !ok {
+			continue
+		}
+		if sub.CreatedAt.Before(c.StartTime) || !sub.CreatedAt.Before(c.EndTime) {
+			continue
+		}
+		if at, ok := registerAt[sub.UserID]; ok && sub.CreatedAt.Before(at) {
 			continue
 		}
 		bySubmission[sub.UserID] = append(bySubmission[sub.UserID], sub)
@@ -191,11 +205,14 @@ func (s *Service) computeScoreBased(
 			}
 			if sub.Status == "accepted" {
 				cell.Status = "accepted"
+				at := sub.CreatedAt
 				if cell.AcceptedAt == nil || sub.CreatedAt.Before(*cell.AcceptedAt) {
-					at := sub.CreatedAt
 					cell.AcceptedAt = &at
 				}
-			} else if cell.Status == "" {
+				if state.row.LastAcceptedAt == nil || sub.CreatedAt.After(*state.row.LastAcceptedAt) {
+					state.row.LastAcceptedAt = &at
+				}
+			} else if cell.Status != "accepted" {
 				cell.Status = sub.Status
 			}
 		}

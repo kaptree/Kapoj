@@ -30,8 +30,33 @@ func rankContest(t *testing.T, e *env, mode contest.Mode, start, end time.Time, 
 	require.NoError(t, err)
 	for _, userID := range participants {
 		require.NoError(t, e.repo.AddParticipant(context.Background(), c.ID, userID))
+		require.NoError(t, e.db.Exec(
+			`UPDATE contest_participants SET register_time = ? WHERE contest_id = ? AND user_id = ?`,
+			start.Add(-time.Minute), c.ID, userID,
+		).Error)
 	}
 	return c
+}
+
+func TestUpcomingRanklistHidesProblemsAndRows(t *testing.T) {
+	e := newEnv(t)
+	now := time.Now()
+	c := rankContest(t, e, contest.ModeICPC, now.Add(time.Hour), now.Add(2*time.Hour), userID)
+
+	guest, err := e.svc.Ranklist(context.Background(), contest.Viewer{}, c.ID)
+	require.NoError(t, err)
+	assert.Empty(t, guest.Problems)
+	assert.Empty(t, guest.Rows)
+
+	participant, err := e.svc.Ranklist(context.Background(), user(), c.ID)
+	require.NoError(t, err)
+	assert.Empty(t, participant.Problems)
+	assert.Empty(t, participant.Rows)
+
+	admin, err := e.svc.Ranklist(context.Background(), manager(), c.ID)
+	require.NoError(t, err)
+	assert.Len(t, admin.Problems, 2)
+	assert.Len(t, admin.Rows, 1)
 }
 
 func TestICPCRanklist(t *testing.T) {

@@ -8,7 +8,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
+	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 )
 
@@ -43,6 +45,16 @@ func NewGormRepository(db *gorm.DB) Repository { return &gormRepository{db: db} 
 
 func (r *gormRepository) Create(ctx context.Context, sub *Submission) error {
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if sub.ContestID != nil {
+			var c contest.Contest
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Select("id").First(&c, *sub.ContestID).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return contest.ErrNotFound
+				}
+				return err
+			}
+		}
 		res := tx.Model(&problem.Problem{}).Where("id = ?", sub.ProblemID).
 			UpdateColumn("submit_count", gorm.Expr("submit_count + 1"))
 		if res.Error != nil {

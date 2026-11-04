@@ -3,6 +3,7 @@ package submission
 import (
 	"time"
 
+	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/dbtypes"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
@@ -34,6 +35,7 @@ type Submission struct {
 	CreatedAt    time.Time                     `gorm:"type:timestamptz;not null;index:idx_submissions_user_created,priority:2"`
 	JudgedAt     *time.Time                    `gorm:"type:timestamptz"`
 
-	User    user.User       `gorm:"foreignKey:UserID;constraint:OnDelete:RESTRICT" json:"-"`
-	Problem problem.Problem `gorm:"foreignKey:ProblemID;constraint:OnDelete:RESTRICT" json:"-"`
+	User    user.User        `gorm:"foreignKey:UserID;constraint:OnDelete:RESTRICT" json:"-"`
+	Problem problem.Problem  `gorm:"foreignKey:ProblemID;constraint:OnDelete:RESTRICT" json:"-"`
+	Contest *contest.Contest `gorm:"foreignKey:ContestID;constraint:OnDelete:RESTRICT" json:"-"`
 }

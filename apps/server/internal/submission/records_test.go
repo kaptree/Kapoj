@@ -82,7 +82,7 @@ func newRecordsEnv(t *testing.T) *recordsEnv {
 func TestListFiltersAndOrders(t *testing.T) {
 	e := newRecordsEnv(t)
 	now := time.Now()
-	contest := int64(7)
+	contest := insertContest(t, e.db, now.Add(-time.Hour), now.Add(time.Hour))
 	s1 := insertRecord(t, e.db, e.alice, e.problem1.ID, "cpp", "code1", "accepted", nil, now.Add(-3*time.Minute))
 	s2 := insertRecord(t, e.db, e.alice, e.problem2.ID, "python3", "code2", "wrong_answer", nil, now.Add(-2*time.Minute))
 	s3 := insertRecord(t, e.db, e.bob, e.problem1.ID, "java", "code3", "accepted", &contest, now.Add(-time.Minute))

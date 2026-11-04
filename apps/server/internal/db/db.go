@@ -37,8 +37,8 @@ func newLogger(w io.Writer) logger.Interface {
 // Migrate creates or updates the schema for all models.
 func Migrate(g *gorm.DB) error {
 	return g.AutoMigrate(
-		&user.User{}, &problem.Problem{}, &problem.Testcase{}, &submission.Submission{},
+		&user.User{}, &problem.Problem{}, &problem.Testcase{},
 		&contest.Contest{}, &contest.ContestProblem{}, &contest.ContestParticipant{},
-		&contest.Announcement{},
+		&contest.Announcement{}, &submission.Submission{},
 	)
 }

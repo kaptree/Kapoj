@@ -281,7 +281,7 @@ contest_participants (
 -- contests 增加 invite_code_hash（邀请码报名）；password_hash / invite_code_hash 只存 bcrypt；
 -- contest_problems 唯一约束为 uniq_contest_problems_problem、uniq_contest_problems_display；
 -- contest_participants 唯一约束为 uniq_contest_participants_user，extra_info_json 存 []；
--- 比赛删除级联删除题目关联、报名与公告（M2-B 引入比赛提交后再调整删除策略）。
+-- 比赛无提交时删除级联删除题目关联、报名与公告；已有提交时禁止物理删除（M2-B）。
 announcements (
   id, contest_id, title, content_md, created_by, created_at
 )
@@ -628,9 +628,14 @@ user_ai_configs (
   - ICPC：通过题数降序、总罚时升序（首次 AC 分钟 + 首次 AC 前未通过次数 × 20），并列同名次，包含 0 提交报名者。
   - IOI：每题取最高分，总分降序。
   - OI：计分同 IOI；赛时非管理员只返回本人行（`selfOnly=true`），管理员和赛后返回完整榜单。
-- 比赛开始后不能整体替换题目列表；已有比赛提交时删除比赛返回 40001。
+- 比赛开始后不能修改开始时间、赛制或整体替换题目列表；已有比赛提交时删除比赛返回 40001；榜单只统计比赛时间窗内且报名之后的提交。
 - 实时刷新复用 M1 的 submission SSE：前端收到事件后重新拉取当前榜单（M2-C 页面接入）。
 - Rating 结算仍留待 M4。
+
+**实现状态（M2-B）— 测评记录**
+
+- 比赛进行中，非本人/非管理员查看他人比赛提交时，列表与详情均隐藏代码、错误信息、测试点详情、耗时、内存、得分；比赛结束后恢复。
+- 用户报名前（例如比赛管理员测试）产生的比赛提交不计入正式榜单。
 
 **Codex 提示词（比赛）**
 
@@ -704,6 +709,8 @@ user_ai_configs (
 - 支持按题目 ID、比赛 ID、语言、提交状态、用户 ID、用户昵称筛选。
 - 比赛进行中，其他选手的代码和测评详情不可见（与 4.4 赛时保护一致）。
 - 单条记录展示：提交者、题目、状态、耗时、内存、语言、时间。
+
+**实现状态（M2-B）**：比赛进行中，其他用户的比赛提交在列表与详情中隐藏代码、错误信息、测试点详情、耗时、内存与得分，只保留状态和语言；本人、管理员和比赛结束后完整可见。OI 赛时非管理员榜单只返回本人行。
 
 **Codex 提示词（测评记录）**
 

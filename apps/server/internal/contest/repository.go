@@ -19,6 +19,8 @@ var (
 	ErrProblemNotFound      = errors.New("problem not found")
 	ErrProblemNotInContest  = errors.New("problem is not in this contest")
 	ErrHasSubmissions       = errors.New("contest has submissions")
+	ErrStartFrozen          = errors.New("contest start time is frozen")
+	ErrModeFrozen           = errors.New("contest mode is frozen")
 )
 
 type ListFilter struct {
@@ -100,6 +102,14 @@ func (r *gormRepository) Update(ctx context.Context, c *Contest, problems []Cont
 		var existing Contest
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&existing, c.ID).Error; err != nil {
 			return err
+		}
+		if !time.Now().Before(existing.StartTime) {
+			if !c.StartTime.Equal(existing.StartTime) {
+				return ErrStartFrozen
+			}
+			if c.Mode != existing.Mode {
+				return ErrModeFrozen
+			}
 		}
 		if err := tx.Save(c).Error; err != nil {
 			return err
@@ -222,6 +232,10 @@ func (r *gormRepository) RankSubmissions(ctx context.Context, contestID int64) (
 
 func (r *gormRepository) Delete(ctx context.Context, id int64) error {
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var current Contest
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").First(&current, id).Error; err != nil {
+			return err
+		}
 		var n int64
 		if err := tx.Table("submissions").Where("contest_id = ?", id).Count(&n).Error; err != nil {
 			return err

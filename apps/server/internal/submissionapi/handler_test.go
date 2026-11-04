@@ -218,7 +218,8 @@ func TestListSubmissionsEndpoint(t *testing.T) {
 	f.seedUser(t, 1002, "listbob", "Bob Li")
 	p1 := f.problem(t, "list-sum", true, problem.TypeTraditional, 1)
 	p2 := f.problem(t, "list-product", true, problem.TypeTraditional, 1)
-	contest := int64(7)
+	now := time.Now()
+	contest := f.contest(t, now.Add(-time.Hour), now.Add(time.Hour))
 	first := f.record(t, 1001, p1.ID, "cpp", "accepted", "code1", nil)
 	second := f.record(t, 1001, p2.ID, "python3", "wrong_answer", "code2", nil)
 	third := f.record(t, 1002, p1.ID, "java", "accepted", "code3", &contest)
@@ -238,7 +239,7 @@ func TestListSubmissionsEndpoint(t *testing.T) {
 	_, resp = f.do(http.MethodGet, "/api/submissions?problemId="+fmt.Sprint(p1.ID), "", nil)
 	assert.EqualValues(t, 2, resp["data"].(map[string]any)["total"])
 
-	_, resp = f.do(http.MethodGet, "/api/submissions?contestId=7", "", nil)
+	_, resp = f.do(http.MethodGet, "/api/submissions?contestId="+fmt.Sprint(contest), "", nil)
 	assert.EqualValues(t, 1, resp["data"].(map[string]any)["total"])
 	items = resp["data"].(map[string]any)["items"].([]any)
 	assert.EqualValues(t, third, items[0].(map[string]any)["id"])

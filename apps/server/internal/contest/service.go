@@ -102,7 +102,13 @@ func (s *Service) Update(ctx context.Context, v Viewer, id int64, in Input) (*Co
 		return nil, invalid("邀请码报名必须设置邀请码")
 	}
 	now := time.Now()
-	if !now.Before(existing.StartTime) || !now.Before(in.StartTime) {
+	if !now.Before(existing.StartTime) {
+		if !in.StartTime.Equal(existing.StartTime) {
+			return nil, invalid("比赛开始后不能修改开始时间")
+		}
+		if in.Mode != existing.Mode {
+			return nil, invalid("比赛开始后不能修改赛制")
+		}
 		rows, err := s.repo.FindProblems(ctx, id)
 		if err != nil {
 			return nil, err
@@ -419,10 +425,16 @@ func mapRepoErr(err error) error {
 		return invalid("同一比赛的题目编号不能重复")
 	case errors.Is(err, ErrDuplicateProblem):
 		return invalid("同一比赛不能重复添加题目")
-	case errors.Is(err, ErrProblemNotFound), errors.Is(err, ErrProblemNotInContest):
+	case errors.Is(err, ErrProblemNotFound):
+		return invalid("题目不存在")
+	case errors.Is(err, ErrProblemNotInContest):
 		return invalid("题目不在该比赛中")
 	case errors.Is(err, ErrHasSubmissions):
 		return invalid("比赛已有提交，无法删除")
+	case errors.Is(err, ErrStartFrozen):
+		return invalid("比赛开始后不能修改开始时间")
+	case errors.Is(err, ErrModeFrozen):
+		return invalid("比赛开始后不能修改赛制")
 	}
 	return err
 }
