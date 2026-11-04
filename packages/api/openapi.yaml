@@ -264,6 +264,20 @@ paths:
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
+  /contests/{id}/ranklist:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      summary: 比赛榜单（ICPC/IOI/OI）；OI 赛时非管理员只返回本人行
+      security: [{}, { bearer: [] }]
+      responses:
+        '200':
+          description: 当前榜单
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ContestRanklistResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
   /contests/{id}/announcements:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
@@ -640,6 +654,51 @@ components:
         title: { type: string }
         contentMd: { type: string }
         createdAt: { type: string, format: date-time }
+    ContestRankProblem:
+      type: object
+      required: [problemId, displayId, title]
+      properties:
+        problemId: { type: integer, format: int64 }
+        displayId: { type: string }
+        title: { type: string }
+    ContestRankCell:
+      type: object
+      required: [attempts, score]
+      properties:
+        status: { type: string, description: 该题最近/最佳状态 }
+        attempts: { type: integer }
+        acceptedAt: { type: string, format: date-time }
+        score: { type: integer }
+    ContestRankRow:
+      type: object
+      required: [rank, userId, username, nickname, solved, penalty, totalScore, problems]
+      properties:
+        rank: { type: integer }
+        userId: { type: integer, format: int64 }
+        username: { type: string }
+        nickname: { type: string }
+        solved: { type: integer }
+        penalty: { type: integer, description: ICPC 罚时（分钟） }
+        totalScore: { type: integer, description: IOI/OI 总分 }
+        lastAcceptedAt: { type: string, format: date-time }
+        problems:
+          type: array
+          items: { $ref: '#/components/schemas/ContestRankCell' }
+    ContestRanklist:
+      type: object
+      required: [contestId, mode, status, generatedAt, problems, rows, selfOnly]
+      properties:
+        contestId: { type: integer, format: int64 }
+        mode: { $ref: '#/components/schemas/ContestMode' }
+        status: { $ref: '#/components/schemas/ContestStatus' }
+        generatedAt: { type: string, format: date-time }
+        problems:
+          type: array
+          items: { $ref: '#/components/schemas/ContestRankProblem' }
+        rows:
+          type: array
+          items: { $ref: '#/components/schemas/ContestRankRow' }
+        selfOnly: { type: boolean, description: OI 赛时只返回本人行 }
     ContestMode:
       type: string
       enum: [icpc, ioi, oi]
@@ -1174,6 +1233,13 @@ components:
           required: [data]
           properties:
             data: { $ref: '#/components/schemas/AnnouncementItem' }
+    ContestRanklistResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/ContestRanklist' }
     ContestPageResponse:
       allOf:
         - $ref: '#/components/schemas/Envelope'

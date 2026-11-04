@@ -28,6 +28,7 @@ func RegisterRoutes(r gin.IRouter, s *contest.Service) {
 	r.POST("/contests/:id/clone", with(h.clone)...)
 	r.POST("/contests/:id/register", middleware.RequireAuth(), h.register)
 	r.GET("/contests/:id/participants", with(h.participants)...)
+	r.GET("/contests/:id/ranklist", h.ranklist)
 	r.GET("/contests/:id/announcements", h.announcements)
 	r.POST("/contests/:id/announcements", with(h.createAnnouncement)...)
 	r.PUT("/contests/:id/announcements/:aid", with(h.updateAnnouncement)...)
@@ -224,6 +225,19 @@ func (h *handler) participants(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, items)
+}
+
+func (h *handler) ranklist(c *gin.Context) {
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	list, err := h.svc.Ranklist(c.Request.Context(), viewer(c), id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, list)
 }
 
 func (h *handler) announcements(c *gin.Context) {

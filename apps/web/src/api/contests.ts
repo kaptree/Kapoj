@@ -8,6 +8,7 @@ import type {
   ContestListItem,
   ContestMode,
   ContestParticipant,
+  ContestRanklist,
   ContestStatus,
   Page,
 } from './types'
@@ -52,6 +53,9 @@ export const registerContest = (
 
 export const listContestParticipants = (id: number | string) =>
   http.get<ContestParticipant[]>(`/contests/${id}/participants`)
+
+export const getContestRanklist = (id: number | string) =>
+  http.get<ContestRanklist>(`/contests/${id}/ranklist`)
 
 export const listAnnouncements = (id: number | string) =>
   http.get<AnnouncementItem[]>(`/contests/${id}/announcements`)

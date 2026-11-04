@@ -233,6 +233,25 @@ func TestContestDetailRegistrationAndProblems(t *testing.T) {
 	assert.Contains(t, participants[0].(map[string]any)["username"], "user")
 }
 
+func TestRanklistEndpoint(t *testing.T) {
+	f := newFx(t)
+	p1, p2 := f.problem("sum"), f.problem("product")
+	w, resp := f.do(http.MethodPost, "/api/contests", f.token("contest_admin"), body(p1.ID, p2.ID))
+	require.Equal(t, http.StatusCreated, w.Code)
+	id := idOf(resp)
+	w, _ = f.do(http.MethodPost, fmt.Sprintf("/api/contests/%d/register", id), f.token("user"), map[string]any{})
+	require.Equal(t, http.StatusOK, w.Code)
+
+	w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/contests/%d/ranklist", id), f.token("user"), nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data := resp["data"].(map[string]any)
+	assert.Equal(t, "icpc", data["mode"])
+	rows := data["rows"].([]any)
+	require.Len(t, rows, 1)
+	assert.Contains(t, rows[0].(map[string]any)["username"], "user")
+	assert.EqualValues(t, 1, rows[0].(map[string]any)["rank"])
+}
+
 func TestAnnouncementPermissionsAndCrud(t *testing.T) {
 	f := newFx(t)
 	p1, p2 := f.problem("sum"), f.problem("product")

@@ -56,6 +56,7 @@ type Repository interface {
 	FindProblem(ctx context.Context, contestID, problemID int64) (*ContestProblem, error)
 	HasSubmissions(ctx context.Context, contestID int64) (bool, error)
 	CanViewProblem(ctx context.Context, userID, problemID int64, now time.Time) (bool, error)
+	RankSubmissions(ctx context.Context, contestID int64) ([]RankSubmission, error)
 	List(ctx context.Context, f ListFilter, offset, limit int) ([]ListRow, int64, error)
 	Delete(ctx context.Context, id int64) error
 
@@ -208,6 +209,15 @@ func (r *gormRepository) CanViewProblem(ctx context.Context, userID, problemID i
 			WHERE cp.user_id = ? AND cpb.problem_id = ? AND c.start_time <= ?
 		)`, userID, problemID, now).Scan(&ok).Error
 	return ok, err
+}
+
+func (r *gormRepository) RankSubmissions(ctx context.Context, contestID int64) ([]RankSubmission, error) {
+	var rows []RankSubmission
+	err := r.db.WithContext(ctx).Table("submissions").
+		Select("user_id, problem_id, status, score, created_at").
+		Where("contest_id = ? AND status NOT IN ('pending', 'judging')", contestID).
+		Order("created_at, id").Scan(&rows).Error
+	return rows, err
 }
 
 func (r *gormRepository) Delete(ctx context.Context, id int64) error {

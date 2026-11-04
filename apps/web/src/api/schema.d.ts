@@ -622,6 +622,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/contests/{id}/ranklist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** 比赛榜单（ICPC/IOI/OI）；OI 赛时非管理员只返回本人行 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 当前榜单 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ContestRanklistResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/contests/{id}/announcements": {
         parameters: {
             query?: never;
@@ -1420,6 +1462,47 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
         };
+        ContestRankProblem: {
+            /** Format: int64 */
+            problemId: number;
+            displayId: string;
+            title: string;
+        };
+        ContestRankCell: {
+            /** @description 该题最近/最佳状态 */
+            status?: string;
+            attempts: number;
+            /** Format: date-time */
+            acceptedAt?: string;
+            score: number;
+        };
+        ContestRankRow: {
+            rank: number;
+            /** Format: int64 */
+            userId: number;
+            username: string;
+            nickname: string;
+            solved: number;
+            /** @description ICPC 罚时（分钟） */
+            penalty: number;
+            /** @description IOI/OI 总分 */
+            totalScore: number;
+            /** Format: date-time */
+            lastAcceptedAt?: string;
+            problems: components["schemas"]["ContestRankCell"][];
+        };
+        ContestRanklist: {
+            /** Format: int64 */
+            contestId: number;
+            mode: components["schemas"]["ContestMode"];
+            status: components["schemas"]["ContestStatus"];
+            /** Format: date-time */
+            generatedAt: string;
+            problems: components["schemas"]["ContestRankProblem"][];
+            rows: components["schemas"]["ContestRankRow"][];
+            /** @description OI 赛时只返回本人行 */
+            selfOnly: boolean;
+        };
         /** @enum {string} */
         ContestMode: "icpc" | "ioi" | "oi";
         /** @enum {string} */
@@ -1813,6 +1896,9 @@ export interface components {
         };
         AnnouncementResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["AnnouncementItem"];
+        };
+        ContestRanklistResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["ContestRanklist"];
         };
         ContestPageResponse: components["schemas"]["Envelope"] & {
             data: {
