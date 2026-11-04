@@ -184,7 +184,7 @@ func TestTaskDeadlineAndPreClaimAC(t *testing.T) {
 	assert.Equal(t, gamification.TaskStatusClaimed, partial.Status)
 	assert.EqualValues(t, 1, partial.Progress)
 
-	// 截止后不能完成，状态由读取计算为 expired。
+	// 截止前未集齐题目：读取保持 claimed，但展示为 expired。
 	require.NoError(t, e.db.Model(&gamification.Task{}).Where("id = ?", task.ID).
 		Update("end_time", now.Add(-time.Minute)).Error)
 	require.NoError(t, e.svc.EvaluateTasks(ctx, e.user.ID))
@@ -394,6 +394,65 @@ func TestTaskClaimConcurrent(t *testing.T) {
 	require.NoError(t, e.db.Model(&gamification.UserTaskRecord{}).
 		Where("user_id = ? AND task_id = ?", e.user.ID, task.ID).Count(&count).Error)
 	assert.EqualValues(t, 1, count)
+}
+
+func TestTaskCompletesAfterDeadlineForPreDeadlineACs(t *testing.T) {
+	ctx := context.Background()
+	e := newTaskEnv(t)
+	p1 := e.addProblem(t, "retro-p1", true)
+	p2 := e.addProblem(t, "retro-p2", true)
+	now := time.Now()
+	task := e.createTask(t, taskInput("补算任务", []int64{p1.ID}, 60,
+		now.Add(-3*time.Hour), now.Add(time.Hour)))
+	partial := e.createTask(t, taskInput("部分进度任务", []int64{p1.ID, p2.ID}, 50,
+		now.Add(-3*time.Hour), now.Add(time.Hour)))
+	e.claim(t, task.ID)
+	e.claim(t, partial.ID)
+
+	// 模拟时间流逝：两条记录都在截止前领取，任务现已截止。
+	claimedAt := now.Add(-2 * time.Hour)
+	endedAt := now.Add(-30 * time.Minute)
+	require.NoError(t, e.db.Model(&gamification.Task{}).
+		Where("id IN ?", []int64{task.ID, partial.ID}).
+		Update("end_time", endedAt).Error)
+	require.NoError(t, e.db.Model(&gamification.UserTaskRecord{}).
+		Where("task_id IN ?", []int64{task.ID, partial.ID}).
+		Update("claimed_at", claimedAt).Error)
+
+	// AC 在领取之后、截止之前落库，但直到截止后才补算。
+	e.addAC(t, p1.ID, now.Add(-time.Hour))
+
+	require.NoError(t, e.svc.EvaluateUser(ctx, e.user.ID))
+
+	items, err := e.svc.ListTasks(ctx, gamification.Viewer{UserID: e.user.ID}, false)
+	require.NoError(t, err)
+	completed := findTask(t, items, task.ID)
+	assert.Equal(t, gamification.TaskStatusCompleted, completed.Status)
+	assert.EqualValues(t, 1, completed.Progress)
+	assert.NotNil(t, completed.CompletedAt)
+
+	// 截止前只完成部分题目：保持 claimed，展示为 expired，不发奖。
+	partialItem := findTask(t, items, partial.ID)
+	assert.Equal(t, gamification.TaskStatusExpired, partialItem.Status)
+	assert.EqualValues(t, 1, partialItem.Progress)
+	assert.Nil(t, partialItem.CompletedAt)
+
+	balance, err := e.repo.Balance(ctx, e.user.ID)
+	require.NoError(t, err)
+	assert.EqualValues(t, 60, balance)
+	var txCount int64
+	require.NoError(t, e.db.Model(&gamification.CoinTransaction{}).
+		Where("user_id = ?", e.user.ID).Count(&txCount).Error)
+	assert.EqualValues(t, 1, txCount)
+
+	// 再次补算仍然只发一次。
+	require.NoError(t, e.svc.EvaluateUser(ctx, e.user.ID))
+	balance, err = e.repo.Balance(ctx, e.user.ID)
+	require.NoError(t, err)
+	assert.EqualValues(t, 60, balance)
+	require.NoError(t, e.db.Model(&gamification.CoinTransaction{}).
+		Where("user_id = ?", e.user.ID).Count(&txCount).Error)
+	assert.EqualValues(t, 1, txCount)
 }
 
 func TestTaskValidation(t *testing.T) {

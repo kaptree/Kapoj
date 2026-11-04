@@ -242,8 +242,9 @@ func (s *Service) ClaimTask(ctx context.Context, userID, id int64) (*TaskItem, e
 	return &item, nil
 }
 
-// EvaluateTasks 遍历用户已领取的任务，在截止前集齐全部题目 AC 时原子完成并发奖。
-// 任务即使被下架也参与判定；截止后未完成的记录保持 claimed。
+// EvaluateTasks 遍历用户已领取的任务。是否完成只由 AC 提交的 judged_at 窗口
+// [claimed_at, end_time) 决定，补算可以在截止后进行，以结算停机期间丢失的
+// 事件；任务即使被下架也参与判定。截止前未集齐题目则保持 claimed。
 func (s *Service) EvaluateTasks(ctx context.Context, userID int64) error {
 	if userID <= 0 {
 		return nil
@@ -255,7 +256,6 @@ func (s *Service) EvaluateTasks(ctx context.Context, userID int64) error {
 	if len(records) == 0 {
 		return nil
 	}
-	now := time.Now()
 	for _, record := range records {
 		task, err := s.repo.FindTask(ctx, record.TaskID)
 		if err != nil {
@@ -264,7 +264,7 @@ func (s *Service) EvaluateTasks(ctx context.Context, userID int64) error {
 			}
 			return err
 		}
-		if len(task.ProblemIDs) == 0 || !now.Before(task.EndTime) {
+		if len(task.ProblemIDs) == 0 {
 			continue
 		}
 		progress, err := s.repo.CountTaskProgress(
