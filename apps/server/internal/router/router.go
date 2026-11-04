@@ -13,6 +13,8 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/config"
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/contestapi"
+	"github.com/kaptree/kapoj/apps/server/internal/gamification"
+	"github.com/kaptree/kapoj/apps/server/internal/gamificationapi"
 	"github.com/kaptree/kapoj/apps/server/internal/health"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
@@ -38,6 +40,7 @@ type Deps struct {
 	Storage  storage.Storage
 	Config   *config.Config
 	Enqueuer submission.Enqueuer
+	Game     *gamification.Service
 }
 
 func New(d Deps) *gin.Engine {
@@ -64,6 +67,9 @@ func New(d Deps) *gin.Engine {
 	problemJSON := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxProblemJSONBytes))
 	uploads := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxUploadBytes))
 	userapi.RegisterRoutes(api, user.NewService(users))
+	if d.Game != nil {
+		gamificationapi.RegisterRoutes(api, d.Game)
+	}
 	contestRepo := contest.NewGormRepository(d.DB)
 	contestapi.RegisterRoutes(api, contest.NewService(contestRepo))
 	problemRepo := problem.NewGormRepository(d.DB)
