@@ -271,6 +271,11 @@ contest_problems (
 contest_participants (
   id, contest_id, user_id, register_time, extra_info_json
 )
+-- 实现差异（M2-A）：
+-- contests 增加 invite_code_hash（邀请码报名）；password_hash / invite_code_hash 只存 bcrypt；
+-- contest_problems 唯一约束为 uniq_contest_problems_problem、uniq_contest_problems_display；
+-- contest_participants 唯一约束为 uniq_contest_participants_user，extra_info_json 存 []；
+-- 比赛删除级联删除题目关联、报名与公告（M2-B 引入比赛提交后再调整删除策略）。
 -- 唯一约束：(contest_id, user_id)
 announcements (
   id, contest_id, title, content_md, created_by, created_at
@@ -599,6 +604,16 @@ user_ai_configs (
   - **ICPC**：按通过题数降序，其次总罚时升序。单题罚时 = 首次 AC 用时（分钟）+ 首次 AC 之前的未通过提交次数 × 20 分钟；未通过的题不计罚时。
   - **IOI**：每题多次提交取最高分，总分排名。
   - **OI**：仅赛时可见分数，赛后统一评测并公布。
+
+**实现状态（M2-A）**
+
+- 后端已完成比赛 CRUD、克隆、比赛题目整体替换、报名（open/password/invite）、报名用户列表、公告 CRUD。
+- 权限：写操作仅 `contest_admin`/`super_admin`；非公开比赛对非报名者/非管理员返回 40400；开赛前比赛题目仅管理员可见。
+- 密码与邀请码只存 bcrypt 哈希；响应 DTO 不包含哈希；日志只记录请求路径与状态。
+- 比赛状态由服务器时间计算为 `upcoming`/`running`/`ended`；`is_rated` 只保存标记，Rating 结算在 M4。
+- 比赛题目最多 26 题，`displayId` 为 A–Z 且同一比赛唯一；更新时整体替换题目列表。
+- 克隆复制比赛配置、密码/邀请码哈希与题目，不复制报名与公告；可覆盖标题/起止时间。
+- 比赛提交、赛时保护、三种榜单与前端页面在 M2-B/M2-C。
 
 **Codex 提示词（比赛）**
 
@@ -1148,7 +1163,7 @@ problem/
 | ------ | -------------------------------------- | ------------------ | ---- |
 | M0     | 项目初始化、认证、基础布局             | 可登录的前后端骨架 | ✅   |
 | M1     | 题库/题目 + 沙盒评测 + 测评记录        | 可提交并判题的 MVP | ✅   |
-| M2     | 比赛系统（三种赛制 + 榜单 + 公告）     | 可办比赛的平台     | ⬜   |
+| M2     | 比赛系统（三种赛制 + 榜单 + 公告）     | 可办比赛的平台     | 🚧   |
 | M3     | 游戏化模块（成就/任务/徽章/称号/金币） | 有趣味的成长体系   | ⬜   |
 | M4     | 排行榜 + Rating + 学习路线             | 社区与成长闭环     | ⬜   |
 | M5     | AI 辅助 + 题目导入 + 证书认证          | 完整版 kapOJ       | ⬜   |

@@ -2,7 +2,7 @@
 
 打造最有趣味的 Online Judge 平台。规格见 [`DEVELOPMENT.md`](DEVELOPMENT.md)，进度见 [`docs/任务清单.md`](docs/任务清单.md) 与 [`docs/开发日志.md`](docs/开发日志.md)。
 
-当前进度：**M1 已完成**（题库、测试数据、提交接口、Asynq 队列、Docker 沙盒评测、测评记录/SSE、Monaco 提交页、AC 后题解）。
+当前进度：**M2-A 已完成**（比赛模型/CRUD/克隆、三种报名、访问控制、公告）；M2-B/C 进行中。M1 已全部完成。
 
 ## 目录结构
 
