@@ -97,6 +97,82 @@ func TestFindMissing(t *testing.T) {
 	assert.ErrorIs(t, err, problem.ErrNotFound)
 }
 
+func TestUpdatePublishChecksTestcasesUnderLock(t *testing.T) {
+	repo, _ := setup(t)
+	ctx := context.Background()
+	p := mustCreate(t, repo, newProblem("publish-empty"))
+	p.IsPublic = true
+
+	err := repo.Update(ctx, p)
+	assert.ErrorIs(t, err, problem.ErrPublishNeedsTestcase)
+
+	got, err := repo.FindByID(ctx, p.ID)
+	require.NoError(t, err)
+	assert.False(t, got.IsPublic, "a rejected publish must leave the problem hidden")
+}
+
+func TestDeleteTestcaseGuardsLastPublicTestcase(t *testing.T) {
+	repo, g := setup(t)
+	ctx := context.Background()
+	p := mustCreate(t, repo, newProblem("guarded-delete"))
+	tc := newCase("guarded")
+	tc.ProblemID = p.ID
+	require.NoError(t, repo.AddTestcase(ctx, tc))
+	require.NoError(t, g.Model(&problem.Problem{}).Where("id = ?", p.ID).Update("is_public", true).Error)
+
+	_, err := repo.DeleteTestcase(ctx, p.ID, tc.ID)
+	assert.ErrorIs(t, err, problem.ErrLastTestcase)
+
+	n, err := repo.CountTestcases(ctx, p.ID)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
+}
+
+func TestPublishAndDeleteLastTestcaseStayConsistent(t *testing.T) {
+	repo, _ := setup(t)
+	ctx := context.Background()
+
+	for i := range 10 {
+		p := mustCreate(t, repo, newProblem(fmt.Sprintf("race-%d", i)))
+		tc := newCase(fmt.Sprintf("race-%d", i))
+		tc.ProblemID = p.ID
+		require.NoError(t, repo.AddTestcase(ctx, tc))
+
+		publish := *p
+		publish.IsPublic = true
+		errs := make(chan error, 2)
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			errs <- repo.Update(ctx, &publish)
+		}()
+		go func() {
+			defer wg.Done()
+			_, err := repo.DeleteTestcase(ctx, p.ID, tc.ID)
+			errs <- err
+		}()
+		wg.Wait()
+		close(errs)
+
+		failed := 0
+		for err := range errs {
+			if err != nil {
+				failed++
+			}
+		}
+		require.Equal(t, 1, failed, "exactly one of publish/delete must lose the race")
+
+		got, err := repo.FindByID(ctx, p.ID)
+		require.NoError(t, err)
+		n, err := repo.CountTestcases(ctx, p.ID)
+		require.NoError(t, err)
+		if got.IsPublic {
+			assert.GreaterOrEqual(t, n, 1, "a public problem must keep at least one testcase")
+		}
+	}
+}
+
 func TestListFilters(t *testing.T) {
 	repo, _ := setup(t)
 	ctx := context.Background()
@@ -173,6 +249,9 @@ func TestUpdateKeepsProtectedColumns(t *testing.T) {
 	repo, g := setup(t)
 	ctx := context.Background()
 	p := mustCreate(t, repo, newProblem("protected"))
+	tc := newCase("protected")
+	tc.ProblemID = p.ID
+	require.NoError(t, repo.AddTestcase(ctx, tc))
 
 	// Something else changes protected columns after p was read.
 	require.NoError(t, g.Exec(

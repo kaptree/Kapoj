@@ -5,6 +5,7 @@ import type {
   ProblemInput,
   ProblemListItem,
   ProblemStats,
+  ProblemUpdateInput,
   Testcase,
 } from './types'
 
@@ -33,7 +34,7 @@ export const getProblem = (id: number | string) => http.get<ProblemDetail>(`/pro
 
 export const createProblem = (input: ProblemInput) => http.post<ProblemDetail>('/problems', input)
 
-export const updateProblem = (id: number | string, input: ProblemInput) =>
+export const updateProblem = (id: number | string, input: ProblemUpdateInput) =>
   http.put<ProblemDetail>(`/problems/${id}`, input)
 
 export const deleteProblem = (id: number | string) =>

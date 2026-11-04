@@ -329,7 +329,7 @@ export interface paths {
                     keyword?: string;
                     tag?: string;
                     difficulty?: number;
-                    /** @description 仅题目管理员有效 */
+                    /** @description 仅题目管理员有效；需要携带 bearer token */
                     includeHidden?: boolean;
                     page?: number;
                     page_size?: number;
@@ -422,7 +422,10 @@ export interface paths {
                 404: components["responses"]["Error"];
             };
         };
-        /** 更新题目（题目管理员）；发布需至少 1 个测试点，特判题还需 checker */
+        /**
+         * 整体替换题目（题目管理员）；必须提交全部可编辑字段
+         * @description PUT 是整体替换：未提交的字段会变成零值（字符串清空、数组清空、isPublic=false）， 不会保留原值。发布需至少 1 个测试点，特判题还需 checker。
+         */
         put: {
             parameters: {
                 query?: never;
@@ -434,7 +437,7 @@ export interface paths {
             };
             requestBody: {
                 content: {
-                    "application/json": components["schemas"]["ProblemInput"];
+                    "application/json": components["schemas"]["ProblemUpdateInput"];
                 };
             };
             responses: {
@@ -452,6 +455,7 @@ export interface paths {
                 403: components["responses"]["Error"];
                 404: components["responses"]["Error"];
                 409: components["responses"]["Error"];
+                413: components["responses"]["Error"];
             };
         };
         post?: never;
@@ -648,6 +652,8 @@ export interface paths {
                     };
                 };
                 400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
                 404: components["responses"]["Error"];
             };
         };
@@ -675,6 +681,8 @@ export interface paths {
                     };
                 };
                 400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
                 404: components["responses"]["Error"];
             };
         };
@@ -720,6 +728,8 @@ export interface paths {
                     };
                 };
                 400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
                 404: components["responses"]["Error"];
             };
         };
@@ -769,6 +779,8 @@ export interface paths {
                     };
                 };
                 400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
                 404: components["responses"]["Error"];
                 413: components["responses"]["Error"];
             };
@@ -905,6 +917,29 @@ export interface components {
             /** @description 创建时被忽略 */
             isPublic?: boolean;
             source?: string;
+        };
+        /** @description PUT 为整体替换，全部可编辑字段都必须提交；未提交的字段会被置为零值。 */
+        ProblemUpdateInput: {
+            title: string;
+            /** @description 会先 trim 并转小写 */
+            slug: string;
+            statementMd: string;
+            inputFormatMd: string;
+            outputFormatMd: string;
+            samples: components["schemas"]["Sample"][];
+            hintMd: string;
+            solutionMd: string;
+            solutionCode: string;
+            type: components["schemas"]["ProblemType"];
+            tags: string[];
+            difficulty: number;
+            /** @description 0 表示默认 1000 */
+            timeLimitMs: number;
+            /** @description 0 表示默认 256 */
+            memoryLimitMb: number;
+            /** @description 整体替换；false 会下线题目 */
+            isPublic: boolean;
+            source: string;
         };
         ProblemListItem: {
             /** Format: int64 */

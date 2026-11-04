@@ -131,11 +131,12 @@ paths:
   /problems:
     get:
       summary: 题目列表（游客可访问，只返回已公开题目）
+      security: [{}, { bearer: [] }]
       parameters:
         - { name: keyword, in: query, schema: { type: string }, description: 匹配标题或题目标识，不区分大小写，按字面量匹配 }
         - { name: tag, in: query, schema: { type: string } }
         - { name: difficulty, in: query, schema: { type: integer, minimum: 1, maximum: 5 } }
-        - { name: includeHidden, in: query, schema: { type: boolean }, description: 仅题目管理员有效 }
+        - { name: includeHidden, in: query, schema: { type: boolean }, description: 仅题目管理员有效；需要携带 bearer token }
         - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
         - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
       responses:
@@ -177,13 +178,16 @@ paths:
               schema: { $ref: '#/components/schemas/ProblemDetailResponse' }
         '404': { $ref: '#/components/responses/Error' }
     put:
-      summary: 更新题目（题目管理员）；发布需至少 1 个测试点，特判题还需 checker
+      summary: 整体替换题目（题目管理员）；必须提交全部可编辑字段
+      description: >-
+        PUT 是整体替换：未提交的字段会变成零值（字符串清空、数组清空、isPublic=false），
+        不会保留原值。发布需至少 1 个测试点，特判题还需 checker。
       security: [{ bearer: [] }]
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/ProblemInput' }
+            schema: { $ref: '#/components/schemas/ProblemUpdateInput' }
       responses:
         '200':
           description: 更新后的题目
@@ -195,6 +199,7 @@ paths:
         '403': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
         '409': { $ref: '#/components/responses/Error' }
+        '413': { $ref: '#/components/responses/Error' }
     delete:
       summary: 删除题目；已有提交记录时只下线
       security: [{ bearer: [] }]
@@ -279,6 +284,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/EmptyResponse' }
         '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
     delete:
       summary: 删除测试点；公开题目不能删除最后一个测试点
@@ -290,6 +297,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/EmptyResponse' }
         '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
   /problems/{id}/testcases/reorder:
     parameters:
@@ -309,6 +318,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/EmptyResponse' }
         '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
   /problems/{id}/checker:
     parameters:
@@ -332,6 +343,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/EmptyResponse' }
         '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
         '413': { $ref: '#/components/responses/Error' }
 components:
@@ -514,6 +527,43 @@ components:
         timeLimitMs: { type: integer, minimum: 100, maximum: 10000, description: 0 表示默认 1000 }
         memoryLimitMb: { type: integer, minimum: 16, maximum: 1024, description: 0 表示默认 256 }
         isPublic: { type: boolean, description: 创建时被忽略 }
+        source: { type: string, maxLength: 200 }
+    ProblemUpdateInput:
+      type: object
+      description: PUT 为整体替换，全部可编辑字段都必须提交；未提交的字段会被置为零值。
+      required:
+        - title
+        - slug
+        - statementMd
+        - inputFormatMd
+        - outputFormatMd
+        - samples
+        - hintMd
+        - solutionMd
+        - solutionCode
+        - type
+        - tags
+        - difficulty
+        - timeLimitMs
+        - memoryLimitMb
+        - isPublic
+        - source
+      properties:
+        title: { type: string, minLength: 1, maxLength: 100 }
+        slug: { type: string, pattern: '^[a-z0-9][a-z0-9-]{1,62}$', description: 会先 trim 并转小写 }
+        statementMd: { type: string, maxLength: 100000 }
+        inputFormatMd: { type: string, maxLength: 20000 }
+        outputFormatMd: { type: string, maxLength: 20000 }
+        samples: { type: array, maxItems: 10, items: { $ref: '#/components/schemas/Sample' } }
+        hintMd: { type: string, maxLength: 50000 }
+        solutionMd: { type: string, maxLength: 50000 }
+        solutionCode: { type: string }
+        type: { $ref: '#/components/schemas/ProblemType' }
+        tags: { type: array, maxItems: 10, items: { type: string, minLength: 1, maxLength: 20 } }
+        difficulty: { type: integer, minimum: 1, maximum: 5 }
+        timeLimitMs: { type: integer, minimum: 100, maximum: 10000, description: 0 表示默认 1000 }
+        memoryLimitMb: { type: integer, minimum: 16, maximum: 1024, description: 0 表示默认 256 }
+        isPublic: { type: boolean, description: 整体替换；false 会下线题目 }
         source: { type: string, maxLength: 200 }
     ProblemListItem:
       type: object

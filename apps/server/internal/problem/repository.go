@@ -14,10 +14,13 @@ import (
 )
 
 var (
-	ErrNotFound         = errors.New("problem not found")
-	ErrSlugTaken        = errors.New("problem slug taken")
-	ErrTestcaseNotFound = errors.New("testcase not found")
-	ErrBadOrder         = errors.New("reorder ids must be exactly the problem's testcases")
+	ErrNotFound             = errors.New("problem not found")
+	ErrSlugTaken            = errors.New("problem slug taken")
+	ErrTestcaseNotFound     = errors.New("testcase not found")
+	ErrBadOrder             = errors.New("reorder ids must be exactly the problem's testcases")
+	ErrPublishNeedsTestcase = errors.New("a public problem needs at least one testcase")
+	ErrPublishNeedsChecker  = errors.New("a public special problem needs a checker")
+	ErrLastTestcase         = errors.New("a public problem cannot lose its last testcase")
 )
 
 type Filter struct {
@@ -111,15 +114,34 @@ func (r *gormRepository) List(ctx context.Context, f Filter, offset, limit int) 
 
 func (r *gormRepository) Update(ctx context.Context, p *Problem) error {
 	p.UpdatedAt = time.Now()
-	res := r.db.WithContext(ctx).Model(&Problem{}).Where("id = ?", p.ID).
-		Select(editableColumns).Updates(p)
-	if res.Error != nil {
-		return mapErr(res.Error)
-	}
-	if res.RowsAffected == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return mapErr(r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var current Problem
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, p.ID).Error; err != nil {
+			return err
+		}
+		// Publishing is checked under the same row lock as the write, so a
+		// concurrent testcase deletion cannot leave a public problem empty.
+		if p.IsPublic {
+			var n int64
+			if err := tx.Model(&Testcase{}).Where("problem_id = ?", p.ID).Count(&n).Error; err != nil {
+				return err
+			}
+			if n == 0 {
+				return ErrPublishNeedsTestcase
+			}
+			if p.Type == TypeSpecial && current.CheckerPath == "" {
+				return ErrPublishNeedsChecker
+			}
+		}
+		res := tx.Model(&Problem{}).Where("id = ?", p.ID).Select(editableColumns).Updates(p)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrNotFound
+		}
+		return nil
+	}))
 }
 
 func (r *gormRepository) SetCheckerPath(ctx context.Context, id int64, path string) error {
@@ -220,18 +242,41 @@ func (r *gormRepository) UpdateTestcase(ctx context.Context, problemID, id int64
 }
 
 func (r *gormRepository) DeleteTestcase(ctx context.Context, problemID, id int64) (*Testcase, error) {
-	tc, err := r.FindTestcase(ctx, problemID, id)
+	var tc Testcase
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var p Problem
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("id", "is_public").First(&p, problemID).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("problem_id = ? AND id = ?", problemID, id).First(&tc).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrTestcaseNotFound
+			}
+			return err
+		}
+		if p.IsPublic {
+			var n int64
+			if err := tx.Model(&Testcase{}).Where("problem_id = ?", problemID).Count(&n).Error; err != nil {
+				return err
+			}
+			if n <= 1 {
+				return ErrLastTestcase
+			}
+		}
+		res := tx.Where("problem_id = ? AND id = ?", problemID, id).Delete(&Testcase{})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrTestcaseNotFound
+		}
+		return nil
+	})
 	if err != nil {
-		return nil, err
+		return nil, mapErr(err)
 	}
-	res := r.db.WithContext(ctx).Where("problem_id = ? AND id = ?", problemID, id).Delete(&Testcase{})
-	if res.Error != nil {
-		return nil, res.Error
-	}
-	if res.RowsAffected == 0 {
-		return nil, ErrTestcaseNotFound
-	}
-	return tc, nil
+	return &tc, nil
 }
 
 func (r *gormRepository) ReorderTestcases(ctx context.Context, problemID int64, ids []int64) error {

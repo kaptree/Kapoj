@@ -21,10 +21,11 @@ import (
 )
 
 type env struct {
-	svc  *problem.Service
-	repo problem.Repository
-	db   *gorm.DB
-	root string
+	svc   *problem.Service
+	repo  problem.Repository
+	store storage.Storage
+	db    *gorm.DB
+	root  string
 }
 
 func newEnv(t *testing.T) *env {
@@ -34,7 +35,15 @@ func newEnv(t *testing.T) *env {
 	store, err := storage.NewLocal(root)
 	require.NoError(t, err)
 	repo := problem.NewGormRepository(g)
-	return &env{svc: problem.NewService(repo, store), repo: repo, db: g, root: root}
+	return &env{svc: problem.NewService(repo, store), repo: repo, store: store, db: g, root: root}
+}
+
+type failingCheckerRepo struct {
+	problem.Repository
+}
+
+func (failingCheckerRepo) SetCheckerPath(context.Context, int64, string) error {
+	return errors.New("database unavailable")
 }
 
 func (e *env) files(t *testing.T) []string {
@@ -423,6 +432,8 @@ func TestUploadCheckerSizeLimitKeepsPrevious(t *testing.T) {
 	in.Type = problem.TypeSpecial
 	p := e.create(t, in)
 	require.NoError(t, e.svc.UploadChecker(ctx, p.ID, strings.NewReader("v1")))
+	old, _ := e.repo.FindByID(ctx, p.ID)
+	oldPath := old.CheckerPath
 
 	assertCode(t, e.svc.UploadChecker(ctx, p.ID, zeroBytes(256<<10+1)), 40001)
 	assertCode(t, e.svc.UploadChecker(ctx, p.ID, strings.NewReader("")), 40001)
@@ -433,6 +444,29 @@ func TestUploadCheckerSizeLimitKeepsPrevious(t *testing.T) {
 	assert.Equal(t, "v1", string(b), "failed uploads must not clobber the previous checker")
 
 	assert.NoError(t, e.svc.UploadChecker(ctx, p.ID, zeroBytes(256<<10)), "exactly 256 KiB is allowed")
+
+	got, _ = e.repo.FindByID(ctx, p.ID)
+	assert.NotEqual(t, oldPath, got.CheckerPath, "a successful upload gets a fresh storage key")
+	_, err = os.Stat(filepath.Join(e.root, filepath.FromSlash(oldPath)))
+	assert.True(t, os.IsNotExist(err), "the replaced checker file must be removed")
+}
+
+func TestUploadCheckerCleansUpWhenDatabaseUpdateFails(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	in := input("spj-db")
+	in.Type = problem.TypeSpecial
+	p := e.create(t, in)
+	require.NoError(t, e.svc.UploadChecker(ctx, p.ID, strings.NewReader("v1")))
+	old, _ := e.repo.FindByID(ctx, p.ID)
+
+	svc := problem.NewService(failingCheckerRepo{e.repo}, e.store)
+	require.Error(t, svc.UploadChecker(ctx, p.ID, strings.NewReader("v2")))
+
+	b, err := os.ReadFile(filepath.Join(e.root, filepath.FromSlash(old.CheckerPath)))
+	require.NoError(t, err)
+	assert.Equal(t, "v1", string(b), "the previous checker must survive a failed DB update")
+	assert.Len(t, e.files(t), 1, "the newly written checker must be removed")
 }
 
 func TestDeleteWithoutSubmissionsRemovesFiles(t *testing.T) {

@@ -268,11 +268,35 @@ func TestCreateDuplicateSlugReturns409(t *testing.T) {
 
 func TestJSONBodyLimit1MiB(t *testing.T) {
 	f := newFx(t)
-	b := body("huge")
-	b["statementMd"] = strings.Repeat("a", 1<<20+1)
-	w, resp := f.do(http.MethodPost, "/api/problems", f.token("problem_admin"), b)
+	huge := map[string]any{"score": 1, "padding": strings.Repeat("a", 1<<20)}
+	w, resp := f.do(http.MethodPut, "/api/problems/1/testcases/1", f.token("problem_admin"), huge)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, w.Code)
 	assert.EqualValues(t, 41300, resp["code"])
+}
+
+func TestProblemCreateAcceptsPayloadOver1MiB(t *testing.T) {
+	f := newFx(t)
+	b := body("large")
+	b["statementMd"] = strings.Repeat("题", 100000)
+	b["inputFormatMd"] = strings.Repeat("入", 20000)
+	b["outputFormatMd"] = strings.Repeat("出", 20000)
+	b["hintMd"] = strings.Repeat("提", 50000)
+	b["solutionMd"] = strings.Repeat("解", 50000)
+	b["solutionCode"] = strings.Repeat("x", 65536)
+	samples := make([]map[string]string, 10)
+	for i := range samples {
+		samples[i] = map[string]string{
+			"input": strings.Repeat("i", 16384), "output": strings.Repeat("o", 16384),
+		}
+	}
+	b["samples"] = samples
+	encoded, err := json.Marshal(b)
+	require.NoError(t, err)
+	require.Greater(t, len(encoded), 1<<20, "the payload must exceed the default JSON limit")
+
+	w, resp := f.do(http.MethodPost, "/api/problems", f.token("problem_admin"), b)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	assert.EqualValues(t, 0, resp["code"])
 }
 
 func items(resp map[string]any) []map[string]any {

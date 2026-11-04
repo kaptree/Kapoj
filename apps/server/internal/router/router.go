@@ -22,8 +22,9 @@ import (
 )
 
 const (
-	maxBodyBytes   = 1 << 20  // JSON endpoints
-	maxUploadBytes = 40 << 20 // file upload endpoints: two 16 MiB files plus form fields
+	maxBodyBytes        = 1 << 20  // JSON endpoints
+	maxProblemJSONBytes = 4 << 20  // problem create/update: statements and samples
+	maxUploadBytes      = 40 << 20 // file upload endpoints: two 16 MiB files plus form fields
 )
 
 type Deps struct {
@@ -54,9 +55,10 @@ func New(d Deps) *gin.Engine {
 	auth.RegisterRoutes(r.Group("/api", middleware.MaxBody(maxBodyBytes)), authSvc)
 
 	api := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxBodyBytes))
+	problemJSON := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxProblemJSONBytes))
 	uploads := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxUploadBytes))
 	userapi.RegisterRoutes(api, user.NewService(users))
-	problemapi.RegisterRoutes(api, uploads, problem.NewService(problem.NewGormRepository(d.DB), d.Storage))
+	problemapi.RegisterRoutes(api, problemJSON, uploads, problem.NewService(problem.NewGormRepository(d.DB), d.Storage))
 	return r
 }
 

@@ -91,29 +91,12 @@ func (s *Service) Update(ctx context.Context, id int64, in Input) (*Problem, err
 		return nil, mapRepoErr(err)
 	}
 	apply(p, in)
-	if p.IsPublic {
-		if err := s.checkPublishable(ctx, p); err != nil {
-			return nil, err
-		}
-	}
+	// Publishability is checked by the repository inside the same transaction
+	// as the update, together with the row lock.
 	if err := s.repo.Update(ctx, p); err != nil {
 		return nil, mapRepoErr(err)
 	}
 	return p, nil
-}
-
-func (s *Service) checkPublishable(ctx context.Context, p *Problem) error {
-	n, err := s.repo.CountTestcases(ctx, p.ID)
-	if err != nil {
-		return err
-	}
-	if n == 0 {
-		return httpx.ErrValidation("公开题目至少需要 1 个测试点")
-	}
-	if p.Type == TypeSpecial && p.CheckerPath == "" {
-		return httpx.ErrValidation("特判题发布前需要先上传 checker")
-	}
-	return nil
 }
 
 // Get returns a problem the viewer may see. A hidden problem looks exactly
@@ -226,22 +209,6 @@ func (s *Service) UpdateTestcase(ctx context.Context, id, tid int64, score *int,
 }
 
 func (s *Service) DeleteTestcase(ctx context.Context, id, tid int64) error {
-	p, err := s.repo.FindByID(ctx, id)
-	if err != nil {
-		return mapRepoErr(err)
-	}
-	if _, err := s.repo.FindTestcase(ctx, id, tid); err != nil {
-		return mapRepoErr(err)
-	}
-	if p.IsPublic {
-		n, err := s.repo.CountTestcases(ctx, id)
-		if err != nil {
-			return err
-		}
-		if n <= 1 {
-			return httpx.ErrValidation("公开题目至少保留 1 个测试点，请先下线题目")
-		}
-	}
 	removed, err := s.repo.DeleteTestcase(ctx, id, tid)
 	if err != nil {
 		return mapRepoErr(err)
@@ -266,11 +233,18 @@ func (s *Service) UploadChecker(ctx context.Context, id int64, r io.Reader) erro
 	if _, err := br.Peek(1); errors.Is(err, io.EOF) {
 		return httpx.ErrValidation("checker 文件不能为空")
 	}
-	key := fmt.Sprintf("problems/%d/checker.cpp", id)
+	key := fmt.Sprintf("problems/%d/checkers/%s.cpp", id, randomHex())
 	if _, err := s.put(ctx, key, br, maxCheckerBytes, "checker 文件"); err != nil {
 		return err
 	}
-	return mapRepoErr(s.repo.SetCheckerPath(ctx, id, key))
+	if err := s.repo.SetCheckerPath(ctx, id, key); err != nil {
+		s.deleteFiles(ctx, []string{key})
+		return mapRepoErr(err)
+	}
+	if p.CheckerPath != "" && p.CheckerPath != key {
+		s.deleteFiles(ctx, []string{p.CheckerPath})
+	}
+	return nil
 }
 
 func (s *Service) deleteFiles(ctx context.Context, keys []string) {
@@ -295,6 +269,12 @@ func mapRepoErr(err error) error {
 		return httpx.ErrSlugTaken
 	case errors.Is(err, ErrBadOrder):
 		return httpx.ErrValidation("排序列表必须恰好包含该题全部测试点，且不能重复")
+	case errors.Is(err, ErrPublishNeedsTestcase):
+		return httpx.ErrValidation("公开题目至少需要 1 个测试点")
+	case errors.Is(err, ErrPublishNeedsChecker):
+		return httpx.ErrValidation("特判题发布前需要先上传 checker")
+	case errors.Is(err, ErrLastTestcase):
+		return httpx.ErrValidation("公开题目至少保留 1 个测试点，请先下线题目")
 	}
 	return err
 }

@@ -21,10 +21,11 @@ const (
 	multipartMemory = 1 << 20
 )
 
-// RegisterRoutes mounts the problem endpoints. api and uploads must already
-// run middleware.Authenticate; uploads carries the larger body limit used by
-// the file upload endpoints.
-func RegisterRoutes(api, uploads gin.IRouter, s *problem.Service) {
+// RegisterRoutes mounts the problem endpoints. api, problemJSON and uploads
+// must already run middleware.Authenticate. problemJSON carries a larger
+// limit because a statement plus samples can exceed the default 1 MiB;
+// uploads carries the limit used by the file upload endpoints.
+func RegisterRoutes(api, problemJSON, uploads gin.IRouter, s *problem.Service) {
 	h := &handler{svc: s}
 	manage := []gin.HandlerFunc{middleware.RequireAuth(), middleware.RequireRole(user.RoleProblemAdmin)}
 	with := func(fn gin.HandlerFunc) []gin.HandlerFunc { return append(append([]gin.HandlerFunc{}, manage...), fn) }
@@ -33,8 +34,8 @@ func RegisterRoutes(api, uploads gin.IRouter, s *problem.Service) {
 	api.GET("/problems/:id", h.get)
 	api.GET("/problems/:id/statistics", h.statistics)
 
-	api.POST("/problems", with(h.create)...)
-	api.PUT("/problems/:id", with(h.update)...)
+	problemJSON.POST("/problems", with(h.create)...)
+	problemJSON.PUT("/problems/:id", with(h.update)...)
 	api.DELETE("/problems/:id", with(h.delete)...)
 
 	api.GET("/problems/:id/testcases", with(h.listTestcases)...)
