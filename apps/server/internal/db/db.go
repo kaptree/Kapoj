@@ -6,6 +6,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
+	"github.com/kaptree/kapoj/apps/server/internal/submission"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
 
@@ -17,5 +18,7 @@ func Open(dsn string) (*gorm.DB, error) {
 
 // Migrate creates or updates the schema for all models.
 func Migrate(g *gorm.DB) error {
-	return g.AutoMigrate(&user.User{}, &problem.Problem{}, &problem.Testcase{})
+	return g.AutoMigrate(
+		&user.User{}, &problem.Problem{}, &problem.Testcase{}, &submission.Submission{},
+	)
 }
