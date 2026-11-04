@@ -156,6 +156,7 @@ func TestPipelineMapsUserVerdicts(t *testing.T) {
 		{"oom", sandbox.RunResult{OOMKilled: true, ExitCode: 137}, model.StatusMemoryLimitExceeded},
 		{"runtime error", sandbox.RunResult{ExitCode: 1, Stderr: []byte("boom")}, model.StatusRuntimeError},
 		{"output truncated", sandbox.RunResult{OutputTruncated: true}, model.StatusWrongAnswer},
+		{"output truncated then killed", sandbox.RunResult{OutputTruncated: true, ExitCode: 153}, model.StatusWrongAnswer},
 		{"wrong answer", sandbox.RunResult{Output: []byte("9\n")}, model.StatusWrongAnswer},
 	}
 	for _, tt := range tests {

@@ -143,10 +143,10 @@ func (p *Pipeline) runCase(
 		result.Status, result.Message = model.StatusTimeLimitExceeded, "运行超时"
 	case run.OOMKilled:
 		result.Status, result.Message = model.StatusMemoryLimitExceeded, "内存超限"
-	case run.ExitCode != 0:
-		result.Status, result.Message = model.StatusRuntimeError, truncate(string(run.Stderr), maxMessageBytes)
 	case run.OutputTruncated:
 		result.Status, result.Message = model.StatusWrongAnswer, "输出超过限制"
+	case run.ExitCode != 0:
+		result.Status, result.Message = model.StatusRuntimeError, truncate(string(run.Stderr), maxMessageBytes)
 	case prob.Type == "special":
 		status, message, err := p.checkSpecial(ctx, work, tc, answer, run.Output, checkerArtifact)
 		if err != nil {
