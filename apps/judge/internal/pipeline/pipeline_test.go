@@ -20,6 +20,12 @@ import (
 	"github.com/kaptree/kapoj/apps/judge/internal/testutil"
 )
 
+type fakePublisher struct{ ids []int64 }
+
+func (p *fakePublisher) Publish(_ context.Context, submissionID int64) {
+	p.ids = append(p.ids, submissionID)
+}
+
 type fakeSandbox struct {
 	compileFn func(sandbox.CompileRequest) (sandbox.CompileResult, error)
 	runFn     func(sandbox.RunRequest) (sandbox.RunResult, error)
@@ -51,6 +57,7 @@ type env struct {
 	repo    *db.Repository
 	root    string
 	sb      *fakeSandbox
+	pub     *fakePublisher
 	pipe    *pipeline.Pipeline
 	userID  int64
 	problem int64
@@ -83,9 +90,10 @@ func newEnv(t *testing.T, typ string, specs ...caseSpec) *env {
 		ids = append(ids, testutil.InsertTestcase(t, pool, problem, in, out, spec.score, i+1))
 	}
 	sb := &fakeSandbox{}
+	pub := &fakePublisher{}
 	return &env{
-		pool: pool, repo: repo, root: root, sb: sb,
-		pipe:   pipeline.New(repo, root, sb),
+		pool: pool, repo: repo, root: root, sb: sb, pub: pub,
+		pipe:   pipeline.New(repo, root, sb, pub),
 		userID: user, problem: problem, cases: ids,
 	}
 }
@@ -143,6 +151,7 @@ func TestPipelineAccepted(t *testing.T) {
 	assert.Equal(t, 30, timeMS)
 	assert.Equal(t, 345, memKB)
 	assert.Equal(t, 30, score)
+	assert.Equal(t, []int64{sub, sub}, e.pub.ids, "judging and terminal states are published")
 }
 
 func TestPipelineMapsUserVerdicts(t *testing.T) {
@@ -189,6 +198,7 @@ func TestPipelineCompileError(t *testing.T) {
 	assert.Contains(t, got.ErrorMessage, "expected ';'")
 	assert.Empty(t, e.sb.runs)
 	assert.Zero(t, acceptCount(t, e.pool, e.problem))
+	assert.Len(t, e.pub.ids, 2, "compile errors still publish a terminal event")
 }
 
 func TestPipelineStopsAtFirstFailure(t *testing.T) {
@@ -265,6 +275,7 @@ func TestPipelineSpecialCheckerCompileFailureIsSystemError(t *testing.T) {
 	assert.NotContains(t, err.Error(), "checker error", "checker compiler output must not leak")
 	got, _ := e.repo.FindByID(context.Background(), sub)
 	assert.Equal(t, model.StatusJudging, got.Status, "infrastructure failures are retried, not terminal")
+	assert.Equal(t, []int64{sub}, e.pub.ids, "a checker failure publishes only the judging event")
 }
 
 func TestPipelineSandboxInfrastructureErrorLeavesJudging(t *testing.T) {
@@ -278,6 +289,7 @@ func TestPipelineSandboxInfrastructureErrorLeavesJudging(t *testing.T) {
 	require.Error(t, err)
 	got, _ := e.repo.FindByID(context.Background(), sub)
 	assert.Equal(t, model.StatusJudging, got.Status)
+	assert.Equal(t, []int64{sub}, e.pub.ids, "only the judging event is published")
 }
 
 func TestPipelineMissingTestcaseFileIsSystemError(t *testing.T) {

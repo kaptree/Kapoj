@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/kaptree/kapoj/apps/judge/internal/db"
+	"github.com/kaptree/kapoj/apps/judge/internal/events"
 	"github.com/kaptree/kapoj/apps/judge/internal/model"
 	"github.com/kaptree/kapoj/apps/judge/internal/sandbox"
 	"github.com/kaptree/kapoj/apps/judge/internal/storage"
@@ -33,10 +34,11 @@ type Pipeline struct {
 	repo        *db.Repository
 	storageRoot string
 	sandbox     sandbox.Sandbox
+	publisher   events.Publisher
 }
 
-func New(repo *db.Repository, storageRoot string, sb sandbox.Sandbox) *Pipeline {
-	return &Pipeline{repo: repo, storageRoot: storageRoot, sandbox: sb}
+func New(repo *db.Repository, storageRoot string, sb sandbox.Sandbox, publisher events.Publisher) *Pipeline {
+	return &Pipeline{repo: repo, storageRoot: storageRoot, sandbox: sb, publisher: publisher}
 }
 
 // Run judges one submission. User verdicts (including CE) are written and
@@ -55,6 +57,7 @@ func (p *Pipeline) Run(ctx context.Context, submissionID int64) error {
 	if !sub.Language.Valid() {
 		return fmt.Errorf("unsupported language %q", sub.Language)
 	}
+	p.publish(ctx, sub.ID)
 
 	work, err := os.MkdirTemp("", "kapoj-judge-*")
 	if err != nil {
@@ -72,7 +75,7 @@ func (p *Pipeline) Run(ctx context.Context, submissionID int64) error {
 		defer p.sandbox.Cleanup(compiled.ArtifactDir)
 	}
 	if compiled.Failed {
-		return p.repo.Finish(ctx, sub.ID, db.FinishInput{
+		return p.finish(ctx, sub.ID, db.FinishInput{
 			Status:       model.StatusCompileError,
 			ErrorMessage: truncate(compiled.ErrorOutput, maxCompileMessageSize),
 			Cases:        []model.JudgeCaseResult{},
@@ -112,9 +115,23 @@ func (p *Pipeline) Run(ctx context.Context, submissionID int64) error {
 		}
 	}
 	status, timeMS, memoryKB, score := verdict.Aggregate(results)
-	return p.repo.Finish(ctx, sub.ID, db.FinishInput{
+	return p.finish(ctx, sub.ID, db.FinishInput{
 		Status: status, TimeUsedMS: timeMS, MemoryUsedKB: memoryKB, Score: score, Cases: results,
 	})
+}
+
+func (p *Pipeline) finish(ctx context.Context, submissionID int64, in db.FinishInput) error {
+	if err := p.repo.Finish(ctx, submissionID, in); err != nil {
+		return err
+	}
+	p.publish(ctx, submissionID)
+	return nil
+}
+
+func (p *Pipeline) publish(ctx context.Context, submissionID int64) {
+	if p.publisher != nil {
+		p.publisher.Publish(ctx, submissionID)
+	}
 }
 
 func (p *Pipeline) runCase(
@@ -264,7 +281,9 @@ func (p *Pipeline) MarkSystemError(ctx context.Context, submissionID int64, caus
 	}
 	if err := p.repo.MarkSystemError(ctx, submissionID, message); err != nil {
 		slog.Error("mark submission system error failed", "submission_id", submissionID, "err", err)
+		return
 	}
+	p.publish(ctx, submissionID)
 }
 
 func truncate(s string, max int) string {

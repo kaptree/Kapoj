@@ -42,7 +42,7 @@ func TestWorkerRetriesThenMarksSystemError(t *testing.T) {
 	testutil.InsertTestcase(t, pool, problem, "cases/0.in", "cases/0.out", 10, 1)
 	sub := testutil.InsertSubmission(t, pool, user, problem, "cpp", "code", "pending")
 
-	w := New(pipeline.New(repo, root, failingSandbox{}))
+	w := New(pipeline.New(repo, root, failingSandbox{}, nil))
 	err := w.handle(context.Background(), sub, 0, 3)
 	require.Error(t, err)
 

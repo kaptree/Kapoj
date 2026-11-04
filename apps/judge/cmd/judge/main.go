@@ -13,6 +13,7 @@ import (
 
 	"github.com/kaptree/kapoj/apps/judge/internal/config"
 	"github.com/kaptree/kapoj/apps/judge/internal/db"
+	"github.com/kaptree/kapoj/apps/judge/internal/events"
 	"github.com/kaptree/kapoj/apps/judge/internal/pipeline"
 	"github.com/kaptree/kapoj/apps/judge/internal/queue"
 	"github.com/kaptree/kapoj/apps/judge/internal/reconcile"
@@ -48,7 +49,9 @@ func run() error {
 	}
 	sb := sandbox.NewDocker(cfg.DockerBin, images)
 	sb.Sweep(ctx)
-	pipe := pipeline.New(repo, cfg.StorageDir, sb)
+	publisher := events.NewRedisPublisher(cfg.RedisAddr)
+	defer func() { _ = publisher.Close() }()
+	pipe := pipeline.New(repo, cfg.StorageDir, sb, publisher)
 	judgeWorker := worker.New(pipe)
 	queueClient := queue.NewClient(cfg.RedisAddr)
 	defer func() { _ = queueClient.Close() }()

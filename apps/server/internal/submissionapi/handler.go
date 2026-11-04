@@ -1,26 +1,34 @@
 package submissionapi
 
 import (
+	"encoding/json"
+	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
 	"github.com/kaptree/kapoj/apps/server/internal/submission"
+	"github.com/kaptree/kapoj/apps/server/internal/submissionevents"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
 
 // RegisterRoutes mounts the submission endpoints. r must already run the
 // authentication middleware.
-func RegisterRoutes(r gin.IRouter, s *submission.Service) {
-	h := &handler{svc: s}
+func RegisterRoutes(r gin.IRouter, s *submission.Service, streamer submissionevents.Streamer) {
+	h := &handler{svc: s, streamer: streamer}
 	r.GET("/submissions", h.list)
+	r.GET("/submissions/stream", h.stream)
 	r.GET("/submissions/:id", h.detail)
 	r.POST("/submissions", middleware.RequireAuth(), h.create)
 }
 
-type handler struct{ svc *submission.Service }
+type handler struct {
+	svc      *submission.Service
+	streamer submissionevents.Streamer
+}
 
 func viewer(c *gin.Context) submission.Viewer {
 	claims, ok := middleware.CurrentClaims(c)
@@ -77,6 +85,43 @@ func (h *handler) list(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, result)
+}
+
+func (h *handler) stream(c *gin.Context) {
+	events, err := h.streamer.Subscribe(c.Request.Context())
+	if err != nil {
+		httpx.Fail(c, httpx.ErrUnavailable)
+		return
+	}
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+	c.Status(200)
+	c.Writer.Flush()
+
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-c.Request.Context().Done():
+			return
+		case event, ok := <-events:
+			if !ok {
+				return
+			}
+			data, _ := json.Marshal(event)
+			if _, err := fmt.Fprintf(c.Writer, "data: %s\n\n", data); err != nil {
+				return
+			}
+			c.Writer.Flush()
+		case <-ticker.C:
+			if _, err := fmt.Fprint(c.Writer, ": keep-alive\n\n"); err != nil {
+				return
+			}
+			c.Writer.Flush()
+		}
+	}
 }
 
 func (h *handler) detail(c *gin.Context) {

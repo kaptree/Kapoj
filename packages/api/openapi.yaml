@@ -386,6 +386,17 @@ paths:
         '404': { $ref: '#/components/responses/Error' }
         '413': { $ref: '#/components/responses/Error' }
         '429': { $ref: '#/components/responses/Error' }
+  /submissions/stream:
+    get:
+      summary: 测评记录实时事件（SSE）；事件数据只含 submissionId
+      security: [{}, { bearer: [] }]
+      responses:
+        '200':
+          description: 'text/event-stream；每行 data 为 {"submissionId": <id>}'
+          content:
+            text/event-stream:
+              schema: { type: string }
+        '503': { $ref: '#/components/responses/Error' }
   /submissions/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
