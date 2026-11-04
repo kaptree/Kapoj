@@ -19,8 +19,33 @@ type Repository interface {
 	FindByID(ctx context.Context, id int64) (*User, error)
 	FindByUsername(ctx context.Context, username string) (*User, error)
 	FindByEmail(ctx context.Context, email string) (*User, error)
+	// Update writes every column; use it only when the caller owns the whole row.
 	Update(ctx context.Context, u *User) error
+	// UpdateProfile writes only the provided profile fields, so concurrent
+	// changes to other columns (status, coins, role) are never overwritten.
+	UpdateProfile(ctx context.Context, id int64, changes ProfileChanges) error
 	List(ctx context.Context, offset, limit int) ([]User, int64, error)
+}
+
+// ProfileChanges holds the user-editable profile fields; nil means unchanged.
+type ProfileChanges struct {
+	Nickname  *string
+	Bio       *string
+	AvatarURL *string
+}
+
+func (c ProfileChanges) columns() map[string]any {
+	cols := map[string]any{}
+	if c.Nickname != nil {
+		cols["nickname"] = *c.Nickname
+	}
+	if c.Bio != nil {
+		cols["bio"] = *c.Bio
+	}
+	if c.AvatarURL != nil {
+		cols["avatar_url"] = *c.AvatarURL
+	}
+	return cols
 }
 
 type gormRepository struct{ db *gorm.DB }
@@ -58,6 +83,22 @@ func (r *gormRepository) findOne(ctx context.Context, query string, arg any) (*U
 
 func (r *gormRepository) Update(ctx context.Context, u *User) error {
 	return mapErr(r.db.WithContext(ctx).Save(u).Error)
+}
+
+func (r *gormRepository) UpdateProfile(ctx context.Context, id int64, changes ProfileChanges) error {
+	cols := changes.columns()
+	if len(cols) == 0 {
+		_, err := r.FindByID(ctx, id)
+		return err
+	}
+	res := r.db.WithContext(ctx).Model(&User{}).Where("id = ?", id).Updates(cols)
+	if res.Error != nil {
+		return mapErr(res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (r *gormRepository) List(ctx context.Context, offset, limit int) ([]User, int64, error) {

@@ -29,7 +29,10 @@ type Deps struct {
 
 func New(d Deps) *gin.Engine {
 	r := gin.New()
-	r.Use(gin.Recovery(), requestLog(), limitBody(maxBodyBytes))
+	r.Use(requestLog(), gin.CustomRecovery(func(c *gin.Context, recovered any) {
+		slog.Error("panic recovered", "path", c.Request.URL.Path, "panic", recovered)
+		httpx.Fail(c, httpx.ErrInternal)
+	}), limitBody(maxBodyBytes))
 	r.NoRoute(func(c *gin.Context) { httpx.Fail(c, httpx.ErrNotFound) })
 
 	r.GET("/health", health.Handler(dbPinger{d.DB}, redisPinger{d.Redis}))
@@ -40,8 +43,11 @@ func New(d Deps) *gin.Engine {
 		auth.NewRefreshStore(d.Redis, d.Config.RefreshTokenTTL),
 		auth.NewLoginLimiter(d.Redis))
 
+	// Auth endpoints identify the caller by the request body, not the bearer
+	// token, so an expired access token must not block logout or refresh.
+	auth.RegisterRoutes(r.Group("/api"), authSvc)
+
 	api := r.Group("/api", middleware.Authenticate(issuer))
-	auth.RegisterRoutes(api, authSvc)
 	userapi.RegisterRoutes(api, user.NewService(users))
 	return r
 }

@@ -8,38 +8,33 @@ import (
 )
 
 const (
-	maxLoginFailures = 10
-	loginFailWindow  = 5 * time.Minute
+	maxLoginAttempts = 10
+	loginWindow      = 5 * time.Minute
 )
 
-// LoginLimiter counts failed logins per account within a fixed window.
+// LoginLimiter allows at most 10 login attempts per key within a 5-minute
+// window. Each attempt is counted atomically before the password is checked,
+// so parallel requests cannot slip past the limit.
 type LoginLimiter struct{ rdb *redis.Client }
 
 func NewLoginLimiter(rdb *redis.Client) *LoginLimiter {
 	return &LoginLimiter{rdb: rdb}
 }
 
-func failKey(account string) string { return "login_fail:" + account }
+func limitKey(key string) string { return "login_fail:" + key }
 
-func (l *LoginLimiter) Allow(ctx context.Context, account string) (bool, error) {
-	n, err := l.rdb.Get(ctx, failKey(account)).Int()
-	if err == redis.Nil {
-		return true, nil
-	}
-	if err != nil {
+// Hit records an attempt and reports whether it is within the limit.
+func (l *LoginLimiter) Hit(ctx context.Context, key string) (bool, error) {
+	pipe := l.rdb.TxPipeline()
+	incr := pipe.Incr(ctx, limitKey(key))
+	pipe.ExpireNX(ctx, limitKey(key), loginWindow)
+	if _, err := pipe.Exec(ctx); err != nil {
 		return false, err
 	}
-	return n < maxLoginFailures, nil
+	return incr.Val() <= maxLoginAttempts, nil
 }
 
-func (l *LoginLimiter) Fail(ctx context.Context, account string) error {
-	pipe := l.rdb.TxPipeline()
-	pipe.Incr(ctx, failKey(account))
-	pipe.ExpireNX(ctx, failKey(account), loginFailWindow)
-	_, err := pipe.Exec(ctx)
-	return err
-}
-
-func (l *LoginLimiter) Reset(ctx context.Context, account string) error {
-	return l.rdb.Del(ctx, failKey(account)).Err()
+// Reset clears the count after a successful login.
+func (l *LoginLimiter) Reset(ctx context.Context, key string) error {
+	return l.rdb.Del(ctx, limitKey(key)).Err()
 }

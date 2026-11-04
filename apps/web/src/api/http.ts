@@ -61,21 +61,25 @@ export function createHttp(hooks: AuthHooks, options: { adapter?: AxiosAdapter }
       hooks.setTokens(res.data.data)
       return true
     } catch {
-      return false
+      // Another tab may have rotated the token first; use its new pair.
+      const current = hooks.getRefreshToken()
+      return current !== null && current !== refreshToken
     }
   }
 
   async function send<T>(config: AxiosRequestConfig, retried = false): Promise<T> {
+    const isAuthEndpoint = config.url?.startsWith('/auth/') ?? false
     const token = hooks.getAccessToken()
     const headers = { ...(config.headers ?? {}) } as Record<string, string>
-    if (token) headers.Authorization = `Bearer ${token}`
+    // Auth endpoints identify the caller by the request body, so a stale
+    // access token is never sent to them.
+    if (token && !isAuthEndpoint) headers.Authorization = `Bearer ${token}`
 
     try {
       const res = await instance.request<Envelope<T>>({ ...config, headers })
       return res.data.data
     } catch (e) {
       const err = toApiError(e)
-      const isAuthEndpoint = config.url?.startsWith('/auth/') ?? false
       if (err.status === 401 && !retried && !isAuthEndpoint) {
         refreshing ??= refresh().finally(() => {
           refreshing = null

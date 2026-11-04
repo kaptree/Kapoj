@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"golang.org/x/crypto/bcrypt"
@@ -85,7 +86,17 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*Session, err
 
 func (s *Service) Login(ctx context.Context, account, password string) (*Session, error) {
 	account = user.Normalize(account)
-	allowed, err := s.limiter.Allow(ctx, account)
+	u, err := s.findByAccount(ctx, account)
+	if err != nil && !errors.Is(err, user.ErrNotFound) {
+		return nil, err
+	}
+
+	// Count attempts per user, so the username and email share one limit.
+	key := "account:" + account
+	if u != nil {
+		key = fmt.Sprintf("user:%d", u.ID)
+	}
+	allowed, err := s.limiter.Hit(ctx, key)
 	if err != nil {
 		return nil, err
 	}
@@ -93,32 +104,21 @@ func (s *Service) Login(ctx context.Context, account, password string) (*Session
 		return nil, httpx.ErrTooManyAttempts
 	}
 
-	u, err := s.findByAccount(ctx, account)
-	if errors.Is(err, user.ErrNotFound) {
+	if u == nil {
 		// Hash anyway so unknown accounts take as long as wrong passwords.
 		_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
-		return nil, s.failLogin(ctx, account)
-	}
-	if err != nil {
-		return nil, err
+		return nil, httpx.ErrInvalidCredentials
 	}
 	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)) != nil {
-		return nil, s.failLogin(ctx, account)
+		return nil, httpx.ErrInvalidCredentials
 	}
 	if u.Status == user.StatusBanned {
 		return nil, httpx.ErrUserBanned
 	}
-	if err := s.limiter.Reset(ctx, account); err != nil {
+	if err := s.limiter.Reset(ctx, key); err != nil {
 		return nil, err
 	}
 	return s.newSession(ctx, u)
-}
-
-func (s *Service) failLogin(ctx context.Context, account string) error {
-	if err := s.limiter.Fail(ctx, account); err != nil {
-		return err
-	}
-	return httpx.ErrInvalidCredentials
 }
 
 func (s *Service) findByAccount(ctx context.Context, account string) (*user.User, error) {

@@ -145,4 +145,36 @@ describe('createHttp', () => {
     expect(urls).toEqual(['/auth/login'])
     expect(h.onAuthFailure).not.toHaveBeenCalled()
   })
+
+  it('does not send the access token to auth endpoints', async () => {
+    let seen: unknown = 'unset'
+    const http = createHttp(hooks(), {
+      adapter: (c) => {
+        seen = c.headers.Authorization
+        return respond(c, 200, { code: 0, message: 'ok', data: null })
+      },
+    })
+    await http.post('/auth/logout', { refreshToken: 'r' })
+    expect(seen).toBeUndefined()
+  })
+
+  it('adopts tokens rotated by another tab instead of logging out', async () => {
+    const h = hooks()
+    const http = createHttp(h, {
+      adapter: (c) => {
+        if (c.url === '/auth/refresh') {
+          // Another tab already rotated the refresh token and stored the new pair.
+          h.setTokens({ accessToken: 'tab-access', refreshToken: 'tab-refresh' })
+          return respond(c, 401, { code: 40100, message: 'reused', data: null })
+        }
+        if (c.headers.Authorization === 'Bearer tab-access') {
+          return respond(c, 200, { code: 0, message: 'ok', data: 'ok-from-tab' })
+        }
+        return respond(c, 401, { code: 40100, message: 'expired', data: null })
+      },
+    })
+
+    await expect(http.get('/users/me')).resolves.toBe('ok-from-tab')
+    expect(h.onAuthFailure).not.toHaveBeenCalled()
+  })
 })

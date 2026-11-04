@@ -63,4 +63,18 @@ describe('auth store', () => {
     const store = useAuthStore()
     expect(store.isLoggedIn).toBe(false)
   })
+
+  it('follows changes made by another tab', () => {
+    const store = useAuthStore()
+    store.setSession({ accessToken: 'a', refreshToken: 'r', user: me })
+
+    const rotated = JSON.stringify({ accessToken: 'a2', refreshToken: 'r2', user: me })
+    localStorage.setItem(AUTH_STORAGE_KEY, rotated)
+    window.dispatchEvent(new StorageEvent('storage', { key: AUTH_STORAGE_KEY, newValue: rotated }))
+    expect(store.refreshToken).toBe('r2')
+
+    localStorage.removeItem(AUTH_STORAGE_KEY)
+    window.dispatchEvent(new StorageEvent('storage', { key: AUTH_STORAGE_KEY, newValue: null }))
+    expect(store.isLoggedIn).toBe(false)
+  })
 })

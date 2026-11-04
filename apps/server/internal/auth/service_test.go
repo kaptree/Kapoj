@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -202,4 +203,50 @@ func TestLogoutRevokes(t *testing.T) {
 	assertCode(t, err, 40100)
 
 	assert.NoError(t, svc.Logout(ctx, s.RefreshToken), "logout is idempotent")
+}
+
+func TestLoginRateLimitHoldsUnderConcurrency(t *testing.T) {
+	svc, _ := newService(t)
+	register(t, svc, "alice", "alice@example.com")
+	ctx := context.Background()
+
+	const attempts = 30
+	codes := make(chan int, attempts)
+	var wg sync.WaitGroup
+	for i := 0; i < attempts; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := svc.Login(ctx, "alice", "wrong-password")
+			var appErr *httpx.AppError
+			if errors.As(err, &appErr) {
+				codes <- appErr.Code
+			}
+		}()
+	}
+	wg.Wait()
+	close(codes)
+
+	checked := 0
+	for c := range codes {
+		if c == 40101 {
+			checked++
+		}
+	}
+	assert.LessOrEqual(t, checked, 10, "at most 10 passwords may be checked per window")
+	_, err := svc.Login(ctx, "alice", password)
+	assertCode(t, err, 42901)
+}
+
+func TestLoginLimitSharedAcrossUsernameAndEmail(t *testing.T) {
+	svc, _ := newService(t)
+	register(t, svc, "alice", "alice@example.com")
+	ctx := context.Background()
+
+	for i := 0; i < 5; i++ {
+		_, _ = svc.Login(ctx, "alice", "wrong-password")
+		_, _ = svc.Login(ctx, "alice@example.com", "wrong-password")
+	}
+	_, err := svc.Login(ctx, "alice", password)
+	assertCode(t, err, 42901)
 }

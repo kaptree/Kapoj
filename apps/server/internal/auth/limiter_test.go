@@ -9,50 +9,39 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLimiterBlocksAfterTenFailures(t *testing.T) {
+func hits(t *testing.T, l *LoginLimiter, key string, n int) (last bool) {
+	t.Helper()
+	for i := 0; i < n; i++ {
+		ok, err := l.Hit(context.Background(), key)
+		require.NoError(t, err)
+		last = ok
+	}
+	return last
+}
+
+func TestLimiterAllowsTenAttempts(t *testing.T) {
 	_, rdb := newRedis(t)
 	l := NewLoginLimiter(rdb)
-	ctx := context.Background()
 
-	for i := 0; i < 9; i++ {
-		require.NoError(t, l.Fail(ctx, "alice"))
-	}
-	ok, err := l.Allow(ctx, "alice")
-	require.NoError(t, err)
-	assert.True(t, ok, "9 failures should still be allowed")
-
-	require.NoError(t, l.Fail(ctx, "alice"))
-	ok, err = l.Allow(ctx, "alice")
-	require.NoError(t, err)
-	assert.False(t, ok, "10 failures should block")
-
-	ok, _ = l.Allow(ctx, "bob")
-	assert.True(t, ok, "other accounts are not affected")
+	assert.True(t, hits(t, l, "alice", 10), "10th attempt is allowed")
+	assert.False(t, hits(t, l, "alice", 1), "11th attempt is blocked")
+	assert.True(t, hits(t, l, "bob", 1), "other keys are not affected")
 }
 
 func TestLimiterWindowExpires(t *testing.T) {
 	mr, rdb := newRedis(t)
 	l := NewLoginLimiter(rdb)
-	ctx := context.Background()
-	for i := 0; i < 10; i++ {
-		require.NoError(t, l.Fail(ctx, "alice"))
-	}
+	hits(t, l, "alice", 11)
 
 	mr.FastForward(5 * time.Minute)
-	ok, err := l.Allow(ctx, "alice")
-	require.NoError(t, err)
-	assert.True(t, ok)
+	assert.True(t, hits(t, l, "alice", 1))
 }
 
 func TestLimiterReset(t *testing.T) {
 	_, rdb := newRedis(t)
 	l := NewLoginLimiter(rdb)
-	ctx := context.Background()
-	for i := 0; i < 10; i++ {
-		require.NoError(t, l.Fail(ctx, "alice"))
-	}
+	hits(t, l, "alice", 11)
 
-	require.NoError(t, l.Reset(ctx, "alice"))
-	ok, _ := l.Allow(ctx, "alice")
-	assert.True(t, ok)
+	require.NoError(t, l.Reset(context.Background(), "alice"))
+	assert.True(t, hits(t, l, "alice", 1))
 }

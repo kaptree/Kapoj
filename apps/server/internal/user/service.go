@@ -29,34 +29,35 @@ func (s *Service) Me(ctx context.Context, id int64) (*User, error) {
 }
 
 func (s *Service) UpdateMe(ctx context.Context, id int64, in UpdateMeInput) (*User, error) {
-	u, err := s.Me(ctx, id)
-	if err != nil {
-		return nil, err
-	}
+	var changes ProfileChanges
 	if in.Nickname != nil {
 		nick := strings.TrimSpace(*in.Nickname)
 		if err := ValidateNickname(nick); err != nil {
 			return nil, err
 		}
-		u.Nickname = nick
+		changes.Nickname = &nick
 	}
 	if in.Bio != nil {
 		if err := ValidateBio(*in.Bio); err != nil {
 			return nil, err
 		}
-		u.Bio = *in.Bio
+		changes.Bio = in.Bio
 	}
 	if in.AvatarURL != nil {
 		avatar := strings.TrimSpace(*in.AvatarURL)
 		if err := ValidateAvatarURL(avatar); err != nil {
 			return nil, err
 		}
-		u.AvatarURL = avatar
+		changes.AvatarURL = &avatar
 	}
-	if err := s.repo.Update(ctx, u); err != nil {
+	err := s.repo.UpdateProfile(ctx, id, changes)
+	if errors.Is(err, ErrNotFound) {
+		return nil, httpx.ErrUnauthorized
+	}
+	if err != nil {
 		return nil, err
 	}
-	return u, nil
+	return s.Me(ctx, id)
 }
 
 func (s *Service) Profile(ctx context.Context, id int64) (*User, error) {

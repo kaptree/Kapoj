@@ -93,6 +93,27 @@ func (r *memoryRepository) Update(_ context.Context, u *User) error {
 	return nil
 }
 
+func (r *memoryRepository) UpdateProfile(_ context.Context, id int64, c ProfileChanges) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	u, ok := r.users[id]
+	if !ok {
+		return ErrNotFound
+	}
+	if c.Nickname != nil {
+		u.Nickname = *c.Nickname
+	}
+	if c.Bio != nil {
+		u.Bio = *c.Bio
+	}
+	if c.AvatarURL != nil {
+		u.AvatarURL = *c.AvatarURL
+	}
+	u.UpdatedAt = time.Now()
+	r.users[id] = u
+	return nil
+}
+
 func (r *memoryRepository) List(_ context.Context, offset, limit int) ([]User, int64, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

@@ -10,12 +10,15 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
+	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kaptree/kapoj/apps/server/internal/auth"
 	"github.com/kaptree/kapoj/apps/server/internal/config"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
+	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
 
 func newRouter(t *testing.T) http.Handler {
@@ -90,4 +93,30 @@ func TestRouterUnknownRouteUsesEnvelope(t *testing.T) {
 	w, resp := call(h, http.MethodGet, "/api/nope", "", "")
 	assert.Equal(t, http.StatusNotFound, w.Code)
 	assert.EqualValues(t, 40400, resp["code"])
+}
+
+func TestLogoutWithExpiredAccessTokenRevokes(t *testing.T) {
+	h := newRouter(t)
+	w, resp := call(h, http.MethodPost, "/api/auth/register", "",
+		`{"username":"alice","email":"alice@example.com","password":"correct-horse"}`)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	refresh := resp["data"].(map[string]any)["refreshToken"].(string)
+
+	expired, err := auth.NewTokenIssuer(strings.Repeat("s", 32), -time.Minute).
+		IssueAccess(&user.User{ID: 1, Role: user.RoleUser})
+	require.NoError(t, err)
+
+	w, _ = call(h, http.MethodPost, "/api/auth/logout", expired, `{"refreshToken":"`+refresh+`"}`)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	w, _ = call(h, http.MethodPost, "/api/auth/refresh", "", `{"refreshToken":"`+refresh+`"}`)
+	assert.Equal(t, http.StatusUnauthorized, w.Code, "refresh token must be revoked")
+}
+
+func TestPanicUsesEnvelope(t *testing.T) {
+	h := newRouter(t).(*gin.Engine)
+	h.GET("/api/boom", func(*gin.Context) { panic("boom") })
+	w, resp := call(h, http.MethodGet, "/api/boom", "", "")
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.EqualValues(t, 50000, resp["code"])
 }

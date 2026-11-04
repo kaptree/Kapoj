@@ -3,6 +3,7 @@ package user_test
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -115,4 +116,64 @@ func TestListPaginates(t *testing.T) {
 	require.Len(t, items, 2)
 	assert.Equal(t, "user2", items[0].Username)
 	assert.Equal(t, "user3", items[1].Username)
+}
+
+func TestUpdateProfileDoesNotOverwriteOtherColumns(t *testing.T) {
+	repo := user.NewGormRepository(testutil.PG(t))
+	ctx := context.Background()
+	u := newUser("frank")
+	require.NoError(t, repo.Create(ctx, u))
+
+	// An admin changes coins and status after the profile request read the row.
+	admin, err := repo.FindByID(ctx, u.ID)
+	require.NoError(t, err)
+	admin.Coins, admin.Status = 50, user.StatusBanned
+	require.NoError(t, repo.Update(ctx, admin))
+
+	bio := "new bio"
+	require.NoError(t, repo.UpdateProfile(ctx, u.ID, user.ProfileChanges{Bio: &bio}))
+
+	got, err := repo.FindByID(ctx, u.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "new bio", got.Bio)
+	assert.Equal(t, "frank", got.Nickname, "unchanged fields stay")
+	assert.Equal(t, int64(50), got.Coins)
+	assert.Equal(t, user.StatusBanned, got.Status)
+}
+
+func TestUpdateProfileMissingUser(t *testing.T) {
+	repo := user.NewGormRepository(testutil.PG(t))
+	bio := "x"
+	err := repo.UpdateProfile(context.Background(), 999999, user.ProfileChanges{Bio: &bio})
+	assert.ErrorIs(t, err, user.ErrNotFound)
+}
+
+func TestConcurrentCreateSameUsername(t *testing.T) {
+	repo := user.NewGormRepository(testutil.PG(t))
+	ctx := context.Background()
+
+	const n = 8
+	errs := make(chan error, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			u := newUser("bob")
+			u.Email = fmt.Sprintf("bob%d@example.com", i)
+			errs <- repo.Create(ctx, u)
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+
+	ok := 0
+	for err := range errs {
+		if err == nil {
+			ok++
+			continue
+		}
+		assert.ErrorIs(t, err, user.ErrUsernameTaken)
+	}
+	assert.Equal(t, 1, ok)
 }

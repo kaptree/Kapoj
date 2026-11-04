@@ -31,6 +31,17 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isLoggedIn = computed(() => accessToken.value !== null)
 
+  // Keep tabs in sync: another tab may rotate tokens or log out.
+  if (typeof window !== 'undefined') {
+    window.addEventListener('storage', (e) => {
+      if (e.key !== AUTH_STORAGE_KEY) return
+      const next = load()
+      accessToken.value = next.accessToken
+      refreshToken.value = next.refreshToken
+      user.value = next.user
+    })
+  }
+
   function persist() {
     const data: Persisted = {
       accessToken: accessToken.value,
