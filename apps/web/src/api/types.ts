@@ -25,6 +25,16 @@ export type SubmissionCreated = Schemas['SubmissionCreated']
 export type SubmissionJudgeCase = Schemas['SubmissionJudgeCase']
 export type SubmissionListItem = Schemas['SubmissionListItem']
 export type SubmissionDetail = Schemas['SubmissionDetail']
+export type ContestMode = Schemas['ContestMode']
+export type ContestRegisterType = Schemas['ContestRegisterType']
+export type ContestStatus = Schemas['ContestStatus']
+export type ContestProblemInput = Schemas['ContestProblemInput']
+export type ContestInput = Schemas['ContestInput']
+export type CloneContestRequest = Schemas['CloneContestRequest']
+export type ContestListItem = Schemas['ContestListItem']
+export type ContestDetail = Schemas['ContestDetail']
+export type ContestProblemItem = Schemas['ContestProblemItem']
+export type ContestParticipant = Schemas['ContestParticipant']
 
 export interface Page<T> {
   total: number

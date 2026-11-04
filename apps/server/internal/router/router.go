@@ -11,6 +11,8 @@ import (
 
 	"github.com/kaptree/kapoj/apps/server/internal/auth"
 	"github.com/kaptree/kapoj/apps/server/internal/config"
+	"github.com/kaptree/kapoj/apps/server/internal/contest"
+	"github.com/kaptree/kapoj/apps/server/internal/contestapi"
 	"github.com/kaptree/kapoj/apps/server/internal/health"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
@@ -62,6 +64,7 @@ func New(d Deps) *gin.Engine {
 	problemJSON := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxProblemJSONBytes))
 	uploads := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxUploadBytes))
 	userapi.RegisterRoutes(api, user.NewService(users))
+	contestapi.RegisterRoutes(api, contest.NewService(contest.NewGormRepository(d.DB)))
 	problemRepo := problem.NewGormRepository(d.DB)
 	submissionRepo := submission.NewGormRepository(d.DB)
 	problemapi.RegisterRoutes(api, problemJSON, uploads,

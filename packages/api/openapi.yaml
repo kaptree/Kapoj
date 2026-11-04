@@ -128,6 +128,140 @@ paths:
               schema: { $ref: '#/components/schemas/UserPageResponse' }
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
+  /contests:
+    get:
+      summary: 比赛列表（公开；管理员可 includeHidden）
+      security: [{}, { bearer: [] }]
+      parameters:
+        - { name: keyword, in: query, schema: { type: string } }
+        - { name: mode, in: query, schema: { $ref: '#/components/schemas/ContestMode' } }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/ContestStatus' } }
+        - { name: includeHidden, in: query, schema: { type: boolean }, description: 仅比赛管理员有效 }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: 比赛分页列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ContestPageResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+    post:
+      summary: 创建比赛（比赛管理员/超级管理员）
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ContestInput' }
+      responses:
+        '201':
+          description: 已创建
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ContestDetailResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /contests/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      summary: 比赛详情；非公开比赛对非报名者/非管理员返回 40400
+      security: [{}, { bearer: [] }]
+      responses:
+        '200':
+          description: 比赛详情
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ContestDetailResponse' }
+        '404': { $ref: '#/components/responses/Error' }
+    put:
+      summary: 整体替换比赛（比赛管理员）；problems 为完整题目列表
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ContestInput' }
+      responses:
+        '200':
+          description: 更新后的比赛
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ContestDetailResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+    delete:
+      summary: 删除比赛（比赛管理员）；级联删除题目关联、报名与公告
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 已删除
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /contests/{id}/clone:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      summary: 克隆比赛（比赛管理员）；复制配置与题目，不复制报名/公告
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CloneContestRequest' }
+      responses:
+        '201':
+          description: 克隆后的比赛
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ContestDetailResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /contests/{id}/register:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      summary: 报名比赛（登录用户）；按 open/password/invite 校验
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterContestRequest' }
+      responses:
+        '200':
+          description: 已报名（重复报名幂等）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RegisterContestResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /contests/{id}/participants:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      summary: 报名用户列表（比赛管理员）
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 报名用户列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ContestParticipantListResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
   /problems:
     get:
       summary: 题目列表（游客可访问，只返回已公开题目）
@@ -423,6 +557,106 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
   schemas:
+    ContestMode:
+      type: string
+      enum: [icpc, ioi, oi]
+    ContestRegisterType:
+      type: string
+      enum: [open, password, invite]
+    ContestStatus:
+      type: string
+      enum: [upcoming, running, ended]
+    ContestProblemInput:
+      type: object
+      required: [problemId, displayId, score]
+      properties:
+        problemId: { type: integer, format: int64 }
+        displayId: { type: string, pattern: '^[A-Z]$' }
+        score: { type: integer, minimum: 1, maximum: 1000 }
+    ContestInput:
+      type: object
+      required: [title, descriptionMd, startTime, endTime, mode, isPublic, registerType, problems]
+      properties:
+        title: { type: string, maxLength: 100 }
+        descriptionMd: { type: string, maxLength: 100000 }
+        startTime: { type: string, format: date-time }
+        endTime: { type: string, format: date-time }
+        mode: { $ref: '#/components/schemas/ContestMode' }
+        isRated: { type: boolean }
+        isPublic: { type: boolean }
+        registerType: { $ref: '#/components/schemas/ContestRegisterType' }
+        password: { type: string, description: 密码报名时必填；更新时留空表示保留原密码 }
+        inviteCode: { type: string, description: 邀请码报名时必填；更新时留空表示保留原邀请码 }
+        problems: { type: array, maxItems: 26, items: { $ref: '#/components/schemas/ContestProblemInput' } }
+    CloneContestRequest:
+      type: object
+      properties:
+        title: { type: string, maxLength: 100 }
+        startTime: { type: string, format: date-time }
+        endTime: { type: string, format: date-time }
+    RegisterContestRequest:
+      type: object
+      properties:
+        password: { type: string }
+        inviteCode: { type: string }
+    RegisterContestResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              required: [registered]
+              properties:
+                registered: { type: boolean }
+    ContestProblemItem:
+      type: object
+      required: [problemId, title, slug, displayId, sortOrder, score]
+      properties:
+        problemId: { type: integer, format: int64 }
+        title: { type: string }
+        slug: { type: string }
+        displayId: { type: string }
+        sortOrder: { type: integer }
+        score: { type: integer }
+    ContestListItem:
+      type: object
+      required: [id, title, descriptionMd, startTime, endTime, mode, isRated, isPublic, registerType, status, problemCount, participantCount, createdAt]
+      properties:
+        id: { type: integer, format: int64 }
+        title: { type: string }
+        descriptionMd: { type: string }
+        startTime: { type: string, format: date-time }
+        endTime: { type: string, format: date-time }
+        mode: { $ref: '#/components/schemas/ContestMode' }
+        isRated: { type: boolean }
+        isPublic: { type: boolean }
+        registerType: { $ref: '#/components/schemas/ContestRegisterType' }
+        status: { $ref: '#/components/schemas/ContestStatus' }
+        problemCount: { type: integer, format: int64 }
+        participantCount: { type: integer, format: int64 }
+        createdAt: { type: string, format: date-time }
+    ContestDetail:
+      allOf:
+        - $ref: '#/components/schemas/ContestListItem'
+        - type: object
+          required: [problems, registered, canManage, serverTime]
+          properties:
+            problems:
+              type: array
+              items: { $ref: '#/components/schemas/ContestProblemItem' }
+            registered: { type: boolean }
+            canManage: { type: boolean }
+            serverTime: { type: string, format: date-time }
+    ContestParticipant:
+      type: object
+      required: [userId, username, nickname, registerTime]
+      properties:
+        userId: { type: integer, format: int64 }
+        username: { type: string }
+        nickname: { type: string }
+        registerTime: { type: string, format: date-time }
     Role:
       type: string
       enum: [user, problem_admin, contest_admin, super_admin]
@@ -840,6 +1074,36 @@ components:
                 items:
                   type: array
                   items: { $ref: '#/components/schemas/SubmissionListItem' }
+    ContestPageResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              required: [total, items]
+              properties:
+                total: { type: integer, format: int64 }
+                items:
+                  type: array
+                  items: { $ref: '#/components/schemas/ContestListItem' }
+    ContestDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/ContestDetail' }
+    ContestParticipantListResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items: { $ref: '#/components/schemas/ContestParticipant' }
     SubmissionDetailResponse:
       allOf:
         - $ref: '#/components/schemas/Envelope'

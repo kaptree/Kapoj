@@ -314,6 +314,312 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/contests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 比赛列表（公开；管理员可 includeHidden） */
+        get: {
+            parameters: {
+                query?: {
+                    keyword?: string;
+                    mode?: components["schemas"]["ContestMode"];
+                    status?: components["schemas"]["ContestStatus"];
+                    /** @description 仅比赛管理员有效 */
+                    includeHidden?: boolean;
+                    page?: number;
+                    page_size?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 比赛分页列表 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ContestPageResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        /** 创建比赛（比赛管理员/超级管理员） */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ContestInput"];
+                };
+            };
+            responses: {
+                /** @description 已创建 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ContestDetailResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/contests/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** 比赛详情；非公开比赛对非报名者/非管理员返回 40400 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 比赛详情 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ContestDetailResponse"];
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        /** 整体替换比赛（比赛管理员）；problems 为完整题目列表 */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ContestInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的比赛 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ContestDetailResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        /** 删除比赛（比赛管理员）；级联删除题目关联、报名与公告 */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已删除 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/contests/{id}/clone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 克隆比赛（比赛管理员）；复制配置与题目，不复制报名/公告 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CloneContestRequest"];
+                };
+            };
+            responses: {
+                /** @description 克隆后的比赛 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ContestDetailResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/contests/{id}/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 报名比赛（登录用户）；按 open/password/invite 校验 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RegisterContestRequest"];
+                };
+            };
+            responses: {
+                /** @description 已报名（重复报名幂等） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RegisterContestResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/contests/{id}/participants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** 报名用户列表（比赛管理员） */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 报名用户列表 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ContestParticipantListResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/problems": {
         parameters: {
             query?: never;
@@ -951,6 +1257,96 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /** @enum {string} */
+        ContestMode: "icpc" | "ioi" | "oi";
+        /** @enum {string} */
+        ContestRegisterType: "open" | "password" | "invite";
+        /** @enum {string} */
+        ContestStatus: "upcoming" | "running" | "ended";
+        ContestProblemInput: {
+            /** Format: int64 */
+            problemId: number;
+            displayId: string;
+            score: number;
+        };
+        ContestInput: {
+            title: string;
+            descriptionMd: string;
+            /** Format: date-time */
+            startTime: string;
+            /** Format: date-time */
+            endTime: string;
+            mode: components["schemas"]["ContestMode"];
+            isRated?: boolean;
+            isPublic: boolean;
+            registerType: components["schemas"]["ContestRegisterType"];
+            /** @description 密码报名时必填；更新时留空表示保留原密码 */
+            password?: string;
+            /** @description 邀请码报名时必填；更新时留空表示保留原邀请码 */
+            inviteCode?: string;
+            problems: components["schemas"]["ContestProblemInput"][];
+        };
+        CloneContestRequest: {
+            title?: string;
+            /** Format: date-time */
+            startTime?: string;
+            /** Format: date-time */
+            endTime?: string;
+        };
+        RegisterContestRequest: {
+            password?: string;
+            inviteCode?: string;
+        };
+        RegisterContestResponse: components["schemas"]["Envelope"] & {
+            data: {
+                registered: boolean;
+            };
+        };
+        ContestProblemItem: {
+            /** Format: int64 */
+            problemId: number;
+            title: string;
+            slug: string;
+            displayId: string;
+            sortOrder: number;
+            score: number;
+        };
+        ContestListItem: {
+            /** Format: int64 */
+            id: number;
+            title: string;
+            descriptionMd: string;
+            /** Format: date-time */
+            startTime: string;
+            /** Format: date-time */
+            endTime: string;
+            mode: components["schemas"]["ContestMode"];
+            isRated: boolean;
+            isPublic: boolean;
+            registerType: components["schemas"]["ContestRegisterType"];
+            status: components["schemas"]["ContestStatus"];
+            /** Format: int64 */
+            problemCount: number;
+            /** Format: int64 */
+            participantCount: number;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        ContestDetail: components["schemas"]["ContestListItem"] & {
+            problems: components["schemas"]["ContestProblemItem"][];
+            registered: boolean;
+            canManage: boolean;
+            /** Format: date-time */
+            serverTime: string;
+        };
+        ContestParticipant: {
+            /** Format: int64 */
+            userId: number;
+            username: string;
+            nickname: string;
+            /** Format: date-time */
+            registerTime: string;
+        };
+        /** @enum {string} */
         Role: "user" | "problem_admin" | "contest_admin" | "super_admin";
         /** @enum {string} */
         Status: "active" | "banned";
@@ -1242,6 +1638,19 @@ export interface components {
                 total: number;
                 items: components["schemas"]["SubmissionListItem"][];
             };
+        };
+        ContestPageResponse: components["schemas"]["Envelope"] & {
+            data: {
+                /** Format: int64 */
+                total: number;
+                items: components["schemas"]["ContestListItem"][];
+            };
+        };
+        ContestDetailResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["ContestDetail"];
+        };
+        ContestParticipantListResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["ContestParticipant"][];
         };
         SubmissionDetailResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["SubmissionDetail"];
