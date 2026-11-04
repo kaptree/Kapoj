@@ -48,9 +48,16 @@ async function submit() {
         prop="password"
         :rules="[{ required: true, message: '请输入密码', trigger: 'blur' }]"
       >
-        <el-input v-model="form.password" type="password" show-password autocomplete="current-password" />
+        <el-input
+          v-model="form.password"
+          type="password"
+          show-password
+          autocomplete="current-password"
+        />
       </el-form-item>
-      <el-button type="primary" native-type="submit" :loading="submitting" class="submit">登录</el-button>
+      <el-button type="primary" native-type="submit" :loading="submitting" class="submit"
+        >登录</el-button
+      >
     </el-form>
     <p class="switch">还没有账号？<RouterLink to="/register">注册</RouterLink></p>
   </el-card>

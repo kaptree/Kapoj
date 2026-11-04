@@ -21,7 +21,8 @@ watch(
     try {
       profile.value = await getProfile(id)
     } catch (e) {
-      error.value = e instanceof ApiError && e.code === 40400 ? '用户不存在' : '加载失败，请稍后再试'
+      error.value =
+        e instanceof ApiError && e.code === 40400 ? '用户不存在' : '加载失败，请稍后再试'
     } finally {
       loading.value = false
     }

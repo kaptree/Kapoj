@@ -29,7 +29,15 @@ describe('safeRedirect', () => {
   })
 
   it('rejects anything that could leave the site', () => {
-    for (const bad of ['https://evil.com', '//evil.com', '/\\evil.com', 'javascript:alert(1)', '', undefined, ['/a']]) {
+    for (const bad of [
+      'https://evil.com',
+      '//evil.com',
+      '/\\evil.com',
+      'javascript:alert(1)',
+      '',
+      undefined,
+      ['/a'],
+    ]) {
       expect(safeRedirect(bad)).toBe('/')
     }
   })

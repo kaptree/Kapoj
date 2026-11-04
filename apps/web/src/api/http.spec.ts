@@ -85,7 +85,11 @@ describe('createHttp', () => {
     })
 
     await expect(http.get('/users/me')).resolves.toBe('fresh')
-    expect(calls).toEqual(['/users/me Bearer old-access', '/auth/refresh', '/users/me Bearer new-access'])
+    expect(calls).toEqual([
+      '/users/me Bearer old-access',
+      '/auth/refresh',
+      '/users/me Bearer new-access',
+    ])
     expect(h.getRefreshToken()).toBe('new-refresh')
   })
 

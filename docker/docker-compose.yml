@@ -2,7 +2,7 @@ name: kapoj
 
 services:
   postgres:
-    image: postgres:16
+    image: postgres:17
     environment:
       POSTGRES_USER: kapoj
       POSTGRES_PASSWORD: kapoj

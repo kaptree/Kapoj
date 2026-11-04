@@ -58,11 +58,7 @@ async function save() {
       <el-form-item label="个人简介" prop="bio">
         <el-input v-model="fields.bio" type="textarea" :rows="4" maxlength="200" show-word-limit />
       </el-form-item>
-      <el-form-item
-        label="头像链接"
-        prop="avatarUrl"
-        :rules="avatarRules"
-      >
+      <el-form-item label="头像链接" prop="avatarUrl" :rules="avatarRules">
         <el-input v-model="fields.avatarUrl" :placeholder="avatarPlaceholder" />
         <div class="hint">头像上传功能将在后续版本提供，目前请填写图片链接。</div>
       </el-form-item>

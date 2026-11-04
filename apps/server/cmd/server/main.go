@@ -42,7 +42,7 @@ func run() error {
 		return err
 	}
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 
 	gin.SetMode(gin.ReleaseMode)
 	srv := &http.Server{

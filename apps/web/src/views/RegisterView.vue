@@ -43,12 +43,19 @@ async function submit() {
         <el-input v-model="form.email" autocomplete="email" />
       </el-form-item>
       <el-form-item label="密码" prop="password" :rules="passwordRules">
-        <el-input v-model="form.password" type="password" show-password autocomplete="new-password" />
+        <el-input
+          v-model="form.password"
+          type="password"
+          show-password
+          autocomplete="new-password"
+        />
       </el-form-item>
       <el-form-item label="昵称（可选，默认与用户名相同）" prop="nickname" :rules="nicknameRules">
         <el-input v-model="form.nickname" />
       </el-form-item>
-      <el-button type="primary" native-type="submit" :loading="submitting" class="submit">注册</el-button>
+      <el-button type="primary" native-type="submit" :loading="submitting" class="submit"
+        >注册</el-button
+      >
     </el-form>
     <p class="switch">已有账号？<RouterLink to="/login">登录</RouterLink></p>
   </el-card>
