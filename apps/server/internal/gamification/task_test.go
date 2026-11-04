@@ -456,6 +456,81 @@ func TestTaskCompletesAfterDeadlineForPreDeadlineACs(t *testing.T) {
 	assert.EqualValues(t, 1, txCount)
 }
 
+func TestTaskShortenedDeadlineExcludesLateACs(t *testing.T) {
+	ctx := context.Background()
+	e := newTaskEnv(t)
+	p1 := e.addProblem(t, "shorten-p1", true)
+	p2 := e.addProblem(t, "shorten-p2", true)
+	now := time.Now()
+	task := e.createTask(t, taskInput("缩短截止任务", []int64{p1.ID, p2.ID}, 70,
+		now.Add(-time.Hour), now.Add(time.Hour)))
+	item := e.claim(t, task.ID)
+
+	// 两条 AC 都在原截止前，但都在管理员即将设置的新截止之后。
+	e.addAC(t, p1.ID, item.ClaimedAt.Add(time.Second))
+	e.addAC(t, p2.ID, item.ClaimedAt.Add(2*time.Second))
+	stale, err := e.repo.CountTaskProgress(ctx, e.user.ID, []int64{p1.ID, p2.ID},
+		*item.ClaimedAt, task.EndTime)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, stale, "缩短前按旧截止统计应已完成")
+
+	shortenedEnd := item.ClaimedAt.Add(500 * time.Millisecond)
+	_, err = e.svc.UpdateTask(ctx, adminViewer(e.user.ID), task.ID,
+		taskInput(task.Title, []int64{p1.ID, p2.ID}, task.RewardCoins,
+			now.Add(-time.Hour), shortenedEnd))
+	require.NoError(t, err)
+
+	// 结算必须重新读取新截止时间，不能沿用上面的旧进度。
+	completed, err := e.repo.TryCompleteTask(ctx, e.user.ID, task.ID)
+	require.NoError(t, err)
+	assert.False(t, completed)
+	require.NoError(t, e.svc.EvaluateUser(ctx, e.user.ID))
+
+	balance, err := e.repo.Balance(ctx, e.user.ID)
+	require.NoError(t, err)
+	assert.Zero(t, balance)
+	var record gamification.UserTaskRecord
+	require.NoError(t, e.db.Where("user_id = ? AND task_id = ?", e.user.ID, task.ID).
+		First(&record).Error)
+	assert.Equal(t, gamification.TaskRecordClaimed, record.Status)
+	var txCount int64
+	require.NoError(t, e.db.Model(&gamification.CoinTransaction{}).
+		Where("user_id = ?", e.user.ID).Count(&txCount).Error)
+	assert.Zero(t, txCount)
+}
+
+func TestTaskShortenedDeadlineStillCompletesEarlyACs(t *testing.T) {
+	ctx := context.Background()
+	e := newTaskEnv(t)
+	p1 := e.addProblem(t, "shorten-early-p1", true)
+	p2 := e.addProblem(t, "shorten-early-p2", true)
+	now := time.Now()
+	task := e.createTask(t, taskInput("缩短截止但仍完成", []int64{p1.ID, p2.ID}, 70,
+		now.Add(-time.Hour), now.Add(2*time.Hour)))
+	item := e.claim(t, task.ID)
+
+	e.addAC(t, p1.ID, item.ClaimedAt.Add(time.Second))
+	e.addAC(t, p2.ID, item.ClaimedAt.Add(2*time.Second))
+
+	// 新截止仍晚于全部 AC：缩短后应正常结算。
+	_, err := e.svc.UpdateTask(ctx, adminViewer(e.user.ID), task.ID,
+		taskInput(task.Title, []int64{p1.ID, p2.ID}, task.RewardCoins,
+			now.Add(-time.Hour), item.ClaimedAt.Add(10*time.Second)))
+	require.NoError(t, err)
+
+	completed, err := e.repo.TryCompleteTask(ctx, e.user.ID, task.ID)
+	require.NoError(t, err)
+	assert.True(t, completed)
+
+	balance, err := e.repo.Balance(ctx, e.user.ID)
+	require.NoError(t, err)
+	assert.EqualValues(t, 70, balance)
+	var txCount int64
+	require.NoError(t, e.db.Model(&gamification.CoinTransaction{}).
+		Where("user_id = ?", e.user.ID).Count(&txCount).Error)
+	assert.EqualValues(t, 1, txCount)
+}
+
 func TestUpdateTaskAfterProblemUnpublished(t *testing.T) {
 	ctx := context.Background()
 	e := newTaskEnv(t)
@@ -602,6 +677,8 @@ func TestTaskValidation(t *testing.T) {
 		{"题目未公开", func(in *gamification.TaskInput) { in.ProblemIDs = []int64{private.ID} }, "题目"},
 		{"奖励为负", func(in *gamification.TaskInput) { in.RewardCoins = -1 }, "奖励"},
 		{"奖励过大", func(in *gamification.TaskInput) { in.RewardCoins = 1_000_001 }, "奖励"},
+		{"开始时间为零", func(in *gamification.TaskInput) { in.StartTime = time.Time{} }, "时间"},
+		{"结束时间为零", func(in *gamification.TaskInput) { in.EndTime = time.Time{} }, "时间"},
 		{"开始时间不早于结束", func(in *gamification.TaskInput) { in.EndTime = in.StartTime }, "时间"},
 	}
 	for i, tc := range cases {

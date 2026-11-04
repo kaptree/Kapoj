@@ -2,7 +2,6 @@ package gamification
 
 import (
 	"context"
-	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -224,6 +223,8 @@ func (s *Service) ClaimTask(ctx context.Context, userID, id int64) (*TaskItem, e
 // EvaluateTasks 遍历用户已领取的任务。是否完成只由 AC 提交的 judged_at 窗口
 // [claimed_at, end_time) 决定，补算可以在截止后进行，以结算停机期间丢失的
 // 事件；任务即使被下架也参与判定。截止前未集齐题目则保持 claimed。
+// 结算在 TryCompleteTask 内重新读取任务截止时间并统计进度，避免使用结算前
+// 已被管理员缩短的旧截止时间。
 func (s *Service) EvaluateTasks(ctx context.Context, userID int64) error {
 	if userID <= 0 {
 		return nil
@@ -232,30 +233,8 @@ func (s *Service) EvaluateTasks(ctx context.Context, userID int64) error {
 	if err != nil {
 		return err
 	}
-	if len(records) == 0 {
-		return nil
-	}
 	for _, record := range records {
-		task, err := s.repo.FindTask(ctx, record.TaskID)
-		if err != nil {
-			if errors.Is(err, httpx.ErrNotFound) {
-				continue
-			}
-			return err
-		}
-		if len(task.ProblemIDs) == 0 {
-			continue
-		}
-		progress, err := s.repo.CountTaskProgress(
-			ctx, userID, task.ProblemIDs, record.ClaimedAt, task.EndTime,
-		)
-		if err != nil {
-			return err
-		}
-		if progress < int64(len(task.ProblemIDs)) {
-			continue
-		}
-		if _, err := s.repo.CompleteTask(ctx, userID, task.ID, task.RewardCoins); err != nil {
+		if _, err := s.repo.TryCompleteTask(ctx, userID, record.TaskID); err != nil {
 			return err
 		}
 	}
@@ -361,6 +340,9 @@ func normalizeTaskEditableInput(in TaskInput) (TaskInput, error) {
 	}
 	if err := validateText("任务描述", in.DescriptionMD, 0, 50000); err != nil {
 		return in, err
+	}
+	if in.StartTime.IsZero() || in.EndTime.IsZero() {
+		return in, httpx.ErrValidation("任务时间不能为空")
 	}
 	if !in.StartTime.Before(in.EndTime) {
 		return in, httpx.ErrValidation("任务开始时间必须早于结束时间")

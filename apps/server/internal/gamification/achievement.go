@@ -2,6 +2,7 @@ package gamification
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
@@ -34,7 +35,8 @@ func (s *Service) EvaluateUser(ctx context.Context, userID int64) error {
 		}
 		cfg, err := conditionConfigFromJSON(a.ConditionConfig)
 		if err != nil {
-			return httpx.ErrValidation("成就条件配置格式错误")
+			slog.Warn("跳过条件配置损坏的成就", "achievementId", a.ID, "error", err)
+			continue
 		}
 		done, _, err := s.EvaluateCondition(ctx, userID, ConditionType(a.ConditionType), cfg)
 		if err != nil {
@@ -83,7 +85,8 @@ func (s *Service) ListAchievements(ctx context.Context, v Viewer, includeInactiv
 		}
 		cfg, err := conditionConfigFromJSON(a.ConditionConfig)
 		if err != nil {
-			return nil, httpx.ErrValidation("成就条件配置格式错误")
+			slog.Warn("跳过条件配置损坏的成就", "achievementId", a.ID, "error", err)
+			continue
 		}
 		_, progress, err := s.EvaluateCondition(ctx, v.UserID, ConditionType(a.ConditionType), cfg)
 		if err != nil {

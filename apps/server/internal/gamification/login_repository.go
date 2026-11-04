@@ -7,7 +7,10 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 )
 
-const loginDateLayout = "2006-01-02"
+const (
+	loginDateLayout         = "2006-01-02"
+	loginStreakLookbackDays = 400
+)
 
 // RecordLoginDay 记录用户在某天的登录；重复日期由唯一约束忽略。
 func (r *Repository) RecordLoginDay(ctx context.Context, userID int64, date string) error {
@@ -30,9 +33,9 @@ func (r *Repository) CurrentLoginStreak(ctx context.Context, userID int64, today
 	}
 	var dates []string
 	if err := r.db.WithContext(ctx).Raw(
-		`SELECT login_date::text FROM user_login_days
-		 WHERE user_id = ? ORDER BY login_date DESC LIMIT 400`,
-		userID,
+		`SELECT to_char(login_date, 'YYYY-MM-DD') FROM user_login_days
+		 WHERE user_id = ? ORDER BY login_date DESC LIMIT ?`,
+		userID, loginStreakLookbackDays,
 	).Scan(&dates).Error; err != nil {
 		return 0, err
 	}

@@ -2,6 +2,7 @@ package gamification
 
 import (
 	"context"
+	"math"
 	"strings"
 	"unicode/utf8"
 
@@ -29,6 +30,11 @@ func (s *Service) ListCoinTransactions(ctx context.Context, userID int64, page, 
 	}
 	if size < 1 {
 		size = 20
+	}
+	// 极大页码会让 (page-1)*size 溢出为负数，导致数据库报错；把页码限制在
+	// 能安全计算 offset 的最大值，超出后自然返回空页。
+	if page-1 > math.MaxInt/size {
+		page = math.MaxInt/size + 1
 	}
 	items, total, balance, err := s.repo.ListCoinTransactions(ctx, userID, (page-1)*size, size)
 	if err != nil {

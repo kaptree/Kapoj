@@ -362,8 +362,11 @@ func TestTaskAPI(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	assert.Equal(t, "改名后的 API 任务", resp["data"].(map[string]any)["title"])
 
-	// 领取后 AC 全部题目，读取任务大厅时自动完成并发奖。
-	claimTime := now.Add(time.Second)
+	// 领取后 AC 全部题目，读取任务大厅时自动完成并发奖。judged_at 必须晚于
+	// 服务端实际写入的 claimed_at，因此从响应解析而不是使用本地 now。
+	claimTime, err := time.Parse(time.RFC3339Nano, claimed["claimedAt"].(string))
+	require.NoError(t, err)
+	claimTime = claimTime.Add(time.Second)
 	f.addTaskSubmission(t, userID, p1.ID, claimTime)
 	f.addTaskSubmission(t, userID, p2.ID, claimTime.Add(time.Second))
 
@@ -476,6 +479,12 @@ func TestAdminAdjustCoinsEndpoint(t *testing.T) {
 	assert.EqualValues(t, 70, data["balance"])
 	assert.EqualValues(t, 2, data["total"])
 	assert.Len(t, data["items"].([]any), 1)
+
+	// 极大页码不能让 offset 溢出并返回 500。
+	w, resp = f.do(http.MethodGet,
+		"/api/coins/transactions?page=9223372036854775807&page_size=100", userToken, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Empty(t, resp["data"].(map[string]any)["items"])
 
 	w, _ = f.do(http.MethodPost, "/api/admin/users/99999/coins", adminToken,
 		map[string]any{"amount": 1, "note": "不存在用户"})

@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
+	"github.com/kaptree/kapoj/apps/server/internal/dbtypes"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/submission"
@@ -190,6 +191,74 @@ func TestAchievementUnlockConcurrent(t *testing.T) {
 	assert.EqualValues(t, 1, txCount)
 }
 
+func TestAchievementDuplicateCodeConcurrent(t *testing.T) {
+	e := newAchievementEnv(t)
+	in := achievementInput(
+		"race-code", "并发 code",
+		gamification.ConditionACCount, gamification.ConditionConfig{Threshold: 1}, 10,
+	)
+
+	const workers = 4
+	var wg sync.WaitGroup
+	errs := make(chan error, workers)
+	start := make(chan struct{})
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := e.svc.CreateAchievement(context.Background(), adminViewer(e.user.ID), in)
+			errs <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+
+	var created int
+	for err := range errs {
+		if err == nil {
+			created++
+			continue
+		}
+		assertCode(t, err, 40001)
+	}
+	assert.Equal(t, 1, created)
+	var count int64
+	require.NoError(t, e.db.Model(&gamification.Achievement{}).
+		Where("code = ?", in.Code).Count(&count).Error)
+	assert.EqualValues(t, 1, count)
+}
+
+func TestAchievementMalformedConfigSkipped(t *testing.T) {
+	e := newAchievementEnv(t)
+	valid := e.create(t, achievementInput(
+		"valid-config", "有效成就",
+		gamification.ConditionACCount, gamification.ConditionConfig{Threshold: 1}, 10,
+	))
+
+	// 模拟历史坏数据：condition_config_json 的 threshold 类型错误。
+	broken := &gamification.Achievement{
+		Code:          "broken-config",
+		Name:          "损坏配置成就",
+		ConditionType: string(gamification.ConditionACCount),
+		ConditionConfig: dbtypes.JSON[map[string]any]{
+			Data: map[string]any{"threshold": "not-a-number"},
+		},
+		IsActive: true,
+	}
+	require.NoError(t, e.db.Create(broken).Error)
+	e.addAcceptedProblem(t, "malformed-config-problem")
+
+	require.NoError(t, e.svc.EvaluateUser(context.Background(), e.user.ID))
+	items, err := e.svc.ListAchievements(
+		context.Background(), gamification.Viewer{UserID: e.user.ID}, false)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, valid.ID, items[0].ID)
+	assert.True(t, items[0].Unlocked)
+}
+
 func TestAchievementListKeepsUnlockedInactive(t *testing.T) {
 	e := newAchievementEnv(t)
 	unlocked := e.create(t, achievementInput(
@@ -288,6 +357,7 @@ func TestAchievementValidation(t *testing.T) {
 		{"未知条件", func(in *gamification.AchievementInput) { in.ConditionType = "bogus" }, "条件"},
 		{"奖励徽章 M3-A 不支持", func(in *gamification.AchievementInput) { in.RewardBadgeID = &badgeID }, "M3-B 才支持徽章奖励"},
 		{"奖励金币为负", func(in *gamification.AchievementInput) { in.RewardCoins = -1 }, "奖励金币"},
+		{"奖励金币过大", func(in *gamification.AchievementInput) { in.RewardCoins = 1_000_001 }, "奖励金币"},
 		{"名称为空", func(in *gamification.AchievementInput) { in.Name = "  " }, "名称"},
 		{"阈值非正", func(in *gamification.AchievementInput) { in.ConditionConfig.Threshold = 0 }, "阈值"},
 		{"all_of 只有一项", func(in *gamification.AchievementInput) {

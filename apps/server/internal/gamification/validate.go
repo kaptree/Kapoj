@@ -11,6 +11,8 @@ import (
 
 var achievementCodePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{1,63}$`)
 
+const maxAchievementRewardCoins = 1_000_000
+
 // normalizeAchievementInput 校验并规范化管理员输入。update 时 code 允许为空，
 // 表示保持原值；创建时必须提供合法 code。
 func normalizeAchievementInput(in AchievementInput, codeRequired bool) (AchievementInput, error) {
@@ -41,6 +43,9 @@ func normalizeAchievementInput(in AchievementInput, codeRequired bool) (Achievem
 	}
 	if in.RewardCoins < 0 {
 		return in, httpx.ErrValidation("奖励金币不能为负数")
+	}
+	if in.RewardCoins > maxAchievementRewardCoins {
+		return in, httpx.ErrValidation("奖励金币不能超过 " + strconv.Itoa(maxAchievementRewardCoins))
 	}
 	if err := ValidateCondition(in.ConditionType, in.ConditionConfig); err != nil {
 		return in, err

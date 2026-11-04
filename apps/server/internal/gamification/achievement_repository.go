@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -50,9 +51,19 @@ func (r *Repository) AchievementCodeTaken(ctx context.Context, code string, excl
 	return count > 0, nil
 }
 
-// CreateAchievement 写入新成就。
+// CreateAchievement 写入新成就；并发创建相同 code 时把唯一约束冲突映射为
+// 40001，避免服务层预检查与插入之间的竞态泄漏 500。
 func (r *Repository) CreateAchievement(ctx context.Context, a *Achievement) error {
-	return r.db.WithContext(ctx).Create(a).Error
+	err := r.db.WithContext(ctx).Create(a).Error
+	if err == nil {
+		return nil
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) &&
+		pgErr.Code == "23505" && pgErr.ConstraintName == "uniq_achievements_code" {
+		return httpx.ErrValidation("成就 code 已存在")
+	}
+	return err
 }
 
 // UpdateAchievement 覆盖保存成就；code 由服务层保证不可修改。

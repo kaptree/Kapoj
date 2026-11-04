@@ -216,11 +216,17 @@ func (r *Repository) ListClaimedTaskRecords(ctx context.Context, userID int64) (
 func (r *Repository) CountTaskProgress(
 	ctx context.Context, userID int64, problemIDs []int64, claimedAt, endTime time.Time,
 ) (int64, error) {
+	return countTaskProgress(r.db.WithContext(ctx), userID, problemIDs, claimedAt, endTime)
+}
+
+func countTaskProgress(
+	db *gorm.DB, userID int64, problemIDs []int64, claimedAt, endTime time.Time,
+) (int64, error) {
 	if len(problemIDs) == 0 {
 		return 0, nil
 	}
 	var count int64
-	err := r.db.WithContext(ctx).Table("submissions").
+	err := db.Table("submissions").
 		Where("user_id = ? AND status = ?", userID, "accepted").
 		Where("judged_at >= ? AND judged_at < ?", claimedAt, endTime).
 		Where("problem_id IN ?", problemIDs).
@@ -229,13 +235,24 @@ func (r *Repository) CountTaskProgress(
 	return count, err
 }
 
-// CompleteTask 在一个事务内锁定记录、claimed → completed，并写入金币流水与余额。
-// 重复或并发完成只会成功一次；第二个返回值表示本次是否完成。
-func (r *Repository) CompleteTask(ctx context.Context, userID, taskID, rewardCoins int64) (bool, error) {
+// TryCompleteTask 在一个事务内锁定任务与领取记录，重新读取当前截止时间并统计
+// 领取窗口内的 AC；全部完成时 claimed → completed 并写入金币流水与余额。
+// 任务行先于记录行加锁，与 ClaimTaskLocked/UpdateTaskLocked 保持同一顺序，
+// 因此缩短截止时间与结算不会互相穿插。重复或并发完成只会成功一次。
+func (r *Repository) TryCompleteTask(ctx context.Context, userID, taskID int64) (bool, error) {
 	completed := false
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var task Task
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&task, taskID).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
 		var record UserTaskRecord
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("user_id = ? AND task_id = ?", userID, taskID).
 			Take(&record).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -244,7 +261,17 @@ func (r *Repository) CompleteTask(ctx context.Context, userID, taskID, rewardCoi
 		if err != nil {
 			return err
 		}
-		if record.Status != TaskRecordClaimed {
+		if record.Status != TaskRecordClaimed || len(task.ProblemIDs) == 0 {
+			return nil
+		}
+
+		progress, err := countTaskProgress(
+			tx, userID, task.ProblemIDs, record.ClaimedAt, task.EndTime,
+		)
+		if err != nil {
+			return err
+		}
+		if progress < int64(len(task.ProblemIDs)) {
 			return nil
 		}
 
@@ -259,9 +286,9 @@ func (r *Repository) CompleteTask(ctx context.Context, userID, taskID, rewardCoi
 			return nil
 		}
 
-		if rewardCoins > 0 {
+		if task.RewardCoins > 0 {
 			txRecord := &CoinTransaction{
-				UserID: userID, Amount: rewardCoins, Type: CoinEarn,
+				UserID: userID, Amount: task.RewardCoins, Type: CoinEarn,
 				Reason: "task", RefType: "task", RefID: taskID,
 			}
 			res := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(txRecord)
@@ -269,7 +296,7 @@ func (r *Repository) CompleteTask(ctx context.Context, userID, taskID, rewardCoi
 				return res.Error
 			}
 			if res.RowsAffected > 0 {
-				if err := addUserCoins(tx, userID, rewardCoins); err != nil {
+				if err := addUserCoins(tx, userID, task.RewardCoins); err != nil {
 					return err
 				}
 			}
