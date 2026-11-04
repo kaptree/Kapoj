@@ -1,0 +1,282 @@
+openapi: 3.0.3
+info:
+  title: kapOJ API
+  version: 0.1.0
+  description: |
+    kapOJ 后端接口。所有响应都使用统一结构 `{ code, message, data }`，
+    `code` 为 0 表示成功，否则为错误码（见 DEVELOPMENT.md 与 M0 计划的错误码表）。
+servers:
+  - url: /api
+paths:
+  /auth/register:
+    post:
+      summary: 注册并直接登录
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201':
+          description: 注册成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+  /auth/login:
+    post:
+      summary: 用用户名或邮箱登录
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: 登录成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+  /auth/refresh:
+    post:
+      summary: 用 refresh token 换取新的令牌（旧 refresh token 立即失效）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '200':
+          description: 刷新成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPairResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /auth/logout:
+    post:
+      summary: 登出，吊销 refresh token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '200':
+          description: 已登出
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+  /users/me:
+    get:
+      summary: 当前用户信息
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 当前用户
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+    put:
+      summary: 更新当前用户资料（只更新提供的字段）
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateMeRequest' }
+      responses:
+        '200':
+          description: 更新后的用户
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+  /users/{id}/profile:
+    get:
+      summary: 用户公开主页
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: 公开资料
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProfileResponse' }
+        '404': { $ref: '#/components/responses/Error' }
+  /admin/users:
+    get:
+      summary: 用户列表（仅超级管理员）
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: 用户分页列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserPageResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    Error:
+      description: 错误
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+  schemas:
+    Role:
+      type: string
+      enum: [user, problem_admin, contest_admin, super_admin]
+    Status:
+      type: string
+      enum: [active, banned]
+    RegisterRequest:
+      type: object
+      required: [username, email, password]
+      properties:
+        username: { type: string, pattern: '^[a-zA-Z0-9_]{3,32}$' }
+        email: { type: string, format: email, maxLength: 254 }
+        password: { type: string, minLength: 8, maxLength: 72, description: 按字节计 }
+        nickname: { type: string, maxLength: 32, description: 为空时默认等于用户名 }
+    LoginRequest:
+      type: object
+      required: [account, password]
+      properties:
+        account: { type: string, description: 用户名或邮箱 }
+        password: { type: string }
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken: { type: string }
+    UpdateMeRequest:
+      type: object
+      properties:
+        nickname: { type: string, maxLength: 32 }
+        bio: { type: string, maxLength: 200 }
+        avatarUrl: { type: string, maxLength: 512 }
+    TokenPair:
+      type: object
+      required: [accessToken, refreshToken]
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+    Me:
+      type: object
+      required: [id, username, nickname, email, avatarUrl, role, rating, coins, bio, status, createdAt]
+      properties:
+        id: { type: integer, format: int64 }
+        username: { type: string }
+        nickname: { type: string }
+        email: { type: string }
+        avatarUrl: { type: string }
+        role: { $ref: '#/components/schemas/Role' }
+        rating: { type: integer }
+        coins: { type: integer, format: int64 }
+        bio: { type: string }
+        status: { $ref: '#/components/schemas/Status' }
+        createdAt: { type: string, format: date-time }
+    Profile:
+      type: object
+      required: [id, username, nickname, avatarUrl, bio, rating, coins, equippedBadges, equippedTitle, createdAt]
+      properties:
+        id: { type: integer, format: int64 }
+        username: { type: string }
+        nickname: { type: string }
+        avatarUrl: { type: string }
+        bio: { type: string }
+        rating: { type: integer }
+        coins: { type: integer, format: int64 }
+        equippedBadges:
+          type: array
+          description: M3 上线前恒为空数组
+          items: { type: object }
+        equippedTitle:
+          type: object
+          nullable: true
+          description: M3 上线前恒为 null
+        createdAt: { type: string, format: date-time }
+    Session:
+      allOf:
+        - $ref: '#/components/schemas/TokenPair'
+        - type: object
+          required: [user]
+          properties:
+            user: { $ref: '#/components/schemas/Me' }
+    Envelope:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: integer }
+        message: { type: string }
+    ErrorResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data: { nullable: true }
+    EmptyResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data: { nullable: true }
+    SessionResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/Session' }
+    TokenPairResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/TokenPair' }
+    MeResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/Me' }
+    ProfileResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/Profile' }
+    UserPageResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              required: [total, items]
+              properties:
+                total: { type: integer, format: int64 }
+                items:
+                  type: array
+                  items: { $ref: '#/components/schemas/Me' }
