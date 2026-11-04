@@ -108,4 +108,11 @@ describe('sanitizeHtml', () => {
   it('removes style attributes outside spans', () => {
     expect(sanitizeHtml('<div style="height:1em">x</div>')).not.toContain('style')
   })
+
+  it('forces task list checkboxes to be disabled', () => {
+    const out = sanitizeHtml('<input type="checkbox" checked>')
+    expect(out).toContain('type="checkbox"')
+    expect(out).toContain('checked')
+    expect(out).toContain('disabled')
+  })
 })

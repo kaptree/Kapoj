@@ -37,8 +37,11 @@ watch(
       const detail = await getProblem(id)
       if (seq !== latest) return
       problem.value = detail
-      // Statistics are a nice-to-have; the page works without them.
-      stats.value = await getStatistics(id).catch(() => null)
+      // Statistics are a nice-to-have; the page works without them, but a
+      // late response for a previous problem must not overwrite this one.
+      const nextStats = await getStatistics(id).catch(() => null)
+      if (seq !== latest) return
+      stats.value = nextStats
     } catch (e) {
       if (seq !== latest) return
       error.value =

@@ -56,6 +56,12 @@ describe('toRouteQuery', () => {
     })
   })
 
+  it('omits a cleared difficulty even when it arrives as undefined or empty', () => {
+    const base = { keyword: '', tag: '', page: 1 }
+    expect(toRouteQuery({ ...base, difficulty: undefined as unknown as null })).toEqual({})
+    expect(toRouteQuery({ ...base, difficulty: '' as unknown as null })).toEqual({})
+  })
+
   it('round-trips through parse', () => {
     const q = { keyword: 'a b', tag: '图论', difficulty: 4, page: 7 }
     expect(parseProblemQuery(toRouteQuery(q))).toEqual(q)

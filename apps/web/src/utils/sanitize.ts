@@ -121,6 +121,8 @@ const options: sanitize.IOptions = {
   allowProtocolRelative: false,
   transformTags: {
     a: sanitize.simpleTransform('a', { target: '_blank', rel: 'noopener noreferrer' }, true),
+    // Task list checkboxes are display-only; do not let readers toggle them.
+    input: sanitize.simpleTransform('input', { disabled: 'disabled' }),
   },
   exclusiveFilter: (frame) => {
     // KaTeX also emits a hidden MathML copy of every formula; keep only the HTML one.

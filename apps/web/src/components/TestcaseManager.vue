@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, shallowRef } from 'vue'
+import { ref, shallowRef, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 import { ApiError } from '@/api/http'
@@ -34,18 +34,29 @@ function fail(e: unknown, fallback: string) {
   ElMessage.error(e instanceof ApiError ? e.message : fallback)
 }
 
+// Only the newest request may update the table; switching problems quickly
+// must not leave the previous problem's testcases on screen.
+let latest = 0
+
 async function load() {
+  const seq = ++latest
   loading.value = true
+  cases.value = []
   try {
-    cases.value = await listTestcases(props.problemId)
+    const list = await listTestcases(props.problemId)
+    if (seq === latest) cases.value = list
   } catch (e) {
-    fail(e, '加载测试点失败')
+    if (seq === latest) fail(e, '加载测试点失败')
   } finally {
-    loading.value = false
+    if (seq === latest) loading.value = false
   }
 }
 
-onMounted(load)
+watch(
+  () => props.problemId,
+  () => void load(),
+  { immediate: true },
+)
 
 function fileOf(e: Event): File | null {
   return (e.target as HTMLInputElement).files?.[0] ?? null

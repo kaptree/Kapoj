@@ -32,7 +32,7 @@ export function toRouteQuery(q: ProblemQuery): Record<string, string> {
   const out: Record<string, string> = {}
   if (q.keyword) out.keyword = q.keyword
   if (q.tag) out.tag = q.tag
-  if (q.difficulty !== null) out.difficulty = String(q.difficulty)
+  if (typeof q.difficulty === 'number') out.difficulty = String(q.difficulty)
   if (q.page > 1) out.page = String(q.page)
   return out
 }

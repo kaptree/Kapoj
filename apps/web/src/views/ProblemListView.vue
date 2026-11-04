@@ -71,7 +71,7 @@ function search() {
   go({
     keyword: filters.keyword.trim(),
     tag: filters.tag.trim(),
-    difficulty: filters.difficulty,
+    difficulty: typeof filters.difficulty === 'number' ? filters.difficulty : null,
     page: 1,
   })
 }
