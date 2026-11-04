@@ -349,6 +349,7 @@ export interface paths {
                     };
                 };
                 400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -416,6 +417,7 @@ export interface paths {
                         "application/json": components["schemas"]["ContestDetailResponse"];
                     };
                 };
+                401: components["responses"]["Error"];
                 404: components["responses"]["Error"];
             };
         };
@@ -650,6 +652,7 @@ export interface paths {
                         "application/json": components["schemas"]["AnnouncementListResponse"];
                     };
                 };
+                401: components["responses"]["Error"];
                 404: components["responses"]["Error"];
             };
         };

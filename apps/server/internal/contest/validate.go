@@ -68,13 +68,6 @@ func (in Input) Normalize() (Input, error) {
 	if in.InviteCode != "" && (len(in.InviteCode) < 4 || len(in.InviteCode) > 64) {
 		return in, invalid("邀请码长度需为 4–64 字节")
 	}
-	if in.RegisterType == RegisterPassword && in.Password == "" {
-		return in, invalid("密码报名必须设置比赛密码")
-	}
-	if in.RegisterType == RegisterInvite && in.InviteCode == "" {
-		return in, invalid("邀请码报名必须设置邀请码")
-	}
-
 	if len(in.Problems) > 26 {
 		return in, invalid("比赛最多 26 道题")
 	}

@@ -153,6 +153,48 @@ func TestContestPermissionsAndCrud(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
+func TestUpdateRequiresFullContestPayload(t *testing.T) {
+	f := newFx(t)
+	p1, p2 := f.problem("sum"), f.problem("product")
+	b := body(p1.ID, p2.ID)
+	b["registerType"] = "password"
+	b["password"] = "secret"
+	w, resp := f.do(http.MethodPost, "/api/contests", f.token("contest_admin"), b)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	id := idOf(resp)
+
+	delete(b, "problems")
+	w, resp = f.do(http.MethodPut, fmt.Sprintf("/api/contests/%d", id), f.token("contest_admin"), b)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+	_, resp = f.do(http.MethodGet, fmt.Sprintf("/api/contests/%d", id), f.token("contest_admin"), nil)
+	assert.Len(t, resp["data"].(map[string]any)["problems"], 2)
+
+	b = body(p1.ID, p2.ID)
+	b["registerType"] = "password"
+	b["password"] = "secret"
+	delete(b, "registerType")
+	w, _ = f.do(http.MethodPut, fmt.Sprintf("/api/contests/%d", id), f.token("contest_admin"), b)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	_, resp = f.do(http.MethodGet, fmt.Sprintf("/api/contests/%d", id), f.token("contest_admin"), nil)
+	assert.Equal(t, "password", resp["data"].(map[string]any)["registerType"])
+}
+
+func TestReferencedProblemCannotBeDeleted(t *testing.T) {
+	f := newFx(t)
+	p1, p2 := f.problem("sum"), f.problem("product")
+	w, _ := f.do(http.MethodPost, "/api/contests", f.token("contest_admin"), body(p1.ID, p2.ID))
+	require.Equal(t, http.StatusCreated, w.Code)
+
+	w, resp := f.do(http.MethodDelete, fmt.Sprintf("/api/problems/%d", p1.ID), f.token("problem_admin"), nil)
+	assert.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	assert.EqualValues(t, 40001, resp["code"])
+	assert.Contains(t, resp["message"], "比赛")
+
+	w, _ = f.do(http.MethodGet, fmt.Sprintf("/api/problems/%d", p1.ID), "", nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
 func TestContestDetailRegistrationAndProblems(t *testing.T) {
 	f := newFx(t)
 	p1, p2 := f.problem("sum"), f.problem("product")

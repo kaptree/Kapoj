@@ -21,6 +21,7 @@ var (
 	ErrPublishNeedsTestcase = errors.New("a public problem needs at least one testcase")
 	ErrPublishNeedsChecker  = errors.New("a public special problem needs a checker")
 	ErrLastTestcase         = errors.New("a public problem cannot lose its last testcase")
+	ErrInUse                = errors.New("problem is referenced by a contest")
 )
 
 type Filter struct {
@@ -179,7 +180,7 @@ func (r *gormRepository) Delete(ctx context.Context, id int64) (DeleteResult, er
 		return tx.Delete(&Problem{}, id).Error
 	})
 	if err != nil {
-		return DeleteResult{}, err
+		return DeleteResult{}, mapErr(err)
 	}
 	return result, nil
 }
@@ -323,8 +324,13 @@ func mapErr(err error) error {
 		return ErrNotFound
 	}
 	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "uniq_problems_slug" {
-		return ErrSlugTaken
+	if errors.As(err, &pgErr) {
+		if pgErr.Code == "23505" && pgErr.ConstraintName == "uniq_problems_slug" {
+			return ErrSlugTaken
+		}
+		if pgErr.Code == "23503" {
+			return ErrInUse
+		}
 	}
 	return err
 }

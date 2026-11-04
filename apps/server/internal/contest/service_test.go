@@ -3,8 +3,10 @@ package contest_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -191,6 +193,7 @@ func TestProblemsHiddenBeforeStart(t *testing.T) {
 	detail, err := e.svc.Detail(context.Background(), user(), c.ID)
 	require.NoError(t, err)
 	assert.Empty(t, detail.Problems, "non-managers cannot see problems before start")
+	assert.EqualValues(t, 2, detail.ProblemCount, "the count must not be hidden with the problems")
 
 	detail, err = e.svc.Detail(context.Background(), manager(), c.ID)
 	require.NoError(t, err)
@@ -269,6 +272,58 @@ func TestListFilters(t *testing.T) {
 	page, err = e.svc.List(context.Background(), contest.Viewer{}, contest.ListQuery{Keyword: "running"}, 1, 20)
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, page.Total)
+}
+
+func TestUpdateKeepsCredentials(t *testing.T) {
+	e := newEnv(t)
+	in := baseInput(e)
+	in.Title = "Password"
+	in.RegisterType = contest.RegisterPassword
+	in.Password = "secret"
+	c, err := e.svc.Create(context.Background(), manager(), in)
+	require.NoError(t, err)
+
+	update := baseInput(e)
+	update.Title = "Password renamed"
+	update.RegisterType = contest.RegisterPassword
+	update.Password = ""
+	_, err = e.svc.Update(context.Background(), manager(), c.ID, update)
+	require.NoError(t, err, "blank password must preserve the existing hash")
+	assertCode(t, e.svc.Register(context.Background(), userID, c.ID, "wrong", ""), 40001)
+	require.NoError(t, e.svc.Register(context.Background(), userID, c.ID, "secret", ""))
+
+	invite := baseInput(e)
+	invite.Title = "Invite"
+	invite.RegisterType = contest.RegisterInvite
+	invite.InviteCode = "code"
+	ic, err := e.svc.Create(context.Background(), manager(), invite)
+	require.NoError(t, err)
+	update = baseInput(e)
+	update.Title = "Invite renamed"
+	update.RegisterType = contest.RegisterInvite
+	update.InviteCode = ""
+	_, err = e.svc.Update(context.Background(), manager(), ic.ID, update)
+	require.NoError(t, err)
+	require.NoError(t, e.svc.Register(context.Background(), otherID, ic.ID, "", "code"))
+}
+
+func TestCloneTruncatesLongDefaultTitle(t *testing.T) {
+	e := newEnv(t)
+	in := baseInput(e)
+	in.Title = strings.Repeat("题", 100)
+	c, err := e.svc.Create(context.Background(), manager(), in)
+	require.NoError(t, err)
+	clone, err := e.svc.Clone(context.Background(), manager(), c.ID, contest.Input{})
+	require.NoError(t, err)
+	assert.LessOrEqual(t, utf8.RuneCountInString(clone.Title), 100)
+}
+
+func TestListRejectsInvalidKeyword(t *testing.T) {
+	e := newEnv(t)
+	for _, keyword := range []string{"\x00", string([]byte{0xff})} {
+		_, err := e.svc.List(context.Background(), contest.Viewer{}, contest.ListQuery{Keyword: keyword}, 1, 20)
+		assertCode(t, err, 40001)
+	}
 }
 
 func TestCloneOverrides(t *testing.T) {

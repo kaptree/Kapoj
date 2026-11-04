@@ -146,6 +146,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ContestPageResponse' }
         '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
     post:
       summary: 创建比赛（比赛管理员/超级管理员）
       security: [{ bearer: [] }]
@@ -175,6 +176,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ContestDetailResponse' }
+        '401': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
     put:
       summary: 整体替换比赛（比赛管理员）；problems 为完整题目列表
@@ -274,6 +276,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AnnouncementListResponse' }
+        '401': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
     post:
       summary: 发布公告（比赛管理员）
@@ -665,8 +668,8 @@ components:
         isRated: { type: boolean }
         isPublic: { type: boolean }
         registerType: { $ref: '#/components/schemas/ContestRegisterType' }
-        password: { type: string, description: 密码报名时必填；更新时留空表示保留原密码 }
-        inviteCode: { type: string, description: 邀请码报名时必填；更新时留空表示保留原邀请码 }
+        password: { type: string, minLength: 4, maxLength: 64, description: 密码报名时必填；更新时留空表示保留原密码 }
+        inviteCode: { type: string, minLength: 4, maxLength: 64, description: 邀请码报名时必填；更新时留空表示保留原邀请码 }
         problems: { type: array, maxItems: 26, items: { $ref: '#/components/schemas/ContestProblemInput' } }
     CloneContestRequest:
       type: object

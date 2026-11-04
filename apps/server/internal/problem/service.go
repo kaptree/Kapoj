@@ -275,6 +275,8 @@ func mapRepoErr(err error) error {
 		return httpx.ErrValidation("特判题发布前需要先上传 checker")
 	case errors.Is(err, ErrLastTestcase):
 		return httpx.ErrValidation("公开题目至少保留 1 个测试点，请先下线题目")
+	case errors.Is(err, ErrInUse):
+		return httpx.ErrValidation("题目已被比赛使用，无法删除，请先下线或从比赛中移除")
 	}
 	return err
 }

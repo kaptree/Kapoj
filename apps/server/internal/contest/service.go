@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"golang.org/x/crypto/bcrypt"
@@ -26,8 +27,16 @@ type ListQuery struct {
 
 func (q ListQuery) Normalize() (ListQuery, error) {
 	q.Keyword = strings.TrimSpace(q.Keyword)
+	if !utf8.ValidString(q.Keyword) {
+		return q, invalid("keyword 包含无效字符")
+	}
 	if utf8.RuneCountInString(q.Keyword) > 100 {
 		return q, invalid("keyword 不能超过 100 个字符")
+	}
+	for _, r := range q.Keyword {
+		if unicode.IsControl(r) {
+			return q, invalid("keyword 不能包含控制字符")
+		}
 	}
 	if q.Mode != "" && !q.Mode.Valid() {
 		return q, invalid("赛制必须是 icpc、ioi 或 oi")
@@ -49,6 +58,12 @@ func (s *Service) Create(ctx context.Context, v Viewer, in Input) (*Contest, err
 	in, err := in.Normalize()
 	if err != nil {
 		return nil, err
+	}
+	if in.RegisterType == RegisterPassword && in.Password == "" {
+		return nil, invalid("密码报名必须设置比赛密码")
+	}
+	if in.RegisterType == RegisterInvite && in.InviteCode == "" {
+		return nil, invalid("邀请码报名必须设置邀请码")
 	}
 	c := &Contest{
 		Title: in.Title, DescriptionMD: in.DescriptionMD,
@@ -116,6 +131,7 @@ func (s *Service) Detail(ctx context.Context, v Viewer, id int64) (*Detail, erro
 	if err != nil {
 		return nil, err
 	}
+	problemCount := int64(len(rows))
 	if !v.CanManage && now.Before(c.StartTime) {
 		rows = nil
 	}
@@ -135,7 +151,7 @@ func (s *Service) Detail(ctx context.Context, v Viewer, id int64) (*Detail, erro
 		return nil, err
 	}
 	return &Detail{
-		ListItem: toListItem(*c, int64(len(rows)), participants, now),
+		ListItem: toListItem(*c, problemCount, participants, now),
 		Problems: problems, Registered: registered, CanManage: v.CanManage, ServerTime: now,
 	}, nil
 }
@@ -179,7 +195,11 @@ func (s *Service) Clone(ctx context.Context, v Viewer, id int64, in Input) (*Con
 	}
 	title := strings.TrimSpace(in.Title)
 	if title == "" {
-		title = original.Title + "（副本）"
+		base := []rune(original.Title)
+		if len(base) > 96 {
+			base = base[:96]
+		}
+		title = string(base) + "（副本）"
 	}
 	if n := utf8.RuneCountInString(title); n < 1 || n > 100 {
 		return nil, invalid("比赛标题长度需为 1–100 个字符")
@@ -232,11 +252,11 @@ func (s *Service) Register(ctx context.Context, userID, id int64, password, invi
 	}
 	switch c.RegisterType {
 	case RegisterPassword:
-		if bcrypt.CompareHashAndPassword([]byte(c.PasswordHash), []byte(password)) != nil {
+		if bcrypt.CompareHashAndPassword([]byte(c.PasswordHash), []byte(strings.TrimSpace(password))) != nil {
 			return invalid("比赛密码错误")
 		}
 	case RegisterInvite:
-		if bcrypt.CompareHashAndPassword([]byte(c.InviteCodeHash), []byte(inviteCode)) != nil {
+		if bcrypt.CompareHashAndPassword([]byte(c.InviteCodeHash), []byte(strings.TrimSpace(inviteCode))) != nil {
 			return invalid("邀请码错误")
 		}
 	}

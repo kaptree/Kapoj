@@ -1,6 +1,8 @@
 package contestapi
 
 import (
+	"encoding/json"
+	"io"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -45,6 +47,36 @@ func viewer(c *gin.Context) contest.Viewer {
 	}
 }
 
+// bindContestInput distinguishes omitted required fields from empty values:
+// a missing "problems" must not silently erase the whole contest problem list.
+func bindContestInput(c *gin.Context) (contest.Input, bool) {
+	data, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		httpx.Fail(c, httpx.ErrBadRequest)
+		return contest.Input{}, false
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		httpx.Fail(c, httpx.ErrBadRequest)
+		return contest.Input{}, false
+	}
+	for _, key := range []string{
+		"title", "descriptionMd", "startTime", "endTime", "mode",
+		"isPublic", "registerType", "problems",
+	} {
+		if _, ok := raw[key]; !ok {
+			httpx.Fail(c, httpx.ErrValidation("缺少字段 "+key))
+			return contest.Input{}, false
+		}
+	}
+	var in contest.Input
+	if err := json.Unmarshal(data, &in); err != nil {
+		httpx.Fail(c, httpx.ErrBadRequest)
+		return contest.Input{}, false
+	}
+	return in, true
+}
+
 func pathID(c *gin.Context, name string) (int64, bool) {
 	id, err := strconv.ParseInt(c.Param(name), 10, 64)
 	if err != nil || id <= 0 {
@@ -84,7 +116,7 @@ func (h *handler) detail(c *gin.Context) {
 }
 
 func (h *handler) create(c *gin.Context) {
-	in, ok := httpx.BindJSON[contest.Input](c)
+	in, ok := bindContestInput(c)
 	if !ok {
 		return
 	}
@@ -106,7 +138,7 @@ func (h *handler) update(c *gin.Context) {
 	if !ok {
 		return
 	}
-	in, ok := httpx.BindJSON[contest.Input](c)
+	in, ok := bindContestInput(c)
 	if !ok {
 		return
 	}

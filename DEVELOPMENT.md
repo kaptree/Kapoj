@@ -271,12 +271,12 @@ contest_problems (
 contest_participants (
   id, contest_id, user_id, register_time, extra_info_json
 )
+-- 唯一约束：(contest_id, user_id)
 -- 实现差异（M2-A）：
 -- contests 增加 invite_code_hash（邀请码报名）；password_hash / invite_code_hash 只存 bcrypt；
 -- contest_problems 唯一约束为 uniq_contest_problems_problem、uniq_contest_problems_display；
 -- contest_participants 唯一约束为 uniq_contest_participants_user，extra_info_json 存 []；
 -- 比赛删除级联删除题目关联、报名与公告（M2-B 引入比赛提交后再调整删除策略）。
--- 唯一约束：(contest_id, user_id)
 announcements (
   id, contest_id, title, content_md, created_by, created_at
 )
