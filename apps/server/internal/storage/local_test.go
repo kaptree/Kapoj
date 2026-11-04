@@ -24,7 +24,7 @@ func readKey(t *testing.T, s Storage, key string) string {
 	t.Helper()
 	rc, err := s.Open(context.Background(), key)
 	require.NoError(t, err)
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	b, err := io.ReadAll(rc)
 	require.NoError(t, err)
 	return string(b)

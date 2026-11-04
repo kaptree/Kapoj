@@ -275,12 +275,12 @@ func (h *handler) addTestcase(c *gin.Context) {
 	if !ok {
 		return
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 	out, ok := formFile(c, "output")
 	if !ok {
 		return
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 
 	score := defaultTestcaseScore
 	if v := c.PostForm("score"); v != "" {
@@ -326,7 +326,7 @@ func (h *handler) uploadChecker(c *gin.Context) {
 	if !ok {
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if err := h.svc.UploadChecker(c.Request.Context(), id, f); err != nil {
 		httpx.Fail(c, err)
 		return
