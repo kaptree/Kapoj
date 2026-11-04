@@ -18,6 +18,10 @@ export type ProblemDetail = Schemas['ProblemDetail']
 export type ProblemStats = Schemas['Stats']
 export type Sample = Schemas['Sample']
 export type Testcase = Schemas['Testcase']
+export type SubmissionLanguage = Schemas['SubmissionLanguage']
+export type SubmissionStatus = Schemas['SubmissionStatus']
+export type CreateSubmissionRequest = Schemas['CreateSubmissionRequest']
+export type SubmissionCreated = Schemas['SubmissionCreated']
 
 export interface Page<T> {
   total: number

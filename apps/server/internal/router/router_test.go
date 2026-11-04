@@ -2,6 +2,7 @@ package router
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -22,6 +23,10 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
 
+type noopQueue struct{}
+
+func (noopQueue) Enqueue(context.Context, int64) error { return nil }
+
 func newRouter(t *testing.T) http.Handler {
 	t.Helper()
 	mr := miniredis.RunT(t)
@@ -35,7 +40,9 @@ func newRouter(t *testing.T) http.Handler {
 			JWTSecret:       strings.Repeat("s", 32),
 			AccessTokenTTL:  15 * time.Minute,
 			RefreshTokenTTL: time.Hour,
+			SubmitCooldown:  time.Second,
 		},
+		Enqueuer: noopQueue{},
 	})
 }
 

@@ -17,6 +17,8 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/problemapi"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
+	"github.com/kaptree/kapoj/apps/server/internal/submission"
+	"github.com/kaptree/kapoj/apps/server/internal/submissionapi"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
 	"github.com/kaptree/kapoj/apps/server/internal/userapi"
 )
@@ -28,10 +30,11 @@ const (
 )
 
 type Deps struct {
-	DB      *gorm.DB
-	Redis   *redis.Client
-	Storage storage.Storage
-	Config  *config.Config
+	DB       *gorm.DB
+	Redis    *redis.Client
+	Storage  storage.Storage
+	Config   *config.Config
+	Enqueuer submission.Enqueuer
 }
 
 func New(d Deps) *gin.Engine {
@@ -58,7 +61,14 @@ func New(d Deps) *gin.Engine {
 	problemJSON := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxProblemJSONBytes))
 	uploads := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxUploadBytes))
 	userapi.RegisterRoutes(api, user.NewService(users))
-	problemapi.RegisterRoutes(api, problemJSON, uploads, problem.NewService(problem.NewGormRepository(d.DB), d.Storage))
+	problemRepo := problem.NewGormRepository(d.DB)
+	problemapi.RegisterRoutes(api, problemJSON, uploads, problem.NewService(problemRepo, d.Storage))
+	submissionapi.RegisterRoutes(api, submission.NewService(
+		submission.NewGormRepository(d.DB),
+		problemRepo,
+		d.Enqueuer,
+		submission.NewRedisLimiter(d.Redis, d.Config.SubmitCooldown),
+	))
 	return r
 }
 

@@ -15,6 +15,7 @@ type Config struct {
 	JWTSecret       string
 	AccessTokenTTL  time.Duration
 	RefreshTokenTTL time.Duration
+	SubmitCooldown  time.Duration
 }
 
 const minSecretLen = 32
@@ -32,6 +33,7 @@ func Load() (*Config, error) {
 	v.SetDefault("jwt_secret", "")
 	v.SetDefault("access_token_ttl", "15m")
 	v.SetDefault("refresh_token_ttl", "168h")
+	v.SetDefault("submit_cooldown", "3s")
 
 	cfg := &Config{
 		HTTPAddr:        v.GetString("http_addr"),
@@ -41,6 +43,7 @@ func Load() (*Config, error) {
 		JWTSecret:       v.GetString("jwt_secret"),
 		AccessTokenTTL:  v.GetDuration("access_token_ttl"),
 		RefreshTokenTTL: v.GetDuration("refresh_token_ttl"),
+		SubmitCooldown:  v.GetDuration("submit_cooldown"),
 	}
 
 	if len(cfg.JWTSecret) < minSecretLen {
@@ -48,6 +51,9 @@ func Load() (*Config, error) {
 	}
 	if cfg.AccessTokenTTL <= 0 || cfg.RefreshTokenTTL <= 0 {
 		return nil, errors.New("token TTLs must be positive durations")
+	}
+	if cfg.SubmitCooldown <= 0 {
+		return nil, errors.New("KAPOJ_SUBMIT_COOLDOWN must be a positive duration")
 	}
 	return cfg, nil
 }

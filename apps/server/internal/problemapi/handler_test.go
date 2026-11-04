@@ -2,6 +2,7 @@ package problemapi_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,6 +26,10 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
 )
+
+type noopQueue struct{}
+
+func (noopQueue) Enqueue(context.Context, int64) error { return nil }
 
 type fx struct {
 	t      *testing.T
@@ -50,7 +55,9 @@ func newFx(t *testing.T) *fx {
 			JWTSecret:       strings.Repeat("s", 32),
 			AccessTokenTTL:  15 * time.Minute,
 			RefreshTokenTTL: time.Hour,
+			SubmitCooldown:  time.Second,
 		},
+		Enqueuer: noopQueue{},
 	})
 	return &fx{t: t, h: h, db: g, root: root, tokens: map[string]string{}}
 }

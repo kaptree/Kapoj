@@ -347,6 +347,26 @@ paths:
         '403': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
         '413': { $ref: '#/components/responses/Error' }
+  /submissions:
+    post:
+      summary: 提交代码（登录用户）；创建后进入 pending 并由评测服务异步处理
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateSubmissionRequest' }
+      responses:
+        '201':
+          description: 已入队
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubmissionCreatedResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '413': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
 components:
   securitySchemes:
     bearer:
@@ -617,6 +637,34 @@ components:
       required: [ids]
       properties:
         ids: { type: array, items: { type: integer, format: int64 } }
+    SubmissionLanguage:
+      type: string
+      enum: [c, cpp, python3, java, go]
+    SubmissionStatus:
+      type: string
+      enum:
+        - pending
+        - judging
+        - accepted
+        - wrong_answer
+        - time_limit_exceeded
+        - memory_limit_exceeded
+        - runtime_error
+        - compile_error
+        - system_error
+    CreateSubmissionRequest:
+      type: object
+      required: [problemId, language, code]
+      properties:
+        problemId: { type: integer, format: int64, minimum: 1 }
+        language: { $ref: '#/components/schemas/SubmissionLanguage' }
+        code: { type: string, minLength: 1, maxLength: 65536, description: 按 UTF-8 字节数不超过 64 KiB }
+    SubmissionCreated:
+      type: object
+      required: [id, status]
+      properties:
+        id: { type: integer, format: int64 }
+        status: { $ref: '#/components/schemas/SubmissionStatus' }
     Stats:
       type: object
       required: [submitCount, acceptCount, acceptRate]
@@ -675,3 +723,10 @@ components:
           required: [data]
           properties:
             data: { type: array, items: { $ref: '#/components/schemas/Testcase' } }
+    SubmissionCreatedResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/SubmissionCreated' }

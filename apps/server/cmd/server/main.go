@@ -15,6 +15,7 @@ import (
 
 	"github.com/kaptree/kapoj/apps/server/internal/config"
 	"github.com/kaptree/kapoj/apps/server/internal/db"
+	"github.com/kaptree/kapoj/apps/server/internal/judgequeue"
 	"github.com/kaptree/kapoj/apps/server/internal/router"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
 )
@@ -48,11 +49,13 @@ func run() error {
 	}
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
 	defer func() { _ = rdb.Close() }()
+	queue := judgequeue.NewClient(cfg.RedisAddr)
+	defer func() { _ = queue.Close() }()
 
 	gin.SetMode(gin.ReleaseMode)
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           router.New(router.Deps{DB: g, Redis: rdb, Storage: store, Config: cfg}),
+		Handler:           router.New(router.Deps{DB: g, Redis: rdb, Storage: store, Config: cfg, Enqueuer: queue}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

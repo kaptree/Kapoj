@@ -57,3 +57,19 @@ func TestLoadStorageDirFromEnv(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "/var/lib/kapoj", cfg.StorageDir)
 }
+
+func TestLoadSubmitCooldown(t *testing.T) {
+	t.Setenv("KAPOJ_JWT_SECRET", strings.Repeat("a", 32))
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, 3*time.Second, cfg.SubmitCooldown)
+
+	t.Setenv("KAPOJ_SUBMIT_COOLDOWN", "5s")
+	cfg, err = Load()
+	require.NoError(t, err)
+	assert.Equal(t, 5*time.Second, cfg.SubmitCooldown)
+
+	t.Setenv("KAPOJ_SUBMIT_COOLDOWN", "0s")
+	_, err = Load()
+	assert.Error(t, err)
+}

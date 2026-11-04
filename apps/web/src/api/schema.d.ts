@@ -791,6 +791,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/submissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 提交代码（登录用户）；创建后进入 pending 并由评测服务异步处理 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreateSubmissionRequest"];
+                };
+            };
+            responses: {
+                /** @description 已入队 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SubmissionCreatedResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+                413: components["responses"]["Error"];
+                429: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -994,6 +1039,22 @@ export interface components {
         ReorderRequest: {
             ids: number[];
         };
+        /** @enum {string} */
+        SubmissionLanguage: "c" | "cpp" | "python3" | "java" | "go";
+        /** @enum {string} */
+        SubmissionStatus: "pending" | "judging" | "accepted" | "wrong_answer" | "time_limit_exceeded" | "memory_limit_exceeded" | "runtime_error" | "compile_error" | "system_error";
+        CreateSubmissionRequest: {
+            /** Format: int64 */
+            problemId: number;
+            language: components["schemas"]["SubmissionLanguage"];
+            /** @description 按 UTF-8 字节数不超过 64 KiB */
+            code: string;
+        };
+        SubmissionCreated: {
+            /** Format: int64 */
+            id: number;
+            status: components["schemas"]["SubmissionStatus"];
+        };
         Stats: {
             submitCount: number;
             acceptCount: number;
@@ -1023,6 +1084,9 @@ export interface components {
         };
         TestcaseListResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["Testcase"][];
+        };
+        SubmissionCreatedResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["SubmissionCreated"];
         };
     };
     responses: {
