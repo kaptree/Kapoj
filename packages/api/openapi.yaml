@@ -627,6 +627,208 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/SubmissionDetailResponse' }
         '404': { $ref: '#/components/responses/Error' }
+  /achievements:
+    get:
+      summary: 成就列表；游客可访问，登录用户含解锁状态与条件进度
+      description: |
+        游客只看到上架成就；登录用户读取时会先补算解锁与奖励，并额外看到自己已解锁但已下线的成就。
+        includeInactive=true 仅 super_admin 可用，否则返回 40300。
+      security: [{}, { bearer: [] }]
+      parameters:
+        - { name: includeInactive, in: query, schema: { type: boolean, default: false }, description: 仅 super_admin 可用；true 时包含已下线成就 }
+      responses:
+        '200':
+          description: 成就列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AchievementListResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+    post:
+      summary: 创建成就（仅超级管理员）
+      description: code 必须唯一且符合格式；条件配置非法、奖励金币为负或填写 rewardBadgeId 时返回 40001。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AchievementInput' }
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AchievementResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /achievements/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    put:
+      summary: 更新成就（仅超级管理员；整体替换，code 创建后不可修改）
+      description: code 留空表示保持原值；尝试修改 code、条件配置非法或填写 rewardBadgeId 时返回 40001。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AchievementInput' }
+      responses:
+        '200':
+          description: 更新后的成就；不含当前用户的解锁信息与进度
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AchievementResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+    delete:
+      summary: 软删除成就（仅超级管理员；保留已解锁记录与金币流水）
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 已下线
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /users/me/achievements:
+    get:
+      summary: 我的成就（登录；含已解锁与未解锁）
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 当前用户的成就列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AchievementListResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+  /tasks:
+    get:
+      summary: 任务大厅；游客可访问，登录用户含领取状态与进度
+      description: |
+        游客只看到上架且未结束的任务；登录用户读取时会先补算完成与奖励，
+        并额外看到自己领取过的任务（包括已下线、已结束与已完成）。
+        includeInactive=true 仅 super_admin 可用，否则返回 40300。
+      security: [{}, { bearer: [] }]
+      parameters:
+        - { name: includeInactive, in: query, schema: { type: boolean, default: false }, description: 仅 super_admin 可用；true 时包含已下线与已结束的任务 }
+      responses:
+        '200':
+          description: 任务列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskListResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+    post:
+      summary: 创建任务（仅超级管理员）
+      description: 题目必须为 1–20 个不重复的公开题目；时间非法、奖励为负或超过 1000000 时返回 40001。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaskInput' }
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /tasks/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    put:
+      summary: 更新任务（仅超级管理员；整体替换）
+      description: 已有领取记录后 problemIds 与 rewardCoins 被冻结，修改返回 40001；标题、描述、时间与上下架仍可修改。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaskInput' }
+      responses:
+        '200':
+          description: 更新后的任务；不含当前用户的领取信息
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+    delete:
+      summary: 软删除任务（仅超级管理员；已领取用户仍可在截止前完成）
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 已下线
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /tasks/{id}/claim:
+    post:
+      summary: 领取任务（登录）
+      description: |
+        任务必须上架且满足 start <= now < end；在领取窗口内重复领取返回当前记录（幂等）。
+        任务未开始、已截止、已下线或已完成返回 40001；任务不存在返回 40400。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 领取后的任务；status 为 claimed，completed 时不能再次领取
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /coins/transactions:
+    get:
+      summary: 我的金币流水（登录；分页，含当前余额）
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: 金币流水；按 created_at 倒序
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CoinTransactionPageResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+  /admin/users/{id}/coins:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    post:
+      summary: 管理员调整金币（仅超级管理员；正负均可，附备注）
+      description: amount 不能为 0，note 为 1–200 字符；调整后余额不能为负。参数非法或余额不足返回 40001，用户不存在返回 40400。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminCoinAdjustInput' }
+      responses:
+        '200':
+          description: 调整成功，返回调整后的余额
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminCoinAdjustResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
 components:
   securitySchemes:
     bearer:
@@ -1279,3 +1481,234 @@ components:
           required: [data]
           properties:
             data: { $ref: '#/components/schemas/SubmissionDetail' }
+    CoinType:
+      type: string
+      description: 金币流水类型；earn 为入账、spend 为消费、admin_adjust 为管理员调整。
+      enum: [earn, spend, admin_adjust]
+    CoinTransactionItem:
+      type: object
+      required: [id, amount, type, reason, refType, refId, note, createdAt]
+      properties:
+        id: { type: integer, format: int64 }
+        amount: { type: integer, format: int64, description: 正数为入账，负数为消费或扣减 }
+        type: { $ref: '#/components/schemas/CoinType' }
+        reason:
+          type: string
+          description: 固定值 achievement、task、admin_adjust；M3-B 起增加 badge_purchase、title_purchase
+        refType:
+          type: string
+          description: achievement 或 task；管理员调整时为空字符串
+        refId:
+          type: integer
+          format: int64
+          description: 成就或任务 id；管理员调整时为 0
+        note: { type: string, maxLength: 200, description: 管理员调整备注；自动奖励为空字符串 }
+        createdAt: { type: string, format: date-time }
+    CoinTransactionPage:
+      type: object
+      required: [balance, total, items]
+      properties:
+        balance: { type: integer, format: int64, description: 当前金币余额，以服务端为准 }
+        total: { type: integer, format: int64, description: 流水总条数 }
+        items: { type: array, items: { $ref: '#/components/schemas/CoinTransactionItem' } }
+    AchievementConditionType:
+      type: string
+      description: 成就条件类型；all_of 组合 2–8 个非 all_of 的子条件，不允许嵌套。
+      enum: [ac_count, contest_count, login_streak, created_contest, all_of]
+    AchievementCondition:
+      type: object
+      required: [type, threshold]
+      description: all_of 中的子条件；type 不能为 all_of。
+      properties:
+        type:
+          allOf:
+            - $ref: '#/components/schemas/AchievementConditionType'
+          description: 不能为 all_of，避免嵌套。
+        threshold: { type: integer, format: int64, minimum: 1 }
+    AchievementConditionConfig:
+      type: object
+      description: 单条件提交 threshold；all_of 提交 conditions。响应只返回实际使用的一种字段。
+      properties:
+        threshold: { type: integer, format: int64, minimum: 1, description: 单条件阈值，必须为正整数 }
+        conditions:
+          type: array
+          minItems: 2
+          maxItems: 8
+          description: all_of 的子条件列表
+          items: { $ref: '#/components/schemas/AchievementCondition' }
+    AchievementConditionProgress:
+      type: object
+      required: [type, current, target, done]
+      properties:
+        type: { $ref: '#/components/schemas/AchievementConditionType' }
+        current: { type: integer, format: int64, description: 当前值；all_of 会拆成逐项进度 }
+        target: { type: integer, format: int64 }
+        done: { type: boolean }
+    AchievementItem:
+      type: object
+      required:
+        - id
+        - code
+        - name
+        - description
+        - iconUrl
+        - conditionType
+        - conditionConfig
+        - rewardCoins
+        - rewardBadgeId
+        - sortOrder
+        - isActive
+        - unlocked
+        - unlockedAt
+        - progress
+      properties:
+        id: { type: integer, format: int64 }
+        code: { type: string, pattern: '^[a-z0-9][a-z0-9_-]{1,63}$' }
+        name: { type: string }
+        description: { type: string }
+        iconUrl: { type: string }
+        conditionType: { $ref: '#/components/schemas/AchievementConditionType' }
+        conditionConfig: { $ref: '#/components/schemas/AchievementConditionConfig' }
+        rewardCoins: { type: integer, format: int64 }
+        rewardBadgeId:
+          type: integer
+          format: int64
+          nullable: true
+          description: M3-A 恒为 null；徽章奖励在 M3-B 开放
+        sortOrder: { type: integer }
+        isActive: { type: boolean, description: false 表示已下线（软删除） }
+        unlocked: { type: boolean, description: 当前用户是否已解锁；游客恒为 false }
+        unlockedAt: { type: string, format: date-time, nullable: true, description: 未解锁时为 null }
+        progress: { type: array, items: { $ref: '#/components/schemas/AchievementConditionProgress' } }
+    AchievementInput:
+      type: object
+      description: 创建时 code 必填；更新为整体替换，code 留空表示保持原值且不可修改。
+      required: [name, conditionType, conditionConfig]
+      properties:
+        code:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9_-]{1,63}$'
+          description: 创建时必填；创建后不可修改
+        name: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, maxLength: 500 }
+        iconUrl: { type: string, maxLength: 512 }
+        conditionType: { $ref: '#/components/schemas/AchievementConditionType' }
+        conditionConfig: { $ref: '#/components/schemas/AchievementConditionConfig' }
+        rewardCoins: { type: integer, format: int64, minimum: 0 }
+        rewardBadgeId:
+          type: integer
+          format: int64
+          nullable: true
+          description: M3-A 必须为空；非 null 返回 40001
+        sortOrder: { type: integer }
+        isActive: { type: boolean, description: 创建时缺省为 true；更新时缺省保持原值 }
+    TaskStatus:
+      type: string
+      description: |
+        任务对当前用户的展示状态：upcoming 未开始、active 可领取、claimed 已领取进行中、
+        completed 已完成、expired 已领取但已截止、ended 未领取且已结束、inactive 已下线。
+        expired 只在读取时计算，不写入数据库。
+      enum: [upcoming, active, claimed, completed, expired, ended, inactive]
+    TaskItem:
+      type: object
+      required:
+        - id
+        - title
+        - descriptionMd
+        - problemIds
+        - rewardCoins
+        - startTime
+        - endTime
+        - isActive
+        - status
+        - claimedAt
+        - completedAt
+        - progress
+        - problemCount
+      properties:
+        id: { type: integer, format: int64 }
+        title: { type: string }
+        descriptionMd: { type: string }
+        problemIds: { type: array, items: { type: integer, format: int64 } }
+        rewardCoins: { type: integer, format: int64 }
+        startTime: { type: string, format: date-time }
+        endTime: { type: string, format: date-time }
+        isActive: { type: boolean, description: false 表示已下线（软删除） }
+        status: { $ref: '#/components/schemas/TaskStatus' }
+        claimedAt: { type: string, format: date-time, nullable: true }
+        completedAt: { type: string, format: date-time, nullable: true }
+        progress: { type: integer, format: int64, description: 已领取后、截止前去重 AC 的题目数 }
+        problemCount: { type: integer, description: 任务题目总数 }
+    TaskInput:
+      type: object
+      description: 创建与更新均为整体替换；已有领取记录后 problemIds 与 rewardCoins 被冻结，修改返回 40001。
+      required: [title, descriptionMd, problemIds, rewardCoins, startTime, endTime]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 100 }
+        descriptionMd: { type: string, maxLength: 50000 }
+        problemIds:
+          type: array
+          minItems: 1
+          maxItems: 20
+          description: 不重复的公开题目 id
+          items: { type: integer, format: int64, minimum: 1 }
+        rewardCoins: { type: integer, format: int64, minimum: 0, maximum: 1000000 }
+        startTime: { type: string, format: date-time }
+        endTime: { type: string, format: date-time, description: 必须晚于 startTime；now >= endTime 后不能领取 }
+        isActive: { type: boolean, description: 创建时缺省为 true；更新时缺省保持原值 }
+    AdminCoinAdjustInput:
+      type: object
+      required: [amount, note]
+      properties:
+        amount: { type: integer, format: int64, description: 正数增加、负数扣减；不能为 0，调整后余额不能为负 }
+        note: { type: string, minLength: 1, maxLength: 200, description: 调整备注，写入流水 note }
+    AchievementListResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items: { $ref: '#/components/schemas/AchievementItem' }
+    AchievementResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/AchievementItem' }
+    TaskListResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items: { $ref: '#/components/schemas/TaskItem' }
+    TaskResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/TaskItem' }
+    CoinTransactionPageResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/CoinTransactionPage' }
+    AdminCoinAdjustResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              required: [balance]
+              properties:
+                balance: { type: integer, format: int64, description: 调整后的金币余额 }

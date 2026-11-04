@@ -1446,6 +1446,480 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/achievements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 成就列表；游客可访问，登录用户含解锁状态与条件进度
+         * @description 游客只看到上架成就；登录用户读取时会先补算解锁与奖励，并额外看到自己已解锁但已下线的成就。
+         *     includeInactive=true 仅 super_admin 可用，否则返回 40300。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 仅 super_admin 可用；true 时包含已下线成就 */
+                    includeInactive?: boolean;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成就列表 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AchievementListResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        /**
+         * 创建成就（仅超级管理员）
+         * @description code 必须唯一且符合格式；条件配置非法、奖励金币为负或填写 rewardBadgeId 时返回 40001。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AchievementInput"];
+                };
+            };
+            responses: {
+                /** @description 创建成功 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AchievementResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/achievements/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 更新成就（仅超级管理员；整体替换，code 创建后不可修改）
+         * @description code 留空表示保持原值；尝试修改 code、条件配置非法或填写 rewardBadgeId 时返回 40001。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AchievementInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的成就；不含当前用户的解锁信息与进度 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AchievementResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        /** 软删除成就（仅超级管理员；保留已解锁记录与金币流水） */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已下线 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/me/achievements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 我的成就（登录；含已解锁与未解锁） */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 当前用户的成就列表 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AchievementListResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 任务大厅；游客可访问，登录用户含领取状态与进度
+         * @description 游客只看到上架且未结束的任务；登录用户读取时会先补算完成与奖励，
+         *     并额外看到自己领取过的任务（包括已下线、已结束与已完成）。
+         *     includeInactive=true 仅 super_admin 可用，否则返回 40300。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 仅 super_admin 可用；true 时包含已下线与已结束的任务 */
+                    includeInactive?: boolean;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 任务列表 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskListResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        /**
+         * 创建任务（仅超级管理员）
+         * @description 题目必须为 1–20 个不重复的公开题目；时间非法、奖励为负或超过 1000000 时返回 40001。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["TaskInput"];
+                };
+            };
+            responses: {
+                /** @description 创建成功 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tasks/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 更新任务（仅超级管理员；整体替换）
+         * @description 已有领取记录后 problemIds 与 rewardCoins 被冻结，修改返回 40001；标题、描述、时间与上下架仍可修改。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["TaskInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的任务；不含当前用户的领取信息 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        /** 软删除任务（仅超级管理员；已领取用户仍可在截止前完成） */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已下线 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tasks/{id}/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 领取任务（登录）
+         * @description 任务必须上架且满足 start <= now < end；在领取窗口内重复领取返回当前记录（幂等）。
+         *     任务未开始、已截止、已下线或已完成返回 40001；任务不存在返回 40400。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 领取后的任务；status 为 claimed，completed 时不能再次领取 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/coins/transactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 我的金币流水（登录；分页，含当前余额） */
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    page_size?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 金币流水；按 created_at 倒序 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CoinTransactionPageResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{id}/coins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 管理员调整金币（仅超级管理员；正负均可，附备注）
+         * @description amount 不能为 0，note 为 1–200 字符；调整后余额不能为负。参数非法或余额不足返回 40001，用户不存在返回 40400。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AdminCoinAdjustInput"];
+                };
+            };
+            responses: {
+                /** @description 调整成功，返回调整后的余额 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminCoinAdjustResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1918,6 +2392,213 @@ export interface components {
         };
         SubmissionDetailResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["SubmissionDetail"];
+        };
+        /**
+         * @description 金币流水类型；earn 为入账、spend 为消费、admin_adjust 为管理员调整。
+         * @enum {string}
+         */
+        CoinType: "earn" | "spend" | "admin_adjust";
+        CoinTransactionItem: {
+            /** Format: int64 */
+            id: number;
+            /**
+             * Format: int64
+             * @description 正数为入账，负数为消费或扣减
+             */
+            amount: number;
+            type: components["schemas"]["CoinType"];
+            /** @description 固定值 achievement、task、admin_adjust；M3-B 起增加 badge_purchase、title_purchase */
+            reason: string;
+            /** @description achievement 或 task；管理员调整时为空字符串 */
+            refType: string;
+            /**
+             * Format: int64
+             * @description 成就或任务 id；管理员调整时为 0
+             */
+            refId: number;
+            /** @description 管理员调整备注；自动奖励为空字符串 */
+            note: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        CoinTransactionPage: {
+            /**
+             * Format: int64
+             * @description 当前金币余额，以服务端为准
+             */
+            balance: number;
+            /**
+             * Format: int64
+             * @description 流水总条数
+             */
+            total: number;
+            items: components["schemas"]["CoinTransactionItem"][];
+        };
+        /**
+         * @description 成就条件类型；all_of 组合 2–8 个非 all_of 的子条件，不允许嵌套。
+         * @enum {string}
+         */
+        AchievementConditionType: "ac_count" | "contest_count" | "login_streak" | "created_contest" | "all_of";
+        /** @description all_of 中的子条件；type 不能为 all_of。 */
+        AchievementCondition: {
+            /** @description 不能为 all_of，避免嵌套。 */
+            type: components["schemas"]["AchievementConditionType"];
+            /** Format: int64 */
+            threshold: number;
+        };
+        /** @description 单条件提交 threshold；all_of 提交 conditions。响应只返回实际使用的一种字段。 */
+        AchievementConditionConfig: {
+            /**
+             * Format: int64
+             * @description 单条件阈值，必须为正整数
+             */
+            threshold?: number;
+            /** @description all_of 的子条件列表 */
+            conditions?: components["schemas"]["AchievementCondition"][];
+        };
+        AchievementConditionProgress: {
+            type: components["schemas"]["AchievementConditionType"];
+            /**
+             * Format: int64
+             * @description 当前值；all_of 会拆成逐项进度
+             */
+            current: number;
+            /** Format: int64 */
+            target: number;
+            done: boolean;
+        };
+        AchievementItem: {
+            /** Format: int64 */
+            id: number;
+            code: string;
+            name: string;
+            description: string;
+            iconUrl: string;
+            conditionType: components["schemas"]["AchievementConditionType"];
+            conditionConfig: components["schemas"]["AchievementConditionConfig"];
+            /** Format: int64 */
+            rewardCoins: number;
+            /**
+             * Format: int64
+             * @description M3-A 恒为 null；徽章奖励在 M3-B 开放
+             */
+            rewardBadgeId: number | null;
+            sortOrder: number;
+            /** @description false 表示已下线（软删除） */
+            isActive: boolean;
+            /** @description 当前用户是否已解锁；游客恒为 false */
+            unlocked: boolean;
+            /**
+             * Format: date-time
+             * @description 未解锁时为 null
+             */
+            unlockedAt: string | null;
+            progress: components["schemas"]["AchievementConditionProgress"][];
+        };
+        /** @description 创建时 code 必填；更新为整体替换，code 留空表示保持原值且不可修改。 */
+        AchievementInput: {
+            /** @description 创建时必填；创建后不可修改 */
+            code?: string;
+            name: string;
+            description?: string;
+            iconUrl?: string;
+            conditionType: components["schemas"]["AchievementConditionType"];
+            conditionConfig: components["schemas"]["AchievementConditionConfig"];
+            /** Format: int64 */
+            rewardCoins?: number;
+            /**
+             * Format: int64
+             * @description M3-A 必须为空；非 null 返回 40001
+             */
+            rewardBadgeId?: number | null;
+            sortOrder?: number;
+            /** @description 创建时缺省为 true；更新时缺省保持原值 */
+            isActive?: boolean;
+        };
+        /**
+         * @description 任务对当前用户的展示状态：upcoming 未开始、active 可领取、claimed 已领取进行中、
+         *     completed 已完成、expired 已领取但已截止、ended 未领取且已结束、inactive 已下线。
+         *     expired 只在读取时计算，不写入数据库。
+         * @enum {string}
+         */
+        TaskStatus: "upcoming" | "active" | "claimed" | "completed" | "expired" | "ended" | "inactive";
+        TaskItem: {
+            /** Format: int64 */
+            id: number;
+            title: string;
+            descriptionMd: string;
+            problemIds: number[];
+            /** Format: int64 */
+            rewardCoins: number;
+            /** Format: date-time */
+            startTime: string;
+            /** Format: date-time */
+            endTime: string;
+            /** @description false 表示已下线（软删除） */
+            isActive: boolean;
+            status: components["schemas"]["TaskStatus"];
+            /** Format: date-time */
+            claimedAt: string | null;
+            /** Format: date-time */
+            completedAt: string | null;
+            /**
+             * Format: int64
+             * @description 已领取后、截止前去重 AC 的题目数
+             */
+            progress: number;
+            /** @description 任务题目总数 */
+            problemCount: number;
+        };
+        /** @description 创建与更新均为整体替换；已有领取记录后 problemIds 与 rewardCoins 被冻结，修改返回 40001。 */
+        TaskInput: {
+            title: string;
+            descriptionMd: string;
+            /** @description 不重复的公开题目 id */
+            problemIds: number[];
+            /** Format: int64 */
+            rewardCoins: number;
+            /** Format: date-time */
+            startTime: string;
+            /**
+             * Format: date-time
+             * @description 必须晚于 startTime；now >= endTime 后不能领取
+             */
+            endTime: string;
+            /** @description 创建时缺省为 true；更新时缺省保持原值 */
+            isActive?: boolean;
+        };
+        AdminCoinAdjustInput: {
+            /**
+             * Format: int64
+             * @description 正数增加、负数扣减；不能为 0，调整后余额不能为负
+             */
+            amount: number;
+            /** @description 调整备注，写入流水 note */
+            note: string;
+        };
+        AchievementListResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AchievementItem"][];
+        };
+        AchievementResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AchievementItem"];
+        };
+        TaskListResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["TaskItem"][];
+        };
+        TaskResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["TaskItem"];
+        };
+        CoinTransactionPageResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["CoinTransactionPage"];
+        };
+        AdminCoinAdjustResponse: components["schemas"]["Envelope"] & {
+            data: {
+                /**
+                 * Format: int64
+                 * @description 调整后的金币余额
+                 */
+                balance: number;
+            };
         };
     };
     responses: {

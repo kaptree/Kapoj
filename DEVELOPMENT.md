@@ -3,7 +3,7 @@
 > 本文档基于 `plan.md` 细化，是 kapOJ（Kap Online Judge）平台的详细开发规格说明书。
 > 目标：**打造出最有趣味的 Online Judge 平台**。
 > 文档包含完整的架构设计、数据库设计、模块需求，并为每个模块提供了可直接交给 Codex 的**开发提示词（Prompt）**。
-> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)。当前进度：**M1 已完成**。
+> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)。当前进度：**M3-A 已完成**（金币、成就、任务后端）；徽章、称号、公开身份与前端页面待 M3-B/C。
 
 ---
 
@@ -330,6 +330,15 @@ coin_transactions (
 -- 唯一约束：(user_id, reason, ref_type, ref_id)，防止同一奖励被重复结算
 ```
 
+**实现状态（M3-A）**：金币、事件、成就、任务后端已实现；徽章、称号、公开身份与前端页面待 M3-B/C。
+
+- 已建表：`coin_transactions`、`achievements`、`user_achievements`、`tasks`、`user_task_records`、`user_login_days`；金币余额沿用 `users.coins`（`CHECK coins >= 0`）。
+- `coin_transactions` 增加 `note` 列（管理员调整备注，1–200 字）；唯一约束仍为 `(user_id, reason, ref_type, ref_id)`，仅 `ref_type <> ''` 时生效，管理员调整不参与幂等去重。
+- `achievements.reward_badge_id` 列已建好但 M3-A 要求为空；徽章奖励在 M3-B 开放。
+- 软删除统一为 `is_active=false`，保留用户已获得的记录与金币流水。
+- 事件队列为 Asynq `game`，任务类型 `game:event`，最多重试 5 次、超时 30 秒；Web 端 worker 并发由 `KAPOJ_GAME_CONCURRENCY` 配置（1–16，默认 2）。judge 投递失败只记录警告，不影响评测结果。
+- 实现文件：`apps/server/internal/{gamification,gamificationapi,gamequeue}`、`apps/judge/internal/{gamequeue,pipeline}`；`auth`、`contestapi` 通过钩子记录登录日与报名事件。
+
 ### 3.6 排行榜与交互
 
 ```sql
@@ -432,10 +441,11 @@ user_ai_configs (
 - access token 为 HS256 JWT，有效期 15 分钟；refresh token 为随机串，有效期 7 天，每次刷新都会轮换，旧令牌立即失效。Redis 中只保存其 SHA-256。
 - 登录尝试限制：每个用户 5 分钟内最多 10 次。每次尝试在校验密码前原子计数，并发请求无法绕过；用户名和邮箱登录共用同一个计数。超过后即使密码正确也返回 42901，登录成功后清零。账号不存在与密码错误返回同一个错误。
 - `/auth/*` 接口不校验 Authorization 头，由请求体中的 refresh token 识别用户，因此 access token 过期后仍可登出和刷新。
+- 注册与登录成功后触发游戏化登录钩子（M3-A）：按服务端本地日期记录登录日，并投递 `user.login` 事件用于连续登录成就。钩子失败只记录警告，不影响注册或登录响应。
 - 前端在多个标签页之间同步登录状态；某个标签页轮换令牌后，其他标签页会改用新令牌，而不是被登出。
 - 修改资料只写入被修改的字段，不会覆盖同时发生的封禁、角色或金币变动。
 - 被封禁用户无法登录或刷新令牌；已签发的 access token 在过期前（最长 15 分钟）仍然有效。
-- `GET /users/:id/profile` 不返回邮箱和角色；`equippedBadges`、`equippedTitle` 在 M3 前固定为空数组和 null。
+- `GET /users/:id/profile` 不返回邮箱和角色；`equippedBadges`、`equippedTitle` 在 M3-B 公开身份落地前固定为空数组和 null。
 - `GET /admin/users` 为新增接口，用于超级管理员的用户管理，也用于验收「管理员接口对普通用户返回 403」。
 - 头像上传依赖 MinIO，**未实现**，安排在 M5-8；目前只能填写头像链接。修改密码接口**未实现**。
 
@@ -719,6 +729,8 @@ user_ai_configs (
 
 **实现状态（M2-B）**：比赛进行中，其他用户的比赛提交在列表与详情中隐藏代码、错误信息、测试点详情、耗时、内存与得分，只保留状态和语言；本人、管理员和比赛结束后完整可见。OI 赛时非管理员榜单只返回本人行。
 
+**后续展示（M3-B/C）**：提交者装备的徽章与称号将显示在测评记录用户列，属于公开身份展示；M3-B 落地前接口不返回装备信息，前端不展示，不能视为已实现。
+
 **Codex 提示词（测评记录）**
 
 ```text
@@ -763,6 +775,15 @@ user_ai_configs (
 - 条件可配置：`condition_type` + `condition_config_json` 支持计数类、阈值类、组合类。
 - 解锁记录与奖励发放在同一数据库事务中完成，依靠 `user_achievements(user_id, achievement_id)` 唯一约束防止重复发放。
 
+**实现状态（M3-A，后端已完成）**
+
+- 接口：`GET /achievements`（公开，可选登录，登录时含解锁状态与逐条件进度；`includeInactive=true` 仅超级管理员）、`GET /users/me/achievements`（登录）、`POST /achievements`、`PUT /achievements/:id`、`DELETE /achievements/:id`（超级管理员）。
+- 条件类型：`ac_count`（去重 AC 题目数）、`contest_count`（报名比赛数）、`login_streak`（截至今天的连续登录天数）、`created_contest`（创建的比赛数）、`all_of`（2–8 个非 `all_of` 子条件，不允许嵌套）；阈值必须为正整数，非法配置返回 40001。
+- 事件：judge 在提交 AC 后投递 `submission.accepted`，注册/登录后投递 `user.login`，比赛报名后投递 `contest.join`；队列 `game`、任务类型 `game:event`，最多重试 5 次。worker 与读取接口都调用同一个 `EvaluateUser`，重复/丢失事件最终收敛。
+- 奖励：金币写入 `coin_transactions`（`reason=achievement`、`ref_type=achievement`），与解锁记录同一事务，唯一约束保证只发一次。M3-A 不支持徽章奖励，`rewardBadgeId` 非空返回 40001；徽章奖励在 M3-B 开放，且不占用商城库存。
+- 可见性：已解锁成就下线后仍对本人可见；未解锁且已下线的成就仅超级管理员通过 `includeInactive=true` 看到。
+- 前端成就页属于 M3-C，尚未实现。
+
 **Codex 提示词（成就）**
 
 ```text
@@ -801,6 +822,16 @@ user_ai_configs (
 - **领取**：任务在有效期内，且用户尚未领取过该任务。
 - **完成**：用户对任务中的全部题目都获得 AC，即视为完成。完成后不可再次领取。
 - **结算**：完成由 AC 事件自动触发并发放金币，无需用户手动提交。同一任务只结算一次（依靠唯一约束，见 2.4 幂等约定）。
+
+**实现状态（M3-A，后端已完成）**
+
+- 接口：`GET /tasks`（公开，可选登录；`includeInactive=true` 仅超级管理员）、`POST /tasks`、`PUT /tasks/:id`、`DELETE /tasks/:id`（超级管理员）、`POST /tasks/:id/claim`（登录）。
+- 题目为 1–20 个不重复的公开题目；奖励金币 0–1000000；`start_time < end_time`，领取要求 `start <= now < end`。
+- 在领取窗口内重复领取返回当前记录（幂等）；任务已完成、未开始、已截止或已下线返回 40001；任务不存在返回 40400。
+- 完成判定只统计 `claimed_at <= judged_at < end_time` 的去重 AC；领取前已 AC 的题目不计入。事件丢失时，读取任务大厅或登录/AC 事件会补算，`user_task_records` 行锁保证 `claimed → completed` 只发生一次，金币只发一次。
+- 已有任一领取记录后冻结 `problem_ids_json` 与 `reward_coins`，只允许修改标题、描述、时间与上下架；软删除后已领取用户仍可在截止前完成并领奖。
+- 展示状态：`upcoming`、`active`、`claimed`、`completed`、`expired`、`ended`、`inactive`；`expired` 只在读取时按时间计算，不写入数据库。
+- 前端任务大厅属于 M3-C，尚未实现。
 
 **Codex 提示词（任务）**
 
@@ -1195,11 +1226,13 @@ problem/
 | M0     | 项目初始化、认证、基础布局             | 可登录的前后端骨架 | ✅   |
 | M1     | 题库/题目 + 沙盒评测 + 测评记录        | 可提交并判题的 MVP | ✅   |
 | M2     | 比赛系统（三种赛制 + 榜单 + 公告）     | 可办比赛的平台     | ✅   |
-| M3     | 游戏化模块（成就/任务/徽章/称号/金币） | 有趣味的成长体系   | ⬜   |
+| M3     | 游戏化模块（成就/任务/徽章/称号/金币） | 有趣味的成长体系   | 🚧   |
 | M4     | 排行榜 + Rating + 学习路线             | 社区与成长闭环     | ⬜   |
 | M5     | AI 辅助 + 题目导入 + 证书认证          | 完整版 kapOJ       | ⬜   |
 
 状态图例：✅ 已完成　🚧 进行中　⬜ 未开始。只有模块的验收标准全部满足后才标记 ✅。
+
+M3 进度：M3-A（金币、事件、成就、任务后端）已完成；M3-B（徽章、称号、公开身份）与 M3-C（前端页面与验收）待办，因此 M3 仍为 🚧。
 
 ---
 

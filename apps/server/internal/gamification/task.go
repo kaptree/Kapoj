@@ -86,7 +86,8 @@ func (s *Service) ListTasks(ctx context.Context, v Viewer, includeInactive bool)
 	items := make([]TaskItem, 0, len(tasks))
 	for _, task := range tasks {
 		record, claimed := records[task.ID]
-		if !includeInactive && !claimed && !(task.IsActive && now.Before(task.EndTime)) {
+		openToGuests := task.IsActive && now.Before(task.EndTime)
+		if !includeInactive && !claimed && !openToGuests {
 			continue
 		}
 		var item TaskItem

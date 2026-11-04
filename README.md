@@ -2,7 +2,7 @@
 
 打造最有趣味的 Online Judge 平台。规格见 [`DEVELOPMENT.md`](DEVELOPMENT.md)，进度见 [`docs/任务清单.md`](docs/任务清单.md) 与 [`docs/开发日志.md`](docs/开发日志.md)。
 
-当前进度：**M2 已完成**（比赛列表/详情/倒计时/报名/公告/实时榜单/管理，以及比赛提交与赛时保护）。
+当前进度：**M3-A 已完成**（M0–M2 已完成；金币、事件、成就、任务后端已实现；徽章、称号与前端页面待 M3-B/C）。
 
 ## 目录结构
 
@@ -46,7 +46,7 @@ docs            任务清单、开发日志、实施计划
    cd apps/server && go run ./cmd/server
    ```
 
-   访问 `http://localhost:8080/health`，返回 `"status":"ok"` 即正常。
+   访问 `http://localhost:8080/health`，返回 `"status":"ok"` 即正常。后端同时运行游戏化事件 worker（Asynq 队列 `game`），并发可用 `KAPOJ_GAME_CONCURRENCY` 调整（1–16，默认 2）。
 
 4. 启动评测服务（需要 Docker）：
 
@@ -76,6 +76,14 @@ docs            任务清单、开发日志、实施计划
 ```bash
 KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/docker-compose.yml --profile app up -d --build
 ```
+
+## 游戏化后端（M3-A）
+
+- `GET /api/coins/transactions`：登录用户查看金币余额与流水（分页）。
+- `GET /api/achievements`、`GET /api/users/me/achievements`：成就列表与我的成就；登录读取会自动补算解锁并发奖，接口仍是幂等的。
+- `GET /api/tasks`、`POST /api/tasks/:id/claim`：任务大厅与领取；领取后 AC 全部题目会自动完成并发金币。
+- 超级管理员可管理成就/任务，并用 `POST /api/admin/users/:id/coins` 调整金币（需填写备注）。
+- 徽章、称号、公开身份与成就/任务前端页面尚未实现，属于 M3-B/C；当前不要按已上线页面的方式使用这些功能。
 
 ## 测试与检查
 
