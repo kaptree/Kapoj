@@ -96,9 +96,9 @@ async function load() {
 
 function queryFor(nextPage: number): Record<string, string> {
   const q: Record<string, string> = {}
-  if (filters.problemId !== undefined) q.problemId = String(filters.problemId)
-  if (filters.contestId !== undefined) q.contestId = String(filters.contestId)
-  if (filters.userId !== undefined) q.userId = String(filters.userId)
+  if (filters.problemId != null) q.problemId = String(filters.problemId)
+  if (filters.contestId != null) q.contestId = String(filters.contestId)
+  if (filters.userId != null) q.userId = String(filters.userId)
   if (filters.language) q.language = filters.language
   if (filters.status) q.status = filters.status
   if (filters.nickname.trim()) q.nickname = filters.nickname.trim()

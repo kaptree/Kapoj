@@ -2,14 +2,14 @@
 
 打造最有趣味的 Online Judge 平台。规格见 [`DEVELOPMENT.md`](DEVELOPMENT.md)，进度见 [`docs/任务清单.md`](docs/任务清单.md) 与 [`docs/开发日志.md`](docs/开发日志.md)。
 
-当前进度：**M1-B 已完成**（题库、测试数据、提交接口、Asynq 队列、Docker 沙盒评测）。测评记录列表、SSE 与前端提交页（M1-C）为下一步。
+当前进度：**M1 已完成**（题库、测试数据、提交接口、Asynq 队列、Docker 沙盒评测、测评记录/SSE、Monaco 提交页、AC 后题解）。
 
 ## 目录结构
 
 ```
 apps/server     Go 后端（Gin + GORM）
 apps/judge      独立评测进程（Asynq + Docker 沙盒）
-apps/web        Vue 3 前端
+apps/web        Vue 3 前端（Element Plus + md-editor-v3 + Monaco）
 packages/api    OpenAPI 规范，前端类型由此生成
 docker          docker compose（PostgreSQL 17、Redis 7、后端/评测镜像）
 docs            任务清单、开发日志、实施计划
@@ -69,7 +69,7 @@ docs            任务清单、开发日志、实施计划
    corepack pnpm dev:web
    ```
 
-   打开 `http://localhost:5173`。开发服务器会把 `/api` 与 `/health` 代理到 `http://localhost:8080`（可用 `KAPOJ_BACKEND_URL` 修改）。
+   打开 `http://localhost:5173`。开发服务器会把 `/api` 与 `/health` 代理到 `http://localhost:8080`（可用 `KAPOJ_BACKEND_URL` 修改）。登录后可在「测评记录」查看实时结果，在题目页点「提交代码」使用 Monaco 编辑器提交。
 
 也可以用容器运行后端与评测服务：
 

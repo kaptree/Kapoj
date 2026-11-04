@@ -3,7 +3,7 @@
 > 本文档基于 `plan.md` 细化，是 kapOJ（Kap Online Judge）平台的详细开发规格说明书。
 > 目标：**打造出最有趣味的 Online Judge 平台**。
 > 文档包含完整的架构设计、数据库设计、模块需求，并为每个模块提供了可直接交给 Codex 的**开发提示词（Prompt）**。
-> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)。当前进度：**M1-B 已完成，M1-C 进行中**。
+> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)。当前进度：**M1 已完成**。
 
 ---
 
@@ -120,7 +120,7 @@ kapoj/
 └── docs/               # 文档
 ```
 
-**当前状态（M1-B）**：已建立 `apps/web`、`apps/server`、`apps/judge`、`packages/api`、`docker`、`docs`。后端按领域分包，位于 `apps/server/internal/`：`config`、`httpx`（统一响应与错误码）、`health`、`db`、`dbtypes`（jsonb 列表类型）、`storage`（文件存储抽象与本地实现）、`user`（模型、仓储、校验、资料服务）、`auth`（令牌与认证服务）、`middleware`、`userapi`（用户 HTTP 接口）、`problem`（题目模型、仓储、校验、服务）、`problemapi`（题目 HTTP 接口）、`submission`（提交模型、仓储、服务、限流）、`submissionapi`（提交 HTTP 接口）、`judgequeue`（Asynq 队列契约）、`router`。`apps/judge` 是独立 Go 模块与进程，包含 `config`、`db`、`model`、`queue`、`storage`、`verdict`、`sandbox`、`pipeline`、`worker`。本地开发时，docker compose 中的 PostgreSQL 映射到宿主机 5433 端口，Redis 映射到 6380 端口，启动方式见 `README.md`。
+**当前状态（M1-C）**：已建立 `apps/web`、`apps/server`、`apps/judge`、`packages/api`、`docker`、`docs`。后端按领域分包，位于 `apps/server/internal/`：`config`、`httpx`（统一响应与错误码）、`health`、`db`、`dbtypes`（jsonb 列表类型）、`storage`（文件存储抽象与本地实现）、`user`（模型、仓储、校验、资料服务）、`auth`（令牌与认证服务）、`middleware`、`userapi`（用户 HTTP 接口）、`problem`（题目模型、仓储、校验、服务）、`problemapi`（题目 HTTP 接口）、`submission`（提交模型、仓储、服务、限流）、`submissionapi`（提交 HTTP 接口）、`submissionevents`（Redis→SSE）、`judgequeue`（Asynq 队列契约）、`router`。`apps/judge` 是独立 Go 模块与进程，包含 `config`、`db`、`model`、`queue`、`events`、`reconcile`、`storage`、`verdict`、`sandbox`、`pipeline`、`worker`。本地开发时，docker compose 中的 PostgreSQL 映射到宿主机 5433 端口，Redis 映射到 6380 端口，启动方式见 `README.md`。
 
 ---
 
@@ -550,13 +550,13 @@ user_ai_configs (
 
 **实现状态（M1-A）**
 
-- 后端题目 CRUD、测试数据管理、checker 上传与前端题目列表、详情、编辑页已完成；提交与评测在 M1-B，测评记录与提交页在 M1-C。
+- 后端题目 CRUD、测试数据管理、checker 上传与前端题目列表、详情、编辑页、测评记录页、Monaco 提交页均已完成；提交、评测与 SSE 实时刷新已在 M1-B/M1-C 交付。
 - 权限：写接口需要 `problem_admin` 或 `super_admin`（`super_admin` 总是放行）；`contest_admin` 不能管理题目。未公开题目对非管理员返回 40400，与不存在一致。
 - 创建时忽略 `isPublic`，新题一律未公开；发布需至少 1 个测试点，特判题还需已上传 checker；公开题目不能删除最后一个测试点。发布校验与删除保护都在题目行锁事务内完成，并发删除测试点不会让公开题目变成 0 个测试点。
 - **更新是整体替换**：`PUT /problems/:id` 必须提交全部可编辑字段；未提交的字符串/数组会清空，`isPublic` 缺省为 `false`（即下线）。前端编辑页会先加载完整题目再提交。题目创建/更新的 JSON 请求体上限为 4 MiB。
 - 难度为整数 1–5（入门、普及、提高、省选、NOI）。
 - 列表筛选：`keyword` 同时匹配标题与 slug（不区分大小写、按字面量匹配，`%`/`_` 不作通配符）；`tag` 精确匹配整个标签；`difficulty` 精确匹配；`includeHidden` 仅对题目管理员有效。
-- 题解可见性（实现差异）：`solutionMd`、`solutionCode`、`checkerUploaded`、`createdBy` 只返回给题目管理员，普通用户的详情页暂不显示「解题思路」「解题代码」；M1-C 起改为本人通过该题后可见。`hintMd` 对所有人生效。
+- 题解可见性：`solutionMd`、`solutionCode`、`checkerUploaded`、`createdBy` 返回给题目管理员，或本人已在该题有 `accepted` 提交的普通用户；`hintMd` 对所有人生效。
 - 交互题允许创建与存储，M1 不参与评测；提交时的拒绝逻辑在 M1-B。
 - 前端使用 md-editor-v3 编辑与渲染 Markdown，渲染结果统一经 `sanitize-html` 净化；KaTeX 与 highlight.js 使用本地实例，不加载 CDN 资源。
 - 关联比赛：M2 之前详情页显示「比赛功能将在 M2 上线」。
@@ -687,6 +687,15 @@ user_ai_configs (
 
 请输出完整代码与类型定义。
 ```
+
+**实现状态（M1-C）**
+
+- 接口：`GET /submissions`（公开，分页 + problemId/contestId/language/status/userId/nickname 筛选）、`GET /submissions/:id`（公开，返回代码与逐测试点结果）、`GET /submissions/stream`（SSE，事件只含 `{"submissionId": id}`）。
+- 排序为提交 id 倒序；`contestId=0` 表示练习提交，`contestId>0` 表示指定比赛。比赛提交在 M2 赛时保护完成前，非本人/非管理员只返回 `codeHidden=true`，不返回代码与测试点详情。
+- 昵称为不区分大小写的模糊匹配，按字面量转义 `%`/`_`；非法 status/language/负 id 返回 40001。
+- judge 在领取任务（judging）与写入终态后向 Redis 频道 `kapoj:submissions` 发布 submission id；Web 端 SSE 订阅该频道，15 秒发送 keep-alive，浏览器断线由 EventSource 自动重连。
+- 前端：`/submissions` 记录页（筛选、分页、状态彩色标签、详情抽屉、SSE 自动刷新）；`/problems/:id/submit` 提交页（Monaco、语言切换、本地草稿）；题目详情页在本人 AC 后显示「解题思路」「解题代码」。
+- Monaco 使用本地打包的 editor worker，不访问 CDN；提交页路由懒加载编辑器，避免影响首屏体积。
 
 ---
 
@@ -1136,7 +1145,7 @@ problem/
 | 里程碑 | 内容                                   | 交付物             | 状态 |
 | ------ | -------------------------------------- | ------------------ | ---- |
 | M0     | 项目初始化、认证、基础布局             | 可登录的前后端骨架 | ✅   |
-| M1     | 题库/题目 + 沙盒评测 + 测评记录        | 可提交并判题的 MVP | 🚧   |
+| M1     | 题库/题目 + 沙盒评测 + 测评记录        | 可提交并判题的 MVP | ✅   |
 | M2     | 比赛系统（三种赛制 + 榜单 + 公告）     | 可办比赛的平台     | ⬜   |
 | M3     | 游戏化模块（成就/任务/徽章/称号/金币） | 有趣味的成长体系   | ⬜   |
 | M4     | 排行榜 + Rating + 学习路线             | 社区与成长闭环     | ⬜   |
