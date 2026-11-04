@@ -5,11 +5,13 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/kaptree/kapoj/apps/server/internal/dbtypes"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
@@ -177,4 +179,94 @@ func TestListCoinTransactionsReturnsBalanceAndTotal(t *testing.T) {
 	assert.Equal(t, gamification.CoinEarn, items[0].Type)
 	assert.Equal(t, gamification.CoinAdminAdjust, items[1].Type)
 	assert.Equal(t, "活动", items[1].Note)
+}
+
+func TestCreditCoinsRejectsInvalidReference(t *testing.T) {
+	e := newCoinEnv(t)
+	cases := []struct {
+		name    string
+		refType string
+		refID   int64
+		want    string
+	}{
+		{"空引用类型", "", 1, "引用类型不能为空"},
+		{"零引用ID", "achievement", 0, "引用 ID 必须为正数"},
+		{"负数引用ID", "achievement", -1, "引用 ID 必须为正数"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ok, err := e.repo.CreditCoins(context.Background(), coinUserID, 50, "achievement", tc.refType, tc.refID)
+			assert.False(t, ok)
+			assertCode(t, err, 40001)
+			var appErr *httpx.AppError
+			require.ErrorAs(t, err, &appErr)
+			assert.Equal(t, tc.want, appErr.Message)
+		})
+	}
+	balance, err := e.repo.Balance(context.Background(), coinUserID)
+	require.NoError(t, err)
+	assert.Zero(t, balance)
+	var count int64
+	require.NoError(t, e.db.Model(&gamification.CoinTransaction{}).Count(&count).Error)
+	assert.Zero(t, count)
+}
+
+func TestSpendCoinsRejectsInvalidReference(t *testing.T) {
+	e := newCoinEnv(t)
+	require.NoError(t, e.repo.AdminAdjustCoins(context.Background(), coinUserID, 10, "初始"))
+	cases := []struct {
+		name    string
+		refType string
+		refID   int64
+		want    string
+	}{
+		{"空引用类型", "", 1, "引用类型不能为空"},
+		{"零引用ID", "badge", 0, "引用 ID 必须为正数"},
+		{"负数引用ID", "badge", -1, "引用 ID 必须为正数"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := e.repo.SpendCoins(context.Background(), coinUserID, 8, "badge_purchase", tc.refType, tc.refID)
+			assertCode(t, err, 40001)
+			var appErr *httpx.AppError
+			require.ErrorAs(t, err, &appErr)
+			assert.Equal(t, tc.want, appErr.Message)
+		})
+	}
+	balance, err := e.repo.Balance(context.Background(), coinUserID)
+	require.NoError(t, err)
+	assert.EqualValues(t, 10, balance)
+	var count int64
+	require.NoError(t, e.db.Model(&gamification.CoinTransaction{}).
+		Where("type = ?", gamification.CoinSpend).Count(&count).Error)
+	assert.Zero(t, count)
+}
+
+func TestCreateInactiveRecordsPersistsFalse(t *testing.T) {
+	e := newCoinEnv(t)
+
+	achievement := &gamification.Achievement{
+		Code:            "inactive-achievement",
+		Name:            "未上架成就",
+		ConditionType:   "ac_count",
+		ConditionConfig: dbtypes.JSON[map[string]any]{Data: map[string]any{"threshold": 1}},
+		IsActive:        false,
+	}
+	require.NoError(t, e.db.Create(achievement).Error)
+	var gotAchievement gamification.Achievement
+	require.NoError(t, e.db.First(&gotAchievement, achievement.ID).Error)
+	assert.False(t, gotAchievement.IsActive)
+
+	now := time.Now()
+	task := &gamification.Task{
+		Title:      "未上架任务",
+		ProblemIDs: dbtypes.List[int64]{1},
+		StartTime:  now.Add(-time.Hour),
+		EndTime:    now.Add(time.Hour),
+		IsActive:   false,
+	}
+	require.NoError(t, e.db.Create(task).Error)
+	var gotTask gamification.Task
+	require.NoError(t, e.db.First(&gotTask, task.ID).Error)
+	assert.False(t, gotTask.IsActive)
 }

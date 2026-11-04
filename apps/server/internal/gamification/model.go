@@ -40,7 +40,7 @@ type Achievement struct {
 	RewardCoins     int64                        `gorm:"not null;default:0"`
 	RewardBadgeID   *int64                       `gorm:"column:reward_badge_id"`
 	SortOrder       int                          `gorm:"not null;default:0"`
-	IsActive        bool                         `gorm:"not null;default:true"`
+	IsActive        bool                         `gorm:"not null"`
 	CreatedAt       time.Time                    `gorm:"type:timestamptz;not null"`
 	UpdatedAt       time.Time                    `gorm:"type:timestamptz;not null"`
 }
@@ -62,7 +62,7 @@ type Task struct {
 	RewardCoins   int64               `gorm:"not null;default:0"`
 	StartTime     time.Time           `gorm:"type:timestamptz;not null"`
 	EndTime       time.Time           `gorm:"type:timestamptz;not null"`
-	IsActive      bool                `gorm:"not null;default:true"`
+	IsActive      bool                `gorm:"not null"`
 	CreatedBy     int64               `gorm:"not null;default:0"`
 	CreatedAt     time.Time           `gorm:"type:timestamptz;not null"`
 	UpdatedAt     time.Time           `gorm:"type:timestamptz;not null"`

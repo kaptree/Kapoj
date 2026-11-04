@@ -16,6 +16,9 @@ func (r *Repository) CreditCoins(ctx context.Context, userID, amount int64, reas
 	if amount <= 0 {
 		return false, httpx.ErrValidation("金币数量必须为正数")
 	}
+	if err := validateCoinRef(refType, refID); err != nil {
+		return false, err
+	}
 	credited := false
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		txRecord := &CoinTransaction{
@@ -46,6 +49,9 @@ func (r *Repository) CreditCoins(ctx context.Context, userID, amount int64, reas
 func (r *Repository) SpendCoins(ctx context.Context, userID, amount int64, reason, refType string, refID int64) error {
 	if amount <= 0 {
 		return httpx.ErrValidation("金币数量必须为正数")
+	}
+	if err := validateCoinRef(refType, refID); err != nil {
+		return err
 	}
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		coins, err := lockUserCoins(tx, userID)
@@ -120,6 +126,18 @@ func (r *Repository) ListCoinTransactions(ctx context.Context, userID int64, off
 		return nil, 0, 0, err
 	}
 	return items, total, balance, nil
+}
+
+// validateCoinRef 保证自动奖励与消费都带有可用于幂等唯一索引的引用；
+// 空引用类型会让部分唯一索引失效，因此必须在仓储边界拒绝。
+func validateCoinRef(refType string, refID int64) error {
+	if refType == "" {
+		return httpx.ErrValidation("引用类型不能为空")
+	}
+	if refID <= 0 {
+		return httpx.ErrValidation("引用 ID 必须为正数")
+	}
+	return nil
 }
 
 // lockUserCoins 使用行锁读取用户余额，串行化同一用户的并发扣款。
