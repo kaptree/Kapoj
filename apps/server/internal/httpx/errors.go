@@ -24,6 +24,8 @@ var (
 	ErrNotFound           = newErr(http.StatusNotFound, 40400, "资源不存在")
 	ErrUsernameTaken      = newErr(http.StatusConflict, 40901, "用户名已被占用")
 	ErrEmailTaken         = newErr(http.StatusConflict, 40902, "邮箱已被注册")
+	ErrSlugTaken          = newErr(http.StatusConflict, 40903, "题目标识已存在")
+	ErrPayloadTooLarge    = newErr(http.StatusRequestEntityTooLarge, 41300, "请求体过大")
 	ErrTooManyAttempts    = newErr(http.StatusTooManyRequests, 42901, "登录失败次数过多，请 5 分钟后再试")
 	ErrInternal           = newErr(http.StatusInternalServerError, 50000, "服务器内部错误")
 	ErrUnavailable        = newErr(http.StatusServiceUnavailable, 50300, "依赖服务不可用")

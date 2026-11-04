@@ -84,8 +84,8 @@ func TestRouterRejectsOversizedBody(t *testing.T) {
 	h := newRouter(t)
 	big := `{"username":"` + strings.Repeat("a", 2<<20) + `"}`
 	w, resp := call(h, http.MethodPost, "/api/auth/register", "", big)
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-	assert.EqualValues(t, 40000, resp["code"])
+	assert.Equal(t, http.StatusRequestEntityTooLarge, w.Code)
+	assert.EqualValues(t, 41300, resp["code"])
 }
 
 func TestRouterUnknownRouteUsesEnvelope(t *testing.T) {

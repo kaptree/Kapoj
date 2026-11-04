@@ -38,17 +38,8 @@ func RegisterRoutes(r gin.IRouter, s *Service) {
 
 type handler struct{ svc *Service }
 
-func bind[T any](c *gin.Context) (T, bool) {
-	var req T
-	if err := c.ShouldBindJSON(&req); err != nil {
-		httpx.Fail(c, httpx.ErrBadRequest)
-		return req, false
-	}
-	return req, true
-}
-
 func (h *handler) register(c *gin.Context) {
-	req, ok := bind[registerRequest](c)
+	req, ok := httpx.BindJSON[registerRequest](c)
 	if !ok {
 		return
 	}
@@ -61,7 +52,7 @@ func (h *handler) register(c *gin.Context) {
 }
 
 func (h *handler) login(c *gin.Context) {
-	req, ok := bind[loginRequest](c)
+	req, ok := httpx.BindJSON[loginRequest](c)
 	if !ok {
 		return
 	}
@@ -74,7 +65,7 @@ func (h *handler) login(c *gin.Context) {
 }
 
 func (h *handler) refresh(c *gin.Context) {
-	req, ok := bind[refreshRequest](c)
+	req, ok := httpx.BindJSON[refreshRequest](c)
 	if !ok {
 		return
 	}
@@ -87,7 +78,7 @@ func (h *handler) refresh(c *gin.Context) {
 }
 
 func (h *handler) logout(c *gin.Context) {
-	req, ok := bind[refreshRequest](c)
+	req, ok := httpx.BindJSON[refreshRequest](c)
 	if !ok {
 		return
 	}

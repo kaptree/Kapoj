@@ -3,7 +3,6 @@ package router
 import (
 	"context"
 	"log/slog"
-	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -32,7 +31,7 @@ func New(d Deps) *gin.Engine {
 	r.Use(requestLog(), gin.CustomRecovery(func(c *gin.Context, recovered any) {
 		slog.Error("panic recovered", "path", c.Request.URL.Path, "panic", recovered)
 		httpx.Fail(c, httpx.ErrInternal)
-	}), limitBody(maxBodyBytes))
+	}), middleware.MaxBody(maxBodyBytes))
 	r.NoRoute(func(c *gin.Context) { httpx.Fail(c, httpx.ErrNotFound) })
 
 	r.GET("/health", health.Handler(dbPinger{d.DB}, redisPinger{d.Redis}))
@@ -63,13 +62,6 @@ func requestLog() gin.HandlerFunc {
 			"path", c.Request.URL.Path,
 			"status", c.Writer.Status(),
 			"latency_ms", time.Since(start).Milliseconds())
-	}
-}
-
-func limitBody(n int64) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, n)
-		c.Next()
 	}
 }
 

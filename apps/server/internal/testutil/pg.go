@@ -2,6 +2,7 @@ package testutil
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"gorm.io/gorm"
@@ -24,8 +25,14 @@ func PG(t *testing.T) *gorm.DB {
 	if err := db.Migrate(g); err != nil {
 		t.Fatalf("migrate test database: %v", err)
 	}
-	if err := g.Exec("TRUNCATE users RESTART IDENTITY CASCADE").Error; err != nil {
-		t.Fatalf("truncate: %v", err)
+	var tables []string
+	if err := g.Raw("SELECT quote_ident(tablename) FROM pg_tables WHERE schemaname = 'public'").Scan(&tables).Error; err != nil {
+		t.Fatalf("list tables: %v", err)
+	}
+	if len(tables) > 0 {
+		if err := g.Exec("TRUNCATE " + strings.Join(tables, ", ") + " RESTART IDENTITY CASCADE").Error; err != nil {
+			t.Fatalf("truncate: %v", err)
+		}
 	}
 	sqlDB, _ := g.DB()
 	t.Cleanup(func() { _ = sqlDB.Close() })

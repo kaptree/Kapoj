@@ -11,6 +11,7 @@ type Config struct {
 	HTTPAddr        string
 	DatabaseURL     string
 	RedisAddr       string
+	StorageDir      string
 	JWTSecret       string
 	AccessTokenTTL  time.Duration
 	RefreshTokenTTL time.Duration
@@ -27,6 +28,7 @@ func Load() (*Config, error) {
 	v.SetDefault("http_addr", ":8080")
 	v.SetDefault("database_url", "")
 	v.SetDefault("redis_addr", "localhost:6379")
+	v.SetDefault("storage_dir", "data")
 	v.SetDefault("jwt_secret", "")
 	v.SetDefault("access_token_ttl", "15m")
 	v.SetDefault("refresh_token_ttl", "168h")
@@ -35,6 +37,7 @@ func Load() (*Config, error) {
 		HTTPAddr:        v.GetString("http_addr"),
 		DatabaseURL:     v.GetString("database_url"),
 		RedisAddr:       v.GetString("redis_addr"),
+		StorageDir:      v.GetString("storage_dir"),
 		JWTSecret:       v.GetString("jwt_secret"),
 		AccessTokenTTL:  v.GetDuration("access_token_ttl"),
 		RefreshTokenTTL: v.GetDuration("refresh_token_ttl"),

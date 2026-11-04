@@ -42,3 +42,18 @@ func TestLoadReadsEnv(t *testing.T) {
 	assert.Equal(t, "postgres://x", cfg.DatabaseURL)
 	assert.Equal(t, 5*time.Minute, cfg.AccessTokenTTL)
 }
+
+func TestLoadStorageDirDefault(t *testing.T) {
+	t.Setenv("KAPOJ_JWT_SECRET", strings.Repeat("a", 32))
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, "data", cfg.StorageDir)
+}
+
+func TestLoadStorageDirFromEnv(t *testing.T) {
+	t.Setenv("KAPOJ_JWT_SECRET", strings.Repeat("a", 32))
+	t.Setenv("KAPOJ_STORAGE_DIR", "/var/lib/kapoj")
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, "/var/lib/kapoj", cfg.StorageDir)
+}

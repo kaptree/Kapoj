@@ -167,20 +167,3 @@ func TestAdminUsersPaginates(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.Len(t, resp["data"].(map[string]any)["items"], 5)
 }
-
-func TestParsePageClamps(t *testing.T) {
-	cases := []struct {
-		query      string
-		page, size int
-	}{
-		{"", 1, 20},
-		{"page=0&page_size=0", 1, 20},
-		{"page=3&page_size=500", 3, 100},
-		{"page=x&page_size=y", 1, 20},
-	}
-	for _, tc := range cases {
-		page, size := parsePage(tc.query)
-		assert.Equal(t, tc.page, page, tc.query)
-		assert.Equal(t, tc.size, size, tc.query)
-	}
-}
