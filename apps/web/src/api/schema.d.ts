@@ -330,6 +330,8 @@ export interface paths {
                     status?: components["schemas"]["ContestStatus"];
                     /** @description 仅比赛管理员有效 */
                     includeHidden?: boolean;
+                    /** @description 仅返回当前登录用户已报名的比赛；游客使用返回 40001 */
+                    mine?: boolean;
                     page?: number;
                     page_size?: number;
                 };
@@ -1575,6 +1577,7 @@ export interface components {
             problemCount: number;
             /** Format: int64 */
             participantCount: number;
+            registered: boolean;
             /** Format: date-time */
             createdAt: string;
         };

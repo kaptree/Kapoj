@@ -93,6 +93,7 @@ func (h *handler) list(c *gin.Context) {
 		Mode:          contest.Mode(c.Query("mode")),
 		Status:        contest.Status(c.Query("status")),
 		IncludeHidden: c.Query("includeHidden") == "true",
+		Mine:          c.Query("mine") == "true",
 	}
 	page, size := httpx.ParsePage(c.Request.URL.RawQuery)
 	result, err := h.svc.List(c.Request.Context(), viewer(c), q, page, size)

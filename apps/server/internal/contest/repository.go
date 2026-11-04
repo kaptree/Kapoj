@@ -3,6 +3,7 @@ package contest
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -24,11 +25,13 @@ var (
 )
 
 type ListFilter struct {
-	Keyword       string
-	Mode          Mode
-	Status        Status
-	IncludeHidden bool
-	Now           time.Time
+	Keyword           string
+	Mode              Mode
+	Status            Status
+	IncludeHidden     bool
+	Now               time.Time
+	ViewerID          int64
+	ParticipantUserID int64
 }
 
 type ProblemRow struct {
@@ -41,6 +44,7 @@ type ListRow struct {
 	Contest
 	ProblemCount     int64 `gorm:"column:problem_count"`
 	ParticipantCount int64 `gorm:"column:participant_count"`
+	Registered       bool  `gorm:"column:registered"`
 }
 
 type ParticipantRow struct {
@@ -145,7 +149,12 @@ func escapeLike(s string) string {
 
 func (r *gormRepository) List(ctx context.Context, f ListFilter, offset, limit int) ([]ListRow, int64, error) {
 	q := r.db.WithContext(ctx).Model(&Contest{})
-	if !f.IncludeHidden {
+	if f.ParticipantUserID != 0 {
+		q = q.Where(`EXISTS (
+			SELECT 1 FROM contest_participants cp
+			WHERE cp.contest_id = contests.id AND cp.user_id = ?
+		)`, f.ParticipantUserID)
+	} else if !f.IncludeHidden {
 		q = q.Where("is_public = true")
 	}
 	if kw := strings.TrimSpace(f.Keyword); kw != "" {
@@ -172,9 +181,20 @@ func (r *gormRepository) List(ctx context.Context, f ListFilter, offset, limit i
 		return nil, 0, err
 	}
 	var rows []ListRow
-	err := q.Select(`contests.*,
+	registered := "false"
+	args := []any{}
+	if f.ViewerID != 0 {
+		registered = `EXISTS (
+			SELECT 1 FROM contest_participants cpv
+			WHERE cpv.contest_id = contests.id AND cpv.user_id = ?
+		)`
+		args = append(args, f.ViewerID)
+	}
+	selectSQL := fmt.Sprintf(`contests.*,
 		(SELECT COUNT(*) FROM contest_problems cp WHERE cp.contest_id = contests.id) AS problem_count,
-		(SELECT COUNT(*) FROM contest_participants cp WHERE cp.contest_id = contests.id) AS participant_count`).
+		(SELECT COUNT(*) FROM contest_participants cp WHERE cp.contest_id = contests.id) AS participant_count,
+		%s AS registered`, registered)
+	err := q.Select(selectSQL, args...).
 		Order("start_time DESC, id DESC").Offset(offset).Limit(limit).Scan(&rows).Error
 	return rows, total, err
 }

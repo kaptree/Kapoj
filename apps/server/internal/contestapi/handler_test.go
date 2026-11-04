@@ -296,6 +296,29 @@ func TestAnnouncementPermissionsAndCrud(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
+func TestContestMineFilter(t *testing.T) {
+	f := newFx(t)
+	p1, p2 := f.problem("sum"), f.problem("product")
+	private := body(p1.ID, p2.ID)
+	private["title"] = "Mine"
+	private["isPublic"] = false
+	w, resp := f.do(http.MethodPost, "/api/contests", f.token("contest_admin"), private)
+	require.Equal(t, http.StatusCreated, w.Code)
+	id := idOf(resp)
+	w, _ = f.do(http.MethodPost, fmt.Sprintf("/api/contests/%d/register", id), f.token("user"), map[string]any{})
+	require.Equal(t, http.StatusOK, w.Code)
+
+	w, resp = f.do(http.MethodGet, "/api/contests?mine=true", f.token("user"), nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	data := resp["data"].(map[string]any)
+	assert.EqualValues(t, 1, data["total"])
+	item := data["items"].([]any)[0].(map[string]any)
+	assert.Equal(t, true, item["registered"])
+
+	w, _ = f.do(http.MethodGet, "/api/contests?mine=true", "", nil)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
 func TestContestListFilters(t *testing.T) {
 	f := newFx(t)
 	p1, p2 := f.problem("sum"), f.problem("product")

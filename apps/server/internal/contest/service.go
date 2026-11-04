@@ -23,6 +23,7 @@ type ListQuery struct {
 	Mode          Mode
 	Status        Status
 	IncludeHidden bool
+	Mine          bool
 }
 
 func (q ListQuery) Normalize() (ListQuery, error) {
@@ -167,7 +168,7 @@ func (s *Service) Detail(ctx context.Context, v Viewer, id int64) (*Detail, erro
 		return nil, err
 	}
 	return &Detail{
-		ListItem: toListItem(*c, problemCount, participants, now),
+		ListItem: toListItem(*c, problemCount, participants, registered, now),
 		Problems: problems, Registered: registered, CanManage: v.CanManage, ServerTime: now,
 	}, nil
 }
@@ -180,16 +181,23 @@ func (s *Service) List(ctx context.Context, v Viewer, q ListQuery, page, size in
 	page = min(max(page, 1), 1_000_000)
 	size = min(max(size, 1), 100)
 	now := time.Now()
-	rows, total, err := s.repo.List(ctx, ListFilter{
+	filter := ListFilter{
 		Keyword: q.Keyword, Mode: q.Mode, Status: q.Status,
-		IncludeHidden: q.IncludeHidden && v.CanManage, Now: now,
-	}, (page-1)*size, size)
+		IncludeHidden: q.IncludeHidden && v.CanManage, Now: now, ViewerID: v.UserID,
+	}
+	if q.Mine {
+		if v.UserID == 0 {
+			return httpx.Page[ListItem]{}, invalid("请先登录后查看我报名的比赛")
+		}
+		filter.ParticipantUserID = v.UserID
+	}
+	rows, total, err := s.repo.List(ctx, filter, (page-1)*size, size)
 	if err != nil {
 		return httpx.Page[ListItem]{}, err
 	}
 	items := make([]ListItem, len(rows))
 	for i, row := range rows {
-		items[i] = toListItem(row.Contest, row.ProblemCount, row.ParticipantCount, now)
+		items[i] = toListItem(row.Contest, row.ProblemCount, row.ParticipantCount, row.Registered, now)
 	}
 	return httpx.Page[ListItem]{Total: total, Items: items}, nil
 }

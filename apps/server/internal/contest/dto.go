@@ -15,6 +15,7 @@ type ListItem struct {
 	Status           Status       `json:"status"`
 	ProblemCount     int64        `json:"problemCount"`
 	ParticipantCount int64        `json:"participantCount"`
+	Registered       bool         `json:"registered"`
 	CreatedAt        time.Time    `json:"createdAt"`
 }
 
@@ -50,13 +51,13 @@ type AnnouncementItem struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
-func toListItem(c Contest, problems, participants int64, now time.Time) ListItem {
+func toListItem(c Contest, problems, participants int64, registered bool, now time.Time) ListItem {
 	return ListItem{
 		ID: c.ID, Title: c.Title, DescriptionMD: c.DescriptionMD,
 		StartTime: c.StartTime, EndTime: c.EndTime, Mode: c.Mode,
 		IsRated: c.IsRated, IsPublic: c.IsPublic, RegisterType: c.RegisterType,
 		Status:       StatusAt(c.StartTime, c.EndTime, now),
-		ProblemCount: problems, ParticipantCount: participants, CreatedAt: c.CreatedAt,
+		ProblemCount: problems, ParticipantCount: participants, Registered: registered, CreatedAt: c.CreatedAt,
 	}
 }
 

@@ -426,6 +426,44 @@ func TestCanViewProblemForContestParticipant(t *testing.T) {
 	assert.False(t, ok)
 }
 
+func TestMineFilterAndRegisteredFlag(t *testing.T) {
+	e := newEnv(t)
+	public, err := e.svc.Create(context.Background(), manager(), baseInput(e))
+	require.NoError(t, err)
+	privateInput := baseInput(e)
+	privateInput.Title = "Private mine"
+	privateInput.IsPublic = false
+	private, err := e.svc.Create(context.Background(), manager(), privateInput)
+	require.NoError(t, err)
+	require.NoError(t, e.svc.Register(context.Background(), userID, private.ID, "", ""))
+
+	page, err := e.svc.List(context.Background(), user(), contest.ListQuery{Mine: true}, 1, 20)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, page.Total)
+	assert.Equal(t, private.ID, page.Items[0].ID)
+	assert.True(t, page.Items[0].Registered)
+
+	page, err = e.svc.List(context.Background(), contest.Viewer{}, contest.ListQuery{Mine: true}, 1, 20)
+	assertCode(t, err, 40001)
+
+	page, err = e.svc.List(context.Background(), user(), contest.ListQuery{}, 1, 20)
+	require.NoError(t, err)
+	for _, item := range page.Items {
+		assert.False(t, item.Registered)
+		if item.ID == public.ID {
+			assert.Equal(t, "Weekly", item.Title)
+		}
+	}
+	require.NoError(t, e.svc.Register(context.Background(), userID, public.ID, "", ""))
+	page, err = e.svc.List(context.Background(), user(), contest.ListQuery{}, 1, 20)
+	require.NoError(t, err)
+	for _, item := range page.Items {
+		if item.ID == public.ID {
+			assert.True(t, item.Registered)
+		}
+	}
+}
+
 func TestCloneOverrides(t *testing.T) {
 	e := newEnv(t)
 	c, err := e.svc.Create(context.Background(), manager(), baseInput(e))

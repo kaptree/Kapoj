@@ -137,6 +137,7 @@ paths:
         - { name: mode, in: query, schema: { $ref: '#/components/schemas/ContestMode' } }
         - { name: status, in: query, schema: { $ref: '#/components/schemas/ContestStatus' } }
         - { name: includeHidden, in: query, schema: { type: boolean }, description: 仅比赛管理员有效 }
+        - { name: mine, in: query, schema: { type: boolean }, description: 仅返回当前登录用户已报名的比赛；游客使用返回 40001 }
         - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
         - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
       responses:
@@ -764,7 +765,7 @@ components:
         score: { type: integer }
     ContestListItem:
       type: object
-      required: [id, title, descriptionMd, startTime, endTime, mode, isRated, isPublic, registerType, status, problemCount, participantCount, createdAt]
+      required: [id, title, descriptionMd, startTime, endTime, mode, isRated, isPublic, registerType, status, problemCount, participantCount, registered, createdAt]
       properties:
         id: { type: integer, format: int64 }
         title: { type: string }
@@ -778,6 +779,7 @@ components:
         status: { $ref: '#/components/schemas/ContestStatus' }
         problemCount: { type: integer, format: int64 }
         participantCount: { type: integer, format: int64 }
+        registered: { type: boolean }
         createdAt: { type: string, format: date-time }
     ContestDetail:
       allOf:
