@@ -1,0 +1,12 @@
+{
+  "name": "kapoj",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev:web": "pnpm --filter web dev",
+    "build:web": "pnpm --filter web build",
+    "test:web": "pnpm --filter web test",
+    "lint:web": "pnpm --filter web lint",
+    "gen:api": "pnpm --filter @kapoj/api gen"
+  }
+}
