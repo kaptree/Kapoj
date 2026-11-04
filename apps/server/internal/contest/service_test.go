@@ -350,9 +350,15 @@ func TestStartAndModeFrozenAfterStart(t *testing.T) {
 	c, err := e.svc.Create(context.Background(), manager(), in)
 	require.NoError(t, err)
 
+	sameSecond := baseInput(e)
+	sameSecond.StartTime = c.StartTime.Truncate(time.Second).Add(500 * time.Millisecond)
+	sameSecond.EndTime = c.EndTime
+	_, err = e.svc.Update(context.Background(), manager(), c.ID, sameSecond)
+	require.NoError(t, err, "millisecond truncation from the date picker must not trip the freeze")
+
 	moved := baseInput(e)
-	moved.StartTime = in.StartTime.Add(30 * time.Minute)
-	moved.EndTime = in.EndTime.Add(30 * time.Minute)
+	moved.StartTime = c.StartTime.Add(30 * time.Minute)
+	moved.EndTime = c.EndTime.Add(30 * time.Minute)
 	_, err = e.svc.Update(context.Background(), manager(), c.ID, moved)
 	assertCode(t, err, 40001)
 

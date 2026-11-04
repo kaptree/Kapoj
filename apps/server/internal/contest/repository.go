@@ -108,7 +108,7 @@ func (r *gormRepository) Update(ctx context.Context, c *Contest, problems []Cont
 			return err
 		}
 		if !time.Now().Before(existing.StartTime) {
-			if !c.StartTime.Equal(existing.StartTime) {
+			if !c.StartTime.Truncate(time.Second).Equal(existing.StartTime.Truncate(time.Second)) {
 				return ErrStartFrozen
 			}
 			if c.Mode != existing.Mode {

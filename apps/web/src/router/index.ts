@@ -77,6 +77,30 @@ export const router = createRouter({
           meta: { title: '测评记录' },
         },
         {
+          path: 'contests',
+          name: 'contests',
+          component: () => import('@/views/ContestListView.vue'),
+          meta: { title: '比赛' },
+        },
+        {
+          path: 'contests/new',
+          name: 'contest-create',
+          component: () => import('@/views/ContestEditView.vue'),
+          meta: { requiresAuth: true, roles: ['contest_admin'], title: '新建比赛' },
+        },
+        {
+          path: 'contests/:id(\\d+)',
+          name: 'contest-detail',
+          component: () => import('@/views/ContestDetailView.vue'),
+          meta: { title: '比赛详情' },
+        },
+        {
+          path: 'contests/:id(\\d+)/edit',
+          name: 'contest-edit',
+          component: () => import('@/views/ContestEditView.vue'),
+          meta: { requiresAuth: true, roles: ['contest_admin'], title: '编辑比赛' },
+        },
+        {
           path: 'problems/:id(\\d+)/edit',
           name: 'problem-edit',
           component: () => import('@/views/ProblemEditView.vue'),

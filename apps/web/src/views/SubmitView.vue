@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 
 import { ApiError } from '@/api/http'
+import { getContest } from '@/api/contests'
 import { getProblem } from '@/api/problems'
 import { createSubmission } from '@/api/submissions'
 import type { ProblemDetail, SubmissionLanguage } from '@/api/types'
@@ -13,8 +14,10 @@ import { languageLabel, monacoLanguage, SUBMISSION_LANGUAGES } from '@/utils/sub
 const route = useRoute()
 const router = useRouter()
 const problemId = computed(() => Number(route.params.id))
+const contestId = computed(() => Number(route.query.contestId) || 0)
 
 const problem = ref<ProblemDetail | null>(null)
+const contestTitle = ref('')
 const loading = ref(false)
 const submitting = ref(false)
 const error = ref('')
@@ -43,7 +46,8 @@ const code = computed({
 })
 
 function storageKey(lang: SubmissionLanguage): string {
-  return `kapoj:code:${problemId.value}:${lang}`
+  const scope = contestId.value > 0 ? `contest:${contestId.value}` : 'practice'
+  return `kapoj:code:${scope}:${problemId.value}:${lang}`
 }
 
 function loadDraft(lang: SubmissionLanguage) {
@@ -83,6 +87,11 @@ onBeforeUnmount(() => {
 
 onMounted(async () => {
   for (const lang of SUBMISSION_LANGUAGES) loadDraft(lang.value)
+  if (contestId.value > 0) {
+    contestTitle.value = await getContest(contestId.value)
+      .then((c) => c.title)
+      .catch(() => '')
+  }
   loading.value = true
   try {
     problem.value = await getProblem(problemId.value)
@@ -106,11 +115,14 @@ async function submit() {
   try {
     const created = await createSubmission({
       problemId: problemId.value,
+      contestId: contestId.value || undefined,
       language: lang,
       code: source,
     })
     ElMessage.success(`已提交 #${created.id}，正在评测`)
-    await router.push({ name: 'submissions', query: { problemId: String(problemId.value) } })
+    const query: Record<string, string> = { problemId: String(problemId.value) }
+    if (contestId.value > 0) query.contestId = String(contestId.value)
+    await router.push({ name: 'submissions', query })
   } catch (e) {
     ElMessage.error(e instanceof ApiError ? e.message : '提交失败，请稍后再试')
   } finally {
@@ -135,14 +147,23 @@ async function submit() {
           <div>
             <h1>{{ problem.title }}</h1>
             <div class="meta">
+              <el-tag v-if="contestId > 0" type="success" size="small">比赛提交</el-tag>
               <el-tag size="small">{{ problem.slug }}</el-tag>
               <span>时间限制 {{ problem.timeLimitMs }} ms</span>
               <span>内存限制 {{ problem.memoryLimitMb }} MB</span>
             </div>
           </div>
-          <RouterLink :to="{ name: 'problem-detail', params: { id: problem.id } }">
-            <el-button>返回题目</el-button>
-          </RouterLink>
+          <div class="head-actions">
+            <RouterLink
+              v-if="contestId > 0"
+              :to="{ name: 'contest-detail', params: { id: contestId } }"
+            >
+              <el-button>返回比赛{{ contestTitle ? `：${contestTitle}` : '' }}</el-button>
+            </RouterLink>
+            <RouterLink :to="{ name: 'problem-detail', params: { id: problem.id } }">
+              <el-button>返回题目</el-button>
+            </RouterLink>
+          </div>
         </div>
       </el-card>
 
@@ -183,6 +204,10 @@ async function submit() {
 h1 {
   margin: 0;
   font-size: 22px;
+}
+.head-actions {
+  display: flex;
+  gap: 8px;
 }
 .meta {
   display: flex;

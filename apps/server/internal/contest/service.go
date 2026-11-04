@@ -104,7 +104,7 @@ func (s *Service) Update(ctx context.Context, v Viewer, id int64, in Input) (*Co
 	}
 	now := time.Now()
 	if !now.Before(existing.StartTime) {
-		if !in.StartTime.Equal(existing.StartTime) {
+		if !in.StartTime.Truncate(time.Second).Equal(existing.StartTime.Truncate(time.Second)) {
 			return nil, invalid("比赛开始后不能修改开始时间")
 		}
 		if in.Mode != existing.Mode {
