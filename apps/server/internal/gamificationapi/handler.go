@@ -30,6 +30,11 @@ func RegisterRoutes(r gin.IRouter, s *gamification.Service) {
 	r.DELETE("/achievements/:id", admin(h.deleteAchievement)...)
 	r.GET("/coins/transactions", middleware.RequireAuth(), h.coinTransactions)
 	r.POST("/admin/users/:id/coins", admin(h.adminAdjustCoins)...)
+	r.GET("/tasks", h.listTasks)
+	r.POST("/tasks", admin(h.createTask)...)
+	r.PUT("/tasks/:id", admin(h.updateTask)...)
+	r.DELETE("/tasks/:id", admin(h.deleteTask)...)
+	r.POST("/tasks/:id/claim", middleware.RequireAuth(), h.claimTask)
 }
 
 type handler struct{ svc *gamification.Service }
@@ -125,6 +130,73 @@ func (h *handler) coinTransactions(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, result)
+}
+
+func (h *handler) listTasks(c *gin.Context) {
+	items, err := h.svc.ListTasks(
+		c.Request.Context(), viewer(c), c.Query("includeInactive") == "true",
+	)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, items)
+}
+
+func (h *handler) createTask(c *gin.Context) {
+	in, ok := httpx.BindJSON[gamification.TaskInput](c)
+	if !ok {
+		return
+	}
+	task, err := h.svc.CreateTask(c.Request.Context(), viewer(c), in)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.Created(c, gamification.TaskItemFromModel(*task))
+}
+
+func (h *handler) updateTask(c *gin.Context) {
+	id, ok := pathID(c)
+	if !ok {
+		return
+	}
+	in, ok := httpx.BindJSON[gamification.TaskInput](c)
+	if !ok {
+		return
+	}
+	task, err := h.svc.UpdateTask(c.Request.Context(), viewer(c), id, in)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, gamification.TaskItemFromModel(*task))
+}
+
+func (h *handler) deleteTask(c *gin.Context) {
+	id, ok := pathID(c)
+	if !ok {
+		return
+	}
+	if err := h.svc.DeleteTask(c.Request.Context(), viewer(c), id); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, nil)
+}
+
+func (h *handler) claimTask(c *gin.Context) {
+	id, ok := pathID(c)
+	if !ok {
+		return
+	}
+	claims, _ := middleware.CurrentClaims(c)
+	item, err := h.svc.ClaimTask(c.Request.Context(), claims.UserID, id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, item)
 }
 
 func (h *handler) adminAdjustCoins(c *gin.Context) {

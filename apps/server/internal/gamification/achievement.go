@@ -7,11 +7,15 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 )
 
-// EvaluateUser 重新计算用户所有上架成就；满足条件的成就原子解锁并发奖。
+// EvaluateUser 重新计算用户所有上架成就与已领取任务；满足条件的成就原子
+// 解锁并发奖，截止前集齐题目的任务原子完成并发奖。
 // 只使用仓储读取，避免调用 ListAchievements 造成递归。
 func (s *Service) EvaluateUser(ctx context.Context, userID int64) error {
 	if userID <= 0 {
 		return nil
+	}
+	if err := s.EvaluateTasks(ctx, userID); err != nil {
+		return err
 	}
 	achievements, err := s.repo.ListAchievements(ctx, false)
 	if err != nil {

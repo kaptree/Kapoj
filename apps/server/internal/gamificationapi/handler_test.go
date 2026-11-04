@@ -246,6 +246,179 @@ func TestAchievementPermissionsAndList(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
+func taskBody(title string, problemIDs []int64, reward int64, start, end time.Time) map[string]any {
+	return map[string]any{
+		"title": title, "descriptionMd": "任务描述",
+		"problemIds": problemIDs, "rewardCoins": reward,
+		"startTime": start.Format(time.RFC3339), "endTime": end.Format(time.RFC3339),
+	}
+}
+
+func (f *fx) addPublicProblem(t *testing.T, slug string) *problem.Problem {
+	t.Helper()
+	p := &problem.Problem{Title: slug, Slug: slug, IsPublic: true}
+	require.NoError(t, f.db.Create(p).Error)
+	return p
+}
+
+func (f *fx) addTaskSubmission(t *testing.T, userID, problemID int64, judgedAt time.Time) {
+	t.Helper()
+	require.NoError(t, f.db.Exec(
+		`INSERT INTO submissions (user_id, problem_id, language, code, status, created_at, judged_at)
+		 VALUES (?, ?, 'cpp', 'int main() {}', ?, now(), ?)`,
+		userID, problemID, submission.StatusAccepted, judgedAt,
+	).Error)
+}
+
+func TestTaskAPI(t *testing.T) {
+	f := newFx(t)
+	userToken := f.token("user")
+	adminToken := f.token("super_admin")
+	userID := f.ids["user"]
+
+	w, resp := f.do(http.MethodGet, "/api/tasks", "", nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Empty(t, itemsOf(t, resp))
+
+	p1 := f.addPublicProblem(t, "api-task-p1")
+	p2 := f.addPublicProblem(t, "api-task-p2")
+	now := time.Now()
+	body := taskBody("API 任务", []int64{p1.ID, p2.ID}, 80, now.Add(-time.Hour), now.Add(time.Hour))
+
+	// 普通用户不能管理任务。
+	w, _ = f.do(http.MethodPost, "/api/tasks", userToken, body)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+
+	// 题目为空返回 40001。
+	invalid := taskBody("空任务", nil, 10, now.Add(-time.Hour), now.Add(time.Hour))
+	w, resp = f.do(http.MethodPost, "/api/tasks", adminToken, invalid)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	w, resp = f.do(http.MethodPost, "/api/tasks", adminToken, body)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	task := resp["data"].(map[string]any)
+	taskID := int64(task["id"].(float64))
+	assert.Equal(t, true, task["isActive"], "isActive 缺省应为 true")
+	assert.Equal(t, "active", task["status"])
+	assert.EqualValues(t, 2, task["problemCount"])
+	assert.EqualValues(t, 0, task["progress"])
+	assert.Nil(t, task["claimedAt"])
+	taskPath := fmt.Sprintf("/api/tasks/%d", taskID)
+
+	// 游客可以看到上架任务。
+	w, resp = f.do(http.MethodGet, "/api/tasks", "", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	items := itemsOf(t, resp)
+	require.Len(t, items, 1)
+	assert.Equal(t, taskID, int64(items[0].(map[string]any)["id"].(float64)))
+
+	w, _ = f.do(http.MethodGet, "/api/tasks?includeInactive=true", "", nil)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	w, _ = f.do(http.MethodGet, "/api/tasks?includeInactive=true", userToken, nil)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+
+	w, _ = f.do(http.MethodPut, taskPath, userToken, body)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	w, _ = f.do(http.MethodDelete, taskPath, userToken, nil)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+
+	// 游客不能领取，登录用户可以领取且重复领取幂等。
+	w, _ = f.do(http.MethodPost, taskPath+"/claim", "", nil)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+
+	w, resp = f.do(http.MethodPost, taskPath+"/claim", userToken, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	claimed := resp["data"].(map[string]any)
+	assert.Equal(t, "claimed", claimed["status"])
+	assert.NotNil(t, claimed["claimedAt"])
+	assert.EqualValues(t, 0, claimed["progress"])
+
+	w, resp = f.do(http.MethodPost, taskPath+"/claim", userToken, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, claimed["claimedAt"], resp["data"].(map[string]any)["claimedAt"])
+
+	w, resp = f.do(http.MethodGet, "/api/tasks", userToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	items = itemsOf(t, resp)
+	require.Len(t, items, 1)
+	assert.Equal(t, "claimed", items[0].(map[string]any)["status"])
+
+	// 已有领取记录后冻结题目与奖励。
+	frozenProblems := taskBody("API 任务", []int64{p1.ID}, 80, now.Add(-time.Hour), now.Add(time.Hour))
+	w, resp = f.do(http.MethodPut, taskPath, adminToken, frozenProblems)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	frozenReward := taskBody("API 任务", []int64{p1.ID, p2.ID}, 90, now.Add(-time.Hour), now.Add(time.Hour))
+	w, resp = f.do(http.MethodPut, taskPath, adminToken, frozenReward)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	// 标题与结束时间仍可修改。
+	editable := taskBody("改名后的 API 任务", []int64{p1.ID, p2.ID}, 80,
+		now.Add(-time.Hour), now.Add(2*time.Hour))
+	w, resp = f.do(http.MethodPut, taskPath, adminToken, editable)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, "改名后的 API 任务", resp["data"].(map[string]any)["title"])
+
+	// 领取后 AC 全部题目，读取任务大厅时自动完成并发奖。
+	claimTime := now.Add(time.Second)
+	f.addTaskSubmission(t, userID, p1.ID, claimTime)
+	f.addTaskSubmission(t, userID, p2.ID, claimTime.Add(time.Second))
+
+	w, resp = f.do(http.MethodGet, "/api/tasks", userToken, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	items = itemsOf(t, resp)
+	require.Len(t, items, 1)
+	completed := items[0].(map[string]any)
+	assert.Equal(t, "completed", completed["status"])
+	assert.EqualValues(t, 2, completed["progress"])
+	assert.NotNil(t, completed["completedAt"])
+
+	w, resp = f.do(http.MethodGet, "/api/coins/transactions", userToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	coins := resp["data"].(map[string]any)
+	assert.EqualValues(t, 80, coins["balance"])
+	require.EqualValues(t, 1, coins["total"])
+	reward := coins["items"].([]any)[0].(map[string]any)
+	assert.EqualValues(t, 80, reward["amount"])
+	assert.Equal(t, "task", reward["reason"])
+	assert.Equal(t, "task", reward["refType"])
+	assert.EqualValues(t, taskID, reward["refId"])
+
+	// 已完成任务不能再次领取。
+	w, resp = f.do(http.MethodPost, taskPath+"/claim", userToken, nil)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	// 软删除后游客不可见，领取过的用户仍可见完成记录，管理员可见下线任务。
+	w, _ = f.do(http.MethodDelete, taskPath, adminToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	w, resp = f.do(http.MethodGet, "/api/tasks", "", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Empty(t, itemsOf(t, resp))
+
+	w, resp = f.do(http.MethodGet, "/api/tasks", userToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	items = itemsOf(t, resp)
+	require.Len(t, items, 1)
+	assert.Equal(t, "completed", items[0].(map[string]any)["status"])
+	assert.Equal(t, false, items[0].(map[string]any)["isActive"])
+
+	w, resp = f.do(http.MethodGet, "/api/tasks?includeInactive=true", adminToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Len(t, itemsOf(t, resp), 1)
+
+	w, _ = f.do(http.MethodPost, "/api/tasks/99999/claim", userToken, nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	w, _ = f.do(http.MethodPut, "/api/tasks/99999", adminToken, body)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	w, _ = f.do(http.MethodDelete, "/api/tasks/99999", adminToken, nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
 func TestAdminAdjustCoinsEndpoint(t *testing.T) {
 	f := newFx(t)
 	userToken := f.token("user")

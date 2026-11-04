@@ -27,13 +27,13 @@ func normalizeAchievementInput(in AchievementInput, codeRequired bool) (Achievem
 		return in, httpx.ErrValidation("成就 code 格式不正确")
 	}
 
-	if err := validateAchievementText("成就名称", in.Name, 1, 100); err != nil {
+	if err := validateText("成就名称", in.Name, 1, 100); err != nil {
 		return in, err
 	}
-	if err := validateAchievementText("成就描述", in.Description, 0, 500); err != nil {
+	if err := validateText("成就描述", in.Description, 0, 500); err != nil {
 		return in, err
 	}
-	if err := validateAchievementText("成就图标地址", in.IconURL, 0, 512); err != nil {
+	if err := validateText("成就图标地址", in.IconURL, 0, 512); err != nil {
 		return in, err
 	}
 	if in.RewardBadgeID != nil {
@@ -54,7 +54,7 @@ func normalizeAchievementInput(in AchievementInput, codeRequired bool) (Achievem
 	return in, nil
 }
 
-func validateAchievementText(field, value string, minLen, maxLen int) error {
+func validateText(field, value string, minLen, maxLen int) error {
 	if !utf8.ValidString(value) {
 		return httpx.ErrValidation(field + "包含无效字符")
 	}
