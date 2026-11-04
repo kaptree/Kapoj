@@ -10,8 +10,12 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 )
 
-// Viewer describes who is submitting; managers may submit hidden problems.
-type Viewer struct{ CanManage bool }
+// Viewer describes who is looking. The zero UserID is a guest; managers may
+// submit hidden problems and see protected contest code.
+type Viewer struct {
+	UserID    int64
+	CanManage bool
+}
 
 type ProblemLookup interface {
 	FindByID(ctx context.Context, id int64) (*problem.Problem, error)
@@ -35,6 +39,53 @@ type Service struct {
 
 func NewService(repo Repository, problems ProblemLookup, queue Enqueuer, limiter Limiter) *Service {
 	return &Service{repo: repo, problems: problems, queue: queue, limiter: limiter}
+}
+
+const (
+	maxListPage = 1_000_000
+	maxPageSize = 100
+)
+
+func (s *Service) List(ctx context.Context, q ListQuery, page, size int) (httpx.Page[ListItem], error) {
+	q, err := q.Normalize()
+	if err != nil {
+		return httpx.Page[ListItem]{}, err
+	}
+	page = min(max(page, 1), maxListPage)
+	size = min(max(size, 1), maxPageSize)
+	rows, total, err := s.repo.List(ctx, toFilter(q), (page-1)*size, size)
+	if err != nil {
+		return httpx.Page[ListItem]{}, err
+	}
+	items := make([]ListItem, len(rows))
+	for i := range rows {
+		items[i] = toListItem(rows[i])
+	}
+	return httpx.Page[ListItem]{Total: total, Items: items}, nil
+}
+
+func (s *Service) Detail(ctx context.Context, v Viewer, id int64) (*Detail, error) {
+	row, err := s.repo.FindDetail(ctx, id)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil, httpx.ErrNotFound
+		}
+		return nil, err
+	}
+	detail := &Detail{
+		ListItem: toListItem(*row), Code: row.Code, ErrorMessage: row.ErrorMessage,
+		JudgeResult: append([]JudgeCaseResult{}, row.JudgeResult...),
+	}
+	if row.ContestID != nil && !v.CanManage && v.UserID != row.UserID {
+		detail.Code = ""
+		detail.CodeHidden = true
+		detail.JudgeResult = []JudgeCaseResult{}
+	}
+	return detail, nil
+}
+
+func (s *Service) HasAccepted(ctx context.Context, userID, problemID int64) (bool, error) {
+	return s.repo.HasAccepted(ctx, userID, problemID)
 }
 
 func (s *Service) Create(ctx context.Context, v Viewer, userID int64, in Input) (*Submission, error) {

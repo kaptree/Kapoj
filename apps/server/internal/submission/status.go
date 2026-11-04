@@ -16,6 +16,17 @@ const (
 )
 
 // Terminal reports whether no further judging is expected.
+func (s Status) Valid() bool {
+	switch s {
+	case StatusPending, StatusJudging, StatusAccepted, StatusWrongAnswer,
+		StatusTimeLimitExceeded, StatusMemoryLimitExceeded, StatusRuntimeError,
+		StatusCompileError, StatusSystemError:
+		return true
+	default:
+		return false
+	}
+}
+
 func (s Status) Terminal() bool {
 	switch s {
 	case StatusAccepted, StatusWrongAnswer, StatusTimeLimitExceeded,

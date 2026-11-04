@@ -3,6 +3,7 @@ package submission
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -13,10 +14,24 @@ import (
 
 var ErrNotFound = errors.New("submission not found")
 
+// ListRow is a submission joined with its user and problem.
+type ListRow struct {
+	Submission
+	Username     string
+	Nickname     string
+	ProblemTitle string `gorm:"column:problem_title"`
+	ProblemSlug  string `gorm:"column:problem_slug"`
+}
+
+type DetailRow = ListRow
+
 type Repository interface {
 	Create(ctx context.Context, sub *Submission) error
 	FindByID(ctx context.Context, id int64) (*Submission, error)
 	MarkSystemError(ctx context.Context, id int64, message string) error
+	List(ctx context.Context, f ListFilter, offset, limit int) ([]ListRow, int64, error)
+	FindDetail(ctx context.Context, id int64) (*DetailRow, error)
+	HasAccepted(ctx context.Context, userID, problemID int64) (bool, error)
 }
 
 type gormRepository struct{ db *gorm.DB }
@@ -60,6 +75,72 @@ func (r *gormRepository) MarkSystemError(ctx context.Context, id int64, message 
 			"error_message": message,
 			"judged_at":     now,
 		}).Error
+}
+
+func escapeLike(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
+}
+
+func (r *gormRepository) List(ctx context.Context, f ListFilter, offset, limit int) ([]ListRow, int64, error) {
+	q := r.db.WithContext(ctx).Table("submissions AS s").
+		Joins("JOIN users AS u ON u.id = s.user_id").
+		Joins("JOIN problems AS p ON p.id = s.problem_id")
+	if f.ProblemID != 0 {
+		q = q.Where("s.problem_id = ?", f.ProblemID)
+	}
+	if f.ContestID != nil {
+		if *f.ContestID == 0 {
+			q = q.Where("s.contest_id IS NULL")
+		} else {
+			q = q.Where("s.contest_id = ?", *f.ContestID)
+		}
+	}
+	if f.UserID != 0 {
+		q = q.Where("s.user_id = ?", f.UserID)
+	}
+	if f.Language != "" {
+		q = q.Where("s.language = ?", f.Language)
+	}
+	if f.Status != "" {
+		q = q.Where("s.status = ?", f.Status)
+	}
+	if f.Nickname != "" {
+		q = q.Where(`u.nickname ILIKE ? ESCAPE '\'`, "%"+escapeLike(f.Nickname)+"%")
+	}
+
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var rows []ListRow
+	err := q.Select("s.*, u.username, u.nickname, p.title AS problem_title, p.slug AS problem_slug").
+		Order("s.id DESC").Offset(offset).Limit(limit).Scan(&rows).Error
+	return rows, total, err
+}
+
+func (r *gormRepository) FindDetail(ctx context.Context, id int64) (*DetailRow, error) {
+	var row DetailRow
+	err := r.db.WithContext(ctx).Table("submissions AS s").
+		Select("s.*, u.username, u.nickname, p.title AS problem_title, p.slug AS problem_slug").
+		Joins("JOIN users AS u ON u.id = s.user_id").
+		Joins("JOIN problems AS p ON p.id = s.problem_id").
+		Where("s.id = ?", id).Scan(&row).Error
+	if err != nil {
+		return nil, err
+	}
+	if row.ID == 0 {
+		return nil, ErrNotFound
+	}
+	return &row, nil
+}
+
+func (r *gormRepository) HasAccepted(ctx context.Context, userID, problemID int64) (bool, error) {
+	var ok bool
+	err := r.db.WithContext(ctx).Raw(
+		`SELECT EXISTS(SELECT 1 FROM submissions WHERE user_id = ? AND problem_id = ? AND status = 'accepted')`,
+		userID, problemID,
+	).Scan(&ok).Error
+	return ok, err
 }
 
 func mapErr(err error) error {

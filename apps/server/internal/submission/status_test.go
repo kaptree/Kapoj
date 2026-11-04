@@ -25,6 +25,20 @@ func TestStatusTerminal(t *testing.T) {
 	}
 }
 
+func TestStatusValid(t *testing.T) {
+	for _, s := range []submission.Status{
+		submission.StatusPending, submission.StatusJudging, submission.StatusAccepted,
+		submission.StatusWrongAnswer, submission.StatusTimeLimitExceeded,
+		submission.StatusMemoryLimitExceeded, submission.StatusRuntimeError,
+		submission.StatusCompileError, submission.StatusSystemError,
+	} {
+		assert.True(t, s.Valid(), s)
+	}
+	for _, s := range []submission.Status{"", "bogus"} {
+		assert.False(t, s.Valid(), s)
+	}
+}
+
 func TestLanguageValid(t *testing.T) {
 	for _, l := range []submission.Language{
 		submission.LanguageC,
