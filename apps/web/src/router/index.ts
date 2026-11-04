@@ -1,12 +1,14 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
+import type { Role } from '@/api/types'
 import { useAuthStore } from '@/stores/auth'
 import { authGuard } from './guard'
 
 declare module 'vue-router' {
   interface RouteMeta {
     requiresAuth?: boolean
+    roles?: Role[]
     guestOnly?: boolean
     title?: string
   }
@@ -45,6 +47,12 @@ export const router = createRouter({
           meta: { title: '用户主页' },
         },
         {
+          path: 'forbidden',
+          name: 'forbidden',
+          component: () => import('@/views/ForbiddenView.vue'),
+          meta: { title: '没有权限' },
+        },
+        {
           path: ':pathMatch(.*)*',
           name: 'not-found',
           component: () => import('@/views/NotFoundView.vue'),
@@ -54,7 +62,10 @@ export const router = createRouter({
   ],
 })
 
-router.beforeEach((to) => authGuard(to, useAuthStore().isLoggedIn))
+router.beforeEach((to) => {
+  const auth = useAuthStore()
+  return authGuard(to, { isLoggedIn: auth.isLoggedIn, role: auth.user?.role ?? null })
+})
 
 router.afterEach((to) => {
   document.title = to.meta.title ? `${to.meta.title} - kapOJ` : 'kapOJ'

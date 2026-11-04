@@ -10,3 +10,15 @@ export type Session = Schemas['Session']
 export type RegisterRequest = Schemas['RegisterRequest']
 export type LoginRequest = Schemas['LoginRequest']
 export type UpdateMeRequest = Schemas['UpdateMeRequest']
+export type ProblemType = Schemas['ProblemType']
+export type ProblemInput = Schemas['ProblemInput']
+export type ProblemListItem = Schemas['ProblemListItem']
+export type ProblemDetail = Schemas['ProblemDetail']
+export type ProblemStats = Schemas['Stats']
+export type Sample = Schemas['Sample']
+export type Testcase = Schemas['Testcase']
+
+export interface Page<T> {
+  total: number
+  items: T[]
+}

@@ -13,7 +13,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { path: '/', label: '首页' },
-  { path: '/problems', label: '题库', milestone: 'M1' },
+  { path: '/problems', label: '题库' },
   { path: '/submissions', label: '测评记录', milestone: 'M1' },
   { path: '/contests', label: '比赛', milestone: 'M2' },
   { path: '/leaderboard', label: '排行榜', milestone: 'M4' },

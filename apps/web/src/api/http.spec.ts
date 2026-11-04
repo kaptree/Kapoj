@@ -177,4 +177,33 @@ describe('createHttp', () => {
     await expect(http.get('/users/me')).resolves.toBe('ok-from-tab')
     expect(h.onAuthFailure).not.toHaveBeenCalled()
   })
+
+  it('sends FormData without a JSON content type', async () => {
+    let seenData: unknown
+    let seenType: unknown
+    const http = createHttp(hooks(), {
+      adapter: (c) => {
+        seenData = c.data
+        seenType = c.headers.getContentType()
+        return respond(c, 201, { code: 0, message: 'ok', data: { id: 1 } })
+      },
+    })
+    const form = new FormData()
+    form.append('input', new Blob(['1']), '1.in')
+    await expect(http.postForm('/problems/1/testcases', form)).resolves.toEqual({ id: 1 })
+    expect(seenData).toBeInstanceOf(FormData)
+    expect(String(seenType ?? '')).not.toContain('application/json')
+  })
+
+  it('supports DELETE', async () => {
+    let method: unknown
+    const http = createHttp(hooks(), {
+      adapter: (c) => {
+        method = c.method
+        return respond(c, 200, { code: 0, message: 'ok', data: { offlined: false } })
+      },
+    })
+    await expect(http.delete('/problems/1')).resolves.toEqual({ offlined: false })
+    expect(method).toBe('delete')
+  })
 })

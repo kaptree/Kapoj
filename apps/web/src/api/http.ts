@@ -24,6 +24,9 @@ export interface Http {
   get<T>(url: string, config?: AxiosRequestConfig): Promise<T>
   post<T>(url: string, body?: unknown, config?: AxiosRequestConfig): Promise<T>
   put<T>(url: string, body?: unknown, config?: AxiosRequestConfig): Promise<T>
+  delete<T>(url: string, config?: AxiosRequestConfig): Promise<T>
+  /** Posts multipart/form-data; the browser sets the boundary header itself. */
+  postForm<T>(url: string, form: FormData, config?: AxiosRequestConfig): Promise<T>
 }
 
 interface Envelope<T> {
@@ -95,5 +98,7 @@ export function createHttp(hooks: AuthHooks, options: { adapter?: AxiosAdapter }
     get: (url, config) => send({ ...config, method: 'GET', url }),
     post: (url, body, config) => send({ ...config, method: 'POST', url, data: body }),
     put: (url, body, config) => send({ ...config, method: 'PUT', url, data: body }),
+    delete: (url, config) => send({ ...config, method: 'DELETE', url }),
+    postForm: (url, form, config) => send({ ...config, method: 'POST', url, data: form }),
   }
 }
