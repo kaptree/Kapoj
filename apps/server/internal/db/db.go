@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/submission"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
@@ -37,5 +38,7 @@ func newLogger(w io.Writer) logger.Interface {
 func Migrate(g *gorm.DB) error {
 	return g.AutoMigrate(
 		&user.User{}, &problem.Problem{}, &problem.Testcase{}, &submission.Submission{},
+		&contest.Contest{}, &contest.ContestProblem{}, &contest.ContestParticipant{},
+		&contest.Announcement{},
 	)
 }
