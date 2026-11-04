@@ -314,6 +314,471 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/problems": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 题目列表（游客可访问，只返回已公开题目） */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 匹配标题或题目标识，不区分大小写，按字面量匹配 */
+                    keyword?: string;
+                    tag?: string;
+                    difficulty?: number;
+                    /** @description 仅题目管理员有效 */
+                    includeHidden?: boolean;
+                    page?: number;
+                    page_size?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 题目分页列表 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProblemPageResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        /** 创建题目（题目管理员）；新题目一律为未公开 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ProblemInput"];
+                };
+            };
+            responses: {
+                /** @description 已创建 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProblemDetailResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                409: components["responses"]["Error"];
+                413: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/problems/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** 题目详情；未公开题目对非管理员返回 40400 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 题目详情，题解字段仅管理员可见 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProblemDetailResponse"];
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        /** 更新题目（题目管理员）；发布需至少 1 个测试点，特判题还需 checker */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ProblemInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的题目 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProblemDetailResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+                409: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        /** 删除题目；已有提交记录时只下线 */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description offlined 为 true 表示仅下线 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DeleteProblemResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/problems/{id}/statistics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** 提交统计 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 提交与通过统计 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StatsResponse"];
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/problems/{id}/testcases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** 测试点列表（题目管理员） */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 按顺序排列的测试点元数据 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TestcaseListResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        /** 上传测试点（题目管理员）；输入输出文件各不超过 16 MiB，请求体不超过 40 MiB */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "multipart/form-data": {
+                        /** Format: binary */
+                        input: string;
+                        /** Format: binary */
+                        output: string;
+                        /** @default 10 */
+                        score?: number;
+                        /** @default false */
+                        isSample?: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description 已创建 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TestcaseResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+                413: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/problems/{id}/testcases/{tid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                tid: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** 修改测试点分数或样例标记（只更新提供的字段） */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                    tid: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["UpdateTestcaseRequest"];
+                };
+            };
+            responses: {
+                /** @description 已更新 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        /** 删除测试点；公开题目不能删除最后一个测试点 */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                    tid: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已删除 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/problems/{id}/testcases/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 调整测试点顺序；ids 必须恰好是该题全部测试点 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ReorderRequest"];
+                };
+            };
+            responses: {
+                /** @description 已调整 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/problems/{id}/checker": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 上传特判 checker（C++ 源码，不超过 256 KiB，仅特判题） */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "multipart/form-data": {
+                        /** Format: binary */
+                        file: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 已上传 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+                413: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -412,6 +877,117 @@ export interface components {
                 total: number;
                 items: components["schemas"]["Me"][];
             };
+        };
+        /** @enum {string} */
+        ProblemType: "traditional" | "special" | "interactive";
+        Sample: {
+            input: string;
+            output: string;
+        };
+        ProblemInput: {
+            title: string;
+            /** @description 会先 trim 并转小写 */
+            slug: string;
+            statementMd: string;
+            inputFormatMd?: string;
+            outputFormatMd?: string;
+            samples?: components["schemas"]["Sample"][];
+            hintMd?: string;
+            solutionMd?: string;
+            solutionCode?: string;
+            type?: components["schemas"]["ProblemType"];
+            tags?: string[];
+            difficulty: number;
+            /** @description 0 表示默认 1000 */
+            timeLimitMs?: number;
+            /** @description 0 表示默认 256 */
+            memoryLimitMb?: number;
+            /** @description 创建时被忽略 */
+            isPublic?: boolean;
+            source?: string;
+        };
+        ProblemListItem: {
+            /** Format: int64 */
+            id: number;
+            title: string;
+            slug: string;
+            type: components["schemas"]["ProblemType"];
+            tags: string[];
+            difficulty: number;
+            timeLimitMs: number;
+            memoryLimitMb: number;
+            submitCount: number;
+            acceptCount: number;
+            isPublic: boolean;
+            source: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        ProblemDetail: components["schemas"]["ProblemListItem"] & {
+            statementMd: string;
+            inputFormatMd: string;
+            outputFormatMd: string;
+            samples: components["schemas"]["Sample"][];
+            hintMd: string;
+            /** @description 仅题目管理员可见 */
+            solutionMd?: string;
+            /** @description 仅题目管理员可见 */
+            solutionCode?: string;
+            /** @description 仅题目管理员可见 */
+            checkerUploaded?: boolean;
+            /**
+             * Format: int64
+             * @description 仅题目管理员可见
+             */
+            createdBy?: number;
+        };
+        Testcase: {
+            /** Format: int64 */
+            id: number;
+            sortOrder: number;
+            score: number;
+            isSample: boolean;
+            /** Format: int64 */
+            inputSize: number;
+            /** Format: int64 */
+            outputSize: number;
+        };
+        UpdateTestcaseRequest: {
+            score?: number;
+            isSample?: boolean;
+        };
+        ReorderRequest: {
+            ids: number[];
+        };
+        Stats: {
+            submitCount: number;
+            acceptCount: number;
+            /** @description 0 到 1，没有提交时为 0 */
+            acceptRate: number;
+        };
+        ProblemPageResponse: components["schemas"]["Envelope"] & {
+            data: {
+                /** Format: int64 */
+                total: number;
+                items: components["schemas"]["ProblemListItem"][];
+            };
+        };
+        ProblemDetailResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["ProblemDetail"];
+        };
+        DeleteProblemResponse: components["schemas"]["Envelope"] & {
+            data: {
+                offlined: boolean;
+            };
+        };
+        StatsResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["Stats"];
+        };
+        TestcaseResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["Testcase"];
+        };
+        TestcaseListResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["Testcase"][];
         };
     };
     responses: {

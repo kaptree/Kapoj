@@ -16,6 +16,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/config"
 	"github.com/kaptree/kapoj/apps/server/internal/db"
 	"github.com/kaptree/kapoj/apps/server/internal/router"
+	"github.com/kaptree/kapoj/apps/server/internal/storage"
 )
 
 func main() {
@@ -41,13 +42,17 @@ func run() error {
 	if err := db.Migrate(g); err != nil {
 		return err
 	}
+	store, err := storage.NewLocal(cfg.StorageDir)
+	if err != nil {
+		return err
+	}
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
 	defer func() { _ = rdb.Close() }()
 
 	gin.SetMode(gin.ReleaseMode)
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           router.New(router.Deps{DB: g, Redis: rdb, Config: cfg}),
+		Handler:           router.New(router.Deps{DB: g, Redis: rdb, Storage: store, Config: cfg}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

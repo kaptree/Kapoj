@@ -17,6 +17,7 @@ import (
 
 	"github.com/kaptree/kapoj/apps/server/internal/auth"
 	"github.com/kaptree/kapoj/apps/server/internal/config"
+	"github.com/kaptree/kapoj/apps/server/internal/storage"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
@@ -24,9 +25,12 @@ import (
 func newRouter(t *testing.T) http.Handler {
 	t.Helper()
 	mr := miniredis.RunT(t)
+	store, err := storage.NewLocal(t.TempDir())
+	require.NoError(t, err)
 	return New(Deps{
-		DB:    testutil.PG(t),
-		Redis: redis.NewClient(&redis.Options{Addr: mr.Addr()}),
+		DB:      testutil.PG(t),
+		Redis:   redis.NewClient(&redis.Options{Addr: mr.Addr()}),
+		Storage: store,
 		Config: &config.Config{
 			JWTSecret:       strings.Repeat("s", 32),
 			AccessTokenTTL:  15 * time.Minute,

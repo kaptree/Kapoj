@@ -4,7 +4,7 @@ info:
   version: 0.1.0
   description: |
     kapOJ 后端接口。所有响应都使用统一结构 `{ code, message, data }`，
-    `code` 为 0 表示成功，否则为错误码（见 DEVELOPMENT.md 与 M0 计划的错误码表）。
+    `code` 为 0 表示成功，否则为错误码（见 DEVELOPMENT.md 2.4 的错误码表）。
 servers:
   - url: /api
 paths:
@@ -128,6 +128,212 @@ paths:
               schema: { $ref: '#/components/schemas/UserPageResponse' }
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
+  /problems:
+    get:
+      summary: 题目列表（游客可访问，只返回已公开题目）
+      parameters:
+        - { name: keyword, in: query, schema: { type: string }, description: 匹配标题或题目标识，不区分大小写，按字面量匹配 }
+        - { name: tag, in: query, schema: { type: string } }
+        - { name: difficulty, in: query, schema: { type: integer, minimum: 1, maximum: 5 } }
+        - { name: includeHidden, in: query, schema: { type: boolean }, description: 仅题目管理员有效 }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: 题目分页列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProblemPageResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+    post:
+      summary: 创建题目（题目管理员）；新题目一律为未公开
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProblemInput' }
+      responses:
+        '201':
+          description: 已创建
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProblemDetailResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '413': { $ref: '#/components/responses/Error' }
+  /problems/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      summary: 题目详情；未公开题目对非管理员返回 40400
+      responses:
+        '200':
+          description: 题目详情，题解字段仅管理员可见
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProblemDetailResponse' }
+        '404': { $ref: '#/components/responses/Error' }
+    put:
+      summary: 更新题目（题目管理员）；发布需至少 1 个测试点，特判题还需 checker
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProblemInput' }
+      responses:
+        '200':
+          description: 更新后的题目
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProblemDetailResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+    delete:
+      summary: 删除题目；已有提交记录时只下线
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: offlined 为 true 表示仅下线
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeleteProblemResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /problems/{id}/statistics:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      summary: 提交统计
+      responses:
+        '200':
+          description: 提交与通过统计
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StatsResponse' }
+        '404': { $ref: '#/components/responses/Error' }
+  /problems/{id}/testcases:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      summary: 测试点列表（题目管理员）
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 按顺序排列的测试点元数据
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestcaseListResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+    post:
+      summary: 上传测试点（题目管理员）；输入输出文件各不超过 16 MiB，请求体不超过 40 MiB
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [input, output]
+              properties:
+                input: { type: string, format: binary }
+                output: { type: string, format: binary }
+                score: { type: integer, minimum: 0, maximum: 1000, default: 10 }
+                isSample: { type: boolean, default: false }
+      responses:
+        '201':
+          description: 已创建
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestcaseResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '413': { $ref: '#/components/responses/Error' }
+  /problems/{id}/testcases/{tid}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      - { name: tid, in: path, required: true, schema: { type: integer, format: int64 } }
+    put:
+      summary: 修改测试点分数或样例标记（只更新提供的字段）
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateTestcaseRequest' }
+      responses:
+        '200':
+          description: 已更新
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+    delete:
+      summary: 删除测试点；公开题目不能删除最后一个测试点
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 已删除
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /problems/{id}/testcases/reorder:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      summary: 调整测试点顺序；ids 必须恰好是该题全部测试点
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReorderRequest' }
+      responses:
+        '200':
+          description: 已调整
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /problems/{id}/checker:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      summary: 上传特判 checker（C++ 源码，不超过 256 KiB，仅特判题）
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '200':
+          description: 已上传
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '413': { $ref: '#/components/responses/Error' }
 components:
   securitySchemes:
     bearer:
@@ -280,3 +486,142 @@ components:
                 items:
                   type: array
                   items: { $ref: '#/components/schemas/Me' }
+    ProblemType:
+      type: string
+      enum: [traditional, special, interactive]
+    Sample:
+      type: object
+      required: [input, output]
+      properties:
+        input: { type: string }
+        output: { type: string }
+    ProblemInput:
+      type: object
+      required: [title, slug, statementMd, difficulty]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 100 }
+        slug: { type: string, pattern: '^[a-z0-9][a-z0-9-]{1,62}$', description: 会先 trim 并转小写 }
+        statementMd: { type: string, maxLength: 100000 }
+        inputFormatMd: { type: string, maxLength: 20000 }
+        outputFormatMd: { type: string, maxLength: 20000 }
+        samples: { type: array, maxItems: 10, items: { $ref: '#/components/schemas/Sample' } }
+        hintMd: { type: string, maxLength: 50000 }
+        solutionMd: { type: string, maxLength: 50000 }
+        solutionCode: { type: string }
+        type: { $ref: '#/components/schemas/ProblemType' }
+        tags: { type: array, maxItems: 10, items: { type: string, minLength: 1, maxLength: 20 } }
+        difficulty: { type: integer, minimum: 1, maximum: 5 }
+        timeLimitMs: { type: integer, minimum: 100, maximum: 10000, description: 0 表示默认 1000 }
+        memoryLimitMb: { type: integer, minimum: 16, maximum: 1024, description: 0 表示默认 256 }
+        isPublic: { type: boolean, description: 创建时被忽略 }
+        source: { type: string, maxLength: 200 }
+    ProblemListItem:
+      type: object
+      required: [id, title, slug, type, tags, difficulty, timeLimitMs, memoryLimitMb, submitCount, acceptCount, isPublic, source, createdAt]
+      properties:
+        id: { type: integer, format: int64 }
+        title: { type: string }
+        slug: { type: string }
+        type: { $ref: '#/components/schemas/ProblemType' }
+        tags: { type: array, items: { type: string } }
+        difficulty: { type: integer }
+        timeLimitMs: { type: integer }
+        memoryLimitMb: { type: integer }
+        submitCount: { type: integer }
+        acceptCount: { type: integer }
+        isPublic: { type: boolean }
+        source: { type: string }
+        createdAt: { type: string, format: date-time }
+    ProblemDetail:
+      allOf:
+        - $ref: '#/components/schemas/ProblemListItem'
+        - type: object
+          required: [statementMd, inputFormatMd, outputFormatMd, samples, hintMd]
+          properties:
+            statementMd: { type: string }
+            inputFormatMd: { type: string }
+            outputFormatMd: { type: string }
+            samples: { type: array, items: { $ref: '#/components/schemas/Sample' } }
+            hintMd: { type: string }
+            solutionMd: { type: string, description: 仅题目管理员可见 }
+            solutionCode: { type: string, description: 仅题目管理员可见 }
+            checkerUploaded: { type: boolean, description: 仅题目管理员可见 }
+            createdBy: { type: integer, format: int64, description: 仅题目管理员可见 }
+    Testcase:
+      type: object
+      required: [id, sortOrder, score, isSample, inputSize, outputSize]
+      properties:
+        id: { type: integer, format: int64 }
+        sortOrder: { type: integer }
+        score: { type: integer }
+        isSample: { type: boolean }
+        inputSize: { type: integer, format: int64 }
+        outputSize: { type: integer, format: int64 }
+    UpdateTestcaseRequest:
+      type: object
+      properties:
+        score: { type: integer, minimum: 0, maximum: 1000 }
+        isSample: { type: boolean }
+    ReorderRequest:
+      type: object
+      required: [ids]
+      properties:
+        ids: { type: array, items: { type: integer, format: int64 } }
+    Stats:
+      type: object
+      required: [submitCount, acceptCount, acceptRate]
+      properties:
+        submitCount: { type: integer }
+        acceptCount: { type: integer }
+        acceptRate: { type: number, description: 0 到 1，没有提交时为 0 }
+    ProblemPageResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              required: [total, items]
+              properties:
+                total: { type: integer, format: int64 }
+                items: { type: array, items: { $ref: '#/components/schemas/ProblemListItem' } }
+    ProblemDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/ProblemDetail' }
+    DeleteProblemResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              required: [offlined]
+              properties:
+                offlined: { type: boolean }
+    StatsResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/Stats' }
+    TestcaseResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/Testcase' }
+    TestcaseListResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { type: array, items: { $ref: '#/components/schemas/Testcase' } }

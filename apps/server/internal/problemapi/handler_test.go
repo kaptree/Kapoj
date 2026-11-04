@@ -1,0 +1,593 @@
+package problemapi_test
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/alicebob/miniredis/v2"
+	"github.com/redis/go-redis/v9"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
+
+	"github.com/kaptree/kapoj/apps/server/internal/config"
+	"github.com/kaptree/kapoj/apps/server/internal/router"
+	"github.com/kaptree/kapoj/apps/server/internal/storage"
+	"github.com/kaptree/kapoj/apps/server/internal/testutil"
+)
+
+type fx struct {
+	t      *testing.T
+	h      http.Handler
+	db     *gorm.DB
+	root   string
+	tokens map[string]string
+	nextN  int
+}
+
+func newFx(t *testing.T) *fx {
+	t.Helper()
+	g := testutil.PG(t)
+	mr := miniredis.RunT(t)
+	root := filepath.Join(t.TempDir(), "store")
+	store, err := storage.NewLocal(root)
+	require.NoError(t, err)
+	h := router.New(router.Deps{
+		DB:      g,
+		Redis:   redis.NewClient(&redis.Options{Addr: mr.Addr()}),
+		Storage: store,
+		Config: &config.Config{
+			JWTSecret:       strings.Repeat("s", 32),
+			AccessTokenTTL:  15 * time.Minute,
+			RefreshTokenTTL: time.Hour,
+		},
+	})
+	return &fx{t: t, h: h, db: g, root: root, tokens: map[string]string{}}
+}
+
+func decode(w *httptest.ResponseRecorder) map[string]any {
+	var m map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &m)
+	return m
+}
+
+func (f *fx) do(method, path, token string, body any) (*httptest.ResponseRecorder, map[string]any) {
+	var buf bytes.Buffer
+	if s, ok := body.(string); ok {
+		buf.WriteString(s)
+	} else if body != nil {
+		require.NoError(f.t, json.NewEncoder(&buf).Encode(body))
+	}
+	req := httptest.NewRequest(method, path, &buf)
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	w := httptest.NewRecorder()
+	f.h.ServeHTTP(w, req)
+	return w, decode(w)
+}
+
+type filePart struct {
+	field string
+	name  string
+	body  io.Reader
+}
+
+func (f *fx) multipart(path, token string, fields map[string]string, files ...filePart) (*httptest.ResponseRecorder, map[string]any) {
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	for k, v := range fields {
+		require.NoError(f.t, mw.WriteField(k, v))
+	}
+	for _, fp := range files {
+		part, err := mw.CreateFormFile(fp.field, fp.name)
+		require.NoError(f.t, err)
+		_, err = io.Copy(part, fp.body)
+		require.NoError(f.t, err)
+	}
+	require.NoError(f.t, mw.Close())
+
+	req := httptest.NewRequest(http.MethodPost, path, &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	w := httptest.NewRecorder()
+	f.h.ServeHTTP(w, req)
+	return w, decode(w)
+}
+
+// token returns an access token for a user with the given role, creating the
+// user on first use. "guest" returns "".
+func (f *fx) token(role string) string {
+	f.t.Helper()
+	if role == "guest" {
+		return ""
+	}
+	if tok, ok := f.tokens[role]; ok {
+		return tok
+	}
+	f.nextN++
+	name := fmt.Sprintf("%s%d", strings.ReplaceAll(role, "_", ""), f.nextN)
+	w, _ := f.do(http.MethodPost, "/api/auth/register", "", map[string]string{
+		"username": name, "email": name + "@example.com", "password": "correct-horse",
+	})
+	require.Equal(f.t, http.StatusCreated, w.Code, w.Body.String())
+	require.NoError(f.t, f.db.Exec("UPDATE users SET role = ? WHERE username = ?", role, name).Error)
+	w, resp := f.do(http.MethodPost, "/api/auth/login", "", map[string]string{"account": name, "password": "correct-horse"})
+	require.Equal(f.t, http.StatusOK, w.Code)
+	tok := resp["data"].(map[string]any)["accessToken"].(string)
+	f.tokens[role] = tok
+	return tok
+}
+
+func (f *fx) storedFiles() []string {
+	var out []string
+	_ = filepath.WalkDir(f.root, func(p string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			out = append(out, p)
+		}
+		return nil
+	})
+	return out
+}
+
+func body(slug string) map[string]any {
+	return map[string]any{
+		"title": "Problem " + slug, "slug": slug, "statementMd": "statement",
+		"type": "traditional", "difficulty": 1, "timeLimitMs": 1000, "memoryLimitMb": 256,
+	}
+}
+
+func idOf(resp map[string]any) int64 {
+	return int64(resp["data"].(map[string]any)["id"].(float64))
+}
+
+func (f *fx) create(b map[string]any) int64 {
+	f.t.Helper()
+	w, resp := f.do(http.MethodPost, "/api/problems", f.token("problem_admin"), b)
+	require.Equal(f.t, http.StatusCreated, w.Code, w.Body.String())
+	return idOf(resp)
+}
+
+func (f *fx) addCase(id int64) int64 {
+	f.t.Helper()
+	w, resp := f.multipart(fmt.Sprintf("/api/problems/%d/testcases", id), f.token("problem_admin"), nil,
+		filePart{"input", "1.in", strings.NewReader("1 2")}, filePart{"output", "1.out", strings.NewReader("3")})
+	require.Equal(f.t, http.StatusCreated, w.Code, w.Body.String())
+	return idOf(resp)
+}
+
+func (f *fx) publish(slug string, extra map[string]any) int64 {
+	f.t.Helper()
+	b := body(slug)
+	for k, v := range extra {
+		b[k] = v
+	}
+	id := f.create(b)
+	f.addCase(id)
+	b["isPublic"] = true
+	w, _ := f.do(http.MethodPut, fmt.Sprintf("/api/problems/%d", id), f.token("problem_admin"), b)
+	require.Equal(f.t, http.StatusOK, w.Code, w.Body.String())
+	return id
+}
+
+func path(format string, args ...any) string { return fmt.Sprintf(format, args...) }
+
+func TestWriteEndpointsRequireProblemAdmin(t *testing.T) {
+	f := newFx(t)
+	type ep struct {
+		method, path string
+		body         any
+		multipart    bool
+	}
+	endpoints := []ep{
+		{http.MethodPost, "/api/problems", body("x1"), false},
+		{http.MethodPut, "/api/problems/999999", body("x1"), false},
+		{http.MethodDelete, "/api/problems/999999", nil, false},
+		{http.MethodGet, "/api/problems/999999/testcases", nil, false},
+		{http.MethodPost, "/api/problems/999999/testcases", nil, true},
+		{http.MethodPut, "/api/problems/999999/testcases/1", map[string]any{"score": 5}, false},
+		{http.MethodPost, "/api/problems/999999/testcases/reorder", map[string]any{"ids": []int64{1}}, false},
+		{http.MethodDelete, "/api/problems/999999/testcases/1", nil, false},
+		{http.MethodPost, "/api/problems/999999/checker", nil, true},
+	}
+	for _, e := range endpoints {
+		call := func(role string) *httptest.ResponseRecorder {
+			if e.multipart {
+				w, _ := f.multipart(e.path, f.token(role), nil)
+				return w
+			}
+			w, _ := f.do(e.method, e.path, f.token(role), e.body)
+			return w
+		}
+		label := e.method + " " + e.path
+		assert.Equal(t, http.StatusUnauthorized, call("guest").Code, label+" guest")
+		assert.Equal(t, http.StatusForbidden, call("user").Code, label+" user")
+		assert.Equal(t, http.StatusForbidden, call("contest_admin").Code, label+" contest_admin")
+		for _, role := range []string{"problem_admin", "super_admin"} {
+			code := call(role).Code
+			assert.NotEqual(t, http.StatusUnauthorized, code, label+" "+role)
+			assert.NotEqual(t, http.StatusForbidden, code, label+" "+role)
+		}
+	}
+}
+
+func TestCreateReturns201AndHidden(t *testing.T) {
+	f := newFx(t)
+	b := body("hello")
+	b["isPublic"] = true
+	b["tags"] = []string{"a", "a", "b"}
+	w, resp := f.do(http.MethodPost, "/api/problems", f.token("problem_admin"), b)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+
+	data := resp["data"].(map[string]any)
+	assert.Equal(t, false, data["isPublic"])
+	assert.Equal(t, "hello", data["slug"])
+	assert.Equal(t, []any{"a", "b"}, data["tags"])
+	assert.Contains(t, data, "solutionMd", "managers see manager fields on their own response")
+}
+
+func TestCreateValidationErrors(t *testing.T) {
+	f := newFx(t)
+	for name, mutate := range map[string]func(map[string]any){
+		"bad slug":   func(b map[string]any) { b["slug"] = "-bad" },
+		"no title":   func(b map[string]any) { b["title"] = "" },
+		"difficulty": func(b map[string]any) { b["difficulty"] = 9 },
+		"bad type":   func(b map[string]any) { b["type"] = "nope" },
+	} {
+		b := body("valid")
+		mutate(b)
+		w, resp := f.do(http.MethodPost, "/api/problems", f.token("problem_admin"), b)
+		assert.Equal(t, http.StatusBadRequest, w.Code, name)
+		assert.EqualValues(t, 40001, resp["code"], name)
+	}
+	w, resp := f.do(http.MethodPost, "/api/problems", f.token("problem_admin"), `{"title":`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40000, resp["code"])
+}
+
+func TestCreateDuplicateSlugReturns409(t *testing.T) {
+	f := newFx(t)
+	f.create(body("same"))
+	w, resp := f.do(http.MethodPost, "/api/problems", f.token("problem_admin"), body("same"))
+	assert.Equal(t, http.StatusConflict, w.Code)
+	assert.EqualValues(t, 40903, resp["code"])
+}
+
+func TestJSONBodyLimit1MiB(t *testing.T) {
+	f := newFx(t)
+	b := body("huge")
+	b["statementMd"] = strings.Repeat("a", 1<<20+1)
+	w, resp := f.do(http.MethodPost, "/api/problems", f.token("problem_admin"), b)
+	assert.Equal(t, http.StatusRequestEntityTooLarge, w.Code)
+	assert.EqualValues(t, 41300, resp["code"])
+}
+
+func items(resp map[string]any) []map[string]any {
+	var out []map[string]any
+	for _, it := range resp["data"].(map[string]any)["items"].([]any) {
+		out = append(out, it.(map[string]any))
+	}
+	return out
+}
+
+func slugsOf(resp map[string]any) []string {
+	var out []string
+	for _, it := range items(resp) {
+		out = append(out, it["slug"].(string))
+	}
+	return out
+}
+
+func TestListGuestSeesOnlyPublic(t *testing.T) {
+	f := newFx(t)
+	f.publish("visible", nil)
+	f.create(body("hidden"))
+
+	w, resp := f.do(http.MethodGet, "/api/problems", "", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, []string{"visible"}, slugsOf(resp))
+	assert.EqualValues(t, 1, resp["data"].(map[string]any)["total"])
+	for _, it := range items(resp) {
+		assert.NotContains(t, it, "solutionMd")
+		assert.NotContains(t, it, "statementMd")
+	}
+}
+
+func TestListIncludeHiddenOnlyForManagers(t *testing.T) {
+	f := newFx(t)
+	f.publish("visible", nil)
+	f.create(body("hidden"))
+
+	_, resp := f.do(http.MethodGet, "/api/problems?includeHidden=true", f.token("user"), nil)
+	assert.Equal(t, []string{"visible"}, slugsOf(resp), "ordinary users cannot opt in")
+	_, resp = f.do(http.MethodGet, "/api/problems?includeHidden=true", "", nil)
+	assert.Equal(t, []string{"visible"}, slugsOf(resp))
+	_, resp = f.do(http.MethodGet, "/api/problems?includeHidden=true", f.token("problem_admin"), nil)
+	assert.Equal(t, []string{"visible", "hidden"}, slugsOf(resp))
+	_, resp = f.do(http.MethodGet, "/api/problems", f.token("problem_admin"), nil)
+	assert.Equal(t, []string{"visible"}, slugsOf(resp), "managers also need to ask for hidden ones")
+}
+
+func TestListFiltersAndPagination(t *testing.T) {
+	f := newFx(t)
+	f.publish("alpha", map[string]any{"title": "Alpha Sum", "tags": []string{"math"}, "difficulty": 1})
+	f.publish("beta", map[string]any{"title": "Beta", "tags": []string{"graph"}, "difficulty": 3})
+	f.publish("gamma", map[string]any{"title": "Gamma", "tags": []string{"math"}, "difficulty": 3})
+
+	_, resp := f.do(http.MethodGet, "/api/problems?keyword=sum", "", nil)
+	assert.Equal(t, []string{"alpha"}, slugsOf(resp))
+	_, resp = f.do(http.MethodGet, "/api/problems?tag=math", "", nil)
+	assert.Equal(t, []string{"alpha", "gamma"}, slugsOf(resp))
+	_, resp = f.do(http.MethodGet, "/api/problems?difficulty=3&tag=math", "", nil)
+	assert.Equal(t, []string{"gamma"}, slugsOf(resp))
+	_, resp = f.do(http.MethodGet, "/api/problems?page=2&page_size=2", "", nil)
+	assert.Equal(t, []string{"gamma"}, slugsOf(resp))
+	assert.EqualValues(t, 3, resp["data"].(map[string]any)["total"])
+	_, resp = f.do(http.MethodGet, "/api/problems?page_size=500", "", nil)
+	assert.Len(t, items(resp), 3)
+
+	w, resp := f.do(http.MethodGet, "/api/problems?difficulty=abc", "", nil)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+}
+
+func TestHiddenProblemLooksNonexistent(t *testing.T) {
+	f := newFx(t)
+	id := f.create(body("secret"))
+	detail := path("/api/problems/%d", id)
+	stats := detail + "/statistics"
+
+	for _, role := range []string{"guest", "user", "contest_admin"} {
+		for _, p := range []string{detail, stats, "/api/problems/999999", "/api/problems/abc", "/api/problems/-1"} {
+			w, resp := f.do(http.MethodGet, p, f.token(role), nil)
+			assert.Equal(t, http.StatusNotFound, w.Code, role+" "+p)
+			assert.EqualValues(t, 40400, resp["code"], role+" "+p)
+		}
+	}
+	for _, p := range []string{detail, stats, detail + "/testcases"} {
+		w, _ := f.do(http.MethodGet, p, f.token("problem_admin"), nil)
+		assert.Equal(t, http.StatusOK, w.Code, p)
+	}
+}
+
+func TestDetailHidesSolutionFromUsers(t *testing.T) {
+	f := newFx(t)
+	id := f.publish("sol", map[string]any{
+		"hintMd": "a hint", "solutionMd": "secret idea", "solutionCode": "secret code",
+	})
+	p := path("/api/problems/%d", id)
+
+	for _, role := range []string{"guest", "user", "contest_admin"} {
+		w, resp := f.do(http.MethodGet, p, f.token(role), nil)
+		require.Equal(t, http.StatusOK, w.Code)
+		data := resp["data"].(map[string]any)
+		for _, k := range []string{"solutionMd", "solutionCode", "checkerUploaded", "createdBy"} {
+			assert.NotContains(t, data, k, role+" must not see "+k)
+		}
+		assert.Equal(t, "a hint", data["hintMd"])
+		assert.NotContains(t, w.Body.String(), "secret")
+	}
+
+	_, resp := f.do(http.MethodGet, p, f.token("problem_admin"), nil)
+	data := resp["data"].(map[string]any)
+	assert.Equal(t, "secret idea", data["solutionMd"])
+	assert.Equal(t, "secret code", data["solutionCode"])
+}
+
+func TestPublishFlow(t *testing.T) {
+	f := newFx(t)
+	admin := f.token("problem_admin")
+	id := f.create(body("flow"))
+	p := path("/api/problems/%d", id)
+
+	// Publishing without a testcase is refused.
+	b := body("flow")
+	b["isPublic"] = true
+	w, resp := f.do(http.MethodPut, p, admin, b)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	f.addCase(id)
+	w, resp = f.do(http.MethodPut, p, admin, b)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, true, resp["data"].(map[string]any)["isPublic"])
+
+	_, resp = f.do(http.MethodGet, "/api/problems", "", nil)
+	assert.Equal(t, []string{"flow"}, slugsOf(resp))
+	w, _ = f.do(http.MethodGet, p, "", nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	// Taking it offline hides it again.
+	b["isPublic"] = false
+	f.do(http.MethodPut, p, admin, b)
+	w, _ = f.do(http.MethodGet, p, "", nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestUploadTestcase(t *testing.T) {
+	f := newFx(t)
+	id := f.create(body("up"))
+	admin := f.token("problem_admin")
+	url := path("/api/problems/%d/testcases", id)
+
+	w, resp := f.multipart(url, admin, map[string]string{"score": "25", "isSample": "true"},
+		filePart{"input", "a.in", strings.NewReader("12345")}, filePart{"output", "a.out", strings.NewReader("678")})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	data := resp["data"].(map[string]any)
+	assert.EqualValues(t, 1, data["sortOrder"])
+	assert.EqualValues(t, 25, data["score"])
+	assert.Equal(t, true, data["isSample"])
+	assert.EqualValues(t, 5, data["inputSize"])
+	assert.EqualValues(t, 3, data["outputSize"])
+
+	w, resp = f.multipart(url, admin, nil,
+		filePart{"input", "b.in", strings.NewReader("")}, filePart{"output", "b.out", strings.NewReader("")})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	data = resp["data"].(map[string]any)
+	assert.EqualValues(t, 10, data["score"], "score defaults to 10")
+	assert.Equal(t, false, data["isSample"])
+	assert.EqualValues(t, 2, data["sortOrder"])
+
+	_, resp = f.do(http.MethodGet, url, admin, nil)
+	assert.Len(t, resp["data"], 2)
+}
+
+type zeros struct{}
+
+func (zeros) Read(p []byte) (int, error) { clear(p); return len(p), nil }
+
+func TestUploadErrors(t *testing.T) {
+	f := newFx(t)
+	id := f.create(body("err"))
+	admin := f.token("problem_admin")
+	url := path("/api/problems/%d/testcases", id)
+	ok := func(field string) filePart { return filePart{field, field, strings.NewReader("x")} }
+
+	cases := []struct {
+		name   string
+		fields map[string]string
+		files  []filePart
+		status int
+		code   int
+	}{
+		{"missing input", nil, []filePart{ok("output")}, 400, 40001},
+		{"missing output", nil, []filePart{ok("input")}, 400, 40001},
+		{"score not a number", map[string]string{"score": "abc"}, []filePart{ok("input"), ok("output")}, 400, 40001},
+		{"score out of range", map[string]string{"score": "5000"}, []filePart{ok("input"), ok("output")}, 400, 40001},
+		{"isSample not a bool", map[string]string{"isSample": "maybe"}, []filePart{ok("input"), ok("output")}, 400, 40001},
+		{"input over 16 MiB", nil, []filePart{{"input", "i", io.LimitReader(zeros{}, 16<<20+1)}, ok("output")}, 400, 40001},
+		{"output over 16 MiB", nil, []filePart{ok("input"), {"output", "o", io.LimitReader(zeros{}, 16<<20+1)}}, 400, 40001},
+		{"body over 40 MiB", nil, []filePart{{"input", "i", io.LimitReader(zeros{}, 41<<20)}, ok("output")}, 413, 41300},
+	}
+	for _, tc := range cases {
+		w, resp := f.multipart(url, admin, tc.fields, tc.files...)
+		assert.Equal(t, tc.status, w.Code, tc.name)
+		assert.EqualValues(t, tc.code, resp["code"], tc.name)
+		assert.Empty(t, f.storedFiles(), tc.name+": no files may remain")
+		_, list := f.do(http.MethodGet, url, admin, nil)
+		assert.Empty(t, list["data"], tc.name+": no rows may remain")
+	}
+
+	// Not multipart at all.
+	w, resp := f.do(http.MethodPost, url, admin, `{"a":1}`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40000, resp["code"])
+
+	// Missing problem.
+	w, resp = f.multipart("/api/problems/999999/testcases", admin, nil, ok("input"), ok("output"))
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.EqualValues(t, 40400, resp["code"])
+	assert.Empty(t, f.storedFiles())
+}
+
+func TestTestcaseUpdateReorderDelete(t *testing.T) {
+	f := newFx(t)
+	admin := f.token("problem_admin")
+	id := f.create(body("ops"))
+	a, b := f.addCase(id), f.addCase(id)
+	base := path("/api/problems/%d/testcases", id)
+
+	w, _ := f.do(http.MethodPut, path("%s/%d", base, a), admin, map[string]any{"score": 50, "isSample": true})
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	w, resp := f.do(http.MethodPut, path("%s/%d", base, a), admin, map[string]any{"score": 5000})
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	w, _ = f.do(http.MethodPost, base+"/reorder", admin, map[string]any{"ids": []int64{b, a}})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	_, resp = f.do(http.MethodGet, base, admin, nil)
+	list := resp["data"].([]any)
+	assert.EqualValues(t, b, list[0].(map[string]any)["id"])
+	assert.EqualValues(t, 50, list[1].(map[string]any)["score"])
+
+	w, resp = f.do(http.MethodPost, base+"/reorder", admin, map[string]any{"ids": []int64{a}})
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	w, _ = f.do(http.MethodDelete, path("%s/%d", base, a), admin, nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Len(t, f.storedFiles(), 2, "only the other testcase's files remain")
+	w, resp = f.do(http.MethodDelete, path("%s/%d", base, a), admin, nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.EqualValues(t, 40400, resp["code"])
+	w, _ = f.do(http.MethodDelete, base+"/abc", admin, nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestCheckerUpload(t *testing.T) {
+	f := newFx(t)
+	admin := f.token("problem_admin")
+	special := body("spj")
+	special["type"] = "special"
+	sid := f.create(special)
+	tid := f.create(body("trad"))
+
+	w, _ := f.multipart(path("/api/problems/%d/checker", sid), admin, nil,
+		filePart{"file", "chk.cpp", strings.NewReader("int main(){}")})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	_, resp := f.do(http.MethodGet, path("/api/problems/%d", sid), admin, nil)
+	assert.Equal(t, true, resp["data"].(map[string]any)["checkerUploaded"])
+	assert.NotContains(t, w.Body.String(), "checker.cpp", "storage paths are never returned")
+
+	w, resp = f.multipart(path("/api/problems/%d/checker", tid), admin, nil,
+		filePart{"file", "chk.cpp", strings.NewReader("x")})
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	w, resp = f.multipart(path("/api/problems/%d/checker", sid), admin, nil)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+}
+
+func TestDeleteProblem(t *testing.T) {
+	f := newFx(t)
+	admin := f.token("problem_admin")
+
+	plain := f.create(body("plain"))
+	f.addCase(plain)
+	w, resp := f.do(http.MethodDelete, path("/api/problems/%d", plain), admin, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, false, resp["data"].(map[string]any)["offlined"])
+	w, _ = f.do(http.MethodGet, path("/api/problems/%d", plain), admin, nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Empty(t, f.storedFiles())
+
+	used := f.publish("used", nil)
+	require.NoError(t, f.db.Exec("UPDATE problems SET submit_count = 2 WHERE id = ?", used).Error)
+	w, resp = f.do(http.MethodDelete, path("/api/problems/%d", used), admin, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, true, resp["data"].(map[string]any)["offlined"])
+	w, _ = f.do(http.MethodGet, path("/api/problems/%d", used), "", nil)
+	assert.Equal(t, http.StatusNotFound, w.Code, "offlined problems disappear for guests")
+	w, _ = f.do(http.MethodGet, path("/api/problems/%d", used), admin, nil)
+	assert.Equal(t, http.StatusOK, w.Code, "but managers still see them")
+
+	w, _ = f.do(http.MethodDelete, "/api/problems/999999", admin, nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestStatisticsEndpoint(t *testing.T) {
+	f := newFx(t)
+	id := f.publish("stat", nil)
+	require.NoError(t, f.db.Exec("UPDATE problems SET submit_count = 4, accept_count = 1 WHERE id = ?", id).Error)
+
+	w, resp := f.do(http.MethodGet, path("/api/problems/%d/statistics", id), "", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	data := resp["data"].(map[string]any)
+	assert.EqualValues(t, 4, data["submitCount"])
+	assert.EqualValues(t, 1, data["acceptCount"])
+	assert.InDelta(t, 0.25, data["acceptRate"], 1e-9)
+}

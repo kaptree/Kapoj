@@ -14,16 +14,23 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/health"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
+	"github.com/kaptree/kapoj/apps/server/internal/problem"
+	"github.com/kaptree/kapoj/apps/server/internal/problemapi"
+	"github.com/kaptree/kapoj/apps/server/internal/storage"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
 	"github.com/kaptree/kapoj/apps/server/internal/userapi"
 )
 
-const maxBodyBytes = 1 << 20
+const (
+	maxBodyBytes   = 1 << 20  // JSON endpoints
+	maxUploadBytes = 40 << 20 // file upload endpoints: two 16 MiB files plus form fields
+)
 
 type Deps struct {
-	DB     *gorm.DB
-	Redis  *redis.Client
-	Config *config.Config
+	DB      *gorm.DB
+	Redis   *redis.Client
+	Storage storage.Storage
+	Config  *config.Config
 }
 
 func New(d Deps) *gin.Engine {
@@ -31,7 +38,7 @@ func New(d Deps) *gin.Engine {
 	r.Use(requestLog(), gin.CustomRecovery(func(c *gin.Context, recovered any) {
 		slog.Error("panic recovered", "path", c.Request.URL.Path, "panic", recovered)
 		httpx.Fail(c, httpx.ErrInternal)
-	}), middleware.MaxBody(maxBodyBytes))
+	}))
 	r.NoRoute(func(c *gin.Context) { httpx.Fail(c, httpx.ErrNotFound) })
 
 	r.GET("/health", health.Handler(dbPinger{d.DB}, redisPinger{d.Redis}))
@@ -44,10 +51,12 @@ func New(d Deps) *gin.Engine {
 
 	// Auth endpoints identify the caller by the request body, not the bearer
 	// token, so an expired access token must not block logout or refresh.
-	auth.RegisterRoutes(r.Group("/api"), authSvc)
+	auth.RegisterRoutes(r.Group("/api", middleware.MaxBody(maxBodyBytes)), authSvc)
 
-	api := r.Group("/api", middleware.Authenticate(issuer))
+	api := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxBodyBytes))
+	uploads := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxUploadBytes))
 	userapi.RegisterRoutes(api, user.NewService(users))
+	problemapi.RegisterRoutes(api, uploads, problem.NewService(problem.NewGormRepository(d.DB), d.Storage))
 	return r
 }
 
