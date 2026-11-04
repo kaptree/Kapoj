@@ -2,6 +2,8 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 
+import UserMenu from '@/components/UserMenu.vue'
+
 interface NavItem {
   path: string
   label: string
@@ -26,7 +28,7 @@ const active = computed(() => route.path)
     <el-header class="header">
       <RouterLink to="/" class="brand">kapOJ</RouterLink>
       <div class="header-right">
-        <slot name="user-menu" />
+        <UserMenu />
       </div>
     </el-header>
     <el-container>
