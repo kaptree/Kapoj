@@ -10,9 +10,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/kaptree/kapoj/apps/judge/internal/db"
 	"github.com/kaptree/kapoj/apps/judge/internal/events"
+	"github.com/kaptree/kapoj/apps/judge/internal/gamequeue"
 	"github.com/kaptree/kapoj/apps/judge/internal/model"
 	"github.com/kaptree/kapoj/apps/judge/internal/sandbox"
 	"github.com/kaptree/kapoj/apps/judge/internal/storage"
@@ -30,15 +32,31 @@ const (
 	checkerOutputBytes    = 4096
 )
 
+// GamePublisher 投递游戏化事件；失败只记录警告，不影响评测结果。
+type GamePublisher interface {
+	Publish(ctx context.Context, ev gamequeue.Event) error
+}
+
 type Pipeline struct {
 	repo        *db.Repository
 	storageRoot string
 	sandbox     sandbox.Sandbox
 	publisher   events.Publisher
+	game        GamePublisher
 }
 
-func New(repo *db.Repository, storageRoot string, sb sandbox.Sandbox, publisher events.Publisher) *Pipeline {
-	return &Pipeline{repo: repo, storageRoot: storageRoot, sandbox: sb, publisher: publisher}
+func New(
+	repo *db.Repository, storageRoot string, sb sandbox.Sandbox,
+	publisher events.Publisher, game ...GamePublisher,
+) *Pipeline {
+	var gamePublisher GamePublisher
+	if len(game) > 0 {
+		gamePublisher = game[0]
+	}
+	return &Pipeline{
+		repo: repo, storageRoot: storageRoot, sandbox: sb,
+		publisher: publisher, game: gamePublisher,
+	}
 }
 
 // Run judges one submission. User verdicts (including CE) are written and
@@ -75,7 +93,7 @@ func (p *Pipeline) Run(ctx context.Context, submissionID int64) error {
 		defer p.sandbox.Cleanup(compiled.ArtifactDir)
 	}
 	if compiled.Failed {
-		return p.finish(ctx, sub.ID, db.FinishInput{
+		return p.finish(ctx, sub, db.FinishInput{
 			Status:       model.StatusCompileError,
 			ErrorMessage: truncate(compiled.ErrorOutput, maxCompileMessageSize),
 			Cases:        []model.JudgeCaseResult{},
@@ -115,17 +133,36 @@ func (p *Pipeline) Run(ctx context.Context, submissionID int64) error {
 		}
 	}
 	status, timeMS, memoryKB, score := verdict.Aggregate(results)
-	return p.finish(ctx, sub.ID, db.FinishInput{
+	return p.finish(ctx, sub, db.FinishInput{
 		Status: status, TimeUsedMS: timeMS, MemoryUsedKB: memoryKB, Score: score, Cases: results,
 	})
 }
 
-func (p *Pipeline) finish(ctx context.Context, submissionID int64, in db.FinishInput) error {
-	if err := p.repo.Finish(ctx, submissionID, in); err != nil {
+func (p *Pipeline) finish(ctx context.Context, sub *model.Submission, in db.FinishInput) error {
+	if err := p.repo.Finish(ctx, sub.ID, in); err != nil {
 		return err
 	}
-	p.publish(ctx, submissionID)
+	p.publish(ctx, sub.ID)
+	if in.Status == model.StatusAccepted {
+		p.publishGameAccepted(ctx, sub)
+	}
 	return nil
+}
+
+func (p *Pipeline) publishGameAccepted(ctx context.Context, sub *model.Submission) {
+	if p.game == nil {
+		return
+	}
+	ev := gamequeue.Event{
+		Type:         gamequeue.EventSubmissionAccepted,
+		UserID:       sub.UserID,
+		SubmissionID: sub.ID,
+		OccurredAt:   time.Now().UTC(),
+	}
+	if err := p.game.Publish(ctx, ev); err != nil {
+		slog.Warn("publish game accepted event failed",
+			"submission_id", sub.ID, "user_id", sub.UserID, "err", err)
+	}
 }
 
 func (p *Pipeline) publish(ctx context.Context, submissionID int64) {

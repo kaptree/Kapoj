@@ -58,6 +58,24 @@ func TestLoadStorageDirFromEnv(t *testing.T) {
 	assert.Equal(t, "/var/lib/kapoj", cfg.StorageDir)
 }
 
+func TestLoadGameConcurrency(t *testing.T) {
+	t.Setenv("KAPOJ_JWT_SECRET", strings.Repeat("a", 32))
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, 2, cfg.GameConcurrency)
+
+	t.Setenv("KAPOJ_GAME_CONCURRENCY", "4")
+	cfg, err = Load()
+	require.NoError(t, err)
+	assert.Equal(t, 4, cfg.GameConcurrency)
+
+	for _, raw := range []string{"0", "-1", "17", "many"} {
+		t.Setenv("KAPOJ_GAME_CONCURRENCY", raw)
+		_, err = Load()
+		assert.Error(t, err, "KAPOJ_GAME_CONCURRENCY=%q must be rejected", raw)
+	}
+}
+
 func TestLoadSubmitCooldown(t *testing.T) {
 	t.Setenv("KAPOJ_JWT_SECRET", strings.Repeat("a", 32))
 	cfg, err := Load()

@@ -12,10 +12,13 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/hibiken/asynq"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/kaptree/kapoj/apps/server/internal/config"
 	"github.com/kaptree/kapoj/apps/server/internal/db"
+	"github.com/kaptree/kapoj/apps/server/internal/gamequeue"
+	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/judgequeue"
 	"github.com/kaptree/kapoj/apps/server/internal/router"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
@@ -52,13 +55,35 @@ func run() error {
 	defer func() { _ = rdb.Close() }()
 	queue := judgequeue.NewClient(cfg.RedisAddr)
 	defer func() { _ = queue.Close() }()
+	gamePublisher := gamequeue.NewPublisher(cfg.RedisAddr)
+	defer func() { _ = gamePublisher.Close() }()
+	gameSvc := gamification.NewService(gamification.NewRepository(g), gamePublisher)
+
+	gameServer := asynq.NewServer(
+		asynq.RedisClientOpt{Addr: cfg.RedisAddr},
+		asynq.Config{
+			Concurrency:     cfg.GameConcurrency,
+			Queues:          map[string]int{gamequeue.QueueName: 1},
+			ShutdownTimeout: 10 * time.Second,
+		},
+	)
+	gameMux := asynq.NewServeMux()
+	gamequeue.Register(gameMux, gameSvc)
+	if err := gameServer.Start(gameMux); err != nil {
+		return err
+	}
+	defer gameServer.Shutdown()
+	slog.Info("kapoj game worker started",
+		"queue", gamequeue.QueueName, "concurrency", cfg.GameConcurrency)
 
 	gin.SetMode(gin.ReleaseMode)
 	baseCtx, cancelBase := context.WithCancel(context.Background())
 	defer cancelBase()
 	srv := &http.Server{
-		Addr:              cfg.HTTPAddr,
-		Handler:           router.New(router.Deps{DB: g, Redis: rdb, Storage: store, Config: cfg, Enqueuer: queue}),
+		Addr: cfg.HTTPAddr,
+		Handler: router.New(router.Deps{
+			DB: g, Redis: rdb, Storage: store, Config: cfg, Enqueuer: queue, Game: gameSvc,
+		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	// SSE handlers only exit when their request context is canceled; cancel

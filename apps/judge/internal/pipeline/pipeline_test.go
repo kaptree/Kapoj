@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kaptree/kapoj/apps/judge/internal/db"
+	"github.com/kaptree/kapoj/apps/judge/internal/gamequeue"
 	"github.com/kaptree/kapoj/apps/judge/internal/model"
 	"github.com/kaptree/kapoj/apps/judge/internal/pipeline"
 	"github.com/kaptree/kapoj/apps/judge/internal/sandbox"
@@ -24,6 +25,16 @@ type fakePublisher struct{ ids []int64 }
 
 func (p *fakePublisher) Publish(_ context.Context, submissionID int64) {
 	p.ids = append(p.ids, submissionID)
+}
+
+type fakeGamePublisher struct {
+	events []gamequeue.Event
+	err    error
+}
+
+func (p *fakeGamePublisher) Publish(_ context.Context, ev gamequeue.Event) error {
+	p.events = append(p.events, ev)
+	return p.err
 }
 
 type fakeSandbox struct {
@@ -58,6 +69,7 @@ type env struct {
 	root    string
 	sb      *fakeSandbox
 	pub     *fakePublisher
+	game    *fakeGamePublisher
 	pipe    *pipeline.Pipeline
 	userID  int64
 	problem int64
@@ -91,9 +103,10 @@ func newEnv(t *testing.T, typ string, specs ...caseSpec) *env {
 	}
 	sb := &fakeSandbox{}
 	pub := &fakePublisher{}
+	game := &fakeGamePublisher{}
 	return &env{
-		pool: pool, repo: repo, root: root, sb: sb, pub: pub,
-		pipe:   pipeline.New(repo, root, sb, pub),
+		pool: pool, repo: repo, root: root, sb: sb, pub: pub, game: game,
+		pipe:   pipeline.New(repo, root, sb, pub, game),
 		userID: user, problem: problem, cases: ids,
 	}
 }
@@ -152,6 +165,49 @@ func TestPipelineAccepted(t *testing.T) {
 	assert.Equal(t, 345, memKB)
 	assert.Equal(t, 30, score)
 	assert.Equal(t, []int64{sub, sub}, e.pub.ids, "judging and terminal states are published")
+}
+
+func TestPipelinePublishesAcceptedGameEvent(t *testing.T) {
+	e := newEnv(t, "traditional", caseSpec{"3\n", 10})
+	sub := e.submit(t, model.LanguageCPP, "int main(){}")
+	e.sb.runFn = func(sandbox.RunRequest) (sandbox.RunResult, error) {
+		return sandbox.RunResult{Output: []byte("3\n")}, nil
+	}
+
+	require.NoError(t, e.pipe.Run(context.Background(), sub))
+
+	require.Len(t, e.game.events, 1)
+	ev := e.game.events[0]
+	assert.Equal(t, gamequeue.EventSubmissionAccepted, ev.Type)
+	assert.Equal(t, e.userID, ev.UserID)
+	assert.Equal(t, sub, ev.SubmissionID)
+	assert.False(t, ev.OccurredAt.IsZero())
+}
+
+func TestPipelineDoesNotPublishGameEventForWrongAnswer(t *testing.T) {
+	e := newEnv(t, "traditional", caseSpec{"3\n", 10})
+	sub := e.submit(t, model.LanguageCPP, "int main(){}")
+	e.sb.runFn = func(sandbox.RunRequest) (sandbox.RunResult, error) {
+		return sandbox.RunResult{Output: []byte("9\n")}, nil
+	}
+
+	require.NoError(t, e.pipe.Run(context.Background(), sub))
+	assert.Empty(t, e.game.events)
+}
+
+func TestPipelineGamePublishFailureDoesNotFailRun(t *testing.T) {
+	e := newEnv(t, "traditional", caseSpec{"3\n", 10})
+	e.game.err = errors.New("redis down")
+	sub := e.submit(t, model.LanguageCPP, "int main(){}")
+	e.sb.runFn = func(sandbox.RunRequest) (sandbox.RunResult, error) {
+		return sandbox.RunResult{Output: []byte("3\n")}, nil
+	}
+
+	require.NoError(t, e.pipe.Run(context.Background(), sub))
+	got, err := e.repo.FindByID(context.Background(), sub)
+	require.NoError(t, err)
+	assert.Equal(t, model.StatusAccepted, got.Status)
+	assert.Len(t, e.game.events, 1)
 }
 
 func TestPipelineMapsUserVerdicts(t *testing.T) {

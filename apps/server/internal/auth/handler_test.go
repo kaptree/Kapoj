@@ -2,7 +2,9 @@ package auth
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -11,6 +13,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type fakeLoginHook struct {
+	userIDs []int64
+	err     error
+}
+
+func (h *fakeLoginHook) OnLogin(_ context.Context, userID int64) error {
+	h.userIDs = append(h.userIDs, userID)
+	return h.err
+}
 
 func newAuthEngine(t *testing.T) *gin.Engine {
 	gin.SetMode(gin.TestMode)
@@ -44,6 +56,42 @@ func TestRegisterEndpoint(t *testing.T) {
 	assert.Equal(t, "alice@example.com", u["email"])
 	assert.NotContains(t, w.Body.String(), "passwordHash")
 	assert.NotContains(t, w.Body.String(), "PasswordHash")
+}
+
+func TestLoginHookFiresOnRegisterAndLogin(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc, _ := newService(t)
+	hook := &fakeLoginHook{}
+	r := gin.New()
+	RegisterRoutes(r.Group("/api"), svc, hook)
+
+	w, resp := postJSON(r, "/api/auth/register",
+		`{"username":"alice","email":"alice@example.com","password":"correct-horse"}`)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	registerID := int64(resp["data"].(map[string]any)["user"].(map[string]any)["id"].(float64))
+	require.Len(t, hook.userIDs, 1)
+	assert.Equal(t, registerID, hook.userIDs[0])
+
+	w, _ = postJSON(r, "/api/auth/login", `{"account":"alice","password":"correct-horse"}`)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.Len(t, hook.userIDs, 2)
+	assert.Equal(t, registerID, hook.userIDs[1])
+}
+
+func TestLoginHookFailureDoesNotFailAuthResponse(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc, _ := newService(t)
+	hook := &fakeLoginHook{err: errors.New("redis down")}
+	r := gin.New()
+	RegisterRoutes(r.Group("/api"), svc, hook)
+
+	w, _ := postJSON(r, "/api/auth/register",
+		`{"username":"alice","email":"alice@example.com","password":"correct-horse"}`)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+
+	w, _ = postJSON(r, "/api/auth/login", `{"account":"alice","password":"correct-horse"}`)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Len(t, hook.userIDs, 2)
 }
 
 func TestRegisterMalformedJSON(t *testing.T) {

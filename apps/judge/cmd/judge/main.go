@@ -14,6 +14,7 @@ import (
 	"github.com/kaptree/kapoj/apps/judge/internal/config"
 	"github.com/kaptree/kapoj/apps/judge/internal/db"
 	"github.com/kaptree/kapoj/apps/judge/internal/events"
+	"github.com/kaptree/kapoj/apps/judge/internal/gamequeue"
 	"github.com/kaptree/kapoj/apps/judge/internal/pipeline"
 	"github.com/kaptree/kapoj/apps/judge/internal/queue"
 	"github.com/kaptree/kapoj/apps/judge/internal/reconcile"
@@ -51,7 +52,9 @@ func run() error {
 	sb.Sweep(ctx)
 	publisher := events.NewRedisPublisher(cfg.RedisAddr)
 	defer func() { _ = publisher.Close() }()
-	pipe := pipeline.New(repo, cfg.StorageDir, sb, publisher)
+	gamePublisher := gamequeue.NewPublisher(cfg.RedisAddr)
+	defer func() { _ = gamePublisher.Close() }()
+	pipe := pipeline.New(repo, cfg.StorageDir, sb, publisher, gamePublisher)
 	judgeWorker := worker.New(pipe)
 	queueClient := queue.NewClient(cfg.RedisAddr)
 	defer func() { _ = queueClient.Close() }()

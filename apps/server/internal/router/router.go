@@ -59,9 +59,16 @@ func New(d Deps) *gin.Engine {
 		auth.NewRefreshStore(d.Redis, d.Config.RefreshTokenTTL),
 		auth.NewLoginLimiter(d.Redis))
 
+	var loginHooks []auth.LoginHook
+	var gameHooks []contestapi.GameHook
+	if d.Game != nil {
+		loginHooks = append(loginHooks, d.Game)
+		gameHooks = append(gameHooks, d.Game)
+	}
+
 	// Auth endpoints identify the caller by the request body, not the bearer
 	// token, so an expired access token must not block logout or refresh.
-	auth.RegisterRoutes(r.Group("/api", middleware.MaxBody(maxBodyBytes)), authSvc)
+	auth.RegisterRoutes(r.Group("/api", middleware.MaxBody(maxBodyBytes)), authSvc, loginHooks...)
 
 	api := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxBodyBytes))
 	problemJSON := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxProblemJSONBytes))
@@ -71,7 +78,7 @@ func New(d Deps) *gin.Engine {
 		gamificationapi.RegisterRoutes(api, d.Game)
 	}
 	contestRepo := contest.NewGormRepository(d.DB)
-	contestapi.RegisterRoutes(api, contest.NewService(contestRepo))
+	contestapi.RegisterRoutes(api, contest.NewService(contestRepo), gameHooks...)
 	problemRepo := problem.NewGormRepository(d.DB)
 	submissionRepo := submission.NewGormRepository(d.DB)
 	problemapi.RegisterRoutes(api, problemJSON, uploads,

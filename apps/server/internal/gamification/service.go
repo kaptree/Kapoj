@@ -3,7 +3,6 @@ package gamification
 import (
 	"context"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
@@ -11,17 +10,16 @@ import (
 
 // Service 是游戏化领域服务。
 type Service struct {
-	repo *Repository
+	repo      *Repository
+	publisher EventPublisher
 }
 
-func NewService(repo *Repository) *Service {
-	return &Service{repo: repo}
-}
-
-// OnLogin 记录服务端本地日期的登录日；事件发布在后续任务接入。
-func (s *Service) OnLogin(ctx context.Context, userID int64) error {
-	today := time.Now().In(time.Local).Format(loginDateLayout)
-	return s.repo.RecordLoginDay(ctx, userID, today)
+func NewService(repo *Repository, publisher ...EventPublisher) *Service {
+	var p EventPublisher
+	if len(publisher) > 0 {
+		p = publisher[0]
+	}
+	return &Service{repo: repo, publisher: p}
 }
 
 // ListCoinTransactions 返回用户的流水分页、总数与当前余额。

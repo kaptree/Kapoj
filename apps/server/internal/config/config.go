@@ -16,6 +16,7 @@ type Config struct {
 	AccessTokenTTL  time.Duration
 	RefreshTokenTTL time.Duration
 	SubmitCooldown  time.Duration
+	GameConcurrency int
 }
 
 const minSecretLen = 32
@@ -34,6 +35,7 @@ func Load() (*Config, error) {
 	v.SetDefault("access_token_ttl", "15m")
 	v.SetDefault("refresh_token_ttl", "168h")
 	v.SetDefault("submit_cooldown", "3s")
+	v.SetDefault("game_concurrency", 2)
 
 	cfg := &Config{
 		HTTPAddr:        v.GetString("http_addr"),
@@ -44,6 +46,7 @@ func Load() (*Config, error) {
 		AccessTokenTTL:  v.GetDuration("access_token_ttl"),
 		RefreshTokenTTL: v.GetDuration("refresh_token_ttl"),
 		SubmitCooldown:  v.GetDuration("submit_cooldown"),
+		GameConcurrency: v.GetInt("game_concurrency"),
 	}
 
 	if len(cfg.JWTSecret) < minSecretLen {
@@ -54,6 +57,9 @@ func Load() (*Config, error) {
 	}
 	if cfg.SubmitCooldown <= 0 {
 		return nil, errors.New("KAPOJ_SUBMIT_COOLDOWN must be a positive duration")
+	}
+	if cfg.GameConcurrency < 1 || cfg.GameConcurrency > 16 {
+		return nil, errors.New("KAPOJ_GAME_CONCURRENCY must be between 1 and 16")
 	}
 	return cfg, nil
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +19,8 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/kaptree/kapoj/apps/server/internal/config"
+	"github.com/kaptree/kapoj/apps/server/internal/gamequeue"
+	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/router"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
@@ -28,15 +31,32 @@ type noopQueue struct{}
 
 func (noopQueue) Enqueue(context.Context, int64) error { return nil }
 
+type fakeGamePublisher struct {
+	events []gamequeue.Event
+	err    error
+}
+
+func (p *fakeGamePublisher) Publish(_ context.Context, ev gamequeue.Event) error {
+	p.events = append(p.events, ev)
+	return p.err
+}
+
 type fx struct {
-	t      *testing.T
-	h      http.Handler
-	db     *gorm.DB
-	tokens map[string]string
-	nextN  int
+	t          *testing.T
+	h          http.Handler
+	db         *gorm.DB
+	tokens     map[string]string
+	ids        map[string]int64
+	gameEvents *fakeGamePublisher
+	nextN      int
 }
 
 func newFx(t *testing.T) *fx {
+	t.Helper()
+	return newFxWithPublisher(t, &fakeGamePublisher{})
+}
+
+func newFxWithPublisher(t *testing.T, publisher *fakeGamePublisher) *fx {
 	t.Helper()
 	g := testutil.PG(t)
 	mr := miniredis.RunT(t)
@@ -49,8 +69,12 @@ func newFx(t *testing.T) *fx {
 			RefreshTokenTTL: time.Hour, SubmitCooldown: time.Second,
 		},
 		Enqueuer: noopQueue{},
+		Game:     gamification.NewService(gamification.NewRepository(g), publisher),
 	})
-	return &fx{t: t, h: h, db: g, tokens: map[string]string{}}
+	return &fx{
+		t: t, h: h, db: g, tokens: map[string]string{}, ids: map[string]int64{},
+		gameEvents: publisher,
+	}
 }
 
 func (f *fx) do(method, path, token string, body any) (*httptest.ResponseRecorder, map[string]any) {
@@ -89,8 +113,10 @@ func (f *fx) token(role string) string {
 		"account": name, "password": "correct-horse",
 	})
 	require.Equal(f.t, http.StatusOK, w.Code)
-	tok := resp["data"].(map[string]any)["accessToken"].(string)
+	data := resp["data"].(map[string]any)
+	tok := data["accessToken"].(string)
 	f.tokens[role] = tok
+	f.ids[role] = int64(data["user"].(map[string]any)["id"].(float64))
 	return tok
 }
 
@@ -231,6 +257,46 @@ func TestContestDetailRegistrationAndProblems(t *testing.T) {
 	participants := resp["data"].([]any)
 	require.Len(t, participants, 1)
 	assert.Contains(t, participants[0].(map[string]any)["username"], "user")
+}
+
+func TestContestRegisterPublishesGameEvent(t *testing.T) {
+	f := newFx(t)
+	p1, p2 := f.problem("sum"), f.problem("product")
+	w, resp := f.do(http.MethodPost, "/api/contests", f.token("contest_admin"), body(p1.ID, p2.ID))
+	require.Equal(t, http.StatusCreated, w.Code)
+	id := idOf(resp)
+
+	w, _ = f.do(http.MethodPost, fmt.Sprintf("/api/contests/%d/register", id), f.token("user"), map[string]any{})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	var joins []gamequeue.Event
+	loginEvents := 0
+	for _, ev := range f.gameEvents.events {
+		switch ev.Type {
+		case gamequeue.EventContestJoin:
+			joins = append(joins, ev)
+		case gamequeue.EventUserLogin:
+			if ev.UserID == f.ids["user"] {
+				loginEvents++
+			}
+		}
+	}
+	require.Len(t, joins, 1)
+	assert.Equal(t, f.ids["user"], joins[0].UserID)
+	assert.Equal(t, id, joins[0].ContestID)
+	assert.False(t, joins[0].OccurredAt.IsZero())
+	assert.GreaterOrEqual(t, loginEvents, 1, "router must pass the game service as the auth login hook")
+}
+
+func TestContestRegisterHookFailureDoesNotFailResponse(t *testing.T) {
+	f := newFxWithPublisher(t, &fakeGamePublisher{err: errors.New("redis down")})
+	p1, p2 := f.problem("sum"), f.problem("product")
+	w, resp := f.do(http.MethodPost, "/api/contests", f.token("contest_admin"), body(p1.ID, p2.ID))
+	require.Equal(t, http.StatusCreated, w.Code)
+	id := idOf(resp)
+
+	w, _ = f.do(http.MethodPost, fmt.Sprintf("/api/contests/%d/register", id), f.token("user"), map[string]any{})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
 
 func TestRanklistEndpoint(t *testing.T) {

@@ -1,8 +1,10 @@
 package contestapi
 
 import (
+	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -13,8 +15,16 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
 
-func RegisterRoutes(r gin.IRouter, s *contest.Service) {
+// GameHook 在比赛报名成功后触发；失败只记录日志，不影响报名响应。
+type GameHook interface {
+	OnContestJoin(ctx context.Context, userID, contestID int64) error
+}
+
+func RegisterRoutes(r gin.IRouter, s *contest.Service, hooks ...GameHook) {
 	h := &handler{svc: s}
+	if len(hooks) > 0 {
+		h.gameHook = hooks[0]
+	}
 	manage := []gin.HandlerFunc{middleware.RequireAuth(), middleware.RequireRole(user.RoleContestAdmin)}
 	with := func(fn gin.HandlerFunc) []gin.HandlerFunc {
 		return append(append([]gin.HandlerFunc{}, manage...), fn)
@@ -35,7 +45,10 @@ func RegisterRoutes(r gin.IRouter, s *contest.Service) {
 	r.DELETE("/contests/:id/announcements/:aid", with(h.deleteAnnouncement)...)
 }
 
-type handler struct{ svc *contest.Service }
+type handler struct {
+	svc      *contest.Service
+	gameHook GameHook
+}
 
 func viewer(c *gin.Context) contest.Viewer {
 	claims, ok := middleware.CurrentClaims(c)
@@ -211,6 +224,12 @@ func (h *handler) register(c *gin.Context) {
 	if err := h.svc.Register(c.Request.Context(), claims.UserID, id, in.Password, in.InviteCode); err != nil {
 		httpx.Fail(c, err)
 		return
+	}
+	if h.gameHook != nil {
+		if err := h.gameHook.OnContestJoin(c.Request.Context(), claims.UserID, id); err != nil {
+			slog.Warn("gamification contest join hook failed",
+				"user_id", claims.UserID, "contest_id", id, "err", err)
+		}
 	}
 	httpx.OK(c, gin.H{"registered": true})
 }
