@@ -35,6 +35,12 @@ type fakeLimiter struct {
 	calls int
 }
 
+type fakePublisher struct{ ids []int64 }
+
+func (p *fakePublisher) Publish(_ context.Context, submissionID int64) {
+	p.ids = append(p.ids, submissionID)
+}
+
 func (l *fakeLimiter) Allow(context.Context, int64) (bool, error) {
 	l.calls++
 	return l.allow, l.err
@@ -47,6 +53,7 @@ type env struct {
 	db       *gorm.DB
 	queue    *fakeQueue
 	limiter  *fakeLimiter
+	pub      *fakePublisher
 }
 
 func newEnv(t *testing.T) *env {
@@ -56,13 +63,15 @@ func newEnv(t *testing.T) *env {
 	problems := problem.NewGormRepository(g)
 	queue := &fakeQueue{}
 	limiter := &fakeLimiter{allow: true}
+	pub := &fakePublisher{}
 	return &env{
-		svc:      submission.NewService(repo, problems, queue, limiter),
+		svc:      submission.NewService(repo, problems, queue, limiter, pub),
 		repo:     repo,
 		problems: problems,
 		db:       g,
 		queue:    queue,
 		limiter:  limiter,
+		pub:      pub,
 	}
 }
 
@@ -161,6 +170,7 @@ func TestCreateIncrementsSubmitCountAndEnqueues(t *testing.T) {
 	assert.Equal(t, int64(7), got.UserID)
 	assert.Equal(t, submission.StatusPending, got.Status)
 	assert.Empty(t, got.JudgeResult)
+	assert.Equal(t, []int64{sub.ID}, e.pub.ids, "a pending event is published")
 
 	var count int
 	require.NoError(t, e.db.Model(&problem.Problem{}).Where("id = ?", p.ID).
@@ -200,6 +210,7 @@ func TestCreateEnqueueFailureMarksSystemError(t *testing.T) {
 	assert.Equal(t, submission.StatusSystemError, sub.Status)
 	assert.NotEmpty(t, sub.ErrorMessage)
 	assert.NotNil(t, sub.JudgedAt)
+	assert.Len(t, e.pub.ids, 2, "pending and system_error events are published")
 }
 
 func TestCreateLimiterErrorIsNotARateLimit(t *testing.T) {

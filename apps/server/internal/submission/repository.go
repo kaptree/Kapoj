@@ -17,10 +17,11 @@ var ErrNotFound = errors.New("submission not found")
 // ListRow is a submission joined with its user and problem.
 type ListRow struct {
 	Submission
-	Username     string
-	Nickname     string
-	ProblemTitle string `gorm:"column:problem_title"`
-	ProblemSlug  string `gorm:"column:problem_slug"`
+	Username        string
+	Nickname        string
+	ProblemTitle    string `gorm:"column:problem_title"`
+	ProblemSlug     string `gorm:"column:problem_slug"`
+	ProblemIsPublic bool   `gorm:"column:problem_is_public"`
 }
 
 type DetailRow = ListRow
@@ -107,13 +108,22 @@ func (r *gormRepository) List(ctx context.Context, f ListFilter, offset, limit i
 	if f.Nickname != "" {
 		q = q.Where(`u.nickname ILIKE ? ESCAPE '\'`, "%"+escapeLike(f.Nickname)+"%")
 	}
+	if !f.CanSeeHidden {
+		if f.ViewerID != 0 {
+			q = q.Where("(p.is_public = true OR s.user_id = ?)", f.ViewerID)
+		} else {
+			q = q.Where("p.is_public = true")
+		}
+	}
 
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 	var rows []ListRow
-	err := q.Select("s.*, u.username, u.nickname, p.title AS problem_title, p.slug AS problem_slug").
+	err := q.Select(`s.id, s.user_id, s.problem_id, s.contest_id, s.language, s.status,
+		s.time_used_ms, s.memory_used_kb, s.score, s.created_at, s.judged_at,
+		u.username, u.nickname, p.title AS problem_title, p.slug AS problem_slug`).
 		Order("s.id DESC").Offset(offset).Limit(limit).Scan(&rows).Error
 	return rows, total, err
 }
@@ -121,7 +131,8 @@ func (r *gormRepository) List(ctx context.Context, f ListFilter, offset, limit i
 func (r *gormRepository) FindDetail(ctx context.Context, id int64) (*DetailRow, error) {
 	var row DetailRow
 	err := r.db.WithContext(ctx).Table("submissions AS s").
-		Select("s.*, u.username, u.nickname, p.title AS problem_title, p.slug AS problem_slug").
+		Select(`s.*, u.username, u.nickname, p.title AS problem_title, p.slug AS problem_slug,
+			p.is_public AS problem_is_public`).
 		Joins("JOIN users AS u ON u.id = s.user_id").
 		Joins("JOIN problems AS p ON p.id = s.problem_id").
 		Where("s.id = ?", id).Scan(&row).Error

@@ -71,6 +71,7 @@ func New(d Deps) *gin.Engine {
 		problemRepo,
 		d.Enqueuer,
 		submission.NewRedisLimiter(d.Redis, d.Config.SubmitCooldown),
+		submissionevents.NewRedisPublisher(d.Redis),
 	), submissionevents.NewRedisStreamer(d.Redis))
 	return r
 }

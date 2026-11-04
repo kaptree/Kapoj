@@ -41,13 +41,18 @@ func TestStreamHandler(t *testing.T) {
 
 	streamer.ch <- submissionevents.Event{SubmissionID: 42}
 	reader := bufio.NewReader(resp.Body)
-	line, err := reader.ReadString('\n')
-	require.NoError(t, err)
-	assert.True(t, strings.HasPrefix(line, "data: "), line)
-	assert.Contains(t, line, `"submissionId":42`)
+	var dataLine string
+	for dataLine == "" {
+		line, err := reader.ReadString('\n')
+		require.NoError(t, err)
+		if strings.HasPrefix(line, "data: ") {
+			dataLine = line
+		}
+	}
+	assert.Contains(t, dataLine, `"submissionId":42`)
 
 	// The next read must be a blank line terminating the SSE event.
-	line, err = reader.ReadString('\n')
+	line, err := reader.ReadString('\n')
 	require.NoError(t, err)
 	assert.Equal(t, "\n", line)
 

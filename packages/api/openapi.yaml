@@ -755,7 +755,7 @@ components:
         - type: object
           required: [codeHidden, judgeResult]
           properties:
-            code: { type: string, description: 比赛进行中对他人的提交不返回 }
+            code: { type: string, description: contestId 非空的提交对非本人/非管理员不返回（M2 赛时保护） }
             codeHidden: { type: boolean }
             errorMessage: { type: string }
             judgeResult:

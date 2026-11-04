@@ -60,7 +60,7 @@ func newRecordsEnv(t *testing.T) *recordsEnv {
 	createNamedUser(t, g, 1, "alice", "Alice Zhang")
 	createNamedUser(t, g, 2, "bob", "Bob Li")
 	return &recordsEnv{
-		repo: repo, svc: submission.NewService(repo, nil, nil, nil), db: g,
+		repo: repo, svc: submission.NewService(repo, nil, nil, nil, nil), db: g,
 		alice: 1, bob: 2,
 		problem1: seedProblem(t, g, "sum"),
 		problem2: seedProblem(t, g, "product"),
@@ -91,7 +91,7 @@ func TestListFiltersAndOrders(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			page, err := e.svc.List(context.Background(), tt.q, 1, 10)
+			page, err := e.svc.List(context.Background(), submission.Viewer{}, tt.q, 1, 10)
 			require.NoError(t, err)
 			assert.EqualValues(t, len(tt.want), page.Total)
 			ids := make([]int64, len(page.Items))
@@ -102,7 +102,7 @@ func TestListFiltersAndOrders(t *testing.T) {
 		})
 	}
 
-	page, err := e.svc.List(context.Background(), submission.ListQuery{UserID: e.alice}, 2, 1)
+	page, err := e.svc.List(context.Background(), submission.Viewer{}, submission.ListQuery{UserID: e.alice}, 2, 1)
 	require.NoError(t, err)
 	require.Len(t, page.Items, 1)
 	assert.Equal(t, s1, page.Items[0].ID)
@@ -122,8 +122,10 @@ func TestListRejectsInvalidFilters(t *testing.T) {
 		{UserID: -1},
 		{ContestID: ptrInt64(-1)},
 		{Nickname: string(make([]rune, 65))},
+		{Nickname: "\x00"},
+		{Nickname: string([]byte{0xff})},
 	} {
-		_, err := e.svc.List(context.Background(), q, 1, 10)
+		_, err := e.svc.List(context.Background(), submission.Viewer{}, q, 1, 10)
 		assertCode(t, err, 40001)
 	}
 }
@@ -135,7 +137,8 @@ func TestDetailVisibility(t *testing.T) {
 	contest := int64(7)
 	contestSub := insertRecord(t, e.db, e.alice, e.problem1.ID, "cpp", "secret", "accepted", &contest, time.Now())
 	require.NoError(t, e.db.Exec(
-		`UPDATE submissions SET judge_result_json = '[{"testcaseId":1,"status":"accepted","timeMs":1,"memoryKb":2}]'::jsonb WHERE id = ?`,
+		`UPDATE submissions SET judge_result_json = '[{"testcaseId":1,"status":"accepted","timeMs":1,"memoryKb":2}]'::jsonb,
+		 error_message = 'SECRET_COMPILER_OUTPUT' WHERE id = ?`,
 		contestSub,
 	).Error)
 	practiceSub := insertRecord(t, e.db, e.alice, e.problem1.ID, "cpp", "public", "accepted", nil, time.Now())
@@ -150,6 +153,7 @@ func TestDetailVisibility(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, other.CodeHidden)
 	assert.Empty(t, other.Code)
+	assert.Empty(t, other.ErrorMessage)
 	assert.Empty(t, other.JudgeResult)
 
 	admin, err := e.svc.Detail(context.Background(), submission.Viewer{UserID: e.bob, CanManage: true}, contestSub)
@@ -164,6 +168,41 @@ func TestDetailVisibility(t *testing.T) {
 
 	_, err = e.svc.Detail(context.Background(), submission.Viewer{}, 999999)
 	assertCode(t, err, 40400)
+}
+
+func TestHiddenProblemSubmissionsAreScoped(t *testing.T) {
+	e := newRecordsEnv(t)
+	hidden := seedProblem(t, e.db, "hidden-problem")
+	require.NoError(t, e.db.Exec(`UPDATE problems SET is_public = false WHERE id = ?`, hidden.ID).Error)
+	subID := insertRecord(t, e.db, e.alice, hidden.ID, "cpp", "reference", "accepted", nil, time.Now())
+
+	guest, err := e.svc.List(context.Background(), submission.Viewer{}, submission.ListQuery{}, 1, 10)
+	require.NoError(t, err)
+	assert.Zero(t, guest.Total)
+	other, err := e.svc.List(context.Background(), submission.Viewer{UserID: e.bob}, submission.ListQuery{}, 1, 10)
+	require.NoError(t, err)
+	assert.Zero(t, other.Total)
+	contestAdmin, err := e.svc.List(context.Background(), submission.Viewer{CanManage: true}, submission.ListQuery{}, 1, 10)
+	require.NoError(t, err)
+	assert.Zero(t, contestAdmin.Total, "contest admins cannot see hidden problem submissions")
+
+	owner, err := e.svc.List(context.Background(), submission.Viewer{UserID: e.alice}, submission.ListQuery{}, 1, 10)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, owner.Total)
+	admin, err := e.svc.List(context.Background(), submission.Viewer{CanManageProblems: true}, submission.ListQuery{}, 1, 10)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, admin.Total)
+
+	_, err = e.svc.Detail(context.Background(), submission.Viewer{UserID: e.bob}, subID)
+	assertCode(t, err, 40400)
+	_, err = e.svc.Detail(context.Background(), submission.Viewer{}, subID)
+	assertCode(t, err, 40400)
+	own, err := e.svc.Detail(context.Background(), submission.Viewer{UserID: e.alice}, subID)
+	require.NoError(t, err)
+	assert.Equal(t, "reference", own.Code)
+	managed, err := e.svc.Detail(context.Background(), submission.Viewer{CanManageProblems: true}, subID)
+	require.NoError(t, err)
+	assert.Equal(t, "reference", managed.Code)
 }
 
 func TestHasAccepted(t *testing.T) {

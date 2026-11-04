@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -53,11 +54,17 @@ func run() error {
 	defer func() { _ = queue.Close() }()
 
 	gin.SetMode(gin.ReleaseMode)
+	baseCtx, cancelBase := context.WithCancel(context.Background())
+	defer cancelBase()
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           router.New(router.Deps{DB: g, Redis: rdb, Storage: store, Config: cfg, Enqueuer: queue}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+	// SSE handlers only exit when their request context is canceled; cancel
+	// them before Shutdown waits for active handlers.
+	srv.BaseContext = func(net.Listener) context.Context { return baseCtx }
+	srv.RegisterOnShutdown(cancelBase)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

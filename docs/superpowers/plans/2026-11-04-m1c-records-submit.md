@@ -381,7 +381,7 @@ git commit -m "feat(server): unlock problem solutions after acceptance"
 - Modify: `apps/web/src/views/ProblemDetailView.vue`
 - Modify: `apps/web/src/router/index.ts`
 - Modify: `apps/web/src/layouts/DefaultLayout.vue`
-- Modify: `apps/web/src/main.ts`
+- Modify: `apps/web/src/components/CodeEditor.vue`
 - Modify: `apps/web/src/api/submissions.ts`
 - Modify: `apps/web/src/api/types.ts`
 - Modify: `apps/web/package.json`（新增 `monaco-editor`）
@@ -406,7 +406,7 @@ git commit -m "feat(server): unlock problem solutions after acceptance"
   - `/submissions` → `SubmissionsView`，标题“测评记录”。
   - `/problems/:id(\\d+)/submit` → `SubmitView`，`requiresAuth: true`，标题“提交代码”。
 - 导航去掉 `/submissions` 的 milestone 禁用标记。
-- `main.ts` 引入 `./monaco`。
+- `CodeEditor.vue` 通过 `@/monaco` 引入本地 worker；提交页路由懒加载 Monaco，不增加首屏体积。
 
 - [ ] **Step 1: 写失败测试**
 
@@ -435,7 +435,7 @@ Expected: FAIL（文件不存在）。
 ```bash
 corepack pnpm --filter web add monaco-editor
 ```
-按 Interfaces 实现。SSE 用 `new EventSource('/api/submissions/stream')`，`onmessage` 解析 `submissionId` 后 300ms 防抖调用 `load()`；`onBeforeUnmount` 关闭。详情抽屉用 `getSubmission(id)`，`codeHidden` 时显示提示。
+按 Interfaces 实现。SSE 用 `new EventSource('/api/submissions/stream')`；`onmessage` 只触发 300ms 节流刷新，`onopen` 重连后补拉一次，30 秒定时兜底，`onBeforeUnmount` 关闭。详情抽屉用 `getSubmission(id)` 并用请求序号丢弃过期响应，`codeHidden` 时显示提示。草稿在代码改动 500ms 后保存，localStorage 异常不影响提交。
 
 - [ ] **Step 4: 运行测试、lint、构建**
 

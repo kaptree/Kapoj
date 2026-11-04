@@ -40,6 +40,8 @@ func viewer(c *gin.Context) submission.Viewer {
 		CanManage: claims.Role == user.RoleProblemAdmin ||
 			claims.Role == user.RoleContestAdmin ||
 			claims.Role == user.RoleSuperAdmin,
+		CanManageProblems: claims.Role == user.RoleProblemAdmin ||
+			claims.Role == user.RoleSuperAdmin,
 	}
 }
 
@@ -79,7 +81,7 @@ func (h *handler) list(c *gin.Context) {
 	q.Status = submission.Status(c.Query("status"))
 
 	page, size := httpx.ParsePage(c.Request.URL.RawQuery)
-	result, err := h.svc.List(c.Request.Context(), q, page, size)
+	result, err := h.svc.List(c.Request.Context(), viewer(c), q, page, size)
 	if err != nil {
 		httpx.Fail(c, err)
 		return
@@ -98,6 +100,9 @@ func (h *handler) stream(c *gin.Context) {
 	c.Header("Connection", "keep-alive")
 	c.Header("X-Accel-Buffering", "no")
 	c.Status(200)
+	if _, err := fmt.Fprint(c.Writer, ": connected\n\n"); err != nil {
+		return
+	}
 	c.Writer.Flush()
 
 	ticker := time.NewTicker(15 * time.Second)

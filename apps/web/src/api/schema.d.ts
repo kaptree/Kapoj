@@ -1197,7 +1197,7 @@ export interface components {
             judgedAt?: string;
         };
         SubmissionDetail: components["schemas"]["SubmissionListItem"] & {
-            /** @description 比赛进行中对他人的提交不返回 */
+            /** @description contestId 非空的提交对非本人/非管理员不返回（M2 赛时保护） */
             code?: string;
             codeHidden: boolean;
             errorMessage?: string;

@@ -2,6 +2,7 @@ package submission
 
 import (
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
@@ -34,20 +35,37 @@ func (q ListQuery) Normalize() (ListQuery, error) {
 		return q, httpx.ErrValidation("status 不是合法的判题状态")
 	}
 	q.Nickname = strings.TrimSpace(q.Nickname)
+	if !utf8.ValidString(q.Nickname) {
+		return q, httpx.ErrValidation("nickname 包含无效字符")
+	}
 	if utf8.RuneCountInString(q.Nickname) > 64 {
 		return q, httpx.ErrValidation("nickname 不能超过 64 个字符")
+	}
+	for _, r := range q.Nickname {
+		if unicode.IsControl(r) {
+			return q, httpx.ErrValidation("nickname 不能包含控制字符")
+		}
 	}
 	return q, nil
 }
 
-// ListFilter is the repository-level filter set.
+// ListFilter is the repository-level filter set. ViewerID scopes hidden
+// problem submissions; CanSeeHidden is true only for problem admins.
 type ListFilter struct {
-	ProblemID int64
-	ContestID *int64
-	UserID    int64
-	Language  Language
-	Status    Status
-	Nickname  string
+	ProblemID    int64
+	ContestID    *int64
+	UserID       int64
+	Language     Language
+	Status       Status
+	Nickname     string
+	ViewerID     int64
+	CanSeeHidden bool
 }
 
-func toFilter(q ListQuery) ListFilter { return ListFilter(q) }
+func (q ListQuery) toFilter(v Viewer) ListFilter {
+	return ListFilter{
+		ProblemID: q.ProblemID, ContestID: q.ContestID, UserID: q.UserID,
+		Language: q.Language, Status: q.Status, Nickname: q.Nickname,
+		ViewerID: v.UserID, CanSeeHidden: v.CanManageProblems,
+	}
+}

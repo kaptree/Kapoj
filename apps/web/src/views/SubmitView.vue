@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 
@@ -47,8 +47,39 @@ function storageKey(lang: SubmissionLanguage): string {
 }
 
 function loadDraft(lang: SubmissionLanguage) {
-  drafts[lang] = localStorage.getItem(storageKey(lang)) ?? templates[lang]
+  try {
+    drafts[lang] = localStorage.getItem(storageKey(lang)) ?? templates[lang]
+  } catch {
+    drafts[lang] = templates[lang]
+  }
 }
+
+function saveDraft(lang: SubmissionLanguage, value: string) {
+  try {
+    localStorage.setItem(storageKey(lang), value)
+  } catch {
+    // Private browsing or a full quota must not block submissions.
+  }
+}
+
+let saveTimer: number | undefined
+
+watch(code, () => {
+  const lang = language.value
+  const value = code.value
+  if (saveTimer !== undefined) window.clearTimeout(saveTimer)
+  saveTimer = window.setTimeout(() => {
+    saveTimer = undefined
+    saveDraft(lang, value)
+  }, 500)
+})
+
+onBeforeUnmount(() => {
+  if (saveTimer !== undefined) {
+    window.clearTimeout(saveTimer)
+    saveDraft(language.value, code.value)
+  }
+})
 
 onMounted(async () => {
   for (const lang of SUBMISSION_LANGUAGES) loadDraft(lang.value)
@@ -64,18 +95,20 @@ onMounted(async () => {
 })
 
 async function submit() {
-  if (!code.value.trim()) {
+  const lang = language.value
+  const source = code.value
+  if (!source.trim()) {
     ElMessage.warning('代码不能为空')
     return
   }
+  saveDraft(lang, source)
   submitting.value = true
   try {
     const created = await createSubmission({
       problemId: problemId.value,
-      language: language.value,
-      code: code.value,
+      language: lang,
+      code: source,
     })
-    localStorage.setItem(storageKey(language.value), code.value)
     ElMessage.success(`已提交 #${created.id}，正在评测`)
     await router.push({ name: 'submissions', query: { problemId: String(problemId.value) } })
   } catch (e) {

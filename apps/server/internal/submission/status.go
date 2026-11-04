@@ -15,7 +15,7 @@ const (
 	StatusSystemError         Status = "system_error"
 )
 
-// Terminal reports whether no further judging is expected.
+// Valid reports whether s is one of the nine judging states.
 func (s Status) Valid() bool {
 	switch s {
 	case StatusPending, StatusJudging, StatusAccepted, StatusWrongAnswer,
@@ -27,6 +27,7 @@ func (s Status) Valid() bool {
 	}
 }
 
+// Terminal reports whether no further judging is expected.
 func (s Status) Terminal() bool {
 	switch s {
 	case StatusAccepted, StatusWrongAnswer, StatusTimeLimitExceeded,

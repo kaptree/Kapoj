@@ -24,27 +24,45 @@ const PAGE_SIZE = 20
 const route = useRoute()
 const router = useRouter()
 
-const filters = reactive({
-  problemId: undefined as number | undefined,
-  contestId: undefined as number | undefined,
-  userId: undefined as number | undefined,
-  language: '' as SubmissionLanguage | '',
-  status: '' as SubmissionStatus | '',
-  nickname: '',
-})
-const page = ref(1)
+interface FilterState {
+  problemId: number | undefined
+  contestId: number | undefined
+  userId: number | undefined
+  language: SubmissionLanguage | ''
+  status: SubmissionStatus | ''
+  nickname: string
+}
+
+function emptyFilters(): FilterState {
+  return {
+    problemId: undefined,
+    contestId: undefined,
+    userId: undefined,
+    language: '',
+    status: '',
+    nickname: '',
+  }
+}
+
+// Draft filters are bound to the form; applied filters come from the URL and
+// are the only ones used by background SSE/pagination reloads.
+const filters = reactive<FilterState>(emptyFilters())
+const applied = reactive<FilterState & { page: number }>({ ...emptyFilters(), page: 1 })
 const items = ref<SubmissionListItem[]>([])
 const total = ref(0)
 const loading = ref(false)
 const error = ref('')
+const live = ref(false)
 
 const drawer = ref(false)
 const detail = ref<SubmissionDetail | null>(null)
 const detailLoading = ref(false)
 
 let latest = 0
+let detailSeq = 0
 let source: EventSource | null = null
 let reloadTimer: number | undefined
+let syncTimer: number | undefined
 
 function first(v: unknown): string {
   const raw = Array.isArray(v) ? v[0] : v
@@ -59,13 +77,17 @@ function numberQuery(v: unknown): number | undefined {
 }
 
 function applyQuery() {
-  filters.problemId = numberQuery(route.query.problemId)
-  filters.contestId = numberQuery(route.query.contestId)
-  filters.userId = numberQuery(route.query.userId)
-  filters.language = (first(route.query.language) as SubmissionLanguage | '') || ''
-  filters.status = (first(route.query.status) as SubmissionStatus | '') || ''
-  filters.nickname = first(route.query.nickname)
-  page.value = numberQuery(route.query.page) ?? 1
+  const parsed: FilterState = {
+    problemId: numberQuery(route.query.problemId),
+    contestId: numberQuery(route.query.contestId),
+    userId: numberQuery(route.query.userId),
+    language: (first(route.query.language) as SubmissionLanguage | '') || '',
+    status: (first(route.query.status) as SubmissionStatus | '') || '',
+    nickname: first(route.query.nickname),
+  }
+  Object.assign(filters, parsed)
+  Object.assign(applied, parsed)
+  applied.page = numberQuery(route.query.page) ?? 1
 }
 
 async function load() {
@@ -74,13 +96,13 @@ async function load() {
   error.value = ''
   try {
     const data = await listSubmissions({
-      problemId: filters.problemId,
-      contestId: filters.contestId,
-      userId: filters.userId,
-      language: filters.language,
-      status: filters.status,
-      nickname: filters.nickname,
-      page: page.value,
+      problemId: applied.problemId,
+      contestId: applied.contestId,
+      userId: applied.userId,
+      language: applied.language,
+      status: applied.status,
+      nickname: applied.nickname,
+      page: applied.page,
       pageSize: PAGE_SIZE,
     })
     if (seq !== latest) return
@@ -94,28 +116,32 @@ async function load() {
   }
 }
 
-function queryFor(nextPage: number): Record<string, string> {
+function queryFrom(state: FilterState, nextPage: number): Record<string, string> {
   const q: Record<string, string> = {}
-  if (filters.problemId != null) q.problemId = String(filters.problemId)
-  if (filters.contestId != null) q.contestId = String(filters.contestId)
-  if (filters.userId != null) q.userId = String(filters.userId)
-  if (filters.language) q.language = filters.language
-  if (filters.status) q.status = filters.status
-  if (filters.nickname.trim()) q.nickname = filters.nickname.trim()
+  if (state.problemId != null) q.problemId = String(state.problemId)
+  if (state.contestId != null) q.contestId = String(state.contestId)
+  if (state.userId != null) q.userId = String(state.userId)
+  if (state.language) q.language = state.language
+  if (state.status) q.status = state.status
+  if (state.nickname.trim()) q.nickname = state.nickname.trim()
   if (nextPage > 1) q.page = String(nextPage)
   return q
 }
 
 function search() {
-  void router.push({ name: 'submissions', query: queryFor(1) })
+  void router.push({ name: 'submissions', query: queryFrom(filters, 1) })
 }
 
 function reset() {
+  if (Object.keys(route.query).length === 0) {
+    void load()
+    return
+  }
   void router.push({ name: 'submissions', query: {} })
 }
 
 function changePage(next: number) {
-  void router.push({ name: 'submissions', query: queryFor(next) })
+  void router.push({ name: 'submissions', query: queryFrom(applied, next) })
 }
 
 watch(
@@ -128,31 +154,51 @@ watch(
 )
 
 async function openDetail(row: SubmissionListItem) {
+  const seq = ++detailSeq
   drawer.value = true
   detail.value = null
   detailLoading.value = true
   try {
-    detail.value = await getSubmission(row.id)
+    const next = await getSubmission(row.id)
+    if (seq === detailSeq) detail.value = next
   } catch (e) {
-    ElMessage.error(e instanceof ApiError ? e.message : '加载记录详情失败')
+    if (seq === detailSeq) {
+      ElMessage.error(e instanceof ApiError ? e.message : '加载记录详情失败')
+    }
   } finally {
-    detailLoading.value = false
+    if (seq === detailSeq) detailLoading.value = false
   }
+}
+
+function scheduleReload() {
+  if (reloadTimer !== undefined) return
+  reloadTimer = window.setTimeout(() => {
+    reloadTimer = undefined
+    void load()
+  }, 300)
 }
 
 function connectStream() {
   if (typeof EventSource === 'undefined') return
   source = new EventSource('/api/submissions/stream')
-  source.onmessage = () => {
-    if (reloadTimer !== undefined) window.clearTimeout(reloadTimer)
-    reloadTimer = window.setTimeout(() => void load(), 300)
+  source.onopen = () => {
+    live.value = true
+    scheduleReload()
   }
+  source.onerror = () => {
+    live.value = false
+  }
+  source.onmessage = () => scheduleReload()
 }
 
-onMounted(connectStream)
+onMounted(() => {
+  connectStream()
+  syncTimer = window.setInterval(() => void load(), 30000)
+})
 onBeforeUnmount(() => {
   source?.close()
   if (reloadTimer !== undefined) window.clearTimeout(reloadTimer)
+  if (syncTimer !== undefined) window.clearInterval(syncTimer)
 })
 </script>
 
@@ -161,7 +207,9 @@ onBeforeUnmount(() => {
     <template #header>
       <div class="head">
         <span>测评记录</span>
-        <el-tag type="success" size="small" effect="plain">实时刷新</el-tag>
+        <el-tag :type="live ? 'success' : 'info'" size="small" effect="plain">
+          {{ live ? '实时刷新' : '连接中断，正在重连' }}
+        </el-tag>
       </div>
     </template>
 
@@ -263,7 +311,7 @@ onBeforeUnmount(() => {
     <div class="pager">
       <el-pagination
         layout="prev, pager, next, total"
-        :current-page="page"
+        :current-page="applied.page"
         :page-size="PAGE_SIZE"
         :total="total"
         @current-change="changePage"

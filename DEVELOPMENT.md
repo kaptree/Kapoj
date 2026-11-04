@@ -493,6 +493,7 @@ user_ai_configs (
 - 超时与重试：任务在 Asynq 中设置 10 分钟超时，最多重试 3 次；judge 的 `ShutdownTimeout` 为 2 分钟，进程启动与关闭时都会按实例标签清扫容器。实例标签取 `KAPOJ_JUDGE_INSTANCE`（默认主机名），多实例部署时必须各不相同。
 - 崩溃恢复：judge 启动后及每分钟扫描一次：创建超过 1 分钟仍为 `pending`、或超过 15 分钟仍为 `judging` 的提交会重新入队；`Claim`/`Finish` 的幂等性保证不会重复计数。这同时覆盖“数据库已提交但入队前进程崩溃”和异步队列丢失两种情况。
 - 日志脱敏：GORM 使用 `ParameterizedQueries`，慢查询/错误日志只出现占位符，不包含源代码或密码哈希。
+- 前端提交页：`/problems/:id/submit` 使用 Monaco（本地 worker、无 CDN），支持 c/cpp/python3/java/go，代码草稿按题目与语言保存在浏览器本地；提交后跳转测评记录。
 - 统计：`submit_count` 创建提交时递增；`accept_count` 仅在首次把提交从 `judging` 改为 `accepted` 时递增。
 - 已知限制：M1 不评测交互题；Java 堆上限按题内存减 64 MB（最低 16 MB）；运行时间按墙钟计时而非 CPU 时间；Docker socket 等价于宿主机 root 权限，生产需独立评测主机或 rootless Docker。
 
@@ -691,10 +692,11 @@ user_ai_configs (
 **实现状态（M1-C）**
 
 - 接口：`GET /submissions`（公开，分页 + problemId/contestId/language/status/userId/nickname 筛选）、`GET /submissions/:id`（公开，返回代码与逐测试点结果）、`GET /submissions/stream`（SSE，事件只含 `{"submissionId": id}`）。
-- 排序为提交 id 倒序；`contestId=0` 表示练习提交，`contestId>0` 表示指定比赛。比赛提交在 M2 赛时保护完成前，非本人/非管理员只返回 `codeHidden=true`，不返回代码与测试点详情。
+- 排序为提交 id 倒序；`contestId=0` 表示练习提交，`contestId>0` 表示指定比赛。比赛提交在 M2 赛时保护完成前，非本人/非管理员只返回 `codeHidden=true`，不返回代码、错误信息与测试点详情。
+- 隐藏题目：公开列表只显示 `problems.is_public=true` 的提交（登录用户额外可看到自己的提交）；详情仅本人、题目管理员或超级管理员可见，其他用户返回 40400；`contest_admin` 不因比赛管理权限看到隐藏题。
 - 昵称为不区分大小写的模糊匹配，按字面量转义 `%`/`_`；非法 status/language/负 id 返回 40001。
-- judge 在领取任务（judging）与写入终态后向 Redis 频道 `kapoj:submissions` 发布 submission id；Web 端 SSE 订阅该频道，15 秒发送 keep-alive，浏览器断线由 EventSource 自动重连。
-- 前端：`/submissions` 记录页（筛选、分页、状态彩色标签、详情抽屉、SSE 自动刷新）；`/problems/:id/submit` 提交页（Monaco、语言切换、本地草稿）；题目详情页在本人 AC 后显示「解题思路」「解题代码」。
+- Web 在创建提交（pending）与入队失败（system_error）、judge 在领取任务（judging）与写入终态后，都会向 Redis 频道 `kapoj:submissions` 发布 submission id；Web 端 SSE 订阅该频道，连接建立时立即发送注释行、每 15 秒 keep-alive，浏览器断线由 EventSource 自动重连。前端在 `onopen` 补拉一次并每 30 秒兜底刷新，避免 Redis/网络短暂中断造成列表长期停留在旧状态。
+- 前端：`/submissions` 记录页（筛选、分页、状态彩色标签、详情抽屉、SSE 自动刷新）；`/problems/:id/submit` 提交页（Monaco、语言切换、代码改动 500ms 防抖写入本地草稿，存储异常不影响提交）；题目详情页在本人 AC 后显示「解题思路」「解题代码」。
 - Monaco 使用本地打包的 editor worker，不访问 CDN；提交页路由懒加载编辑器，避免影响首屏体积。
 
 ---

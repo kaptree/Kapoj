@@ -13,8 +13,11 @@ import (
 // Viewer describes who is looking. The zero UserID is a guest; managers may
 // submit hidden problems and see protected contest code.
 type Viewer struct {
-	UserID    int64
+	UserID int64
+	// CanManage covers problem/contest/super admins for contest code access.
 	CanManage bool
+	// CanManageProblems is limited to problem/super admins for hidden problems.
+	CanManageProblems bool
 }
 
 type ProblemLookup interface {
@@ -30,15 +33,26 @@ type Limiter interface {
 	Allow(ctx context.Context, userID int64) (bool, error)
 }
 
-type Service struct {
-	repo     Repository
-	problems ProblemLookup
-	queue    Enqueuer
-	limiter  Limiter
+type Publisher interface {
+	Publish(ctx context.Context, submissionID int64)
 }
 
-func NewService(repo Repository, problems ProblemLookup, queue Enqueuer, limiter Limiter) *Service {
-	return &Service{repo: repo, problems: problems, queue: queue, limiter: limiter}
+type Service struct {
+	repo      Repository
+	problems  ProblemLookup
+	queue     Enqueuer
+	limiter   Limiter
+	publisher Publisher
+}
+
+func NewService(repo Repository, problems ProblemLookup, queue Enqueuer, limiter Limiter, publisher Publisher) *Service {
+	return &Service{repo: repo, problems: problems, queue: queue, limiter: limiter, publisher: publisher}
+}
+
+func (s *Service) publish(ctx context.Context, submissionID int64) {
+	if s.publisher != nil {
+		s.publisher.Publish(ctx, submissionID)
+	}
 }
 
 const (
@@ -46,14 +60,14 @@ const (
 	maxPageSize = 100
 )
 
-func (s *Service) List(ctx context.Context, q ListQuery, page, size int) (httpx.Page[ListItem], error) {
+func (s *Service) List(ctx context.Context, v Viewer, q ListQuery, page, size int) (httpx.Page[ListItem], error) {
 	q, err := q.Normalize()
 	if err != nil {
 		return httpx.Page[ListItem]{}, err
 	}
 	page = min(max(page, 1), maxListPage)
 	size = min(max(size, 1), maxPageSize)
-	rows, total, err := s.repo.List(ctx, toFilter(q), (page-1)*size, size)
+	rows, total, err := s.repo.List(ctx, q.toFilter(v), (page-1)*size, size)
 	if err != nil {
 		return httpx.Page[ListItem]{}, err
 	}
@@ -72,6 +86,9 @@ func (s *Service) Detail(ctx context.Context, v Viewer, id int64) (*Detail, erro
 		}
 		return nil, err
 	}
+	if !row.ProblemIsPublic && !v.CanManageProblems && v.UserID != row.UserID {
+		return nil, httpx.ErrNotFound
+	}
 	detail := &Detail{
 		ListItem: toListItem(*row), Code: row.Code, ErrorMessage: row.ErrorMessage,
 		JudgeResult: append([]JudgeCaseResult{}, row.JudgeResult...),
@@ -79,6 +96,7 @@ func (s *Service) Detail(ctx context.Context, v Viewer, id int64) (*Detail, erro
 	if row.ContestID != nil && !v.CanManage && v.UserID != row.UserID {
 		detail.Code = ""
 		detail.CodeHidden = true
+		detail.ErrorMessage = ""
 		detail.JudgeResult = []JudgeCaseResult{}
 	}
 	return detail, nil
@@ -136,10 +154,12 @@ func (s *Service) Create(ctx context.Context, v Viewer, userID int64, in Input) 
 		}
 		return nil, err
 	}
+	s.publish(ctx, sub.ID)
 	if err := s.queue.Enqueue(ctx, sub.ID); err != nil {
 		if markErr := s.repo.MarkSystemError(ctx, sub.ID, "任务入队失败"); markErr != nil {
 			slog.Error("mark submission system error failed", "submission_id", sub.ID, "err", markErr)
 		}
+		s.publish(ctx, sub.ID)
 		return nil, err
 	}
 	return sub, nil
