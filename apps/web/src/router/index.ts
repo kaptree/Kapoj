@@ -65,6 +65,18 @@ export const router = createRouter({
           meta: { title: '题目' },
         },
         {
+          path: 'problems/:id(\\d+)/submit',
+          name: 'problem-submit',
+          component: () => import('@/views/SubmitView.vue'),
+          meta: { requiresAuth: true, title: '提交代码' },
+        },
+        {
+          path: 'submissions',
+          name: 'submissions',
+          component: () => import('@/views/SubmissionsView.vue'),
+          meta: { title: '测评记录' },
+        },
+        {
           path: 'problems/:id(\\d+)/edit',
           name: 'problem-edit',
           component: () => import('@/views/ProblemEditView.vue'),

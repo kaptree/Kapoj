@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatBytes } from './format'
+import { formatBytes, formatDateTime } from './format'
 
 describe('formatBytes', () => {
   it('formats sizes with binary units', () => {
@@ -14,5 +14,13 @@ describe('formatBytes', () => {
   it('handles invalid input', () => {
     expect(formatBytes(-1)).toBe('-')
     expect(formatBytes(NaN)).toBe('-')
+  })
+})
+
+describe('formatDateTime', () => {
+  it('formats ISO timestamps and handles empty values', () => {
+    expect(formatDateTime(null)).toBe('-')
+    expect(formatDateTime('not-a-date')).toBe('-')
+    expect(formatDateTime('2026-11-04T12:00:00Z')).not.toBe('-')
   })
 })

@@ -88,9 +88,17 @@ const rate = computed(() => (stats.value ? `${(stats.value.acceptRate * 100).toF
           />
           <div class="head">
             <h1>{{ problem.title }}</h1>
-            <RouterLink v-if="canManage" :to="{ name: 'problem-edit', params: { id: problem.id } }">
-              <el-button>编辑</el-button>
-            </RouterLink>
+            <div class="actions">
+              <RouterLink :to="{ name: 'problem-submit', params: { id: problem.id } }">
+                <el-button type="primary">提交代码</el-button>
+              </RouterLink>
+              <RouterLink
+                v-if="canManage"
+                :to="{ name: 'problem-edit', params: { id: problem.id } }"
+              >
+                <el-button>编辑</el-button>
+              </RouterLink>
+            </div>
           </div>
           <div class="meta">
             <el-tag>{{ difficultyLabel(problem.difficulty) }}</el-tag>
@@ -182,6 +190,10 @@ const rate = computed(() => (stats.value ? `${(stats.value.acceptRate * 100).toF
 }
 .head h1 {
   margin: 0;
+}
+.actions {
+  display: flex;
+  gap: 8px;
 }
 .meta {
   display: flex;
