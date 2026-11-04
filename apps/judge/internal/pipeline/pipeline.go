@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/kaptree/kapoj/apps/judge/internal/db"
 	"github.com/kaptree/kapoj/apps/judge/internal/model"
@@ -95,7 +96,7 @@ func (p *Pipeline) Run(ctx context.Context, submissionID int64) error {
 			defer p.sandbox.Cleanup(checkerArtifact)
 		}
 		if checker.Failed {
-			return fmt.Errorf("checker compile failed: %s", truncate(checker.ErrorOutput, maxCompileMessageSize))
+			return errors.New("checker compile failed")
 		}
 	}
 
@@ -141,7 +142,7 @@ func (p *Pipeline) runCase(
 	switch {
 	case run.TimedOut || run.TimeMS > prob.TimeLimitMS:
 		result.Status, result.Message = model.StatusTimeLimitExceeded, "运行超时"
-	case run.OOMKilled:
+	case run.OOMKilled || (run.ExitCode != 0 && looksLikeOOM(run.Stderr)):
 		result.Status, result.Message = model.StatusMemoryLimitExceeded, "内存超限"
 	case run.OutputTruncated:
 		result.Status, result.Message = model.StatusWrongAnswer, "输出超过限制"
@@ -189,14 +190,34 @@ func (p *Pipeline) checkSpecial(
 	if run.OOMKilled {
 		return "", "", fmt.Errorf("checker out of memory on testcase %d", tc.ID)
 	}
-	if run.ExitCode != 0 {
+	if run.OutputTruncated {
+		return "", "", fmt.Errorf("checker output limit exceeded on testcase %d", tc.ID)
+	}
+	switch run.ExitCode {
+	case 0:
+		return model.StatusAccepted, "", nil
+	case 1:
 		message := truncate(string(run.Output), maxMessageBytes)
 		if message == "" {
 			message = truncate(string(run.Stderr), maxMessageBytes)
 		}
 		return model.StatusWrongAnswer, message, nil
+	default:
+		return "", "", fmt.Errorf("checker failed with exit code %d on testcase %d", run.ExitCode, tc.ID)
 	}
-	return model.StatusAccepted, "", nil
+}
+
+func looksLikeOOM(stderr []byte) bool {
+	text := strings.ToLower(string(stderr))
+	for _, marker := range []string{
+		"outofmemoryerror", "memoryerror", "std::bad_alloc",
+		"out of memory", "cannot allocate memory",
+	} {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *Pipeline) readStorage(key string, limit int64) ([]byte, error) {

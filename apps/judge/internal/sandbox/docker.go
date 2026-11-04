@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,12 +25,36 @@ const (
 )
 
 type Docker struct {
-	bin    string
-	images map[string]string
+	bin      string
+	images   map[string]string
+	instance string
 }
 
 func NewDocker(bin string, images map[string]string) *Docker {
-	return &Docker{bin: bin, images: images}
+	instance := os.Getenv("KAPOJ_JUDGE_INSTANCE")
+	if instance == "" {
+		instance, _ = os.Hostname()
+	}
+	if instance == "" {
+		instance = "judge-" + randomHex(4)
+	}
+	return &Docker{bin: bin, images: images, instance: instance}
+}
+
+// Sweep removes containers left by this judge instance, for example after an
+// interrupted shutdown. It never touches another instance's containers.
+func (d *Docker) Sweep(ctx context.Context) {
+	out, err := exec.CommandContext(ctx, d.bin, "ps", "-aq",
+		"--filter", "label=kapoj.judge.instance="+d.instance).Output()
+	if err != nil {
+		slog.Warn("list leftover judge containers failed", "err", err)
+		return
+	}
+	for _, id := range strings.Fields(string(out)) {
+		if err := exec.CommandContext(ctx, d.bin, "rm", "-f", id).Run(); err != nil {
+			slog.Warn("remove leftover judge container failed", "container", id, "err", err)
+		}
+	}
 }
 
 func (d *Docker) Cleanup(artifactDir string) {
@@ -55,7 +80,7 @@ func (d *Docker) Compile(ctx context.Context, req CompileRequest) (CompileResult
 	defer cancel()
 
 	name := containerName()
-	if err := d.start(compileCtx, name, image, compileFlags()); err != nil {
+	if err := d.start(compileCtx, name, image, d.compileFlags()); err != nil {
 		d.remove(name)
 		return CompileResult{}, err
 	}
@@ -67,6 +92,9 @@ func (d *Docker) Compile(ctx context.Context, req CompileRequest) (CompileResult
 	var out, errOut limitedBuffer
 	out.max, errOut.max = 64<<10, 64<<10
 	err = d.exec(compileCtx, name, nil, &out, &errOut, spec.compile...)
+	if ctx.Err() != nil {
+		return CompileResult{}, ctx.Err()
+	}
 	if errors.Is(compileCtx.Err(), context.DeadlineExceeded) {
 		return CompileResult{}, errors.New("compile timed out")
 	}
@@ -127,7 +155,7 @@ func (d *Docker) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		return RunResult{}, err
 	}
 	name := containerName()
-	if err := d.start(ctx, name, image, runFlags(req.MemoryLimitMB)); err != nil {
+	if err := d.start(ctx, name, image, d.runFlags(req.MemoryLimitMB)); err != nil {
 		d.remove(name)
 		return RunResult{}, err
 	}
@@ -160,6 +188,9 @@ func (d *Docker) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	defer cancel()
 	var out, errOut bytes.Buffer
 	err = d.exec(runCtx, name, nil, &out, &errOut, "sh", "/work/run.sh")
+	if ctx.Err() != nil {
+		return RunResult{}, ctx.Err()
+	}
 	if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
 		return RunResult{TimedOut: true, ExitCode: -1, TimeMS: timeLimit + 1}, nil
 	}
@@ -184,9 +215,18 @@ func (d *Docker) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if err != nil {
 		return RunResult{}, err
 	}
-	timeMS := d.readInt(ctx, name, "/out/time_ms")
-	memoryKB := d.readInt(ctx, name, "/out/memory_kb")
-	oomKills := d.readInt(ctx, name, "/out/oom_kill")
+	timeMS, err := d.readInt(ctx, name, "/out/time_ms")
+	if err != nil {
+		return RunResult{}, err
+	}
+	memoryKB, err := d.readInt(ctx, name, "/out/memory_kb")
+	if err != nil {
+		return RunResult{}, err
+	}
+	oomKills, err := d.readInt(ctx, name, "/out/oom_kill")
+	if err != nil {
+		return RunResult{}, err
+	}
 	return RunResult{
 		Output: output, Stderr: stderr, ExitCode: exitCode,
 		OOMKilled: oomKills > 0 || exitCode == 137,
@@ -286,8 +326,11 @@ func (d *Docker) copyArtifacts(ctx context.Context, name, artifactDir string, sp
 		}
 		var errOut limitedBuffer
 		errOut.max = 4096
-		return d.exec(ctx, name, bytes.NewReader(data), io.Discard, &errOut,
-			"sh", "-c", "mkdir -p /work/classes && tar xf - -C /work/classes")
+		if err := d.exec(ctx, name, bytes.NewReader(data), io.Discard, &errOut,
+			"sh", "-c", "mkdir -p /work/classes && tar xf - --no-same-owner -C /work/classes"); err != nil {
+			return fmt.Errorf("extract Java classes: %w: %s", err, errOut.String())
+		}
+		return nil
 	}
 	return fmt.Errorf("unknown artifact kind %q", spec.artifact)
 }
@@ -337,18 +380,26 @@ func (d *Docker) readOut(ctx context.Context, name, path string, limit int) ([]b
 	return buf.Bytes(), false, nil
 }
 
-func (d *Docker) readInt(ctx context.Context, name, path string) int {
+func (d *Docker) readInt(ctx context.Context, name, path string) (int, error) {
 	data, _, err := d.readOut(ctx, name, path, 64)
 	if err != nil {
-		return 0
+		return 0, err
 	}
-	n, _ := strconv.Atoi(strings.TrimSpace(string(data)))
-	return n
+	text := strings.TrimSpace(string(data))
+	if text == "" {
+		return 0, fmt.Errorf("measurement %s is missing", path)
+	}
+	n, err := strconv.Atoi(text)
+	if err != nil {
+		return 0, fmt.Errorf("measurement %s is invalid: %q", path, text)
+	}
+	return n, nil
 }
 
-func compileFlags() []string {
+func (d *Docker) compileFlags() []string {
 	return []string{
 		"--label", "kapoj.judge=1",
+		"--label", "kapoj.judge.instance=" + d.instance,
 		"--network", "none",
 		"--cpus", "1",
 		"--memory", "1g",
@@ -364,25 +415,27 @@ func compileFlags() []string {
 	}
 }
 
-func runFlags(memoryMB int) []string {
+func (d *Docker) runFlags(memoryMB int) []string {
 	if memoryMB < runMemoryFloor {
 		memoryMB = runMemoryFloor
 	}
 	memory := fmt.Sprintf("%dm", memoryMB)
 	return []string{
 		"--label", "kapoj.judge=1",
+		"--label", "kapoj.judge.instance=" + d.instance,
 		"--network", "none",
 		"--cpus", "1",
 		"--memory", memory,
 		"--memory-swap", memory,
 		"--pids-limit", "64",
 		"--cap-drop", "ALL",
+		"--cap-add", "SETUID",
+		"--cap-add", "SETGID",
 		"--security-opt", "no-new-privileges",
-		"--user", "65532:65532",
 		"--read-only",
-		"--tmpfs", "/work:rw,exec,nosuid,size=64m,mode=1777",
+		"--tmpfs", "/work:rw,exec,nosuid,size=64m,mode=0755",
 		"--tmpfs", "/tmp:rw,exec,nosuid,size=64m,mode=1777",
-		"--tmpfs", "/out:rw,noexec,nosuid,size=8m,mode=1777",
+		"--tmpfs", "/out:rw,noexec,nosuid,size=8m,mode=0755",
 		"--workdir", "/work",
 	}
 }
@@ -390,6 +443,7 @@ func runFlags(memoryMB int) []string {
 func runScript(command []string) string {
 	return `#!/bin/sh
 ulimit -f 4096
+cd /tmp
 oom_before=0
 if [ -r /sys/fs/cgroup/memory.events ]; then
   while read -r key value; do
@@ -397,7 +451,7 @@ if [ -r /sys/fs/cgroup/memory.events ]; then
   done < /sys/fs/cgroup/memory.events
 fi
 start=$(date +%s%N)
-` + strings.Join(command, " ") + ` < /work/input.txt > /out/stdout 2> /out/stderr
+setpriv --reuid=65532 --regid=65532 --clear-groups -- ` + strings.Join(command, " ") + ` < /work/input.txt > /out/stdout 2> /out/stderr
 status=$?
 end=$(date +%s%N)
 echo $(( (end - start) / 1000000 )) > /out/time_ms
@@ -418,10 +472,12 @@ exit $status
 `
 }
 
-func containerName() string {
-	b := make([]byte, 6)
+func containerName() string { return "kapoj-judge-" + randomHex(6) }
+
+func randomHex(n int) string {
+	b := make([]byte, n)
 	_, _ = rand.Read(b)
-	return "kapoj-judge-" + hex.EncodeToString(b)
+	return hex.EncodeToString(b)
 }
 
 type limitedBuffer struct {
@@ -463,6 +519,10 @@ func tarDir(dir string) ([]byte, error) {
 			return err
 		}
 		hdr.Name = filepath.ToSlash(rel)
+		// Container tar runs without CAP_CHOWN; do not ask it to restore the
+		// host's numeric owner.
+		hdr.Uid, hdr.Gid = 0, 0
+		hdr.Uname, hdr.Gname = "", ""
 		if entry.IsDir() {
 			hdr.Name += "/"
 		}

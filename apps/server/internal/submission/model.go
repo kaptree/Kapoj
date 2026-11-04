@@ -20,7 +20,7 @@ type JudgeCaseResult struct {
 // Submission is a user's code submission and its judging result.
 type Submission struct {
 	ID           int64                         `gorm:"primaryKey"`
-	UserID       int64                         `gorm:"not null;index:idx_submissions_user_created,priority:1"`
+	UserID       int64                         `gorm:"not null;index:idx_submissions_user_created,priority:1;index:idx_submissions_contest_user,priority:2"`
 	ProblemID    int64                         `gorm:"not null;index:idx_submissions_problem_status,priority:1"`
 	ContestID    *int64                        `gorm:"index:idx_submissions_contest_user,priority:1"`
 	Language     Language                      `gorm:"size:20;not null"`

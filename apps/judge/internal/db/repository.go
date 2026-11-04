@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -151,6 +152,29 @@ func (r *Repository) MarkSystemError(ctx context.Context, id int64, message stri
 		UPDATE submissions SET status = 'system_error', error_message = $2, judged_at = now()
 		WHERE id = $1 AND status IN ('pending', 'judging')`, id, message)
 	return err
+}
+
+// StaleSubmissionIDs returns submissions that likely lost their queue task or
+// whose judge died: old pending rows and old judging rows.
+func (r *Repository) StaleSubmissionIDs(ctx context.Context, pendingBefore, judgingBefore time.Time, limit int) ([]int64, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id FROM submissions
+		WHERE (status = 'pending' AND created_at < $1)
+		   OR (status = 'judging' AND created_at < $2)
+		ORDER BY id LIMIT $3`, pendingBefore, judgingBefore, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 func (r *Repository) FindByID(ctx context.Context, id int64) (*model.Submission, error) {

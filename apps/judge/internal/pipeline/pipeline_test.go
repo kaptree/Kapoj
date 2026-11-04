@@ -154,6 +154,7 @@ func TestPipelineMapsUserVerdicts(t *testing.T) {
 		{"timeout flag", sandbox.RunResult{TimedOut: true}, model.StatusTimeLimitExceeded},
 		{"time over limit", sandbox.RunResult{TimeMS: 1001}, model.StatusTimeLimitExceeded},
 		{"oom", sandbox.RunResult{OOMKilled: true, ExitCode: 137}, model.StatusMemoryLimitExceeded},
+		{"jvm oom", sandbox.RunResult{ExitCode: 1, Stderr: []byte("Exception in thread \"main\" java.lang.OutOfMemoryError: Java heap space")}, model.StatusMemoryLimitExceeded},
 		{"runtime error", sandbox.RunResult{ExitCode: 1, Stderr: []byte("boom")}, model.StatusRuntimeError},
 		{"output truncated", sandbox.RunResult{OutputTruncated: true}, model.StatusWrongAnswer},
 		{"output truncated then killed", sandbox.RunResult{OutputTruncated: true, ExitCode: 153}, model.StatusWrongAnswer},
@@ -205,13 +206,16 @@ func TestPipelineStopsAtFirstFailure(t *testing.T) {
 
 func TestPipelineSpecialChecker(t *testing.T) {
 	tests := []struct {
-		name     string
-		checker  sandbox.RunResult
-		want     model.Status
-		runError error
+		name    string
+		checker sandbox.RunResult
+		want    model.Status
+		wantErr bool
 	}{
-		{"accepted", sandbox.RunResult{ExitCode: 0}, model.StatusAccepted, nil},
-		{"rejected", sandbox.RunResult{ExitCode: 1, Output: []byte("bad token")}, model.StatusWrongAnswer, nil},
+		{"accepted", sandbox.RunResult{ExitCode: 0}, model.StatusAccepted, false},
+		{"rejected", sandbox.RunResult{ExitCode: 1, Output: []byte("bad token")}, model.StatusWrongAnswer, false},
+		{"checker exit 2", sandbox.RunResult{ExitCode: 2}, "", true},
+		{"checker segfault", sandbox.RunResult{ExitCode: 139, Stderr: []byte("Segmentation fault")}, "", true},
+		{"checker output limit", sandbox.RunResult{OutputTruncated: true}, "", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -227,9 +231,18 @@ func TestPipelineSpecialChecker(t *testing.T) {
 				return sandbox.RunResult{Output: []byte("user output")}, nil
 			}
 
-			require.NoError(t, e.pipe.Run(context.Background(), sub))
+			err := e.pipe.Run(context.Background(), sub)
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
 			got, _ := e.repo.FindByID(context.Background(), sub)
-			assert.Equal(t, tt.want, got.Status)
+			if tt.wantErr {
+				assert.Equal(t, model.StatusJudging, got.Status)
+			} else {
+				assert.Equal(t, tt.want, got.Status)
+			}
 			require.Len(t, e.sb.compiles, 2)
 			assert.True(t, e.sb.compiles[1].Checker)
 			assert.Len(t, e.sb.cleaned, 2)
@@ -249,6 +262,7 @@ func TestPipelineSpecialCheckerCompileFailureIsSystemError(t *testing.T) {
 
 	err := e.pipe.Run(context.Background(), sub)
 	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "checker error", "checker compiler output must not leak")
 	got, _ := e.repo.FindByID(context.Background(), sub)
 	assert.Equal(t, model.StatusJudging, got.Status, "infrastructure failures are retried, not terminal")
 }

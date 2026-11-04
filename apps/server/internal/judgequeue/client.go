@@ -4,6 +4,7 @@ package judgequeue
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/hibiken/asynq"
 )
@@ -33,5 +34,6 @@ func (c *Client) Enqueue(ctx context.Context, submissionID int64) error {
 
 func newTask(submissionID int64) *asynq.Task {
 	payload, _ := json.Marshal(Payload{SubmissionID: submissionID})
-	return asynq.NewTask(TypeSubmission, payload, asynq.Queue(QueueName), asynq.MaxRetry(3))
+	return asynq.NewTask(TypeSubmission, payload,
+		asynq.Queue(QueueName), asynq.MaxRetry(3), asynq.Timeout(10*time.Minute))
 }

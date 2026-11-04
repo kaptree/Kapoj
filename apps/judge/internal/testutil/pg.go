@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
@@ -128,11 +129,16 @@ func InsertTestcase(t *testing.T, pool *pgxpool.Pool, problemID int64, input, ou
 
 func InsertSubmission(t *testing.T, pool *pgxpool.Pool, userID, problemID int64, language, code, status string) int64 {
 	t.Helper()
+	return InsertSubmissionAt(t, pool, userID, problemID, language, code, status, time.Now())
+}
+
+func InsertSubmissionAt(t *testing.T, pool *pgxpool.Pool, userID, problemID int64, language, code, status string, created time.Time) int64 {
+	t.Helper()
 	var id int64
 	err := pool.QueryRow(context.Background(),
 		`INSERT INTO submissions (user_id, problem_id, language, code, status, created_at)
-		 VALUES ($1, $2, $3, $4, $5, now()) RETURNING id`,
-		userID, problemID, language, code, status,
+		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+		userID, problemID, language, code, status, created,
 	).Scan(&id)
 	require.NoError(t, err)
 	return id

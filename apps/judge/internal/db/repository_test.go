@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -127,6 +128,26 @@ func TestFinishUnknownSubmissionIsNoop(t *testing.T) {
 	require.NoError(t, repo.Finish(context.Background(), 999999, db.FinishInput{
 		Status: model.StatusSystemError,
 	}))
+}
+
+func TestStaleSubmissionIDs(t *testing.T) {
+	pool := testutil.PG(t)
+	repo := db.New(pool)
+	user := testutil.InsertUser(t, pool)
+	problem := testutil.InsertProblem(t, pool, "traditional", 1000, 256, "")
+	now := time.Now()
+
+	oldPending := testutil.InsertSubmissionAt(t, pool, user, problem, "cpp", "x", "pending", now.Add(-2*time.Minute))
+	freshPending := testutil.InsertSubmissionAt(t, pool, user, problem, "cpp", "x", "pending", now.Add(-30*time.Second))
+	oldJudging := testutil.InsertSubmissionAt(t, pool, user, problem, "cpp", "x", "judging", now.Add(-20*time.Minute))
+	freshJudging := testutil.InsertSubmissionAt(t, pool, user, problem, "cpp", "x", "judging", now.Add(-5*time.Minute))
+	testutil.InsertSubmissionAt(t, pool, user, problem, "cpp", "x", "accepted", now.Add(-time.Hour))
+
+	ids, err := repo.StaleSubmissionIDs(context.Background(), now.Add(-time.Minute), now.Add(-15*time.Minute), 100)
+	require.NoError(t, err)
+	assert.Equal(t, []int64{oldPending, oldJudging}, ids)
+	assert.NotContains(t, ids, freshPending)
+	assert.NotContains(t, ids, freshJudging)
 }
 
 func TestMarkSystemErrorOnlyMovesOpenSubmissions(t *testing.T) {

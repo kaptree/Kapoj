@@ -1,6 +1,6 @@
 module github.com/kaptree/kapoj/apps/judge
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/hibiken/asynq v0.26.0

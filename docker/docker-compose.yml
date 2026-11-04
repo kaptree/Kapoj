@@ -58,6 +58,7 @@ services:
       KAPOJ_STORAGE_DIR: /data
       KAPOJ_JUDGE_CONCURRENCY: "2"
       KAPOJ_JUDGE_DOCKER: docker
+      KAPOJ_JUDGE_INSTANCE: judge-1
     volumes:
       - storage:/data
       - /var/run/docker.sock:/var/run/docker.sock

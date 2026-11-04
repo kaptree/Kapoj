@@ -1,6 +1,11 @@
 package db
 
 import (
+	"io"
+	"log"
+	"os"
+	"time"
+
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -11,8 +16,20 @@ import (
 )
 
 func Open(dsn string) (*gorm.DB, error) {
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Warn),
+	return open(dsn, os.Stdout)
+}
+
+func open(dsn string, w io.Writer) (*gorm.DB, error) {
+	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: newLogger(w)})
+}
+
+// newLogger never interpolates query parameters, so source code and password
+// hashes cannot appear in slow-query or error logs.
+func newLogger(w io.Writer) logger.Interface {
+	return logger.New(log.New(w, "", log.LstdFlags), logger.Config{
+		SlowThreshold:        200 * time.Millisecond,
+		LogLevel:             logger.Warn,
+		ParameterizedQueries: true,
 	})
 }
 

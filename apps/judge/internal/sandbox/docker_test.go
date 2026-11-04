@@ -140,3 +140,50 @@ func TestDockerSandboxCompileTimeoutIsError(t *testing.T) {
 	_, err := d.Compile(ctx, CompileRequest{Language: "cpp", Source: []byte("int main(){}")})
 	assert.Error(t, err)
 }
+
+func TestDockerSandboxParentDeadlineIsSystemError(t *testing.T) {
+	d := newTestDocker(t)
+	compiled, err := d.Compile(context.Background(), CompileRequest{
+		Language: "cpp", Source: []byte("int main(){for(;;);}"),
+	})
+	require.NoError(t, err)
+	defer d.Cleanup(compiled.ArtifactDir)
+	input := t.TempDir() + "/input.txt"
+	require.NoError(t, os.WriteFile(input, []byte(""), 0o644))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	_, err = d.Run(ctx, RunRequest{
+		Language: "cpp", ArtifactDir: compiled.ArtifactDir, InputPath: input,
+		TimeLimitMS: 10000, MemoryLimitMB: 256, OutputLimitBytes: 1024,
+	})
+	assert.Error(t, err, "a parent deadline must not become a student TLE")
+	assertNoJudgeContainers(t)
+}
+
+func TestDockerSweepRemovesOnlyThisInstance(t *testing.T) {
+	d := newTestDocker(t)
+	name := "kapoj-sweep-probe-" + d.instance
+	flags := []string{
+		"--label", "kapoj.judge=1",
+		"--label", "kapoj.judge.instance=" + d.instance,
+		"--network", "none",
+	}
+	require.NoError(t, d.start(context.Background(), name, "gcc:14", flags))
+	d.Sweep(context.Background())
+	out, err := exec.Command("docker", "ps", "-a", "--filter", "name="+name, "--format", "{{.Names}}").Output()
+	require.NoError(t, err)
+	assert.Empty(t, strings.TrimSpace(string(out)))
+}
+
+func TestDockerSandboxProgramCannotForgeTiming(t *testing.T) {
+	d := newTestDocker(t)
+	code := `#include <sys/stat.h>
+#include <unistd.h>
+int main(){mkdir("/out/time_ms",0700); usleep(2000000);}
+`
+	run, _ := compileAndRun(t, d, "cpp", code, "", 1000, 256, 1<<20)
+	assert.False(t, run.TimedOut)
+	assert.GreaterOrEqual(t, run.TimeMS, 1500, "the wrapper must measure the real runtime")
+	assertNoJudgeContainers(t)
+}

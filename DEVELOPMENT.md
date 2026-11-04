@@ -3,7 +3,7 @@
 > 本文档基于 `plan.md` 细化，是 kapOJ（Kap Online Judge）平台的详细开发规格说明书。
 > 目标：**打造出最有趣味的 Online Judge 平台**。
 > 文档包含完整的架构设计、数据库设计、模块需求，并为每个模块提供了可直接交给 Codex 的**开发提示词（Prompt）**。
-> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)。当前进度：**M0 已完成**。
+> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)。当前进度：**M1-B 已完成，M1-C 进行中**。
 
 ---
 
@@ -485,10 +485,14 @@ user_ai_configs (
 - 队列：Asynq，任务类型 `judge:submission`，队列名 `judge`，payload 为 `{"submissionId": <id>}`，最多重试 3 次。入队失败时提交被标记为 `system_error` 并返回 500。
 - 评测进程：`apps/judge`，可独立部署；从 PostgreSQL 读取提交/题目/测试点，从共享 `KAPOJ_STORAGE_DIR` 读取输入、答案与 checker。
 - 语言与镜像：C/C++ `gcc:14`、Python3 `python:3.12-slim`、Java `eclipse-temurin:21-jdk`、Go `golang:1.26`；镜像可用 `KAPOJ_JUDGE_*_IMAGE` 覆盖。
-- 沙盒：每个测试点使用独立容器；`--network none`、`--read-only`、非 root 用户、`--cap-drop ALL`、`--pids-limit`、`--cpus 1`、`--memory/--memory-swap`，`/work`、`/tmp`、`/out` 使用 tmpfs。源码、编译产物、输入通过 `docker exec` + tar/cat 流传输，不使用宿主机 bind mount，因此 judge 自身在容器中也能运行。
-- 资源：编译超时 30 秒、编译内存 1 GiB；运行时间上限为题目限制 + 3 秒容器宽限，实际耗时在容器内测量；输出上限 1 MiB；内存峰值读取 cgroup v2 `memory.peak`，OOM 通过 `memory.events` 判定。若内核不提供 cgroup v2，内存峰值记为 0，但 OOM 仍通过退出码识别。
+- 沙盒：每个测试点使用独立容器；`--network none`、`--read-only`、`--cap-drop ALL`、`--pids-limit`、`--cpus 1`、`--memory/--memory-swap`，`/work`、`/tmp`、`/out` 使用 tmpfs。源码、编译产物、输入通过 `docker exec` + tar/cat 流传输，不使用宿主机 bind mount，因此 judge 自身在容器中也能运行。
+- 计时防篡改：运行容器的 wrapper 以 root 启动，`/out`、`/work` 归 root 且选手进程不可写；选手程序通过 `setpriv` 降权到 UID 65532，只有 `/tmp` 可写。耗时、内存峰值、OOM 计数由 root wrapper 写入；测量文件缺失或无法解析视为系统错误，不当作 0。
+- 资源：编译超时 30 秒、编译内存 1 GiB；运行时间上限为题目限制 + 3 秒容器宽限，实际耗时在容器内测量；输出上限 1 MiB；内存峰值读取 cgroup v2 `memory.peak`，OOM 通过 `memory.events` 判定。若内核不提供 cgroup v2，内存峰值记为 0，但 OOM 仍通过退出码识别；Java/Python/Go/C++ 的 OOM 堆栈（如 `OutOfMemoryError`、`MemoryError`、`std::bad_alloc`）也会判定为 MLE。
 - 结论：编译失败 `compile_error`；运行超时 `time_limit_exceeded`；OOM `memory_limit_exceeded`；非零退出 `runtime_error`；输出超限或文本比对失败 `wrong_answer`；全部通过 `accepted`。系统原因（Docker/存储/DB/checker 编译失败）重试，耗尽后 `system_error`。
-- 特判：checker 以 C++ 编译，argv 为 `<checker> <输入> <选手输出> <标准答案>`，退出 0 通过，非 0 答案错误；checker 超时/OOM/编译失败属于系统错误。
+- 特判：checker 以 C++ 编译，argv 为 `<checker> <输入> <选手输出> <标准答案>`；退出 0 通过，退出 1 答案错误，其他退出码（含信号、126/127）或输出超限属于系统错误；checker 超时/OOM/编译失败也属于系统错误。checker 编译诊断不写入日志或 `error_message`，避免泄露判题逻辑。
+- 超时与重试：任务在 Asynq 中设置 10 分钟超时，最多重试 3 次；judge 的 `ShutdownTimeout` 为 2 分钟，进程启动与关闭时都会按实例标签清扫容器。实例标签取 `KAPOJ_JUDGE_INSTANCE`（默认主机名），多实例部署时必须各不相同。
+- 崩溃恢复：judge 启动后及每分钟扫描一次：创建超过 1 分钟仍为 `pending`、或超过 15 分钟仍为 `judging` 的提交会重新入队；`Claim`/`Finish` 的幂等性保证不会重复计数。这同时覆盖“数据库已提交但入队前进程崩溃”和异步队列丢失两种情况。
+- 日志脱敏：GORM 使用 `ParameterizedQueries`，慢查询/错误日志只出现占位符，不包含源代码或密码哈希。
 - 统计：`submit_count` 创建提交时递增；`accept_count` 仅在首次把提交从 `judging` 改为 `accepted` 时递增。
 - 已知限制：M1 不评测交互题；Java 堆上限按题内存减 64 MB（最低 16 MB）；运行时间按墙钟计时而非 CPU 时间；Docker socket 等价于宿主机 root 权限，生产需独立评测主机或 rootless Docker。
 
@@ -1148,6 +1152,6 @@ problem/
 - **安全**：沙盒强隔离、API key 加密存储、防 SQL 注入/XSS/CSRF、接口限流。
 - **可观测性**：结构化日志、监控指标、评测任务失败告警。
 - **可扩展性**：评测服务可水平扩展；模块间解耦（事件驱动）。
-- **接口限流**：登录、提交、AI 接口按用户限流；提交接口默认每用户每 10 秒最多 1 次（可配置）。
+- **接口限流**：登录、提交、AI 接口按用户限流；提交接口默认每用户每 3 秒最多 1 次（`KAPOJ_SUBMIT_COOLDOWN` 可配置）。
 - **敏感信息**：日志不记录密码、API key 和 refresh token；测评输出与用户内容做 XSS 转义后再展示。
 - **数据备份**：PostgreSQL 每日全量备份，保留 7 天；MinIO 中的题目数据与证书图片同步备份。

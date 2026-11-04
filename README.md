@@ -37,7 +37,7 @@ docs            任务清单、开发日志、实施计划
    export KAPOJ_DATABASE_URL='postgres://kapoj:kapoj@localhost:5433/kapoj?sslmode=disable'
    export KAPOJ_REDIS_ADDR=localhost:6380
    export KAPOJ_JWT_SECRET='替换为至少 32 字节的随机字符串'
-   export KAPOJ_STORAGE_DIR=data   # 测试数据与 checker 的存放目录，可改为绝对路径
+   export KAPOJ_STORAGE_DIR="$(pwd)/apps/server/data"   # 必须使用绝对路径；judge 也从这里读
    ```
 
 3. 启动后端（启动时自动执行数据库迁移）：
