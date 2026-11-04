@@ -326,6 +326,71 @@ func TestListRejectsInvalidKeyword(t *testing.T) {
 	}
 }
 
+func TestContestWithSubmissionsCannotBeDeleted(t *testing.T) {
+	e := newEnv(t)
+	c, err := e.svc.Create(context.Background(), manager(), baseInput(e))
+	require.NoError(t, err)
+	require.NoError(t, e.db.Exec(
+		`INSERT INTO submissions (user_id, problem_id, contest_id, language, code, status, created_at)
+		 VALUES (?, ?, ?, 'cpp', 'x', 'accepted', now())`,
+		userID, e.problems[0].ID, c.ID,
+	).Error)
+
+	has, err := e.repo.HasSubmissions(context.Background(), c.ID)
+	require.NoError(t, err)
+	assert.True(t, has)
+	assertCode(t, e.svc.Delete(context.Background(), manager(), c.ID), 40001)
+}
+
+func TestProblemListIsFrozenAfterStart(t *testing.T) {
+	e := newEnv(t)
+	in := baseInput(e)
+	c, err := e.svc.Create(context.Background(), manager(), in)
+	require.NoError(t, err)
+
+	changed := baseInput(e)
+	changed.Title = "Changed"
+	changed.Problems[0].Score = 50
+	_, err = e.svc.Update(context.Background(), manager(), c.ID, changed)
+	assertCode(t, err, 40001)
+
+	same := baseInput(e)
+	same.Title = "Renamed"
+	_, err = e.svc.Update(context.Background(), manager(), c.ID, same)
+	require.NoError(t, err)
+
+	future := baseInput(e)
+	future.Title = "Future editable"
+	future.StartTime = time.Now().Add(time.Hour)
+	future.EndTime = time.Now().Add(2 * time.Hour)
+	fc, err := e.svc.Create(context.Background(), manager(), future)
+	require.NoError(t, err)
+	future.Problems[1].DisplayID = "C"
+	_, err = e.svc.Update(context.Background(), manager(), fc.ID, future)
+	require.NoError(t, err)
+}
+
+func TestCanViewProblemForContestParticipant(t *testing.T) {
+	e := newEnv(t)
+	in := baseInput(e)
+	c, err := e.svc.Create(context.Background(), manager(), in)
+	require.NoError(t, err)
+	require.NoError(t, e.repo.AddParticipant(context.Background(), c.ID, userID))
+
+	now := time.Now()
+	ok, err := e.repo.CanViewProblem(context.Background(), userID, e.problems[0].ID, now)
+	require.NoError(t, err)
+	assert.True(t, ok)
+
+	ok, err = e.repo.CanViewProblem(context.Background(), otherID, e.problems[0].ID, now)
+	require.NoError(t, err)
+	assert.False(t, ok)
+
+	ok, err = e.repo.CanViewProblem(context.Background(), userID, e.problems[0].ID, c.StartTime.Add(-time.Minute))
+	require.NoError(t, err)
+	assert.False(t, ok)
+}
+
 func TestCloneOverrides(t *testing.T) {
 	e := newEnv(t)
 	c, err := e.svc.Create(context.Background(), manager(), baseInput(e))

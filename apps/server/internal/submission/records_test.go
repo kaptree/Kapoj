@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/submission"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
@@ -30,6 +31,17 @@ func seedProblem(t *testing.T, g *gorm.DB, slug string) *problem.Problem {
 	p := publicProblem(slug)
 	require.NoError(t, repo.Create(context.Background(), p))
 	return p
+}
+
+func insertContest(t *testing.T, g *gorm.DB, start, end time.Time) int64 {
+	t.Helper()
+	var id int64
+	require.NoError(t, g.Raw(
+		`INSERT INTO contests (title, description_md, start_time, end_time, mode, is_public, register_type, created_at, updated_at)
+		 VALUES ('Contest', '', ?, ?, 'icpc', true, 'open', now(), now()) RETURNING id`,
+		start, end,
+	).Scan(&id).Error)
+	return id
 }
 
 func insertRecord(t *testing.T, g *gorm.DB, userID, problemID int64, language, code, status string, contestID *int64, created time.Time) int64 {
@@ -60,7 +72,7 @@ func newRecordsEnv(t *testing.T) *recordsEnv {
 	createNamedUser(t, g, 1, "alice", "Alice Zhang")
 	createNamedUser(t, g, 2, "bob", "Bob Li")
 	return &recordsEnv{
-		repo: repo, svc: submission.NewService(repo, nil, nil, nil, nil), db: g,
+		repo: repo, svc: submission.NewService(repo, nil, contest.NewGormRepository(g), nil, nil, nil), db: g,
 		alice: 1, bob: 2,
 		problem1: seedProblem(t, g, "sum"),
 		problem2: seedProblem(t, g, "product"),
@@ -134,14 +146,15 @@ func ptrInt64(v int64) *int64 { return &v }
 
 func TestDetailVisibility(t *testing.T) {
 	e := newRecordsEnv(t)
-	contest := int64(7)
-	contestSub := insertRecord(t, e.db, e.alice, e.problem1.ID, "cpp", "secret", "accepted", &contest, time.Now())
+	now := time.Now()
+	contest := insertContest(t, e.db, now.Add(-time.Hour), now.Add(time.Hour))
+	contestSub := insertRecord(t, e.db, e.alice, e.problem1.ID, "cpp", "secret", "accepted", &contest, now)
 	require.NoError(t, e.db.Exec(
 		`UPDATE submissions SET judge_result_json = '[{"testcaseId":1,"status":"accepted","timeMs":1,"memoryKb":2}]'::jsonb,
 		 error_message = 'SECRET_COMPILER_OUTPUT' WHERE id = ?`,
 		contestSub,
 	).Error)
-	practiceSub := insertRecord(t, e.db, e.alice, e.problem1.ID, "cpp", "public", "accepted", nil, time.Now())
+	practiceSub := insertRecord(t, e.db, e.alice, e.problem1.ID, "cpp", "public", "accepted", nil, now)
 
 	own, err := e.svc.Detail(context.Background(), submission.Viewer{UserID: e.alice}, contestSub)
 	require.NoError(t, err)
@@ -166,8 +179,37 @@ func TestDetailVisibility(t *testing.T) {
 	assert.False(t, visible.CodeHidden)
 	assert.Equal(t, "public", visible.Code)
 
+	ended := insertContest(t, e.db, now.Add(-2*time.Hour), now.Add(-time.Hour))
+	endedSub := insertRecord(t, e.db, e.alice, e.problem1.ID, "cpp", "ended-code", "accepted", &ended, now.Add(-90*time.Minute))
+	after, err := e.svc.Detail(context.Background(), submission.Viewer{UserID: e.bob}, endedSub)
+	require.NoError(t, err)
+	assert.False(t, after.CodeHidden)
+	assert.Equal(t, "ended-code", after.Code)
+
 	_, err = e.svc.Detail(context.Background(), submission.Viewer{}, 999999)
 	assertCode(t, err, 40400)
+}
+
+func TestListHidesContestDetailsWhileRunning(t *testing.T) {
+	e := newRecordsEnv(t)
+	now := time.Now()
+	contest := insertContest(t, e.db, now.Add(-time.Hour), now.Add(time.Hour))
+	subID := insertRecord(t, e.db, e.alice, e.problem1.ID, "cpp", "secret", "accepted", &contest, now)
+	require.NoError(t, e.db.Exec(
+		`UPDATE submissions SET time_used_ms = 10, memory_used_kb = 20, score = 100 WHERE id = ?`, subID,
+	).Error)
+
+	other, err := e.svc.List(context.Background(), submission.Viewer{UserID: e.bob}, submission.ListQuery{ContestID: &contest}, 1, 10)
+	require.NoError(t, err)
+	require.Len(t, other.Items, 1)
+	assert.Zero(t, other.Items[0].TimeUsedMS)
+	assert.Zero(t, other.Items[0].MemoryUsedKB)
+	assert.Zero(t, other.Items[0].Score)
+
+	owner, err := e.svc.List(context.Background(), submission.Viewer{UserID: e.alice}, submission.ListQuery{ContestID: &contest}, 1, 10)
+	require.NoError(t, err)
+	require.Len(t, owner.Items, 1)
+	assert.NotZero(t, owner.Items[0].Score+owner.Items[0].TimeUsedMS+owner.Items[0].MemoryUsedKB)
 }
 
 func TestHiddenProblemSubmissionsAreScoped(t *testing.T) {

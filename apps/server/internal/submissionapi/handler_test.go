@@ -129,6 +129,17 @@ func (f *fx) record(t *testing.T, userID, problemID int64, language, status, cod
 	return id
 }
 
+func (f *fx) contest(t *testing.T, start, end time.Time) int64 {
+	t.Helper()
+	var id int64
+	require.NoError(t, f.db.Raw(
+		`INSERT INTO contests (title, description_md, start_time, end_time, mode, is_public, register_type, created_at, updated_at)
+		 VALUES ('Contest', '', ?, ?, 'icpc', true, 'open', now(), now()) RETURNING id`,
+		start, end,
+	).Scan(&id).Error)
+	return id
+}
+
 func (f *fx) usernameID(t *testing.T, username string) int64 {
 	t.Helper()
 	var id int64
@@ -259,7 +270,8 @@ func TestSubmissionDetailEndpoint(t *testing.T) {
 	owner := f.register("detailowner")
 	ownerID := f.usernameID(t, "detailowner")
 	p := f.problem(t, "detail", true, problem.TypeTraditional, 1)
-	contest := int64(7)
+	now := time.Now()
+	contest := f.contest(t, now.Add(-time.Hour), now.Add(time.Hour))
 	contestSub := f.record(t, ownerID, p.ID, "cpp", "accepted", "secret-code", &contest)
 	practiceSub := f.record(t, ownerID, p.ID, "cpp", "accepted", "public-code", nil)
 

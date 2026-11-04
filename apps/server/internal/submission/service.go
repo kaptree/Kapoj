@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
+	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/dbtypes"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
@@ -25,6 +27,12 @@ type ProblemLookup interface {
 	CountTestcases(ctx context.Context, problemID int64) (int, error)
 }
 
+type ContestLookup interface {
+	FindByID(ctx context.Context, id int64) (*contest.Contest, error)
+	IsParticipant(ctx context.Context, contestID, userID int64) (bool, error)
+	FindProblem(ctx context.Context, contestID, problemID int64) (*contest.ContestProblem, error)
+}
+
 type Enqueuer interface {
 	Enqueue(ctx context.Context, submissionID int64) error
 }
@@ -40,13 +48,17 @@ type Publisher interface {
 type Service struct {
 	repo      Repository
 	problems  ProblemLookup
+	contests  ContestLookup
 	queue     Enqueuer
 	limiter   Limiter
 	publisher Publisher
 }
 
-func NewService(repo Repository, problems ProblemLookup, queue Enqueuer, limiter Limiter, publisher Publisher) *Service {
-	return &Service{repo: repo, problems: problems, queue: queue, limiter: limiter, publisher: publisher}
+func NewService(repo Repository, problems ProblemLookup, contests ContestLookup, queue Enqueuer, limiter Limiter, publisher Publisher) *Service {
+	return &Service{
+		repo: repo, problems: problems, contests: contests,
+		queue: queue, limiter: limiter, publisher: publisher,
+	}
 }
 
 func (s *Service) publish(ctx context.Context, submissionID int64) {
@@ -72,8 +84,14 @@ func (s *Service) List(ctx context.Context, v Viewer, q ListQuery, page, size in
 		return httpx.Page[ListItem]{}, err
 	}
 	items := make([]ListItem, len(rows))
+	now := time.Now()
 	for i := range rows {
 		items[i] = toListItem(rows[i])
+		if contestProtected(rows[i], v, now) {
+			items[i].TimeUsedMS = 0
+			items[i].MemoryUsedKB = 0
+			items[i].Score = 0
+		}
 	}
 	return httpx.Page[ListItem]{Total: total, Items: items}, nil
 }
@@ -93,13 +111,26 @@ func (s *Service) Detail(ctx context.Context, v Viewer, id int64) (*Detail, erro
 		ListItem: toListItem(*row), Code: row.Code, ErrorMessage: row.ErrorMessage,
 		JudgeResult: append([]JudgeCaseResult{}, row.JudgeResult...),
 	}
-	if row.ContestID != nil && !v.CanManage && v.UserID != row.UserID {
+	if contestProtected(*row, v, time.Now()) {
 		detail.Code = ""
 		detail.CodeHidden = true
 		detail.ErrorMessage = ""
 		detail.JudgeResult = []JudgeCaseResult{}
+		detail.TimeUsedMS = 0
+		detail.MemoryUsedKB = 0
+		detail.Score = 0
 	}
 	return detail, nil
+}
+
+func contestProtected(row ListRow, v Viewer, now time.Time) bool {
+	if row.ContestID == nil || v.CanManage || v.UserID == row.UserID {
+		return false
+	}
+	if row.ContestStartTime == nil || row.ContestEndTime == nil {
+		return false
+	}
+	return !now.Before(*row.ContestStartTime) && now.Before(*row.ContestEndTime)
 }
 
 func (s *Service) HasAccepted(ctx context.Context, userID, problemID int64) (bool, error) {
@@ -118,7 +149,38 @@ func (s *Service) Create(ctx context.Context, v Viewer, userID int64, in Input) 
 		}
 		return nil, err
 	}
-	if !p.IsPublic && !v.CanManage {
+	var contestID *int64
+	if in.ContestID > 0 {
+		c, err := s.contests.FindByID(ctx, in.ContestID)
+		if err != nil {
+			if errors.Is(err, contest.ErrNotFound) {
+				return nil, httpx.ErrNotFound
+			}
+			return nil, err
+		}
+		now := time.Now()
+		if now.Before(c.StartTime) {
+			return nil, httpx.ErrValidation("比赛尚未开始")
+		}
+		if !now.Before(c.EndTime) {
+			return nil, httpx.ErrValidation("比赛已结束")
+		}
+		if !v.CanManage {
+			registered, err := s.contests.IsParticipant(ctx, c.ID, userID)
+			if err != nil {
+				return nil, err
+			}
+			if !registered {
+				return nil, httpx.ErrValidation("请先报名比赛")
+			}
+		}
+		if _, err := s.contests.FindProblem(ctx, c.ID, p.ID); err != nil {
+			return nil, httpx.ErrValidation("题目不属于该比赛")
+		}
+		id := c.ID
+		contestID = &id
+	}
+	if !p.IsPublic && !v.CanManage && contestID == nil {
 		return nil, httpx.ErrNotFound
 	}
 	if p.Type == problem.TypeInteractive {
@@ -145,7 +207,8 @@ func (s *Service) Create(ctx context.Context, v Viewer, userID int64, in Input) 
 	}
 
 	sub := &Submission{
-		UserID: userID, ProblemID: p.ID, Language: in.Language, Code: in.Code,
+		UserID: userID, ProblemID: p.ID, ContestID: contestID,
+		Language: in.Language, Code: in.Code,
 		Status: StatusPending, JudgeResult: dbtypes.List[JudgeCaseResult]{},
 	}
 	if err := s.repo.Create(ctx, sub); err != nil {

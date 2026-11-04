@@ -22,6 +22,8 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/kaptree/kapoj/apps/server/internal/config"
+	"github.com/kaptree/kapoj/apps/server/internal/contest"
+	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/router"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
@@ -450,6 +452,46 @@ func TestDetailShowsSolutionAfterAccepted(t *testing.T) {
 	_, detail = f.do(http.MethodGet, fmt.Sprintf("/api/problems/%d", id), token, nil)
 	assert.Equal(t, "SECRET_SOLUTION", detail["data"].(map[string]any)["solutionMd"])
 	assert.Equal(t, "SECRET_CODE", detail["data"].(map[string]any)["solutionCode"])
+}
+
+func TestHiddenContestProblemVisibleToParticipant(t *testing.T) {
+	f := newFx(t)
+	repo := problem.NewGormRepository(f.db)
+	p := &problem.Problem{
+		Title: "Hidden contest problem", Slug: "hidden-contest", StatementMD: "statement",
+		Type: problem.TypeTraditional, Difficulty: 1, TimeLimitMS: 1000, MemoryLimitMB: 256,
+		IsPublic: false, CreatedBy: 1,
+	}
+	require.NoError(t, repo.Create(context.Background(), p))
+	require.NoError(t, repo.AddTestcase(context.Background(), &problem.Testcase{
+		ProblemID: p.ID, InputFile: "a.in", OutputFile: "a.out", Score: 10,
+	}))
+
+	w, reg := f.do(http.MethodPost, "/api/auth/register", "", map[string]string{
+		"username": "contestant", "email": "contestant@example.com", "password": "correct-horse",
+	})
+	require.Equal(t, http.StatusCreated, w.Code)
+	token := reg["data"].(map[string]any)["accessToken"].(string)
+	var userID int64
+	require.NoError(t, f.db.Raw(`SELECT id FROM users WHERE username = 'contestant'`).Scan(&userID).Error)
+
+	now := time.Now()
+	contestRepo := contest.NewGormRepository(f.db)
+	c := &contest.Contest{
+		Title: "Hidden contest", StartTime: now.Add(-time.Hour), EndTime: now.Add(time.Hour),
+		Mode: contest.ModeICPC, IsPublic: true, RegisterType: contest.RegisterOpen, CreatedBy: 1,
+	}
+	require.NoError(t, contestRepo.Create(context.Background(), c, []contest.ContestProblem{
+		{ProblemID: p.ID, DisplayID: "A", Score: 100},
+	}))
+
+	w, _ = f.do(http.MethodGet, fmt.Sprintf("/api/problems/%d", p.ID), token, nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	require.NoError(t, contestRepo.AddParticipant(context.Background(), c.ID, userID))
+	w, _ = f.do(http.MethodGet, fmt.Sprintf("/api/problems/%d", p.ID), token, nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+	w, _ = f.do(http.MethodGet, fmt.Sprintf("/api/problems/%d", p.ID), "", nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
 func TestPublishFlow(t *testing.T) {

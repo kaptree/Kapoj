@@ -6,6 +6,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -30,8 +31,17 @@ type AcceptedChecker interface {
 	HasAccepted(ctx context.Context, userID, problemID int64) (bool, error)
 }
 
-func RegisterRoutes(api, problemJSON, uploads gin.IRouter, s *problem.Service, accepted AcceptedChecker) {
-	h := &handler{svc: s, accepted: accepted}
+type ContestAccess interface {
+	CanViewProblem(ctx context.Context, userID, problemID int64, now time.Time) (bool, error)
+}
+
+func RegisterRoutes(
+	api, problemJSON, uploads gin.IRouter,
+	s *problem.Service,
+	accepted AcceptedChecker,
+	contests ContestAccess,
+) {
+	h := &handler{svc: s, accepted: accepted, contests: contests}
 	manage := []gin.HandlerFunc{middleware.RequireAuth(), middleware.RequireRole(user.RoleProblemAdmin)}
 	with := func(fn gin.HandlerFunc) []gin.HandlerFunc { return append(append([]gin.HandlerFunc{}, manage...), fn) }
 
@@ -55,6 +65,7 @@ func RegisterRoutes(api, problemJSON, uploads gin.IRouter, s *problem.Service, a
 type handler struct {
 	svc      *problem.Service
 	accepted AcceptedChecker
+	contests ContestAccess
 }
 
 func viewer(c *gin.Context) problem.Viewer {
@@ -107,8 +118,24 @@ func (h *handler) get(c *gin.Context) {
 	v := viewer(c)
 	p, err := h.svc.Get(c.Request.Context(), v, id)
 	if err != nil {
-		httpx.Fail(c, err)
-		return
+		var appErr *httpx.AppError
+		if h.contests != nil && errors.As(err, &appErr) && appErr.Code == 40400 {
+			if claims, ok := middleware.CurrentClaims(c); ok {
+				allowed, checkErr := h.contests.CanViewProblem(c.Request.Context(), claims.UserID, id, time.Now())
+				if checkErr != nil {
+					httpx.Fail(c, checkErr)
+					return
+				}
+				if allowed {
+					v.CanViewHidden = true
+					p, err = h.svc.Get(c.Request.Context(), v, id)
+				}
+			}
+		}
+		if err != nil {
+			httpx.Fail(c, err)
+			return
+		}
 	}
 	includeSolution := v.CanManage
 	if !includeSolution && h.accepted != nil {

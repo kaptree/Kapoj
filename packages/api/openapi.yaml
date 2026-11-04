@@ -1017,6 +1017,7 @@ components:
       required: [problemId, language, code]
       properties:
         problemId: { type: integer, format: int64, minimum: 1 }
+        contestId: { type: integer, format: int64, minimum: 0, description: 0 表示练习提交；大于 0 时必须是已报名且进行中的比赛 }
         language: { $ref: '#/components/schemas/SubmissionLanguage' }
         code: { type: string, minLength: 1, maxLength: 65536, description: 按 UTF-8 字节数不超过 64 KiB }
     SubmissionCreated:

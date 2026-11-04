@@ -64,14 +64,16 @@ func New(d Deps) *gin.Engine {
 	problemJSON := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxProblemJSONBytes))
 	uploads := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxUploadBytes))
 	userapi.RegisterRoutes(api, user.NewService(users))
-	contestapi.RegisterRoutes(api, contest.NewService(contest.NewGormRepository(d.DB)))
+	contestRepo := contest.NewGormRepository(d.DB)
+	contestapi.RegisterRoutes(api, contest.NewService(contestRepo))
 	problemRepo := problem.NewGormRepository(d.DB)
 	submissionRepo := submission.NewGormRepository(d.DB)
 	problemapi.RegisterRoutes(api, problemJSON, uploads,
-		problem.NewService(problemRepo, d.Storage), submissionRepo)
+		problem.NewService(problemRepo, d.Storage), submissionRepo, contestRepo)
 	submissionapi.RegisterRoutes(api, submission.NewService(
 		submissionRepo,
 		problemRepo,
+		contestRepo,
 		d.Enqueuer,
 		submission.NewRedisLimiter(d.Redis, d.Config.SubmitCooldown),
 		submissionevents.NewRedisPublisher(d.Redis),

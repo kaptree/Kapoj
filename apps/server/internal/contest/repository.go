@@ -17,6 +17,8 @@ var (
 	ErrDuplicateProblem     = errors.New("problem already in contest")
 	ErrDuplicateDisplay     = errors.New("display id already used")
 	ErrProblemNotFound      = errors.New("problem not found")
+	ErrProblemNotInContest  = errors.New("problem is not in this contest")
+	ErrHasSubmissions       = errors.New("contest has submissions")
 )
 
 type ListFilter struct {
@@ -51,6 +53,9 @@ type Repository interface {
 	Update(ctx context.Context, c *Contest, problems []ContestProblem) error
 	FindByID(ctx context.Context, id int64) (*Contest, error)
 	FindProblems(ctx context.Context, contestID int64) ([]ProblemRow, error)
+	FindProblem(ctx context.Context, contestID, problemID int64) (*ContestProblem, error)
+	HasSubmissions(ctx context.Context, contestID int64) (bool, error)
+	CanViewProblem(ctx context.Context, userID, problemID int64, now time.Time) (bool, error)
 	List(ctx context.Context, f ListFilter, offset, limit int) ([]ListRow, int64, error)
 	Delete(ctx context.Context, id int64) error
 
@@ -173,15 +178,57 @@ func (r *gormRepository) FindProblems(ctx context.Context, contestID int64) ([]P
 	return rows, err
 }
 
+func (r *gormRepository) FindProblem(ctx context.Context, contestID, problemID int64) (*ContestProblem, error) {
+	var cp ContestProblem
+	if err := r.db.WithContext(ctx).
+		Where("contest_id = ? AND problem_id = ?", contestID, problemID).First(&cp).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrProblemNotInContest
+		}
+		return nil, err
+	}
+	return &cp, nil
+}
+
+func (r *gormRepository) HasSubmissions(ctx context.Context, contestID int64) (bool, error) {
+	var n int64
+	err := r.db.WithContext(ctx).Table("submissions").Where("contest_id = ?", contestID).Count(&n).Error
+	return n > 0, err
+}
+
+// CanViewProblem reports whether userID may open a hidden problem because they
+// are registered in a contest that contains it and has already started.
+func (r *gormRepository) CanViewProblem(ctx context.Context, userID, problemID int64, now time.Time) (bool, error) {
+	var ok bool
+	err := r.db.WithContext(ctx).Raw(`
+		SELECT EXISTS(
+			SELECT 1 FROM contest_participants cp
+			JOIN contest_problems cpb ON cpb.contest_id = cp.contest_id
+			JOIN contests c ON c.id = cp.contest_id
+			WHERE cp.user_id = ? AND cpb.problem_id = ? AND c.start_time <= ?
+		)`, userID, problemID, now).Scan(&ok).Error
+	return ok, err
+}
+
 func (r *gormRepository) Delete(ctx context.Context, id int64) error {
-	res := r.db.WithContext(ctx).Where("id = ?", id).Delete(&Contest{})
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return ErrNotFound
-	}
-	return nil
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var n int64
+		if err := tx.Table("submissions").Where("contest_id = ?", id).Count(&n).Error; err != nil {
+			return err
+		}
+		if n > 0 {
+			return ErrHasSubmissions
+		}
+		res := tx.Where("id = ?", id).Delete(&Contest{})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrNotFound
+		}
+		return nil
+	})
+	return mapErr(err)
 }
 
 func (r *gormRepository) IsParticipant(ctx context.Context, contestID, userID int64) (bool, error) {

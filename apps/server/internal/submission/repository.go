@@ -17,11 +17,13 @@ var ErrNotFound = errors.New("submission not found")
 // ListRow is a submission joined with its user and problem.
 type ListRow struct {
 	Submission
-	Username        string
-	Nickname        string
-	ProblemTitle    string `gorm:"column:problem_title"`
-	ProblemSlug     string `gorm:"column:problem_slug"`
-	ProblemIsPublic bool   `gorm:"column:problem_is_public"`
+	Username         string
+	Nickname         string
+	ProblemTitle     string     `gorm:"column:problem_title"`
+	ProblemSlug      string     `gorm:"column:problem_slug"`
+	ProblemIsPublic  bool       `gorm:"column:problem_is_public"`
+	ContestStartTime *time.Time `gorm:"column:contest_start_time"`
+	ContestEndTime   *time.Time `gorm:"column:contest_end_time"`
 }
 
 type DetailRow = ListRow
@@ -85,7 +87,8 @@ func escapeLike(s string) string {
 func (r *gormRepository) List(ctx context.Context, f ListFilter, offset, limit int) ([]ListRow, int64, error) {
 	q := r.db.WithContext(ctx).Table("submissions AS s").
 		Joins("JOIN users AS u ON u.id = s.user_id").
-		Joins("JOIN problems AS p ON p.id = s.problem_id")
+		Joins("JOIN problems AS p ON p.id = s.problem_id").
+		Joins("LEFT JOIN contests AS c ON c.id = s.contest_id")
 	if f.ProblemID != 0 {
 		q = q.Where("s.problem_id = ?", f.ProblemID)
 	}
@@ -123,7 +126,9 @@ func (r *gormRepository) List(ctx context.Context, f ListFilter, offset, limit i
 	var rows []ListRow
 	err := q.Select(`s.id, s.user_id, s.problem_id, s.contest_id, s.language, s.status,
 		s.time_used_ms, s.memory_used_kb, s.score, s.created_at, s.judged_at,
-		u.username, u.nickname, p.title AS problem_title, p.slug AS problem_slug`).
+		u.username, u.nickname, p.title AS problem_title, p.slug AS problem_slug,
+		p.is_public AS problem_is_public,
+		c.start_time AS contest_start_time, c.end_time AS contest_end_time`).
 		Order("s.id DESC").Offset(offset).Limit(limit).Scan(&rows).Error
 	return rows, total, err
 }
@@ -132,9 +137,11 @@ func (r *gormRepository) FindDetail(ctx context.Context, id int64) (*DetailRow, 
 	var row DetailRow
 	err := r.db.WithContext(ctx).Table("submissions AS s").
 		Select(`s.*, u.username, u.nickname, p.title AS problem_title, p.slug AS problem_slug,
-			p.is_public AS problem_is_public`).
+			p.is_public AS problem_is_public,
+			c.start_time AS contest_start_time, c.end_time AS contest_end_time`).
 		Joins("JOIN users AS u ON u.id = s.user_id").
 		Joins("JOIN problems AS p ON p.id = s.problem_id").
+		Joins("LEFT JOIN contests AS c ON c.id = s.contest_id").
 		Where("s.id = ?", id).Scan(&row).Error
 	if err != nil {
 		return nil, err

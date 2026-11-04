@@ -23,7 +23,10 @@ const (
 
 // Viewer describes who is looking. The zero value is a guest or ordinary
 // user; CanManage is true for problem admins and above.
-type Viewer struct{ CanManage bool }
+type Viewer struct {
+	CanManage     bool
+	CanViewHidden bool
+}
 
 type ListQuery struct {
 	Keyword       string
@@ -106,7 +109,7 @@ func (s *Service) Get(ctx context.Context, v Viewer, id int64) (*Problem, error)
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	if !p.IsPublic && !v.CanManage {
+	if !p.IsPublic && !v.CanManage && !v.CanViewHidden {
 		return nil, httpx.ErrNotFound
 	}
 	return p, nil

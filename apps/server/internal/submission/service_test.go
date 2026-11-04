@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/submission"
@@ -50,6 +52,7 @@ type env struct {
 	svc      *submission.Service
 	repo     submission.Repository
 	problems problem.Repository
+	contests contest.Repository
 	db       *gorm.DB
 	queue    *fakeQueue
 	limiter  *fakeLimiter
@@ -61,13 +64,15 @@ func newEnv(t *testing.T) *env {
 	g := testutil.PG(t)
 	repo := submission.NewGormRepository(g)
 	problems := problem.NewGormRepository(g)
+	contests := contest.NewGormRepository(g)
 	queue := &fakeQueue{}
 	limiter := &fakeLimiter{allow: true}
 	pub := &fakePublisher{}
 	return &env{
-		svc:      submission.NewService(repo, problems, queue, limiter, pub),
+		svc:      submission.NewService(repo, problems, contests, queue, limiter, pub),
 		repo:     repo,
 		problems: problems,
+		contests: contests,
 		db:       g,
 		queue:    queue,
 		limiter:  limiter,
@@ -194,6 +199,83 @@ func TestCreateIsRateLimitedBeforeInsert(t *testing.T) {
 	require.NoError(t, e.db.Model(&problem.Problem{}).Where("id = ?", p.ID).
 		Select("submit_count").Scan(&submitCount).Error)
 	assert.Zero(t, submitCount)
+}
+
+func (e *env) createContest(t *testing.T, start, end time.Time, problem *problem.Problem) *contest.Contest {
+	t.Helper()
+	c := &contest.Contest{
+		Title: "Contest", StartTime: start, EndTime: end, Mode: contest.ModeICPC,
+		IsPublic: true, RegisterType: contest.RegisterOpen, CreatedBy: 1,
+	}
+	require.NoError(t, e.contests.Create(context.Background(), c, []contest.ContestProblem{
+		{ProblemID: problem.ID, DisplayID: "A", Score: 100},
+	}))
+	return c
+}
+
+func TestContestSubmissionRules(t *testing.T) {
+	e := newEnv(t)
+	now := time.Now()
+	p := e.createProblem(t, publicProblem("contest-problem"), 1)
+	createUser(t, e.db, 1)
+	c := e.createContest(t, now.Add(-time.Hour), now.Add(time.Hour), p)
+	require.NoError(t, e.contests.AddParticipant(context.Background(), c.ID, 1))
+
+	in := codeInput(p.ID, "int main(){}")
+	in.ContestID = c.ID
+	sub, err := e.svc.Create(context.Background(), submission.Viewer{UserID: 1}, 1, in)
+	require.NoError(t, err)
+	require.NotNil(t, sub.ContestID)
+	assert.Equal(t, c.ID, *sub.ContestID)
+
+	notRegistered := in
+	_, err = e.svc.Create(context.Background(), submission.Viewer{UserID: 7}, 7, notRegistered)
+	assertCode(t, err, 40001)
+
+	before := e.createContest(t, now.Add(time.Hour), now.Add(2*time.Hour), p)
+	in.ContestID = before.ID
+	_, err = e.svc.Create(context.Background(), submission.Viewer{UserID: 1}, 1, in)
+	assertCode(t, err, 40001)
+
+	ended := e.createContest(t, now.Add(-2*time.Hour), now.Add(-time.Hour), p)
+	in.ContestID = ended.ID
+	_, err = e.svc.Create(context.Background(), submission.Viewer{UserID: 1}, 1, in)
+	assertCode(t, err, 40001)
+
+	p2 := e.createProblem(t, publicProblem("other-problem"), 1)
+	in.ContestID = c.ID
+	in.ProblemID = p2.ID
+	_, err = e.svc.Create(context.Background(), submission.Viewer{UserID: 1}, 1, in)
+	assertCode(t, err, 40001)
+
+	createUser(t, e.db, 9)
+	manager := in
+	manager.ProblemID = p.ID
+	_, err = e.svc.Create(context.Background(), submission.Viewer{UserID: 9, CanManage: true}, 9, manager)
+	require.NoError(t, err, "managers may test contest submissions without registering")
+}
+
+func TestContestHiddenProblemVisibleToParticipant(t *testing.T) {
+	e := newEnv(t)
+	now := time.Now()
+	createUser(t, e.db, 1)
+	p := publicProblem("hidden-contest-problem")
+	p.IsPublic = false
+	require.NoError(t, e.problems.Create(context.Background(), p))
+	require.NoError(t, e.problems.AddTestcase(context.Background(), &problem.Testcase{
+		ProblemID: p.ID, InputFile: "a.in", OutputFile: "a.out", Score: 10,
+	}))
+	c := e.createContest(t, now.Add(-time.Hour), now.Add(time.Hour), p)
+	require.NoError(t, e.contests.AddParticipant(context.Background(), c.ID, 1))
+
+	in := codeInput(p.ID, "int main(){}")
+	in.ContestID = c.ID
+	_, err := e.svc.Create(context.Background(), submission.Viewer{UserID: 1}, 1, in)
+	require.NoError(t, err)
+
+	in.ContestID = 0
+	_, err = e.svc.Create(context.Background(), submission.Viewer{UserID: 1}, 1, in)
+	assertCode(t, err, 40400)
 }
 
 func TestCreateEnqueueFailureMarksSystemError(t *testing.T) {

@@ -1716,6 +1716,11 @@ export interface components {
         CreateSubmissionRequest: {
             /** Format: int64 */
             problemId: number;
+            /**
+             * Format: int64
+             * @description 0 表示练习提交；大于 0 时必须是已报名且进行中的比赛
+             */
+            contestId?: number;
             language: components["schemas"]["SubmissionLanguage"];
             /** @description 按 UTF-8 字节数不超过 64 KiB */
             code: string;

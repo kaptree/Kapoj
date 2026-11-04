@@ -101,6 +101,16 @@ func (s *Service) Update(ctx context.Context, v Viewer, id int64, in Input) (*Co
 	if in.RegisterType == RegisterInvite && in.InviteCode == "" && existing.InviteCodeHash == "" {
 		return nil, invalid("邀请码报名必须设置邀请码")
 	}
+	now := time.Now()
+	if !now.Before(existing.StartTime) || !now.Before(in.StartTime) {
+		rows, err := s.repo.FindProblems(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if !sameProblems(rows, in.Problems) {
+			return nil, invalid("比赛开始后不能修改题目列表")
+		}
+	}
 	c := *existing
 	c.Title, c.DescriptionMD = in.Title, in.DescriptionMD
 	c.StartTime, c.EndTime, c.Mode = in.StartTime, in.EndTime, in.Mode
@@ -353,6 +363,20 @@ func (s *Service) findAccessible(ctx context.Context, v Viewer, id int64) (*Cont
 	return nil, httpx.ErrNotFound
 }
 
+func sameProblems(rows []ProblemRow, inputs []ProblemInput) bool {
+	if len(rows) != len(inputs) {
+		return false
+	}
+	for i, row := range rows {
+		if row.ProblemID != inputs[i].ProblemID ||
+			row.DisplayID != inputs[i].DisplayID ||
+			row.Score != inputs[i].Score {
+			return false
+		}
+	}
+	return true
+}
+
 func toProblems(inputs []ProblemInput) []ContestProblem {
 	out := make([]ContestProblem, len(inputs))
 	for i, p := range inputs {
@@ -395,8 +419,10 @@ func mapRepoErr(err error) error {
 		return invalid("同一比赛的题目编号不能重复")
 	case errors.Is(err, ErrDuplicateProblem):
 		return invalid("同一比赛不能重复添加题目")
-	case errors.Is(err, ErrProblemNotFound):
-		return invalid("题目不存在")
+	case errors.Is(err, ErrProblemNotFound), errors.Is(err, ErrProblemNotInContest):
+		return invalid("题目不在该比赛中")
+	case errors.Is(err, ErrHasSubmissions):
+		return invalid("比赛已有提交，无法删除")
 	}
 	return err
 }
