@@ -109,6 +109,34 @@ func (f *fx) problem(t *testing.T, slug string, public bool, typ problem.Type, c
 	return p
 }
 
+func (f *fx) seedUser(t *testing.T, id int64, username, nickname string) {
+	t.Helper()
+	require.NoError(t, f.db.Exec(
+		`INSERT INTO users (id, username, nickname, email, password_hash, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, 'x', now(), now())`,
+		id, username, nickname, username+"@example.com",
+	).Error)
+}
+
+func (f *fx) record(t *testing.T, userID, problemID int64, language, status, code string, contestID *int64) int64 {
+	t.Helper()
+	var id int64
+	require.NoError(t, f.db.Raw(
+		`INSERT INTO submissions (user_id, problem_id, contest_id, language, code, status, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, now()) RETURNING id`,
+		userID, problemID, contestID, language, code, status,
+	).Scan(&id).Error)
+	return id
+}
+
+func (f *fx) usernameID(t *testing.T, username string) int64 {
+	t.Helper()
+	var id int64
+	require.NoError(t, f.db.Raw(`SELECT id FROM users WHERE username = ?`, username).Scan(&id).Error)
+	require.NotZero(t, id)
+	return id
+}
+
 func (f *fx) submit(token string, problemID int64) (*httptest.ResponseRecorder, map[string]any) {
 	f.t.Helper()
 	return f.do(http.MethodPost, "/api/submissions", token, map[string]any{
@@ -171,6 +199,87 @@ func TestCreateSubmissionRateLimit(t *testing.T) {
 
 	w, _ = f.submit(bob, p.ID)
 	assert.Equal(t, http.StatusCreated, w.Code, "cooldown is per user")
+}
+
+func TestListSubmissionsEndpoint(t *testing.T) {
+	f := newFx(t)
+	f.seedUser(t, 1001, "listalice", "Alice Zhang")
+	f.seedUser(t, 1002, "listbob", "Bob Li")
+	p1 := f.problem(t, "list-sum", true, problem.TypeTraditional, 1)
+	p2 := f.problem(t, "list-product", true, problem.TypeTraditional, 1)
+	contest := int64(7)
+	first := f.record(t, 1001, p1.ID, "cpp", "accepted", "code1", nil)
+	second := f.record(t, 1001, p2.ID, "python3", "wrong_answer", "code2", nil)
+	third := f.record(t, 1002, p1.ID, "java", "accepted", "code3", &contest)
+
+	w, resp := f.do(http.MethodGet, "/api/submissions?status=accepted&language=cpp&nickname=ali", "", nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data := resp["data"].(map[string]any)
+	assert.EqualValues(t, 1, data["total"])
+	items := data["items"].([]any)
+	require.Len(t, items, 1)
+	item := items[0].(map[string]any)
+	assert.EqualValues(t, first, item["id"])
+	assert.Equal(t, "listalice", item["username"])
+	assert.Equal(t, "Alice Zhang", item["nickname"])
+	assert.Equal(t, "list-sum", item["problemSlug"])
+
+	_, resp = f.do(http.MethodGet, "/api/submissions?problemId="+fmt.Sprint(p1.ID), "", nil)
+	assert.EqualValues(t, 2, resp["data"].(map[string]any)["total"])
+
+	_, resp = f.do(http.MethodGet, "/api/submissions?contestId=7", "", nil)
+	assert.EqualValues(t, 1, resp["data"].(map[string]any)["total"])
+	items = resp["data"].(map[string]any)["items"].([]any)
+	assert.EqualValues(t, third, items[0].(map[string]any)["id"])
+
+	_, resp = f.do(http.MethodGet, "/api/submissions?userId=1001", "", nil)
+	assert.EqualValues(t, 2, resp["data"].(map[string]any)["total"])
+	items = resp["data"].(map[string]any)["items"].([]any)
+	assert.EqualValues(t, second, items[0].(map[string]any)["id"], "newest first")
+}
+
+func TestListSubmissionsValidation(t *testing.T) {
+	f := newFx(t)
+	for _, query := range []string{
+		"problemId=abc",
+		"contestId=abc",
+		"userId=abc",
+		"language=rust",
+		"status=bogus",
+		"problemId=-1",
+	} {
+		w, resp := f.do(http.MethodGet, "/api/submissions?"+query, "", nil)
+		assert.Equal(t, http.StatusBadRequest, w.Code, query)
+		assert.EqualValues(t, 40001, resp["code"], query)
+	}
+}
+
+func TestSubmissionDetailEndpoint(t *testing.T) {
+	f := newFx(t)
+	owner := f.register("detailowner")
+	ownerID := f.usernameID(t, "detailowner")
+	p := f.problem(t, "detail", true, problem.TypeTraditional, 1)
+	contest := int64(7)
+	contestSub := f.record(t, ownerID, p.ID, "cpp", "accepted", "secret-code", &contest)
+	practiceSub := f.record(t, ownerID, p.ID, "cpp", "accepted", "public-code", nil)
+
+	w, resp := f.do(http.MethodGet, fmt.Sprintf("/api/submissions/%d", contestSub), owner, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, "secret-code", resp["data"].(map[string]any)["code"])
+
+	w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/submissions/%d", contestSub), "", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	data := resp["data"].(map[string]any)
+	assert.Equal(t, true, data["codeHidden"])
+	_, hasCode := data["code"]
+	assert.False(t, hasCode)
+
+	w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/submissions/%d", practiceSub), "", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "public-code", resp["data"].(map[string]any)["code"])
+
+	w, _ = f.do(http.MethodGet, "/api/submissions/999999", "", nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
 func TestCreateSubmissionCodeLimit(t *testing.T) {

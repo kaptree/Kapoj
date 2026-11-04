@@ -22,6 +22,9 @@ export type SubmissionLanguage = Schemas['SubmissionLanguage']
 export type SubmissionStatus = Schemas['SubmissionStatus']
 export type CreateSubmissionRequest = Schemas['CreateSubmissionRequest']
 export type SubmissionCreated = Schemas['SubmissionCreated']
+export type SubmissionJudgeCase = Schemas['SubmissionJudgeCase']
+export type SubmissionListItem = Schemas['SubmissionListItem']
+export type SubmissionDetail = Schemas['SubmissionDetail']
 
 export interface Page<T> {
   total: number

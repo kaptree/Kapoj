@@ -798,7 +798,39 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** 测评记录列表（游客可访问） */
+        get: {
+            parameters: {
+                query?: {
+                    problemId?: number;
+                    /** @description 0 表示练习提交 */
+                    contestId?: number;
+                    userId?: number;
+                    language?: components["schemas"]["SubmissionLanguage"];
+                    status?: components["schemas"]["SubmissionStatus"];
+                    /** @description 昵称模糊匹配 */
+                    nickname?: string;
+                    page?: number;
+                    page_size?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 测评记录分页列表 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SubmissionPageResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+            };
+        };
         put?: never;
         /** 提交代码（登录用户）；创建后进入 pending 并由评测服务异步处理 */
         post: {
@@ -830,6 +862,47 @@ export interface paths {
                 429: components["responses"]["Error"];
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/submissions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** 测评记录详情；比赛提交对他人的代码与测评详情暂不可见 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 测评记录详情 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SubmissionDetailResponse"];
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1055,6 +1128,44 @@ export interface components {
             id: number;
             status: components["schemas"]["SubmissionStatus"];
         };
+        SubmissionJudgeCase: {
+            /** Format: int64 */
+            testcaseId: number;
+            status: components["schemas"]["SubmissionStatus"];
+            timeMs: number;
+            memoryKb: number;
+            message?: string;
+        };
+        SubmissionListItem: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            userId: number;
+            username: string;
+            nickname: string;
+            /** Format: int64 */
+            problemId: number;
+            problemTitle: string;
+            problemSlug: string;
+            /** Format: int64 */
+            contestId?: number;
+            language: components["schemas"]["SubmissionLanguage"];
+            status: components["schemas"]["SubmissionStatus"];
+            timeUsedMs: number;
+            memoryUsedKb: number;
+            score: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            judgedAt?: string;
+        };
+        SubmissionDetail: components["schemas"]["SubmissionListItem"] & {
+            /** @description 比赛进行中对他人的提交不返回 */
+            code?: string;
+            codeHidden: boolean;
+            errorMessage?: string;
+            judgeResult: components["schemas"]["SubmissionJudgeCase"][];
+        };
         Stats: {
             submitCount: number;
             acceptCount: number;
@@ -1087,6 +1198,16 @@ export interface components {
         };
         SubmissionCreatedResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["SubmissionCreated"];
+        };
+        SubmissionPageResponse: components["schemas"]["Envelope"] & {
+            data: {
+                /** Format: int64 */
+                total: number;
+                items: components["schemas"]["SubmissionListItem"][];
+            };
+        };
+        SubmissionDetailResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["SubmissionDetail"];
         };
     };
     responses: {

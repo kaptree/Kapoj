@@ -348,6 +348,25 @@ paths:
         '404': { $ref: '#/components/responses/Error' }
         '413': { $ref: '#/components/responses/Error' }
   /submissions:
+    get:
+      summary: 测评记录列表（游客可访问）
+      security: [{}, { bearer: [] }]
+      parameters:
+        - { name: problemId, in: query, schema: { type: integer, format: int64, minimum: 0 } }
+        - { name: contestId, in: query, schema: { type: integer, format: int64, minimum: 0 }, description: 0 表示练习提交 }
+        - { name: userId, in: query, schema: { type: integer, format: int64, minimum: 0 } }
+        - { name: language, in: query, schema: { $ref: '#/components/schemas/SubmissionLanguage' } }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/SubmissionStatus' } }
+        - { name: nickname, in: query, schema: { type: string, maxLength: 64 }, description: 昵称模糊匹配 }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: 测评记录分页列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubmissionPageResponse' }
+        '400': { $ref: '#/components/responses/Error' }
     post:
       summary: 提交代码（登录用户）；创建后进入 pending 并由评测服务异步处理
       security: [{ bearer: [] }]
@@ -367,6 +386,19 @@ paths:
         '404': { $ref: '#/components/responses/Error' }
         '413': { $ref: '#/components/responses/Error' }
         '429': { $ref: '#/components/responses/Error' }
+  /submissions/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      summary: 测评记录详情；比赛提交对他人的代码与测评详情暂不可见
+      security: [{}, { bearer: [] }]
+      responses:
+        '200':
+          description: 测评记录详情
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubmissionDetailResponse' }
+        '404': { $ref: '#/components/responses/Error' }
 components:
   securitySchemes:
     bearer:
@@ -665,6 +697,59 @@ components:
       properties:
         id: { type: integer, format: int64 }
         status: { $ref: '#/components/schemas/SubmissionStatus' }
+    SubmissionJudgeCase:
+      type: object
+      required: [testcaseId, status, timeMs, memoryKb]
+      properties:
+        testcaseId: { type: integer, format: int64 }
+        status: { $ref: '#/components/schemas/SubmissionStatus' }
+        timeMs: { type: integer }
+        memoryKb: { type: integer }
+        message: { type: string }
+    SubmissionListItem:
+      type: object
+      required:
+        - id
+        - userId
+        - username
+        - nickname
+        - problemId
+        - problemTitle
+        - problemSlug
+        - language
+        - status
+        - timeUsedMs
+        - memoryUsedKb
+        - score
+        - createdAt
+      properties:
+        id: { type: integer, format: int64 }
+        userId: { type: integer, format: int64 }
+        username: { type: string }
+        nickname: { type: string }
+        problemId: { type: integer, format: int64 }
+        problemTitle: { type: string }
+        problemSlug: { type: string }
+        contestId: { type: integer, format: int64 }
+        language: { $ref: '#/components/schemas/SubmissionLanguage' }
+        status: { $ref: '#/components/schemas/SubmissionStatus' }
+        timeUsedMs: { type: integer }
+        memoryUsedKb: { type: integer }
+        score: { type: integer }
+        createdAt: { type: string, format: date-time }
+        judgedAt: { type: string, format: date-time }
+    SubmissionDetail:
+      allOf:
+        - $ref: '#/components/schemas/SubmissionListItem'
+        - type: object
+          required: [codeHidden, judgeResult]
+          properties:
+            code: { type: string, description: 比赛进行中对他人的提交不返回 }
+            codeHidden: { type: boolean }
+            errorMessage: { type: string }
+            judgeResult:
+              type: array
+              items: { $ref: '#/components/schemas/SubmissionJudgeCase' }
     Stats:
       type: object
       required: [submitCount, acceptCount, acceptRate]
@@ -730,3 +815,24 @@ components:
           required: [data]
           properties:
             data: { $ref: '#/components/schemas/SubmissionCreated' }
+    SubmissionPageResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              required: [total, items]
+              properties:
+                total: { type: integer, format: int64 }
+                items:
+                  type: array
+                  items: { $ref: '#/components/schemas/SubmissionListItem' }
+    SubmissionDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/SubmissionDetail' }
