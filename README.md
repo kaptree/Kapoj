@@ -2,7 +2,7 @@
 
 打造最有趣味的 Online Judge 平台。规格见 [`DEVELOPMENT.md`](DEVELOPMENT.md)，进度见 [`docs/任务清单.md`](docs/任务清单.md) 与 [`docs/开发日志.md`](docs/开发日志.md)。
 
-当前进度：**M0 已完成**（项目脚手架、用户注册登录、令牌刷新、个人资料）。
+当前进度：**M1-A 已完成**（题库与测试数据：题目 CRUD、测试点与 checker 管理、题目列表/详情/编辑页）。M1 其余部分（提交与评测、测评记录）进行中。
 
 ## 目录结构
 
@@ -36,6 +36,7 @@ docs            任务清单、开发日志、实施计划
    export KAPOJ_DATABASE_URL='postgres://kapoj:kapoj@localhost:5433/kapoj?sslmode=disable'
    export KAPOJ_REDIS_ADDR=localhost:6380
    export KAPOJ_JWT_SECRET='替换为至少 32 字节的随机字符串'
+   export KAPOJ_STORAGE_DIR=data   # 测试数据与 checker 的存放目录，可改为绝对路径
    ```
 
 3. 启动后端（启动时自动执行数据库迁移）：
