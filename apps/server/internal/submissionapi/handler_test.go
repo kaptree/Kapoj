@@ -42,7 +42,6 @@ type fx struct {
 	h     http.Handler
 	db    *gorm.DB
 	queue *fakeQueue
-	next  int
 }
 
 func newFx(t *testing.T) *fx {

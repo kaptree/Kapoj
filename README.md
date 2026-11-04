@@ -2,15 +2,16 @@
 
 打造最有趣味的 Online Judge 平台。规格见 [`DEVELOPMENT.md`](DEVELOPMENT.md)，进度见 [`docs/任务清单.md`](docs/任务清单.md) 与 [`docs/开发日志.md`](docs/开发日志.md)。
 
-当前进度：**M1-A 已完成**（题库与测试数据：题目 CRUD、测试点与 checker 管理、题目列表/详情/编辑页）。M1 其余部分（提交与评测、测评记录）进行中。
+当前进度：**M1-B 已完成**（题库、测试数据、提交接口、Asynq 队列、Docker 沙盒评测）。测评记录列表、SSE 与前端提交页（M1-C）为下一步。
 
 ## 目录结构
 
 ```
 apps/server     Go 后端（Gin + GORM）
+apps/judge      独立评测进程（Asynq + Docker 沙盒）
 apps/web        Vue 3 前端
 packages/api    OpenAPI 规范，前端类型由此生成
-docker          docker compose（PostgreSQL 17、Redis 7、后端镜像）
+docker          docker compose（PostgreSQL 17、Redis 7、后端/评测镜像）
 docs            任务清单、开发日志、实施计划
 ```
 
@@ -47,7 +48,21 @@ docs            任务清单、开发日志、实施计划
 
    访问 `http://localhost:8080/health`，返回 `"status":"ok"` 即正常。
 
-4. 启动前端：
+4. 启动评测服务（需要 Docker）：
+
+   ```bash
+   docker pull gcc:14
+   docker pull python:3.12-slim
+   docker pull eclipse-temurin:21-jdk
+   docker pull golang:1.26
+
+   # 与后端使用相同的数据库、Redis 和 KAPOJ_STORAGE_DIR
+   cd apps/judge && go run ./cmd/judge
+   ```
+
+   评测服务消费 Redis 中的 `judge` 队列，在独立容器里编译运行 C/C++、Python3、Java、Go 代码。
+
+5. 启动前端：
 
    ```bash
    corepack pnpm install
@@ -56,7 +71,7 @@ docs            任务清单、开发日志、实施计划
 
    打开 `http://localhost:5173`。开发服务器会把 `/api` 与 `/health` 代理到 `http://localhost:8080`（可用 `KAPOJ_BACKEND_URL` 修改）。
 
-也可以用容器运行后端：
+也可以用容器运行后端与评测服务：
 
 ```bash
 KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/docker-compose.yml --profile app up -d --build
@@ -76,6 +91,15 @@ golangci-lint run   # 配置见 apps/server/.golangci.yml
 ```
 
 未设置 `KAPOJ_TEST_DATABASE_URL` 时，数据库测试会被跳过，其余测试照常运行。
+
+评测服务（真实 Docker 沙盒测试需要 `KAPOJ_DOCKER_TESTS=1`，约 30 秒）：
+
+```bash
+cd apps/judge
+export KAPOJ_TEST_DATABASE_URL='postgres://kapoj:kapoj@localhost:5433/kapoj_test?sslmode=disable'
+go test -p 1 ./...
+KAPOJ_DOCKER_TESTS=1 go test -p 1 ./internal/sandbox/
+```
 
 前端：
 

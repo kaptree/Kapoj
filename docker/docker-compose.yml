@@ -48,6 +48,25 @@ services:
       redis:
         condition: service_healthy
 
+  judge:
+    profiles: ["app"]
+    build:
+      context: ../apps/judge
+    environment:
+      KAPOJ_DATABASE_URL: postgres://kapoj:kapoj@postgres:5432/kapoj?sslmode=disable
+      KAPOJ_REDIS_ADDR: redis:6379
+      KAPOJ_STORAGE_DIR: /data
+      KAPOJ_JUDGE_CONCURRENCY: "2"
+      KAPOJ_JUDGE_DOCKER: docker
+    volumes:
+      - storage:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
 volumes:
   pgdata:
   storage:

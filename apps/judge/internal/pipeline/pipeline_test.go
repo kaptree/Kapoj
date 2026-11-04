@@ -219,6 +219,9 @@ func TestPipelineSpecialChecker(t *testing.T) {
 			sub := e.submit(t, model.LanguageCPP, "code")
 			e.sb.runFn = func(req sandbox.RunRequest) (sandbox.RunResult, error) {
 				if req.Checker != nil {
+					assert.NotEmpty(t, req.InputPath, "checker also needs the testcase input")
+					assert.FileExists(t, req.Checker.AnswerPath)
+					assert.FileExists(t, req.Checker.OutputPath)
 					return tt.checker, nil
 				}
 				return sandbox.RunResult{Output: []byte("user output")}, nil

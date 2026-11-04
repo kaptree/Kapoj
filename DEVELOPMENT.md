@@ -120,7 +120,7 @@ kapoj/
 └── docs/               # 文档
 ```
 
-**当前状态（M1-A）**：已建立 `apps/web`、`apps/server`、`packages/api`、`docker`、`docs`；`apps/judge` 在 M1-B 创建。后端按领域分包，位于 `apps/server/internal/`：`config`、`httpx`（统一响应与错误码）、`health`、`db`、`dbtypes`（jsonb 列表类型）、`storage`（文件存储抽象与本地实现）、`user`（模型、仓储、校验、资料服务）、`auth`（令牌与认证服务）、`middleware`、`userapi`（用户 HTTP 接口）、`problem`（题目模型、仓储、校验、服务）、`problemapi`（题目 HTTP 接口）、`router`。本地开发时，docker compose 中的 PostgreSQL 映射到宿主机 5433 端口，Redis 映射到 6380 端口，启动方式见 `README.md`。
+**当前状态（M1-B）**：已建立 `apps/web`、`apps/server`、`apps/judge`、`packages/api`、`docker`、`docs`。后端按领域分包，位于 `apps/server/internal/`：`config`、`httpx`（统一响应与错误码）、`health`、`db`、`dbtypes`（jsonb 列表类型）、`storage`（文件存储抽象与本地实现）、`user`（模型、仓储、校验、资料服务）、`auth`（令牌与认证服务）、`middleware`、`userapi`（用户 HTTP 接口）、`problem`（题目模型、仓储、校验、服务）、`problemapi`（题目 HTTP 接口）、`submission`（提交模型、仓储、服务、限流）、`submissionapi`（提交 HTTP 接口）、`judgequeue`（Asynq 队列契约）、`router`。`apps/judge` 是独立 Go 模块与进程，包含 `config`、`db`、`model`、`queue`、`storage`、`verdict`、`sandbox`、`pipeline`、`worker`。本地开发时，docker compose 中的 PostgreSQL 映射到宿主机 5433 端口，Redis 映射到 6380 端口，启动方式见 `README.md`。
 
 ---
 
@@ -154,6 +154,7 @@ kapoj/
 | 40903 | 409  | 题目标识已存在               |
 | 41300 | 413  | 请求体过大                   |
 | 42901 | 429  | 登录失败次数过多             |
+| 42902 | 429  | 提交过于频繁                 |
 | 50000 | 500  | 服务器内部错误               |
 | 50300 | 503  | 依赖服务不可用               |
 
@@ -228,6 +229,15 @@ submissions (
   created_at, judged_at
 )
 -- 索引：(problem_id, status)、(user_id, created_at)、(contest_id, user_id)
+
+-- 实现差异（M1-B）：
+-- contest_id 暂不设外键，M2 建 contests 表后补；
+-- 索引名为 idx_submissions_problem_status、idx_submissions_user_created、idx_submissions_contest_user；
+-- judge_result_json 为 jsonb 数组，元素形如
+--   {"testcaseId":1,"status":"accepted","timeMs":12,"memoryKb":345,"message":"..."}；
+-- submit_count 在创建提交的同一事务中 +1；accept_count 只在 judging -> accepted 时 +1，
+--   且 Finish 带 status='judging' 条件，重复任务不会重复计数；
+-- 提交代码上限 64 KiB；创建提交按用户限流（默认冷却 3 秒）。
 ```
 
 **判题状态**（全平台统一，`submissions.status` 的取值）：
@@ -468,6 +478,19 @@ user_ai_configs (
 - 判题状态机：`pending → judging → 终态`，终态取值与 3.3 节「判题状态」一致。
 - 失败重试：因系统原因（非用户代码问题）导致的失败由 Asynq 重试，超过次数后标记为 `system_error`。
 - 权限隔离：评测服务需要调用 Docker，应部署在独立主机或使用 rootless Docker，不与 Web 服务共享宿主机权限。
+
+**实现状态（M1-B）**
+
+- Web 服务只做校验、写 `submissions(status=pending)` 与入队；`POST /submissions` 要求登录，交互题、隐藏题对普通用户、无测试点或特判题缺 checker 会被拒绝。
+- 队列：Asynq，任务类型 `judge:submission`，队列名 `judge`，payload 为 `{"submissionId": <id>}`，最多重试 3 次。入队失败时提交被标记为 `system_error` 并返回 500。
+- 评测进程：`apps/judge`，可独立部署；从 PostgreSQL 读取提交/题目/测试点，从共享 `KAPOJ_STORAGE_DIR` 读取输入、答案与 checker。
+- 语言与镜像：C/C++ `gcc:14`、Python3 `python:3.12-slim`、Java `eclipse-temurin:21-jdk`、Go `golang:1.26`；镜像可用 `KAPOJ_JUDGE_*_IMAGE` 覆盖。
+- 沙盒：每个测试点使用独立容器；`--network none`、`--read-only`、非 root 用户、`--cap-drop ALL`、`--pids-limit`、`--cpus 1`、`--memory/--memory-swap`，`/work`、`/tmp`、`/out` 使用 tmpfs。源码、编译产物、输入通过 `docker exec` + tar/cat 流传输，不使用宿主机 bind mount，因此 judge 自身在容器中也能运行。
+- 资源：编译超时 30 秒、编译内存 1 GiB；运行时间上限为题目限制 + 3 秒容器宽限，实际耗时在容器内测量；输出上限 1 MiB；内存峰值读取 cgroup v2 `memory.peak`，OOM 通过 `memory.events` 判定。若内核不提供 cgroup v2，内存峰值记为 0，但 OOM 仍通过退出码识别。
+- 结论：编译失败 `compile_error`；运行超时 `time_limit_exceeded`；OOM `memory_limit_exceeded`；非零退出 `runtime_error`；输出超限或文本比对失败 `wrong_answer`；全部通过 `accepted`。系统原因（Docker/存储/DB/checker 编译失败）重试，耗尽后 `system_error`。
+- 特判：checker 以 C++ 编译，argv 为 `<checker> <输入> <选手输出> <标准答案>`，退出 0 通过，非 0 答案错误；checker 超时/OOM/编译失败属于系统错误。
+- 统计：`submit_count` 创建提交时递增；`accept_count` 仅在首次把提交从 `judging` 改为 `accepted` 时递增。
+- 已知限制：M1 不评测交互题；Java 堆上限按题内存减 64 MB（最低 16 MB）；运行时间按墙钟计时而非 CPU 时间；Docker socket 等价于宿主机 root 权限，生产需独立评测主机或 rootless Docker。
 
 **Codex 提示词（代码测评沙盒）**
 

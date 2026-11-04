@@ -148,7 +148,7 @@ func (p *Pipeline) runCase(
 	case run.ExitCode != 0:
 		result.Status, result.Message = model.StatusRuntimeError, truncate(string(run.Stderr), maxMessageBytes)
 	case prob.Type == "special":
-		status, message, err := p.checkSpecial(ctx, work, tc, answer, run.Output, checkerArtifact)
+		status, message, err := p.checkSpecial(ctx, work, tc, inputPath, answer, run.Output, checkerArtifact)
 		if err != nil {
 			return model.JudgeCaseResult{}, err
 		}
@@ -162,7 +162,7 @@ func (p *Pipeline) runCase(
 }
 
 func (p *Pipeline) checkSpecial(
-	ctx context.Context, work string, tc model.Testcase, answer, output []byte, checkerArtifact string,
+	ctx context.Context, work string, tc model.Testcase, inputPath string, answer, output []byte, checkerArtifact string,
 ) (model.Status, string, error) {
 	outputPath := filepath.Join(work, fmt.Sprintf("tc%d.user", tc.ID))
 	answerPath := filepath.Join(work, fmt.Sprintf("tc%d.answer", tc.ID))
@@ -175,6 +175,7 @@ func (p *Pipeline) checkSpecial(
 	run, err := p.sandbox.Run(ctx, sandbox.RunRequest{
 		Language:    string(model.LanguageCPP),
 		ArtifactDir: checkerArtifact,
+		InputPath:   inputPath,
 		Checker:     &sandbox.CheckerFiles{AnswerPath: answerPath, OutputPath: outputPath},
 		TimeLimitMS: checkerTimeLimitMS, MemoryLimitMB: checkerMemoryMB,
 		OutputLimitBytes: checkerOutputBytes,
