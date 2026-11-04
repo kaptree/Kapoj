@@ -86,6 +86,25 @@ describe('sanitizeHtml', () => {
     expect(out).toContain('height:1.5em')
   })
 
+  it('allows relative positioning but no other position', () => {
+    expect(sanitizeHtml('<span style="position:relative;top:-0.1em">x</span>')).toContain(
+      'position:relative',
+    )
+    for (const bad of ['absolute', 'fixed', 'sticky']) {
+      expect(sanitizeHtml(`<span style="position:${bad};top:0">x</span>`)).not.toContain('position')
+    }
+  })
+
+  it('only allows the code gutter custom property with a ch value', () => {
+    expect(sanitizeHtml('<span style="--md-code-line-number-width: 2.5ch">x</span>')).toContain(
+      '2.5ch',
+    )
+    expect(
+      sanitizeHtml('<span style="--md-code-line-number-width: url(https://evil.com)">x</span>'),
+    ).not.toContain('url(')
+    expect(sanitizeHtml('<span style="--other: 1ch">x</span>')).not.toContain('--other')
+  })
+
   it('removes style attributes outside spans', () => {
     expect(sanitizeHtml('<div style="height:1em">x</div>')).not.toContain('style')
   })

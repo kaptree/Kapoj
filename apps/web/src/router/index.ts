@@ -47,6 +47,30 @@ export const router = createRouter({
           meta: { title: '用户主页' },
         },
         {
+          path: 'problems',
+          name: 'problems',
+          component: () => import('@/views/ProblemListView.vue'),
+          meta: { title: '题库' },
+        },
+        {
+          path: 'problems/new',
+          name: 'problem-create',
+          component: () => import('@/views/ProblemEditView.vue'),
+          meta: { requiresAuth: true, roles: ['problem_admin'], title: '新建题目' },
+        },
+        {
+          path: 'problems/:id(\\d+)',
+          name: 'problem-detail',
+          component: () => import('@/views/ProblemDetailView.vue'),
+          meta: { title: '题目' },
+        },
+        {
+          path: 'problems/:id(\\d+)/edit',
+          name: 'problem-edit',
+          component: () => import('@/views/ProblemEditView.vue'),
+          meta: { requiresAuth: true, roles: ['problem_admin'], title: '编辑题目' },
+        },
+        {
           path: 'forbidden',
           name: 'forbidden',
           component: () => import('@/views/ForbiddenView.vue'),

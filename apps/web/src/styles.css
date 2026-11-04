@@ -12,3 +12,12 @@ body {
   color: var(--el-text-color-primary);
   background: var(--el-bg-color-page);
 }
+
+a {
+  color: var(--el-color-primary);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
