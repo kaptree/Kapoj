@@ -50,9 +50,4 @@ type ListFilter struct {
 	Nickname  string
 }
 
-func toFilter(q ListQuery) ListFilter {
-	return ListFilter{
-		ProblemID: q.ProblemID, ContestID: q.ContestID, UserID: q.UserID,
-		Language: q.Language, Status: q.Status, Nickname: q.Nickname,
-	}
-}
+func toFilter(q ListQuery) ListFilter { return ListFilter(q) }

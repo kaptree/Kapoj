@@ -418,6 +418,40 @@ func TestDetailHidesSolutionFromUsers(t *testing.T) {
 	assert.Equal(t, "secret code", data["solutionCode"])
 }
 
+func TestDetailShowsSolutionAfterAccepted(t *testing.T) {
+	f := newFx(t)
+	admin := f.token("problem_admin")
+	b := body("unlock")
+	b["solutionMd"] = "SECRET_SOLUTION"
+	b["solutionCode"] = "SECRET_CODE"
+	w, resp := f.do(http.MethodPost, "/api/problems", admin, b)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	id := idOf(resp)
+	f.addCase(id)
+	b["isPublic"] = true
+	w, _ = f.do(http.MethodPut, fmt.Sprintf("/api/problems/%d", id), admin, b)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	w, reg := f.do(http.MethodPost, "/api/auth/register", "", map[string]string{
+		"username": "solver", "email": "solver@example.com", "password": "correct-horse",
+	})
+	require.Equal(t, http.StatusCreated, w.Code)
+	token := reg["data"].(map[string]any)["accessToken"].(string)
+	var userID int64
+	require.NoError(t, f.db.Raw(`SELECT id FROM users WHERE username = 'solver'`).Scan(&userID).Error)
+
+	_, detail := f.do(http.MethodGet, fmt.Sprintf("/api/problems/%d", id), token, nil)
+	assert.NotContains(t, detail["data"].(map[string]any), "solutionMd")
+
+	require.NoError(t, f.db.Exec(
+		`INSERT INTO submissions (user_id, problem_id, language, code, status, created_at)
+		 VALUES (?, ?, 'cpp', 'int main(){}', 'accepted', now())`, userID, id).Error)
+
+	_, detail = f.do(http.MethodGet, fmt.Sprintf("/api/problems/%d", id), token, nil)
+	assert.Equal(t, "SECRET_SOLUTION", detail["data"].(map[string]any)["solutionMd"])
+	assert.Equal(t, "SECRET_CODE", detail["data"].(map[string]any)["solutionCode"])
+}
+
 func TestPublishFlow(t *testing.T) {
 	f := newFx(t)
 	admin := f.token("problem_admin")

@@ -56,7 +56,7 @@ func ToListItem(p *Problem) ListItem {
 	}
 }
 
-func ToDetail(p *Problem, manage bool) DetailDTO {
+func ToDetail(p *Problem, includeSolution bool) DetailDTO {
 	samples := []Sample(p.Samples)
 	if samples == nil {
 		samples = []Sample{}
@@ -69,7 +69,7 @@ func ToDetail(p *Problem, manage bool) DetailDTO {
 		Samples:        samples,
 		HintMD:         p.HintMD,
 	}
-	if manage {
+	if includeSolution {
 		uploaded := p.CheckerPath != ""
 		d.SolutionMD, d.SolutionCode = &p.SolutionMD, &p.SolutionCode
 		d.CheckerUploaded, d.CreatedBy = &uploaded, &p.CreatedBy

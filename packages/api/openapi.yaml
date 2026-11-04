@@ -172,7 +172,7 @@ paths:
       summary: 题目详情；未公开题目对非管理员返回 40400
       responses:
         '200':
-          description: 题目详情，题解字段仅管理员可见
+          description: 题目详情；题解字段对管理员或本人已通过该题的用户可见
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ProblemDetailResponse' }
@@ -656,10 +656,10 @@ components:
             outputFormatMd: { type: string }
             samples: { type: array, items: { $ref: '#/components/schemas/Sample' } }
             hintMd: { type: string }
-            solutionMd: { type: string, description: 仅题目管理员可见 }
-            solutionCode: { type: string, description: 仅题目管理员可见 }
-            checkerUploaded: { type: boolean, description: 仅题目管理员可见 }
-            createdBy: { type: integer, format: int64, description: 仅题目管理员可见 }
+            solutionMd: { type: string, description: 管理员或本人已通过该题时可见 }
+            solutionCode: { type: string, description: 管理员或本人已通过该题时可见 }
+            checkerUploaded: { type: boolean, description: 管理员或本人已通过该题时可见 }
+            createdBy: { type: integer, format: int64, description: 管理员或本人已通过该题时可见 }
     Testcase:
       type: object
       required: [id, sortOrder, score, isSample, inputSize, outputSize]

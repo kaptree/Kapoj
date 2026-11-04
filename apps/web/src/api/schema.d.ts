@@ -410,7 +410,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description 题目详情，题解字段仅管理员可见 */
+                /** @description 题目详情；题解字段对管理员或本人已通过该题的用户可见 */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -1119,15 +1119,15 @@ export interface components {
             outputFormatMd: string;
             samples: components["schemas"]["Sample"][];
             hintMd: string;
-            /** @description 仅题目管理员可见 */
+            /** @description 管理员或本人已通过该题时可见 */
             solutionMd?: string;
-            /** @description 仅题目管理员可见 */
+            /** @description 管理员或本人已通过该题时可见 */
             solutionCode?: string;
-            /** @description 仅题目管理员可见 */
+            /** @description 管理员或本人已通过该题时可见 */
             checkerUploaded?: boolean;
             /**
              * Format: int64
-             * @description 仅题目管理员可见
+             * @description 管理员或本人已通过该题时可见
              */
             createdBy?: number;
         };

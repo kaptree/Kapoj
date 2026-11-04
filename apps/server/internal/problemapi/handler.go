@@ -1,6 +1,7 @@
 package problemapi
 
 import (
+	"context"
 	"errors"
 	"mime/multipart"
 	"net/http"
@@ -25,8 +26,12 @@ const (
 // must already run middleware.Authenticate. problemJSON carries a larger
 // limit because a statement plus samples can exceed the default 1 MiB;
 // uploads carries the limit used by the file upload endpoints.
-func RegisterRoutes(api, problemJSON, uploads gin.IRouter, s *problem.Service) {
-	h := &handler{svc: s}
+type AcceptedChecker interface {
+	HasAccepted(ctx context.Context, userID, problemID int64) (bool, error)
+}
+
+func RegisterRoutes(api, problemJSON, uploads gin.IRouter, s *problem.Service, accepted AcceptedChecker) {
+	h := &handler{svc: s, accepted: accepted}
 	manage := []gin.HandlerFunc{middleware.RequireAuth(), middleware.RequireRole(user.RoleProblemAdmin)}
 	with := func(fn gin.HandlerFunc) []gin.HandlerFunc { return append(append([]gin.HandlerFunc{}, manage...), fn) }
 
@@ -47,7 +52,10 @@ func RegisterRoutes(api, problemJSON, uploads gin.IRouter, s *problem.Service) {
 	uploads.POST("/problems/:id/checker", with(h.uploadChecker)...)
 }
 
-type handler struct{ svc *problem.Service }
+type handler struct {
+	svc      *problem.Service
+	accepted AcceptedChecker
+}
 
 func viewer(c *gin.Context) problem.Viewer {
 	claims, ok := middleware.CurrentClaims(c)
@@ -102,7 +110,17 @@ func (h *handler) get(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
-	httpx.OK(c, problem.ToDetail(p, v.CanManage))
+	includeSolution := v.CanManage
+	if !includeSolution && h.accepted != nil {
+		if claims, ok := middleware.CurrentClaims(c); ok {
+			includeSolution, err = h.accepted.HasAccepted(c.Request.Context(), claims.UserID, p.ID)
+			if err != nil {
+				httpx.Fail(c, err)
+				return
+			}
+		}
+	}
+	httpx.OK(c, problem.ToDetail(p, includeSolution))
 }
 
 func (h *handler) statistics(c *gin.Context) {
