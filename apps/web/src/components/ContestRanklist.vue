@@ -38,7 +38,7 @@ function cellText(cell: ContestRankCell, icpc: boolean): string {
     if (cell.status === 'accepted') return `AC (${cell.attempts})`
     return cell.attempts > 0 ? `-${cell.attempts}` : ''
   }
-  return String(cell.score || '')
+  return cell.attempts > 0 ? String(cell.score) : ''
 }
 
 function rowValue(row: ContestRankRow): string {
@@ -79,7 +79,14 @@ onBeforeUnmount(() => {
           align="center"
         >
           <template #default="{ row }">
-            <span :class="{ accepted: row.problems[index]?.status === 'accepted' }">
+            <span
+              :class="{ accepted: row.problems[index]?.status === 'accepted' }"
+              :title="
+                row.problems[index]?.acceptedAt
+                  ? formatDateTime(row.problems[index].acceptedAt)
+                  : ''
+              "
+            >
               {{ cellText(row.problems[index], ranklist.mode === 'icpc') }}
             </span>
           </template>

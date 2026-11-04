@@ -68,6 +68,11 @@ const loading = ref(false)
 const saving = ref(false)
 const loadError = ref('')
 const problemOptions = ref<{ value: number; label: string }[]>([])
+const problemLoading = ref(false)
+const originalStart = ref<Date | null>(null)
+const started = computed(
+  () => originalStart.value !== null && originalStart.value.getTime() <= Date.now(),
+)
 
 function addOptions(items: { problemId: number; title: string }[]) {
   for (const item of items) {
@@ -82,7 +87,19 @@ async function loadProblems() {
     const page = await listProblems({ pageSize: 100 })
     addOptions(page.items.map((p: ProblemListItem) => ({ problemId: p.id, title: p.title })))
   } catch {
-    // A contest admin may only have public problems; manual ID entry still works.
+    // Keep any options already loaded from the contest.
+  }
+}
+
+async function searchProblems(keyword: string) {
+  problemLoading.value = true
+  try {
+    const page = await listProblems({ keyword, pageSize: 20 })
+    addOptions(page.items.map((p: ProblemListItem) => ({ problemId: p.id, title: p.title })))
+  } catch {
+    // Ignore transient search failures; existing options remain usable.
+  } finally {
+    problemLoading.value = false
   }
 }
 
@@ -110,6 +127,7 @@ async function loadContest() {
       })),
     })
     addOptions(c.problems.map((p) => ({ problemId: p.problemId, title: p.title })))
+    originalStart.value = new Date(c.startTime)
   } catch (e) {
     loadError.value = e instanceof ApiError ? e.message : '加载比赛失败'
   } finally {
@@ -233,13 +251,13 @@ onMounted(() => {
             <el-input v-model="form.title" maxlength="100" show-word-limit />
           </el-form-item>
           <el-form-item label="开始时间">
-            <el-date-picker v-model="form.startTime" type="datetime" />
+            <el-date-picker v-model="form.startTime" type="datetime" :disabled="started" />
           </el-form-item>
           <el-form-item label="结束时间">
             <el-date-picker v-model="form.endTime" type="datetime" />
           </el-form-item>
           <el-form-item label="赛制">
-            <el-select v-model="form.mode" style="width: 160px">
+            <el-select v-model="form.mode" style="width: 160px" :disabled="started">
               <el-option
                 v-for="item in CONTEST_MODES"
                 :key="item.value"
@@ -287,7 +305,7 @@ onMounted(() => {
         <template #header>
           <div class="head">
             <span>比赛题目</span>
-            <el-button size="small" @click="addProblem">添加题目</el-button>
+            <el-button size="small" :disabled="started" @click="addProblem">添加题目</el-button>
           </div>
         </template>
         <el-table :data="form.problems" row-key="displayId" empty-text="还没有题目">
@@ -297,6 +315,7 @@ onMounted(() => {
                 v-model="row.displayId"
                 maxlength="1"
                 style="width: 55px"
+                :disabled="started"
                 @input="normalizeDisplay($index)"
               />
             </template>
@@ -306,7 +325,11 @@ onMounted(() => {
               <el-select
                 v-model="row.problemId"
                 filterable
-                placeholder="选择题目的 ID"
+                remote
+                :remote-method="searchProblems"
+                :loading="problemLoading"
+                :disabled="started"
+                placeholder="搜索题目标题或 ID"
                 style="width: 100%"
               >
                 <el-option
@@ -320,7 +343,13 @@ onMounted(() => {
           </el-table-column>
           <el-table-column label="分数" width="130">
             <template #default="{ row }">
-              <el-input-number v-model="row.score" :min="1" :max="1000" size="small" />
+              <el-input-number
+                v-model="row.score"
+                :min="1"
+                :max="1000"
+                size="small"
+                :disabled="started"
+              />
             </template>
           </el-table-column>
           <el-table-column label="操作" width="150">
@@ -336,18 +365,30 @@ onMounted(() => {
               <el-button
                 text
                 size="small"
-                :disabled="$index === form.problems.length - 1"
+                :disabled="started || $index === form.problems.length - 1"
                 @click="moveProblem($index, 1)"
               >
                 下移
               </el-button>
-              <el-button text size="small" type="danger" @click="removeProblem($index)">
+              <el-button
+                text
+                size="small"
+                type="danger"
+                :disabled="started"
+                @click="removeProblem($index)"
+              >
                 删除
               </el-button>
             </template>
           </el-table-column>
         </el-table>
-        <p class="hint">比赛开始后不能修改题目列表；题目编号为单个大写字母 A–Z，最多 26 题。</p>
+        <p class="hint">
+          {{
+            started
+              ? '比赛已开始，开始时间、赛制与题目列表已冻结。'
+              : '题目编号为单个大写字母 A–Z，最多 26 题。'
+          }}
+        </p>
       </el-card>
     </template>
   </div>

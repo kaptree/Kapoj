@@ -22,6 +22,7 @@ var (
 	ErrHasSubmissions       = errors.New("contest has submissions")
 	ErrStartFrozen          = errors.New("contest start time is frozen")
 	ErrModeFrozen           = errors.New("contest mode is frozen")
+	ErrProblemsFrozen       = errors.New("contest problems are frozen")
 )
 
 type ListFilter struct {
@@ -114,6 +115,14 @@ func (r *gormRepository) Update(ctx context.Context, c *Contest, problems []Cont
 			if c.Mode != existing.Mode {
 				return ErrModeFrozen
 			}
+			var current []ContestProblem
+			if err := tx.Where("contest_id = ?", c.ID).Order("sort_order, id").Find(&current).Error; err != nil {
+				return err
+			}
+			if !sameContestProblems(current, problems) {
+				return ErrProblemsFrozen
+			}
+			c.StartTime = existing.StartTime
 		}
 		if err := tx.Save(c).Error; err != nil {
 			return err
@@ -346,6 +355,20 @@ func (r *gormRepository) DeleteAnnouncement(ctx context.Context, contestID, id i
 		return ErrAnnouncementNotFound
 	}
 	return nil
+}
+
+func sameContestProblems(current, wanted []ContestProblem) bool {
+	if len(current) != len(wanted) {
+		return false
+	}
+	for i := range current {
+		if current[i].ProblemID != wanted[i].ProblemID ||
+			current[i].DisplayID != wanted[i].DisplayID ||
+			current[i].Score != wanted[i].Score {
+			return false
+		}
+	}
+	return true
 }
 
 func mapErr(err error) error {

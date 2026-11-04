@@ -14,7 +14,13 @@ import { languageLabel, monacoLanguage, SUBMISSION_LANGUAGES } from '@/utils/sub
 const route = useRoute()
 const router = useRouter()
 const problemId = computed(() => Number(route.params.id))
-const contestId = computed(() => Number(route.query.contestId) || 0)
+const contestId = computed(() => {
+  const raw = Array.isArray(route.query.contestId)
+    ? route.query.contestId[0]
+    : route.query.contestId
+  const n = Number(raw)
+  return Number.isInteger(n) && n > 0 ? n : 0
+})
 
 const problem = ref<ProblemDetail | null>(null)
 const contestTitle = ref('')
@@ -87,11 +93,15 @@ onBeforeUnmount(() => {
 
 onMounted(async () => {
   for (const lang of SUBMISSION_LANGUAGES) loadDraft(lang.value)
-  if (contestId.value > 0) {
-    contestTitle.value = await getContest(contestId.value)
-      .then((c) => c.title)
-      .catch(() => '')
+  if (route.query.contestId && contestId.value === 0) {
+    ElMessage.warning('比赛参数无效，将按练习提交处理')
   }
+  const titlePromise =
+    contestId.value > 0
+      ? getContest(contestId.value)
+          .then((c) => c.title)
+          .catch(() => '')
+      : Promise.resolve('')
   loading.value = true
   try {
     problem.value = await getProblem(problemId.value)
@@ -101,6 +111,7 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+  contestTitle.value = await titlePromise
 })
 
 async function submit() {

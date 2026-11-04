@@ -24,19 +24,26 @@ describe('contest utils', () => {
     expect(formatDuration(90_000_000)).toBe('1天 01:00:00')
   })
 
-  it('counts down against the server clock', () => {
+  it('counts down against the captured server skew', () => {
     const now = Date.parse('2026-01-01T00:00:00Z')
     const start = '2026-01-01T01:00:00Z'
     const end = '2026-01-01T02:00:00Z'
-    const server = '2026-01-01T00:00:00Z'
 
-    expect(contestCountdown(start, end, server, now)?.phase).toBe('upcoming')
-    expect(contestCountdown(start, end, server, now)?.text).toBe('距开始 01:00:00')
-    expect(contestCountdown(start, end, '2026-01-01T01:30:00Z', now)?.text).toBe('距结束 00:30:00')
-    expect(contestCountdown(start, end, '2026-01-01T02:00:00Z', now)?.phase).toBe('ended')
+    expect(contestCountdown(start, end, 0, now)?.phase).toBe('upcoming')
+    expect(contestCountdown(start, end, 0, now)?.text).toBe('距开始 01:00:00')
+    expect(contestCountdown(start, end, 0, now + 60_000)?.text).toBe('距开始 00:59:00')
+    expect(contestCountdown(start, end, 0, now + 90 * 60_000)?.text).toBe('距结束 00:30:00')
+    expect(contestCountdown(start, end, 0, now + 120 * 60_000)?.phase).toBe('ended')
+  })
+
+  it('applies a server clock skew', () => {
+    const now = Date.parse('2026-01-01T00:00:00Z')
+    expect(
+      contestCountdown('2026-01-01T01:00:00Z', '2026-01-01T02:00:00Z', 30 * 60_000, now)?.text,
+    ).toBe('距开始 00:30:00')
   })
 
   it('returns null for invalid times', () => {
-    expect(contestCountdown('bad', '2026-01-01T02:00:00Z', null, 0)).toBeNull()
+    expect(contestCountdown('bad', '2026-01-01T02:00:00Z', 0, 0)).toBeNull()
   })
 })

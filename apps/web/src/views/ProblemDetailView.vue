@@ -14,6 +14,10 @@ import { difficultyLabel } from '@/utils/difficulty'
 const route = useRoute()
 const auth = useAuthStore()
 const canManage = computed(() => hasRole(auth.user?.role ?? null, ['problem_admin']))
+const contestId = computed(() => {
+  const n = Number(route.query?.contestId)
+  return Number.isInteger(n) && n > 0 ? n : 0
+})
 
 const problem = ref<ProblemDetail | null>(null)
 const stats = ref<ProblemStats | null>(null)
@@ -80,7 +84,11 @@ const rate = computed(() => (stats.value ? `${(stats.value.acceptRate * 100).toF
         <el-card shadow="never">
           <el-alert
             v-if="!problem.isPublic"
-            title="这道题目尚未公开，只有题目管理员能看到。"
+            :title="
+              contestId
+                ? '这道题目正在比赛中，比赛结束后将公开。'
+                : '这道题目尚未公开，只有题目管理员能看到。'
+            "
             type="warning"
             show-icon
             :closable="false"
@@ -89,7 +97,13 @@ const rate = computed(() => (stats.value ? `${(stats.value.acceptRate * 100).toF
           <div class="head">
             <h1>{{ problem.title }}</h1>
             <div class="actions">
-              <RouterLink :to="{ name: 'problem-submit', params: { id: problem.id } }">
+              <RouterLink
+                :to="{
+                  name: 'problem-submit',
+                  params: { id: problem.id },
+                  query: contestId ? { contestId: String(contestId) } : {},
+                }"
+              >
                 <el-button type="primary">提交代码</el-button>
               </RouterLink>
               <RouterLink
@@ -167,7 +181,13 @@ const rate = computed(() => (stats.value ? `${(stats.value.acceptRate * 100).toF
               <el-empty v-else description="暂时无法获取统计" :image-size="60" />
             </el-tab-pane>
             <el-tab-pane label="关联比赛">
-              <el-empty description="比赛功能将在 M2 上线" :image-size="60" />
+              <RouterLink
+                v-if="contestId"
+                :to="{ name: 'contest-detail', params: { id: contestId } }"
+              >
+                返回比赛 #{{ contestId }}
+              </RouterLink>
+              <el-empty v-else description="暂无关联比赛" :image-size="60" />
             </el-tab-pane>
           </el-tabs>
         </el-card>

@@ -55,20 +55,19 @@ export function formatDuration(ms: number): string {
 }
 
 /**
- * Returns a countdown label using the server clock to avoid client clock
- * skew. Returns null when the target time is invalid.
+ * Returns a countdown label using the server clock skew captured when the
+ * contest was fetched. Returns null when the target time is invalid.
  */
 export function contestCountdown(
   startTime: string,
   endTime: string,
-  serverTime: string | null | undefined,
+  serverSkewMs: number,
   nowMs = Date.now(),
 ): { phase: 'upcoming' | 'running' | 'ended'; text: string } | null {
   const start = new Date(startTime).getTime()
   const end = new Date(endTime).getTime()
   if (!Number.isFinite(start) || !Number.isFinite(end)) return null
-  const server = serverTime ? new Date(serverTime).getTime() : nowMs
-  const serverNow = nowMs + (Number.isFinite(server) ? server - nowMs : 0)
+  const serverNow = nowMs + (Number.isFinite(serverSkewMs) ? serverSkewMs : 0)
   if (serverNow < start) {
     return { phase: 'upcoming', text: `距开始 ${formatDuration(start - serverNow)}` }
   }

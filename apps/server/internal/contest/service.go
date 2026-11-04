@@ -443,6 +443,8 @@ func mapRepoErr(err error) error {
 		return invalid("比赛开始后不能修改开始时间")
 	case errors.Is(err, ErrModeFrozen):
 		return invalid("比赛开始后不能修改赛制")
+	case errors.Is(err, ErrProblemsFrozen):
+		return invalid("比赛开始后不能修改题目列表")
 	}
 	return err
 }

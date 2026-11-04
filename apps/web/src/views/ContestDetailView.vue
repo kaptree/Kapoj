@@ -53,6 +53,8 @@ const announcementForm = reactive({ title: '', contentMd: '' })
 const savingAnnouncement = ref(false)
 
 const refreshTick = ref(0)
+const serverSkew = ref(0)
+const refreshError = ref('')
 let latest = 0
 let ticker: number | undefined
 let source: EventSource | null = null
@@ -72,23 +74,33 @@ const canRegister = computed(
     contest.value!.status !== 'ended',
 )
 
-async function loadContest() {
+async function loadAnnouncements() {
+  announcements.value = await listAnnouncements(contestId.value).catch(() => [])
+}
+
+async function loadContest(background = false) {
   const seq = ++latest
-  loading.value = true
-  error.value = ''
+  if (!background) {
+    loading.value = true
+    error.value = ''
+  } else {
+    refreshError.value = ''
+  }
   try {
     const data = await getContest(contestId.value)
     if (seq !== latest) return
     contest.value = data
+    serverSkew.value = new Date(data.serverTime).getTime() - Date.now()
     updateCountdown()
-    const items = await listAnnouncements(contestId.value).catch(() => [])
-    if (seq === latest) announcements.value = items
+    if (!background) void loadAnnouncements()
   } catch (e) {
     if (seq !== latest) return
-    error.value =
+    const message =
       e instanceof ApiError && e.code === 40400 ? '比赛不存在或无权访问' : '加载比赛失败'
+    if (contest.value) refreshError.value = '刷新失败，稍后将自动重试'
+    else error.value = message
   } finally {
-    if (seq === latest) loading.value = false
+    if (seq === latest && !background) loading.value = false
   }
 }
 
@@ -97,13 +109,10 @@ function updateCountdown() {
     countdown.value = null
     return
   }
-  const next = contestCountdown(
-    contest.value.startTime,
-    contest.value.endTime,
-    contest.value.serverTime,
-  )
+  const next = contestCountdown(contest.value.startTime, contest.value.endTime, serverSkew.value)
   if (next && countdown.value && next.phase !== countdown.value.phase) {
-    void loadContest()
+    refreshTick.value++
+    void loadContest(true)
   }
   countdown.value = next
 }
@@ -113,7 +122,7 @@ function scheduleRefresh() {
   reloadTimer = window.setTimeout(() => {
     reloadTimer = undefined
     refreshTick.value++
-    void loadContest()
+    void loadContest(true)
   }, 300)
 }
 
@@ -127,7 +136,7 @@ function connectStream() {
 onMounted(() => {
   void loadContest()
   ticker = window.setInterval(updateCountdown, 1000)
-  syncTimer = window.setInterval(() => void loadContest(), 30000)
+  syncTimer = window.setInterval(scheduleRefresh, 30000)
   connectStream()
 })
 onBeforeUnmount(() => {
@@ -155,7 +164,8 @@ async function sendRegister(input: { password?: string; inviteCode?: string }) {
     await registerContest(contest.value.id, input)
     ElMessage.success('报名成功')
     registerDialog.value = false
-    await loadContest()
+    refreshTick.value++
+    await loadContest(true)
   } catch (e) {
     ElMessage.error(e instanceof ApiError ? e.message : '报名失败')
   } finally {
@@ -226,7 +236,7 @@ async function saveAnnouncement() {
     }
     ElMessage.success('公告已保存')
     announcementDialog.value = false
-    announcements.value = await listAnnouncements(contest.value.id)
+    await loadAnnouncements()
   } catch (e) {
     ElMessage.error(e instanceof ApiError ? e.message : '保存公告失败')
   } finally {
@@ -243,7 +253,7 @@ async function removeAnnouncement(item: AnnouncementItem) {
   }
   try {
     await deleteAnnouncement(contest.value.id, item.id)
-    announcements.value = await listAnnouncements(contest.value.id)
+    await loadAnnouncements()
   } catch (e) {
     ElMessage.error(e instanceof ApiError ? e.message : '删除公告失败')
   }
@@ -261,6 +271,14 @@ async function removeAnnouncement(item: AnnouncementItem) {
     </el-result>
 
     <template v-else-if="contest">
+      <el-alert
+        v-if="refreshError"
+        :title="refreshError"
+        type="warning"
+        show-icon
+        :closable="false"
+        class="banner"
+      />
       <el-card shadow="never" class="head-card">
         <div class="head">
           <div>
@@ -314,7 +332,13 @@ async function removeAnnouncement(item: AnnouncementItem) {
           <el-tab-pane label="题目" name="problems">
             <el-alert
               v-if="!contest.problems.length"
-              title="题目将在比赛开始后公布。"
+              :title="
+                contest.status === 'upcoming'
+                  ? '题目将在比赛开始后公布。'
+                  : contest.status === 'ended'
+                    ? '本场比赛没有公开题目。'
+                    : '暂无题目。'
+              "
               type="info"
               show-icon
               :closable="false"
@@ -324,7 +348,13 @@ async function removeAnnouncement(item: AnnouncementItem) {
               <el-table-column prop="displayId" label="编号" width="70" />
               <el-table-column label="题目" min-width="220">
                 <template #default="{ row }">
-                  <RouterLink :to="{ name: 'problem-detail', params: { id: row.problemId } }">
+                  <RouterLink
+                    :to="{
+                      name: 'problem-detail',
+                      params: { id: row.problemId },
+                      query: { contestId: String(contest.id) },
+                    }"
+                  >
                     {{ row.title }}
                   </RouterLink>
                 </template>

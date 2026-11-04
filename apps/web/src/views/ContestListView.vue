@@ -112,7 +112,11 @@ function search() {
 }
 
 function reset() {
-  if (Object.keys(route.query).length === 0) {
+  const wasEmpty = Object.keys(route.query).length === 0
+  Object.assign(filters, emptyFilters())
+  Object.assign(applied, emptyFilters())
+  applied.page = 1
+  if (wasEmpty) {
     void load()
     return
   }
