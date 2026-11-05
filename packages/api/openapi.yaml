@@ -113,6 +113,37 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ProfileResponse' }
         '404': { $ref: '#/components/responses/Error' }
+  /users/{id}/rating-history:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    get:
+      summary: 用户 Rating 历史（公开）
+      description: 按时间倒序返回 kind=contest 的 Rating 变化；用户不存在返回 40400。
+      security: [{}, { bearer: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: Rating 历史分页
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RatingHistoryPageResponse' }
+        '404': { $ref: '#/components/responses/Error' }
+  /leaderboard/rating:
+    get:
+      summary: Rating 排行榜（公开）
+      description: 只包含状态为 active 的用户，按 Rating 倒序、用户 ID 升序；榜单行附带已装备徽章/称号。游客可访问。
+      security: [{}, { bearer: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: Rating 排行榜分页
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RatingLeaderboardPageResponse' }
   /admin/users:
     get:
       summary: 用户列表（仅超级管理员）
@@ -2246,3 +2277,68 @@ components:
           required: [data]
           properties:
             data: { $ref: '#/components/schemas/TitleItem' }
+    RatingLevel:
+      type: object
+      required: [key, name, color, accentColor]
+      properties:
+        key: { type: string, enum: [gray, green, cyan, blue, purple, orange, red, black_red] }
+        name: { type: string, description: 中文等级名称 }
+        color: { type: string, description: '十六进制颜色，如 #03A89E' }
+        accentColor: { type: string, description: '仅黑红名为 #FF0000，其余为空字符串' }
+    RatingLeaderboardRow:
+      type: object
+      required: [rank, userId, username, nickname, score, level, equippedBadges, equippedTitle]
+      properties:
+        rank: { type: integer, minimum: 1 }
+        userId: { type: integer, format: int64 }
+        username: { type: string }
+        nickname: { type: string }
+        score: { type: integer, description: Rating }
+        level: { $ref: '#/components/schemas/RatingLevel' }
+        equippedBadges:
+          type: array
+          description: 已装备徽章；无装备时为空数组
+          items: { $ref: '#/components/schemas/EquippedBadge' }
+        equippedTitle:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/EquippedTitle'
+          description: 已装备称号；无装备时为 null
+    RatingLeaderboardPage:
+      type: object
+      required: [total, items]
+      properties:
+        total: { type: integer, format: int64 }
+        items: { type: array, items: { $ref: '#/components/schemas/RatingLeaderboardRow' } }
+    RatingHistoryItem:
+      type: object
+      required: [contestId, contestTitle, rank, ratingBefore, ratingAfter, delta, createdAt]
+      properties:
+        contestId: { type: integer, format: int64 }
+        contestTitle: { type: string }
+        rank: { type: integer }
+        ratingBefore: { type: integer }
+        ratingAfter: { type: integer }
+        delta: { type: integer, description: ratingAfter - ratingBefore }
+        createdAt: { type: string, format: date-time }
+    RatingHistoryPage:
+      type: object
+      required: [total, items]
+      properties:
+        total: { type: integer, format: int64 }
+        items: { type: array, items: { $ref: '#/components/schemas/RatingHistoryItem' } }
+    RatingLeaderboardPageResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/RatingLeaderboardPage' }
+    RatingHistoryPageResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/RatingHistoryPage' }

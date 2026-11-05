@@ -273,6 +273,95 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/{id}/rating-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * 用户 Rating 历史（公开）
+         * @description 按时间倒序返回 kind=contest 的 Rating 变化；用户不存在返回 40400。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    page_size?: number;
+                };
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Rating 历史分页 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RatingHistoryPageResponse"];
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/leaderboard/rating": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Rating 排行榜（公开）
+         * @description 只包含状态为 active 的用户，按 Rating 倒序、用户 ID 升序；榜单行附带已装备徽章/称号。游客可访问。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    page_size?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Rating 排行榜分页 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RatingLeaderboardPageResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/users": {
         parameters: {
             query?: never;
@@ -3524,6 +3613,58 @@ export interface components {
         };
         TitleResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["TitleItem"];
+        };
+        RatingLevel: {
+            /** @enum {string} */
+            key: "gray" | "green" | "cyan" | "blue" | "purple" | "orange" | "red" | "black_red";
+            /** @description 中文等级名称 */
+            name: string;
+            /** @description 十六进制颜色，如 #03A89E */
+            color: string;
+            /** @description 仅黑红名为 #FF0000，其余为空字符串 */
+            accentColor: string;
+        };
+        RatingLeaderboardRow: {
+            rank: number;
+            /** Format: int64 */
+            userId: number;
+            username: string;
+            nickname: string;
+            /** @description Rating */
+            score: number;
+            level: components["schemas"]["RatingLevel"];
+            /** @description 已装备徽章；无装备时为空数组 */
+            equippedBadges: components["schemas"]["EquippedBadge"][];
+            /** @description 已装备称号；无装备时为 null */
+            equippedTitle: components["schemas"]["EquippedTitle"] | null;
+        };
+        RatingLeaderboardPage: {
+            /** Format: int64 */
+            total: number;
+            items: components["schemas"]["RatingLeaderboardRow"][];
+        };
+        RatingHistoryItem: {
+            /** Format: int64 */
+            contestId: number;
+            contestTitle: string;
+            rank: number;
+            ratingBefore: number;
+            ratingAfter: number;
+            /** @description ratingAfter - ratingBefore */
+            delta: number;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        RatingHistoryPage: {
+            /** Format: int64 */
+            total: number;
+            items: components["schemas"]["RatingHistoryItem"][];
+        };
+        RatingLeaderboardPageResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["RatingLeaderboardPage"];
+        };
+        RatingHistoryPageResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["RatingHistoryPage"];
         };
     };
     responses: {

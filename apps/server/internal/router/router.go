@@ -20,6 +20,8 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/problemapi"
+	"github.com/kaptree/kapoj/apps/server/internal/rating"
+	"github.com/kaptree/kapoj/apps/server/internal/ratingapi"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
 	"github.com/kaptree/kapoj/apps/server/internal/submission"
 	"github.com/kaptree/kapoj/apps/server/internal/submissionapi"
@@ -41,6 +43,7 @@ type Deps struct {
 	Config   *config.Config
 	Enqueuer submission.Enqueuer
 	Game     *gamification.Service
+	Rating   *rating.Service
 }
 
 func New(d Deps) *gin.Engine {
@@ -79,6 +82,13 @@ func New(d Deps) *gin.Engine {
 	}
 	if d.Game != nil {
 		gamificationapi.RegisterRoutes(api, uploads, d.Game)
+	}
+	if d.Rating != nil {
+		if d.Game != nil {
+			ratingapi.RegisterRoutes(api, d.Rating, ratingapi.Options{IdentityLookup: d.Game})
+		} else {
+			ratingapi.RegisterRoutes(api, d.Rating)
+		}
 	}
 	contestRepo := contest.NewGormRepository(d.DB)
 	contestSvc := contest.NewService(contestRepo)

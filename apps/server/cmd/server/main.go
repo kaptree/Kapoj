@@ -93,6 +93,7 @@ func run() error {
 		Addr: cfg.HTTPAddr,
 		Handler: router.New(router.Deps{
 			DB: g, Redis: rdb, Storage: store, Config: cfg, Enqueuer: queue, Game: gameSvc,
+			Rating: ratingSvc,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
