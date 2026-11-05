@@ -2,7 +2,7 @@
 
 打造最有趣味的 Online Judge 平台。规格见 [`DEVELOPMENT.md`](DEVELOPMENT.md)，进度见 [`docs/任务清单.md`](docs/任务清单.md) 与 [`docs/开发日志.md`](docs/开发日志.md)。
 
-当前进度：**M3 已完成**（M0–M3 已完成；M3 游戏化模块包含金币、成就、任务、徽章、称号、公开身份与完整前端页面）。M4 排行榜、Rating 与学习路线尚未实现。
+当前进度：**M4-A 已完成**（M0–M3 已完成；M4 进行中。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 的活跃度、签到金币、共享分与三榜，M4-C 的排行榜前端与验收，以及学习路线、社交、Rating 衰减/赛季重置尚未实现）。
 
 ## 目录结构
 
@@ -46,7 +46,7 @@ docs            任务清单、开发日志、实施计划
    cd apps/server && go run ./cmd/server
    ```
 
-   访问 `http://localhost:8080/health`，返回 `"status":"ok"` 即正常。后端同时运行游戏化事件 worker（Asynq 队列 `game`），并发可用 `KAPOJ_GAME_CONCURRENCY` 调整（1–16，默认 2）。
+   访问 `http://localhost:8080/health`，返回 `"status":"ok"` 即正常。后端同时运行游戏化事件 worker（Asynq 队列 `game`，并发可用 `KAPOJ_GAME_CONCURRENCY` 调整，1–16，默认 2）与 Rating 结算扫描器（默认每 60 秒一次，可用 `KAPOJ_RATING_SCAN_INTERVAL` 调整，10s–10m）。比赛结束后的评测等待时间用 `KAPOJ_RATING_JUDGE_GRACE` 配置（1m–60m，默认 10m）。
 
 4. 启动评测服务（需要 Docker）：
 
@@ -96,7 +96,18 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 - `GET /api/titles`、`POST /api/titles/:id/purchase|equip|unequip`：称号商店、解锁、购买与装备；同一用户同时只装备 1 个称号。
 - 个人主页、测评记录与比赛榜单返回 `equippedBadges`、`equippedTitle` 公开身份字段。
 - 超级管理员可在 `/admin/gamification` 管理成就/任务/徽章/称号并上传徽章图片，也可用 `POST /api/admin/users/:id/coins` 调整金币（需填写备注）。
-- M3 不包含 M4 的排行榜、Rating 结算、活跃度/共享积分与学习路线；侧边栏「排行榜」仍标记为 M4 上线。
+- M3 不包含排行榜与 Rating；M4-A 的 Rating 榜/Rating 历史见下一节，活跃度/共享榜等仍未实现。
+
+## Rating 与排行榜（M4-A）
+
+- `GET /api/leaderboard/rating?page=&page_size=`：公开 Rating 榜，只含 `status=active` 用户，按 Rating 降序、用户 ID 升序；行内 `score` 为 Rating，并返回 `level`、`equippedBadges`、`equippedTitle`。
+- `GET /api/users/:id/rating-history?page=&page_size=`：公开 Rating 历史，按时间倒序返回比赛名、名次、赛前/赛后 Rating、`delta` 与 `createdAt`；用户不存在返回 40400。
+- Rated 比赛结束后由后台扫描器自动结算，只统计比赛窗口内至少提交过一次的报名者；使用 PostgreSQL 全局 advisory lock 串行处理不同比赛，`rating_history` 部分唯一索引 `(user_id, contest_id) WHERE contest_id IS NOT NULL` 保证重复扫描不会重复写历史或重复更新 Rating。结算完成写入 `contests.rating_settled_at`。
+- `KAPOJ_RATING_SCAN_INTERVAL`：扫描间隔，10s–10m，默认 `60s`；每轮最多处理 20 场。
+- `KAPOJ_RATING_JUDGE_GRACE`：比赛结束后等待 `pending`/`judging` 提交的宽限，1m–60m，默认 `10m`；超过宽限按已判结果结算。
+- 等级为灰/绿/青/蓝/紫/橙/红/黑红；黑红名 `color=#000000`、`accentColor=#FF0000`，其他等级 `accentColor` 为空字符串。
+- Rating 榜基础行使用 Redis 缓存 60 秒（key 含版本号），结算后递增版本；Redis 故障自动回退数据库，榜单接口不返回 5xx。
+- 本阶段**未包含**活跃度榜、共享榜、签到金币（M4-B）、排行榜前端与用户主页 Rating 历史卡片（M4-C），也未实现学习路线、社交互动、Rating 衰减/赛季重置。
 
 ## 测试与检查
 
