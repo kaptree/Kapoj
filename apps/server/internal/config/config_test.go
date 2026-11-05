@@ -99,6 +99,49 @@ func TestMaxEquippedBadgesConfig(t *testing.T) {
 	}
 }
 
+func TestRatingSettlementConfig(t *testing.T) {
+	t.Setenv("KAPOJ_JWT_SECRET", strings.Repeat("a", 32))
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, 60*time.Second, cfg.RatingScanInterval)
+	assert.Equal(t, 10*time.Minute, cfg.RatingJudgeGrace)
+
+	t.Setenv("KAPOJ_RATING_SCAN_INTERVAL", "10s")
+	t.Setenv("KAPOJ_RATING_JUDGE_GRACE", "1m")
+	cfg, err = Load()
+	require.NoError(t, err)
+	assert.Equal(t, 10*time.Second, cfg.RatingScanInterval)
+	assert.Equal(t, time.Minute, cfg.RatingJudgeGrace)
+
+	t.Setenv("KAPOJ_RATING_SCAN_INTERVAL", "10m")
+	t.Setenv("KAPOJ_RATING_JUDGE_GRACE", "60m")
+	cfg, err = Load()
+	require.NoError(t, err)
+	assert.Equal(t, 10*time.Minute, cfg.RatingScanInterval)
+	assert.Equal(t, time.Hour, cfg.RatingJudgeGrace)
+
+	cases := []struct {
+		name  string
+		scan  string
+		grace string
+	}{
+		{"scan too short", "9s", "10m"},
+		{"scan too long", "11m", "10m"},
+		{"scan invalid", "soon", "10m"},
+		{"grace too short", "60s", "59s"},
+		{"grace too long", "60s", "61m"},
+		{"grace invalid", "60s", "later"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Setenv("KAPOJ_RATING_SCAN_INTERVAL", c.scan)
+			t.Setenv("KAPOJ_RATING_JUDGE_GRACE", c.grace)
+			_, err := Load()
+			assert.Error(t, err)
+		})
+	}
+}
+
 func TestLoadSubmitCooldown(t *testing.T) {
 	t.Setenv("KAPOJ_JWT_SECRET", strings.Repeat("a", 32))
 	cfg, err := Load()

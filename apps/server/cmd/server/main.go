@@ -16,10 +16,12 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/kaptree/kapoj/apps/server/internal/config"
+	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/db"
 	"github.com/kaptree/kapoj/apps/server/internal/gamequeue"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/judgequeue"
+	"github.com/kaptree/kapoj/apps/server/internal/rating"
 	"github.com/kaptree/kapoj/apps/server/internal/router"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
 )
@@ -62,6 +64,10 @@ func run() error {
 		gamification.ServiceOptions{MaxEquippedBadges: cfg.MaxEquippedBadges, Storage: store},
 		gamePublisher,
 	)
+	ratingSvc := rating.NewService(g, contest.NewService(contest.NewGormRepository(g)), rdb, rating.Options{
+		JudgeGrace:   cfg.RatingJudgeGrace,
+		ScanInterval: cfg.RatingScanInterval,
+	})
 
 	gameServer := asynq.NewServer(
 		asynq.RedisClientOpt{Addr: cfg.RedisAddr},
@@ -97,6 +103,7 @@ func run() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	go ratingSvc.Run(ctx)
 
 	errCh := make(chan error, 1)
 	go func() {
