@@ -7,6 +7,7 @@ import type {
   BadgeInput,
   BadgeItem,
   CoinTransactionPage,
+  GamificationConfig,
   TaskInput,
   TaskItem,
   TitleInput,
@@ -46,6 +47,8 @@ export const deleteTask = (id: number | string) => http.delete<null>(`/tasks/${i
 
 export const listBadges = (opts: IncludeInactiveOptions = {}) =>
   http.get<BadgeItem[]>('/badges', { params: includeInactive(opts) })
+
+export const getGamificationConfig = () => http.get<GamificationConfig>('/gamification/config')
 
 export const createBadge = (input: BadgeInput) => http.post<BadgeItem>('/badges', input)
 

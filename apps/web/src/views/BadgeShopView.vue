@@ -3,9 +3,15 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
-import { equipBadge, listBadges, purchaseBadge, unequipBadge } from '@/api/gamification'
+import {
+  equipBadge,
+  getGamificationConfig,
+  listBadges,
+  purchaseBadge,
+  unequipBadge,
+} from '@/api/gamification'
 import { ApiError } from '@/api/http'
-import type { BadgeItem } from '@/api/types'
+import type { BadgeItem, GamificationConfig } from '@/api/types'
 import { useAuthStore } from '@/stores/auth'
 import { badgeImageSrc, badgeInitial, formatCoins } from '@/utils/gamification'
 
@@ -13,6 +19,7 @@ const route = useRoute()
 const auth = useAuthStore()
 
 const badges = ref<BadgeItem[]>([])
+const config = ref<GamificationConfig | null>(null)
 const loading = ref(false)
 const error = ref('')
 const category = ref('')
@@ -37,6 +44,21 @@ const filtered = computed(() =>
 
 const balance = computed(() => auth.user?.coins ?? 0)
 const loginTarget = computed(() => ({ name: 'login', query: { redirect: route.fullPath } }))
+const equippedCount = computed(() => badges.value.filter((badge) => badge.equipped).length)
+const limitReached = computed(
+  () => config.value !== null && equippedCount.value >= config.value.maxEquippedBadges,
+)
+const equipSummary = computed(() =>
+  config.value
+    ? `已装备 ${equippedCount.value} / ${config.value.maxEquippedBadges} 个`
+    : `已装备 ${equippedCount.value} 个`,
+)
+
+function ownedHint(item: BadgeItem): string {
+  if (item.equipped) return '该徽章正在公开展示。'
+  if (limitReached.value) return '装备已满，请先卸下一个徽章。'
+  return '可装备此徽章用于公开展示。'
+}
 
 function insufficient(item: BadgeItem): boolean {
   return auth.isLoggedIn && auth.user !== null && auth.user.coins < item.priceCoins
@@ -101,7 +123,19 @@ function toggleEquip(item: BadgeItem) {
   }
 }
 
-onMounted(load)
+async function loadConfig() {
+  try {
+    config.value = await getGamificationConfig()
+  } catch {
+    // 配置加载失败时不做前端上限拦截，仍由服务端在装备时校验。
+    config.value = null
+  }
+}
+
+onMounted(() => {
+  void loadConfig()
+  void load()
+})
 // 登录状态变化后重新拉取，以刷新拥有/装备状态与余额。
 watch(
   () => auth.isLoggedIn,
@@ -117,9 +151,12 @@ watch(
           <span class="page-title">徽章商城</span>
           <span class="sub">使用金币购买徽章，装备后可在公开页面展示</span>
         </div>
-        <el-tag v-if="auth.isLoggedIn" type="warning" effect="plain">
-          余额 {{ formatCoins(balance) }} 金币
-        </el-tag>
+        <div v-if="auth.isLoggedIn" class="head-tags">
+          <el-tag :type="limitReached ? 'warning' : 'success'" effect="plain">
+            {{ equipSummary }}
+          </el-tag>
+          <el-tag type="warning" effect="plain"> 余额 {{ formatCoins(balance) }} 金币 </el-tag>
+        </div>
       </div>
     </template>
 
@@ -196,7 +233,9 @@ watch(
                 plain
                 size="small"
                 :loading="actingId === item.id"
-                :disabled="actingId !== null && actingId !== item.id"
+                :disabled="
+                  (actingId !== null && actingId !== item.id) || (!item.equipped && limitReached)
+                "
                 @click="toggleEquip(item)"
               >
                 {{ item.equipped ? '卸下' : '装备' }}
@@ -222,9 +261,7 @@ watch(
           </div>
 
           <div v-if="!auth.isLoggedIn" class="hint">登录后才能购买与装备徽章。</div>
-          <div v-else-if="item.owned" class="hint">
-            {{ item.equipped ? '该徽章正在公开展示。' : '可装备此徽章用于公开展示。' }}
-          </div>
+          <div v-else-if="item.owned" class="hint">{{ ownedHint(item) }}</div>
           <div v-else-if="item.isLimited && item.stock <= 0" class="hint">
             限量库存已售罄，无法购买。
           </div>
@@ -248,6 +285,11 @@ watch(
 .page-title {
   font-size: 18px;
   font-weight: 600;
+}
+.head-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 .sub {
   margin-left: 10px;

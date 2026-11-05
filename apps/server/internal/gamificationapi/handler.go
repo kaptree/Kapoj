@@ -37,6 +37,7 @@ func RegisterRoutes(r gin.IRouter, uploads gin.IRouter, s *gamification.Service)
 	r.DELETE("/tasks/:id", admin(h.deleteTask)...)
 	r.POST("/tasks/:id/claim", middleware.RequireAuth(), h.claimTask)
 
+	r.GET("/gamification/config", h.gamificationConfig)
 	r.GET("/badges", h.listBadges)
 	r.POST("/badges", admin(h.createBadge)...)
 	r.PUT("/badges/:id", admin(h.updateBadge)...)
@@ -237,6 +238,10 @@ func (h *handler) adminAdjustCoins(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, gin.H{"balance": balance})
+}
+
+func (h *handler) gamificationConfig(c *gin.Context) {
+	httpx.OK(c, gin.H{"maxEquippedBadges": h.svc.MaxEquippedBadges()})
 }
 
 func (h *handler) listTitles(c *gin.Context) {

@@ -5,6 +5,7 @@ import { ElMessage } from 'element-plus'
 import {
   equipBadge,
   equipTitle,
+  getGamificationConfig,
   listCoinTransactions,
   listTitles,
   listUserBadges,
@@ -17,6 +18,7 @@ import type {
   CoinTransactionItem,
   EquippedBadge,
   EquippedTitle,
+  GamificationConfig,
   TitleItem,
 } from '@/api/types'
 import IdentityShowcase from '@/components/IdentityShowcase.vue'
@@ -36,6 +38,7 @@ const auth = useAuthStore()
 const ownedBadges = ref<BadgeItem[]>([])
 const ownedTitles = ref<TitleItem[]>([])
 const transactions = ref<CoinTransactionItem[]>([])
+const config = ref<GamificationConfig | null>(null)
 const txTotal = ref(0)
 const txPage = ref(1)
 const loading = ref(false)
@@ -57,6 +60,14 @@ const equippedTitle = computed<EquippedTitle | null>(() => {
 })
 const equippedBadgeCount = computed(
   () => ownedBadges.value.filter((badge) => badge.equipped).length,
+)
+const badgeLimitReached = computed(
+  () => config.value !== null && equippedBadgeCount.value >= config.value.maxEquippedBadges,
+)
+const badgeEquipSummary = computed(() =>
+  config.value
+    ? `已装备 ${equippedBadgeCount.value} / ${config.value.maxEquippedBadges} 个`
+    : `已装备 ${equippedBadgeCount.value} 个`,
 )
 
 function amountText(amount: number): string {
@@ -92,10 +103,16 @@ async function loadPage() {
     await auth.fetchMe()
     const userId = auth.user?.id
     if (!userId) throw new Error('missing user')
-    const [badgeData, titleData] = await Promise.all([listUserBadges(userId), listTitles()])
+    const [badgeData, titleData, configData] = await Promise.all([
+      listUserBadges(userId),
+      listTitles(),
+      getGamificationConfig().catch(() => null),
+    ])
     if (seq !== latest) return
     ownedBadges.value = badgeData
     ownedTitles.value = titleData.filter((title) => title.purchased)
+    // 配置加载失败时不做前端上限拦截，装备仍由服务端校验。
+    config.value = configData
     await loadTransactions()
   } catch (e) {
     if (seq !== latest) return
@@ -204,12 +221,14 @@ watch(
         <div class="section-head">
           <div>
             <span class="section-title">我的徽章</span>
-            <span class="section-sub">已装备 {{ equippedBadgeCount }} 个</span>
+            <span class="section-sub">{{ badgeEquipSummary }}</span>
           </div>
           <RouterLink to="/shop/badges">
             <el-button text type="primary" size="small">前往徽章商城</el-button>
           </RouterLink>
         </div>
+
+        <div v-if="badgeLimitReached" class="limit-hint">装备已满，请先卸下一个徽章。</div>
 
         <el-empty v-if="ownedBadges.length === 0" description="暂无徽章，去商城看看吧" />
         <div v-else class="badge-grid">
@@ -233,7 +252,10 @@ watch(
               size="small"
               :type="badge.equipped ? 'info' : 'primary'"
               :loading="actingKey === `badge-${badge.id}`"
-              :disabled="actingKey !== '' && actingKey !== `badge-${badge.id}`"
+              :disabled="
+                (actingKey !== '' && actingKey !== `badge-${badge.id}`) ||
+                (!badge.equipped && badgeLimitReached)
+              "
               @click="runBadgeAction(badge)"
             >
               {{ badge.equipped ? '卸下' : '装备' }}
@@ -412,6 +434,11 @@ watch(
 .section-sub {
   margin-left: 10px;
   color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.limit-hint {
+  margin-bottom: 10px;
+  color: var(--el-color-warning);
   font-size: 12px;
 }
 .badge-grid {

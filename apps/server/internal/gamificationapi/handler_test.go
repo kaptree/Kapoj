@@ -537,6 +537,16 @@ func badgeBody(name string, price int64) map[string]any {
 
 var pngBytes = []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0, 0, 0, 0x0d, 'I', 'H', 'D', 'R'}
 
+func TestGamificationConfigAPI(t *testing.T) {
+	f := newFx(t)
+
+	w, resp := f.do(http.MethodGet, "/api/gamification/config", "", nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data, ok := resp["data"].(map[string]any)
+	require.True(t, ok, "expected config object, got %T", resp["data"])
+	assert.EqualValues(t, 3, data["maxEquippedBadges"])
+}
+
 func TestBadgeAPIPermissionsAndCRUD(t *testing.T) {
 	f := newFx(t)
 	userToken := f.token("user")

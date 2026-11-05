@@ -1924,6 +1924,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/gamification/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 游戏化公开配置
+         * @description 返回服务端生效的徽章装备上限，供商城与装扮管理展示 n/上限并提前禁用装备按钮。游客可访问。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 公开配置 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["GamificationConfigResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/badges": {
         parameters: {
             query?: never;
@@ -3156,6 +3195,10 @@ export interface components {
             total: number;
             items: components["schemas"]["CoinTransactionItem"][];
         };
+        GamificationConfig: {
+            /** @description 服务端生效的徽章装备上限（KAPOJ_MAX_EQUIPPED_BADGES，1–10） */
+            maxEquippedBadges: number;
+        };
         BadgeInput: {
             name: string;
             description?: string;
@@ -3463,6 +3506,9 @@ export interface components {
                  */
                 balance: number;
             };
+        };
+        GamificationConfigResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["GamificationConfig"];
         };
         BadgeListResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["BadgeItem"][];

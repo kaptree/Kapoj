@@ -831,6 +831,16 @@ paths:
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
+  /gamification/config:
+    get:
+      summary: 游戏化公开配置
+      description: 返回服务端生效的徽章装备上限，供商城与装扮管理展示 n/上限并提前禁用装备按钮。游客可访问。
+      responses:
+        '200':
+          description: 公开配置
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GamificationConfigResponse' }
   /badges:
     get:
       summary: 徽章商城（游客可访问；登录用户含拥有与装备状态）
@@ -1835,6 +1845,15 @@ components:
         balance: { type: integer, format: int64, description: 当前金币余额，以服务端为准 }
         total: { type: integer, format: int64, description: 流水总条数 }
         items: { type: array, items: { $ref: '#/components/schemas/CoinTransactionItem' } }
+    GamificationConfig:
+      type: object
+      required: [maxEquippedBadges]
+      properties:
+        maxEquippedBadges:
+          type: integer
+          minimum: 1
+          maximum: 10
+          description: 服务端生效的徽章装备上限（KAPOJ_MAX_EQUIPPED_BADGES，1–10）
     BadgeInput:
       type: object
       required: [name, category]
@@ -2183,6 +2202,13 @@ components:
               required: [balance]
               properties:
                 balance: { type: integer, format: int64, description: 调整后的金币余额 }
+    GamificationConfigResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/GamificationConfig' }
     BadgeListResponse:
       allOf:
         - $ref: '#/components/schemas/Envelope'
