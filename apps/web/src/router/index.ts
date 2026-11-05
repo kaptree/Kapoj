@@ -119,6 +119,24 @@ export const router = createRouter({
           meta: { title: '任务' },
         },
         {
+          path: 'shop/badges',
+          name: 'badge-shop',
+          component: () => import('@/views/BadgeShopView.vue'),
+          meta: { title: '徽章商城' },
+        },
+        {
+          path: 'shop/titles',
+          name: 'title-shop',
+          component: () => import('@/views/TitleShopView.vue'),
+          meta: { title: '称号商店' },
+        },
+        {
+          path: 'appearance',
+          name: 'appearance',
+          component: () => import('@/views/AppearanceView.vue'),
+          meta: { requiresAuth: true, title: '装扮管理' },
+        },
+        {
           path: 'forbidden',
           name: 'forbidden',
           component: () => import('@/views/ForbiddenView.vue'),
