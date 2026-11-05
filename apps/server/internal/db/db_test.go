@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kaptree/kapoj/apps/server/internal/activity"
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/rating"
@@ -95,4 +96,52 @@ func TestMigrateCreatesRatingSchema(t *testing.T) {
 			Rank: 0, RatingBefore: 1500, RatingAfter: 1490,
 		}).Error, "contest_id is nullable for future decay/season rows")
 	}
+}
+
+func TestMigrateCreatesActivitySchema(t *testing.T) {
+	dsn := os.Getenv("KAPOJ_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("KAPOJ_TEST_DATABASE_URL not set; skipping database test")
+	}
+	g, err := open(dsn, io.Discard)
+	require.NoError(t, err)
+	require.NoError(t, Migrate(g))
+	sqlDB, err := g.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	for _, table := range []string{"activity_logs", "shared_items"} {
+		assert.True(t, g.Migrator().HasTable(table), "缺少表 %s", table)
+	}
+	assert.True(t, g.Migrator().HasIndex(&activity.ActivityLog{}, "uniq_activity_logs_dedupe"))
+	assert.True(t, g.Migrator().HasIndex(&activity.ActivityLog{}, "idx_activity_logs_user_created"))
+	assert.True(t, g.Migrator().HasIndex(&activity.ActivityLog{}, "idx_activity_logs_created"))
+	assert.True(t, g.Migrator().HasIndex(&activity.SharedItem{}, "uniq_shared_items_type_ref"))
+
+	userID := time.Now().UnixNano()
+	refID := userID
+	t.Cleanup(func() {
+		require.NoError(t, g.Where("user_id = ?", userID).Delete(&activity.ActivityLog{}).Error)
+		require.NoError(t, g.Where("user_id = ?", userID).Delete(&activity.SharedItem{}).Error)
+	})
+
+	logRow := &activity.ActivityLog{
+		UserID: userID, Action: activity.ActionSubmission, Points: 2,
+		RefType: "submission", RefID: refID, CreatedAt: time.Now(),
+	}
+	require.NoError(t, g.Create(logRow).Error)
+	duplicateLog := &activity.ActivityLog{
+		UserID: userID, Action: activity.ActionSubmission, Points: 2,
+		RefType: "submission", RefID: refID, CreatedAt: time.Now(),
+	}
+	assert.Error(t, g.Create(duplicateLog).Error, "同一用户同一 action/ref 只能有一条活跃度记录")
+
+	item := &activity.SharedItem{
+		UserID: userID, Type: "contest", RefID: refID, LikeCount: 0, CreatedAt: time.Now(),
+	}
+	require.NoError(t, g.Create(item).Error)
+	duplicateItem := &activity.SharedItem{
+		UserID: userID, Type: "contest", RefID: refID, LikeCount: 0, CreatedAt: time.Now(),
+	}
+	assert.Error(t, g.Create(duplicateItem).Error, "同一 (type, ref_id) 只能有一条共享记录")
 }

@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"github.com/kaptree/kapoj/apps/server/internal/activity"
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
@@ -43,6 +44,7 @@ func Migrate(g *gorm.DB) error {
 		&contest.Contest{}, &contest.ContestProblem{}, &contest.ContestParticipant{},
 		&contest.Announcement{}, &submission.Submission{},
 		&rating.RatingHistory{},
+		&activity.ActivityLog{}, &activity.SharedItem{},
 		&gamification.CoinTransaction{}, &gamification.Achievement{},
 		&gamification.UserAchievement{}, &gamification.Task{},
 		&gamification.UserTaskRecord{}, &gamification.UserLoginDay{},
