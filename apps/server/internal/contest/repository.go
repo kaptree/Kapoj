@@ -23,6 +23,7 @@ var (
 	ErrStartFrozen          = errors.New("contest start time is frozen")
 	ErrModeFrozen           = errors.New("contest mode is frozen")
 	ErrProblemsFrozen       = errors.New("contest problems are frozen")
+	ErrRatedFrozen          = errors.New("contest rated flag is frozen")
 )
 
 type ListFilter struct {
@@ -115,6 +116,9 @@ func (r *gormRepository) Update(ctx context.Context, c *Contest, problems []Cont
 			if c.Mode != existing.Mode {
 				return ErrModeFrozen
 			}
+			if c.IsRated != existing.IsRated {
+				return ErrRatedFrozen
+			}
 			var current []ContestProblem
 			if err := tx.Where("contest_id = ?", c.ID).Order("sort_order, id").Find(&current).Error; err != nil {
 				return err
@@ -124,6 +128,9 @@ func (r *gormRepository) Update(ctx context.Context, c *Contest, problems []Cont
 			}
 			c.StartTime = existing.StartTime
 		}
+		// Edits never change the settlement marker; a concurrent settlement
+		// between the service read and this row lock must not be erased.
+		c.RatingSettledAt = existing.RatingSettledAt
 		if err := tx.Save(c).Error; err != nil {
 			return err
 		}

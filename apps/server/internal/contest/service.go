@@ -110,6 +110,9 @@ func (s *Service) Update(ctx context.Context, v Viewer, id int64, in Input) (*Co
 		if in.Mode != existing.Mode {
 			return nil, invalid("比赛开始后不能修改赛制")
 		}
+		if in.IsRated != existing.IsRated {
+			return nil, invalid("比赛开始后不能修改是否计 Rating")
+		}
 		rows, err := s.repo.FindProblems(ctx, id)
 		if err != nil {
 			return nil, err
@@ -240,6 +243,7 @@ func (s *Service) Clone(ctx context.Context, v Viewer, id int64, in Input) (*Con
 	}
 	c := *original
 	c.ID, c.Title, c.StartTime, c.EndTime = 0, title, start, end
+	c.RatingSettledAt = nil
 	c.CreatedBy = v.UserID
 	c.CreatedAt, c.UpdatedAt = time.Time{}, time.Time{}
 	rows, err := s.repo.FindProblems(ctx, id)
@@ -445,6 +449,8 @@ func mapRepoErr(err error) error {
 		return invalid("比赛开始后不能修改赛制")
 	case errors.Is(err, ErrProblemsFrozen):
 		return invalid("比赛开始后不能修改题目列表")
+	case errors.Is(err, ErrRatedFrozen):
+		return invalid("比赛开始后不能修改是否计 Rating")
 	}
 	return err
 }

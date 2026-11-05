@@ -380,6 +380,66 @@ func TestStartAndModeFrozenAfterStart(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestIsRatedFrozenAfterStart(t *testing.T) {
+	e := newEnv(t)
+	now := time.Now()
+
+	future := baseInput(e)
+	future.Title = "Future rated"
+	future.StartTime = now.Add(time.Hour)
+	future.EndTime = now.Add(2 * time.Hour)
+	fc, err := e.svc.Create(context.Background(), manager(), future)
+	require.NoError(t, err)
+
+	enable := baseInput(e)
+	enable.Title = fc.Title
+	enable.StartTime, enable.EndTime = fc.StartTime, fc.EndTime
+	enable.IsRated = true
+	updated, err := e.svc.Update(context.Background(), manager(), fc.ID, enable)
+	require.NoError(t, err, "isRated may change before the start")
+	assert.True(t, updated.IsRated)
+
+	started := baseInput(e)
+	started.Title = "Started rated"
+	started.IsRated = true
+	c, err := e.svc.Create(context.Background(), manager(), started)
+	require.NoError(t, err)
+
+	disable := baseInput(e)
+	disable.Title = c.Title
+	disable.StartTime, disable.EndTime = c.StartTime, c.EndTime
+	disable.IsRated = false
+	_, err = e.svc.Update(context.Background(), manager(), c.ID, disable)
+	assertCode(t, err, 40001)
+
+	rename := baseInput(e)
+	rename.Title = "Started renamed"
+	rename.StartTime, rename.EndTime = c.StartTime, c.EndTime
+	rename.IsRated = true
+	renamed, err := e.svc.Update(context.Background(), manager(), c.ID, rename)
+	require.NoError(t, err, "other editable fields must still change after the start")
+	assert.Equal(t, "Started renamed", renamed.Title)
+}
+
+func TestRepositoryRejectsRatedChangeAfterStart(t *testing.T) {
+	e := newEnv(t)
+	in := baseInput(e)
+	in.IsRated = true
+	c, err := e.svc.Create(context.Background(), manager(), in)
+	require.NoError(t, err)
+
+	rows, err := e.repo.FindProblems(context.Background(), c.ID)
+	require.NoError(t, err)
+	problems := make([]contest.ContestProblem, len(rows))
+	for i, row := range rows {
+		problems[i] = row.ContestProblem
+	}
+	changed := *c
+	changed.IsRated = false
+	err = e.repo.Update(context.Background(), &changed, problems)
+	assert.ErrorIs(t, err, contest.ErrRatedFrozen, "the row lock guard must reject the stale write")
+}
+
 func TestProblemListIsFrozenAfterStart(t *testing.T) {
 	e := newEnv(t)
 	in := baseInput(e)
@@ -474,6 +534,8 @@ func TestCloneOverrides(t *testing.T) {
 	e := newEnv(t)
 	c, err := e.svc.Create(context.Background(), manager(), baseInput(e))
 	require.NoError(t, err)
+	require.NoError(t, e.db.Model(&contest.Contest{}).Where("id = ?", c.ID).
+		Update("rating_settled_at", time.Now()).Error)
 	start := time.Now().Add(24 * time.Hour).UTC()
 	end := start.Add(2 * time.Hour)
 	clone, err := e.svc.Clone(context.Background(), manager(), c.ID, contest.Input{
@@ -483,6 +545,34 @@ func TestCloneOverrides(t *testing.T) {
 	assert.Equal(t, "Custom", clone.Title)
 	assert.WithinDuration(t, start, clone.StartTime, time.Second)
 	assert.WithinDuration(t, end, clone.EndTime, time.Second)
+	assert.Nil(t, clone.RatingSettledAt, "a clone is a new contest that must still be settled")
+}
+
+func TestUpdatePreservesRatingSettledAt(t *testing.T) {
+	e := newEnv(t)
+	now := time.Now()
+	in := baseInput(e)
+	in.Title = "Settled"
+	in.StartTime = now.Add(-2 * time.Hour)
+	in.EndTime = now.Add(-time.Hour)
+	c, err := e.svc.Create(context.Background(), manager(), in)
+	require.NoError(t, err)
+	settledAt := now.Add(-30 * time.Minute).UTC().Truncate(time.Microsecond)
+	require.NoError(t, e.db.Model(&contest.Contest{}).Where("id = ?", c.ID).
+		Update("rating_settled_at", settledAt).Error)
+
+	update := baseInput(e)
+	update.Title = "Settled renamed"
+	update.StartTime, update.EndTime = c.StartTime, c.EndTime
+	updated, err := e.svc.Update(context.Background(), manager(), c.ID, update)
+	require.NoError(t, err)
+	require.NotNil(t, updated.RatingSettledAt)
+	assert.True(t, updated.RatingSettledAt.Equal(settledAt), "an edit must not clear the settlement marker")
+
+	var stored contest.Contest
+	require.NoError(t, e.db.First(&stored, c.ID).Error)
+	require.NotNil(t, stored.RatingSettledAt)
+	assert.True(t, stored.RatingSettledAt.Equal(settledAt))
 }
 
 func TestDuplicateDisplayAndProblem(t *testing.T) {

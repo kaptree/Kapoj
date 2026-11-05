@@ -32,23 +32,24 @@ func (r RegisterType) Valid() bool {
 }
 
 type Contest struct {
-	ID             int64                `gorm:"primaryKey"`
-	Title          string               `gorm:"size:100;not null"`
-	DescriptionMD  string               `gorm:"column:description_md;type:text;not null;default:''"`
-	StartTime      time.Time            `gorm:"type:timestamptz;not null;index:idx_contests_start"`
-	EndTime        time.Time            `gorm:"type:timestamptz;not null;index:idx_contests_end"`
-	Mode           Mode                 `gorm:"size:10;not null"`
-	IsRated        bool                 `gorm:"not null;default:false"`
-	IsPublic       bool                 `gorm:"not null;default:false;index"`
-	PasswordHash   string               `gorm:"size:100;not null;default:''"`
-	InviteCodeHash string               `gorm:"size:100;not null;default:''"`
-	RegisterType   RegisterType         `gorm:"size:20;not null;default:open"`
-	CreatedBy      int64                `gorm:"not null;default:0"`
-	CreatedAt      time.Time            `gorm:"type:timestamptz;not null"`
-	UpdatedAt      time.Time            `gorm:"type:timestamptz;not null"`
-	Problems       []ContestProblem     `gorm:"foreignKey:ContestID;constraint:OnDelete:CASCADE" json:"-"`
-	Participants   []ContestParticipant `gorm:"foreignKey:ContestID;constraint:OnDelete:CASCADE" json:"-"`
-	Announcements  []Announcement       `gorm:"foreignKey:ContestID;constraint:OnDelete:CASCADE" json:"-"`
+	ID              int64                `gorm:"primaryKey"`
+	Title           string               `gorm:"size:100;not null"`
+	DescriptionMD   string               `gorm:"column:description_md;type:text;not null;default:''"`
+	StartTime       time.Time            `gorm:"type:timestamptz;not null;index:idx_contests_start"`
+	EndTime         time.Time            `gorm:"type:timestamptz;not null;index:idx_contests_end"`
+	Mode            Mode                 `gorm:"size:10;not null"`
+	IsRated         bool                 `gorm:"not null;default:false"`
+	RatingSettledAt *time.Time           `gorm:"type:timestamptz"`
+	IsPublic        bool                 `gorm:"not null;default:false;index"`
+	PasswordHash    string               `gorm:"size:100;not null;default:''"`
+	InviteCodeHash  string               `gorm:"size:100;not null;default:''"`
+	RegisterType    RegisterType         `gorm:"size:20;not null;default:open"`
+	CreatedBy       int64                `gorm:"not null;default:0"`
+	CreatedAt       time.Time            `gorm:"type:timestamptz;not null"`
+	UpdatedAt       time.Time            `gorm:"type:timestamptz;not null"`
+	Problems        []ContestProblem     `gorm:"foreignKey:ContestID;constraint:OnDelete:CASCADE" json:"-"`
+	Participants    []ContestParticipant `gorm:"foreignKey:ContestID;constraint:OnDelete:CASCADE" json:"-"`
+	Announcements   []Announcement       `gorm:"foreignKey:ContestID;constraint:OnDelete:CASCADE" json:"-"`
 }
 
 type ContestProblem struct {

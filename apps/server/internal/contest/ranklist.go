@@ -158,6 +158,10 @@ func (s *Service) computeICPC(
 	for userID, subs := range submissions {
 		state := states[userID]
 		for _, sub := range subs {
+			if state.row.LastSubmissionAt == nil || sub.CreatedAt.After(*state.row.LastSubmissionAt) {
+				at := sub.CreatedAt
+				state.row.LastSubmissionAt = &at
+			}
 			idx, ok := problemIndex[sub.ProblemID]
 			if !ok {
 				continue

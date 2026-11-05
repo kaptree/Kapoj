@@ -87,6 +87,29 @@ func TestICPCRanklist(t *testing.T) {
 	assert.Equal(t, 3, rank.Rows[2].Rank)
 }
 
+func TestICPCRanklistTracksLastSubmission(t *testing.T) {
+	e := newEnv(t)
+	now := time.Now()
+	start := now.Add(-time.Hour)
+	c := rankContest(t, e, contest.ModeICPC, start, now.Add(time.Hour), userID, otherID)
+	p1 := e.problems[0].ID
+
+	insertRankSubmission(t, e, c.ID, userID, p1, "wrong_answer", 0, start.Add(5*time.Minute))
+	insertRankSubmission(t, e, c.ID, userID, p1, "compile_error", 0, start.Add(12*time.Minute))
+
+	rank, err := e.svc.Ranklist(context.Background(), manager(), c.ID)
+	require.NoError(t, err)
+	require.Len(t, rank.Rows, 2)
+
+	rows := make(map[int64]contest.RankRow, len(rank.Rows))
+	for _, row := range rank.Rows {
+		rows[row.UserID] = row
+	}
+	require.NotNil(t, rows[userID].LastSubmissionAt, "a non-AC submission still marks participation")
+	assert.WithinDuration(t, start.Add(12*time.Minute), *rows[userID].LastSubmissionAt, time.Microsecond)
+	assert.Nil(t, rows[otherID].LastSubmissionAt)
+}
+
 func TestICPCRanklistTies(t *testing.T) {
 	e := newEnv(t)
 	now := time.Now()
