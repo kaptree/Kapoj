@@ -8,15 +8,16 @@ import (
 )
 
 type Config struct {
-	HTTPAddr        string
-	DatabaseURL     string
-	RedisAddr       string
-	StorageDir      string
-	JWTSecret       string
-	AccessTokenTTL  time.Duration
-	RefreshTokenTTL time.Duration
-	SubmitCooldown  time.Duration
-	GameConcurrency int
+	HTTPAddr          string
+	DatabaseURL       string
+	RedisAddr         string
+	StorageDir        string
+	JWTSecret         string
+	AccessTokenTTL    time.Duration
+	RefreshTokenTTL   time.Duration
+	SubmitCooldown    time.Duration
+	GameConcurrency   int
+	MaxEquippedBadges int
 }
 
 const minSecretLen = 32
@@ -36,17 +37,19 @@ func Load() (*Config, error) {
 	v.SetDefault("refresh_token_ttl", "168h")
 	v.SetDefault("submit_cooldown", "3s")
 	v.SetDefault("game_concurrency", 2)
+	v.SetDefault("max_equipped_badges", 3)
 
 	cfg := &Config{
-		HTTPAddr:        v.GetString("http_addr"),
-		DatabaseURL:     v.GetString("database_url"),
-		RedisAddr:       v.GetString("redis_addr"),
-		StorageDir:      v.GetString("storage_dir"),
-		JWTSecret:       v.GetString("jwt_secret"),
-		AccessTokenTTL:  v.GetDuration("access_token_ttl"),
-		RefreshTokenTTL: v.GetDuration("refresh_token_ttl"),
-		SubmitCooldown:  v.GetDuration("submit_cooldown"),
-		GameConcurrency: v.GetInt("game_concurrency"),
+		HTTPAddr:          v.GetString("http_addr"),
+		DatabaseURL:       v.GetString("database_url"),
+		RedisAddr:         v.GetString("redis_addr"),
+		StorageDir:        v.GetString("storage_dir"),
+		JWTSecret:         v.GetString("jwt_secret"),
+		AccessTokenTTL:    v.GetDuration("access_token_ttl"),
+		RefreshTokenTTL:   v.GetDuration("refresh_token_ttl"),
+		SubmitCooldown:    v.GetDuration("submit_cooldown"),
+		GameConcurrency:   v.GetInt("game_concurrency"),
+		MaxEquippedBadges: v.GetInt("max_equipped_badges"),
 	}
 
 	if len(cfg.JWTSecret) < minSecretLen {
@@ -60,6 +63,9 @@ func Load() (*Config, error) {
 	}
 	if cfg.GameConcurrency < 1 || cfg.GameConcurrency > 16 {
 		return nil, errors.New("KAPOJ_GAME_CONCURRENCY must be between 1 and 16")
+	}
+	if cfg.MaxEquippedBadges < 1 || cfg.MaxEquippedBadges > 10 {
+		return nil, errors.New("KAPOJ_MAX_EQUIPPED_BADGES must be between 1 and 10")
 	}
 	return cfg, nil
 }

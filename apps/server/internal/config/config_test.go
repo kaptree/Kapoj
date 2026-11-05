@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -73,6 +74,28 @@ func TestLoadGameConcurrency(t *testing.T) {
 		t.Setenv("KAPOJ_GAME_CONCURRENCY", raw)
 		_, err = Load()
 		assert.Error(t, err, "KAPOJ_GAME_CONCURRENCY=%q must be rejected", raw)
+	}
+}
+
+func TestMaxEquippedBadgesConfig(t *testing.T) {
+	t.Setenv("KAPOJ_JWT_SECRET", strings.Repeat("a", 32))
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, 3, cfg.MaxEquippedBadges)
+
+	for _, raw := range []string{"1", "5", "10"} {
+		t.Setenv("KAPOJ_MAX_EQUIPPED_BADGES", raw)
+		cfg, err = Load()
+		require.NoError(t, err, "KAPOJ_MAX_EQUIPPED_BADGES=%q 应合法", raw)
+		want, convErr := strconv.Atoi(raw)
+		require.NoError(t, convErr)
+		assert.Equal(t, want, cfg.MaxEquippedBadges)
+	}
+
+	for _, raw := range []string{"0", "-1", "11", "many"} {
+		t.Setenv("KAPOJ_MAX_EQUIPPED_BADGES", raw)
+		_, err = Load()
+		assert.Error(t, err, "KAPOJ_MAX_EQUIPPED_BADGES=%q 必须被拒绝", raw)
 	}
 }
 

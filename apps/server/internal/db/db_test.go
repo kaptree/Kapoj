@@ -43,9 +43,12 @@ func TestMigrateCreatesGamificationSchema(t *testing.T) {
 	for _, table := range []string{
 		"coin_transactions", "achievements", "user_achievements",
 		"tasks", "user_task_records", "user_login_days",
+		"badges", "user_badges", "titles", "user_titles",
 	} {
 		assert.True(t, g.Migrator().HasTable(table), "缺少表 %s", table)
 	}
 	assert.True(t, g.Migrator().HasIndex(&gamification.CoinTransaction{}, "uniq_coin_transactions_idem"))
 	assert.True(t, g.Migrator().HasIndex(&gamification.UserLoginDay{}, "uniq_user_login_days"))
+	assert.True(t, g.Migrator().HasIndex(&gamification.UserBadge{}, "uniq_user_badges"))
+	assert.True(t, g.Migrator().HasIndex(&gamification.UserTitle{}, "uniq_user_titles"))
 }

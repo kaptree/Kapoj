@@ -44,5 +44,7 @@ func Migrate(g *gorm.DB) error {
 		&gamification.CoinTransaction{}, &gamification.Achievement{},
 		&gamification.UserAchievement{}, &gamification.Task{},
 		&gamification.UserTaskRecord{}, &gamification.UserLoginDay{},
+		&gamification.Badge{}, &gamification.UserBadge{},
+		&gamification.Title{}, &gamification.UserTitle{},
 	)
 }

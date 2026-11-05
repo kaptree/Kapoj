@@ -93,3 +93,55 @@ type UserLoginDay struct {
 	LoginDate time.Time `gorm:"type:date;not null;uniqueIndex:uniq_user_login_days,priority:2"`
 	CreatedAt time.Time `gorm:"type:timestamptz;not null"`
 }
+
+// Badge 是徽章商城中可由管理员配置、用户购买或由成就奖励的徽章。
+// 图片 key 固定为 badges/<id>，image_url 指向公开图片接口。
+// IsActive 不设置数据库默认值，创建时必须显式赋值，否则 false 无法持久化。
+type Badge struct {
+	ID          int64     `gorm:"primaryKey"`
+	Name        string    `gorm:"size:100;not null"`
+	Description string    `gorm:"size:500;not null;default:''"`
+	ImageURL    string    `gorm:"size:512;not null;default:''"`
+	PriceCoins  int64     `gorm:"not null;default:0"`
+	Category    string    `gorm:"size:20;not null;default:'其他'"`
+	IsLimited   bool      `gorm:"not null;default:false"`
+	Stock       int64     `gorm:"not null;default:0"`
+	SortOrder   int       `gorm:"not null;default:0"`
+	IsActive    bool      `gorm:"not null"`
+	CreatedAt   time.Time `gorm:"type:timestamptz;not null"`
+	UpdatedAt   time.Time `gorm:"type:timestamptz;not null"`
+}
+
+// UserBadge 记录用户拥有的徽章与装备状态。
+type UserBadge struct {
+	ID          int64     `gorm:"primaryKey"`
+	UserID      int64     `gorm:"not null;uniqueIndex:uniq_user_badges,priority:1"`
+	BadgeID     int64     `gorm:"not null;uniqueIndex:uniq_user_badges,priority:2"`
+	IsEquipped  bool      `gorm:"not null;default:false"`
+	PurchasedAt time.Time `gorm:"type:timestamptz;not null"`
+}
+
+// Title 是管理员配置的称号，用户满足解锁条件后可购买与装备。
+// IsActive 不设置数据库默认值，创建时必须显式赋值，否则 false 无法持久化。
+type Title struct {
+	ID                    int64                        `gorm:"primaryKey"`
+	Name                  string                       `gorm:"size:100;not null"`
+	Color                 string                       `gorm:"size:7;not null"`
+	UnlockConditionType   string                       `gorm:"size:30;not null"`
+	UnlockConditionConfig dbtypes.JSON[map[string]any] `gorm:"column:unlock_condition_json;type:jsonb;not null;default:'{}'"`
+	PriceCoins            int64                        `gorm:"not null;default:0"`
+	SortOrder             int                          `gorm:"not null;default:0"`
+	IsActive              bool                         `gorm:"not null"`
+	CreatedAt             time.Time                    `gorm:"type:timestamptz;not null"`
+	UpdatedAt             time.Time                    `gorm:"type:timestamptz;not null"`
+}
+
+// UserTitle 记录用户解锁与购买称号的状态；同一用户同一称号只有一条记录。
+type UserTitle struct {
+	ID          int64      `gorm:"primaryKey"`
+	UserID      int64      `gorm:"not null;uniqueIndex:uniq_user_titles,priority:1"`
+	TitleID     int64      `gorm:"not null;uniqueIndex:uniq_user_titles,priority:2"`
+	IsEquipped  bool       `gorm:"not null;default:false"`
+	UnlockedAt  time.Time  `gorm:"type:timestamptz;not null"`
+	PurchasedAt *time.Time `gorm:"type:timestamptz"`
+}
