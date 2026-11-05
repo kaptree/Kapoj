@@ -407,20 +407,22 @@ onMounted(load)
           <el-input-number v-model="form.rewardCoins" :min="0" :max="1000000" :step="1" />
         </el-form-item>
         <el-form-item label="奖励徽章">
-          <el-select
-            v-model="form.rewardBadgeId"
-            clearable
-            placeholder="不配置奖励徽章"
-            style="width: 260px"
-          >
-            <el-option
-              v-for="option in badgeOptions"
-              :key="option.value"
-              :label="option.label"
-              :value="option.value"
-              :disabled="option.disabled"
-            />
-          </el-select>
+          <div class="badge-field">
+            <el-select
+              v-model="form.rewardBadgeId"
+              placeholder="不配置奖励徽章"
+              style="width: 260px"
+            >
+              <el-option
+                v-for="option in badgeOptions"
+                :key="option.value"
+                :label="option.label"
+                :value="option.value"
+                :disabled="option.disabled"
+              />
+            </el-select>
+            <div class="field-hint">奖励徽章只能更换，不能清除；创建时可留空不配置。</div>
+          </div>
         </el-form-item>
         <el-form-item label="排序">
           <el-input-number v-model="form.sortOrder" :step="1" />
@@ -471,6 +473,16 @@ onMounted(load)
 }
 .condition-label {
   color: var(--el-text-color-secondary);
+}
+.badge-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.field-hint {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.4;
 }
 @media (max-width: 640px) {
   :deep(.el-dialog) {

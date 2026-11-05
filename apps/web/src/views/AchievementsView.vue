@@ -72,7 +72,7 @@ watch(
     </template>
 
     <div v-if="!auth.isLoggedIn" class="cta">
-      <span>登录后可查看自己的成就解锁进度并领取奖励。</span>
+      <span>登录后可查看自己的成就解锁进度；达成后奖励自动发放。</span>
       <RouterLink :to="loginTarget">
         <el-button type="primary" plain size="small">登录 / 注册</el-button>
       </RouterLink>

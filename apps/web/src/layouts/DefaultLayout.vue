@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import UserMenu from '@/components/UserMenu.vue'
@@ -37,27 +37,58 @@ const showAdminEntry = computed(() => hasRole(auth.user?.role ?? null, ['super_a
 // Narrow screens use an overlay drawer instead of a permanently visible sidebar.
 const narrow = ref(false)
 const menuOpen = ref(false)
+const toggleButton = ref<{ $el?: HTMLElement } | null>(null)
+const closeButton = ref<HTMLButtonElement | null>(null)
+const toggleLabel = computed(() => (menuOpen.value ? '关闭导航' : '打开导航'))
+const drawerOpen = computed(() => narrow.value && menuOpen.value)
 let media: MediaQueryList | null = null
+
+function focusToggle() {
+  toggleButton.value?.$el?.focus()
+}
+
+function openMenu() {
+  menuOpen.value = true
+  void nextTick(() => closeButton.value?.focus())
+}
+
+function closeMenu(restoreFocus = true) {
+  if (!menuOpen.value) return
+  menuOpen.value = false
+  if (restoreFocus && narrow.value) void nextTick(focusToggle)
+}
+
+function toggleMenu() {
+  if (menuOpen.value) closeMenu()
+  else openMenu()
+}
 
 function syncNarrow(query: MediaQueryList | MediaQueryListEvent) {
   narrow.value = query.matches
-  if (!query.matches) menuOpen.value = false
+  if (!query.matches) closeMenu(false)
+}
+
+function onKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && drawerOpen.value) {
+    event.preventDefault()
+    closeMenu()
+  }
 }
 
 onMounted(() => {
   media = window.matchMedia('(max-width: 768px)')
   syncNarrow(media)
   media.addEventListener('change', syncNarrow)
+  window.addEventListener('keydown', onKeydown)
 })
 onBeforeUnmount(() => {
   media?.removeEventListener('change', syncNarrow)
+  window.removeEventListener('keydown', onKeydown)
 })
 
 watch(
   () => route.fullPath,
-  () => {
-    menuOpen.value = false
-  },
+  () => closeMenu(),
 )
 </script>
 
@@ -66,11 +97,13 @@ watch(
     <el-header class="header">
       <el-button
         v-if="narrow"
+        ref="toggleButton"
         text
         class="menu-toggle"
         :aria-expanded="menuOpen"
-        aria-label="打开导航"
-        @click="menuOpen = !menuOpen"
+        :aria-label="toggleLabel"
+        aria-controls="app-nav"
+        @click="toggleMenu"
       >
         导航
       </el-button>
@@ -80,13 +113,32 @@ watch(
       </div>
     </el-header>
     <el-container>
-      <div v-if="narrow && menuOpen" class="backdrop" @click="menuOpen = false" />
-      <el-aside width="200px" class="aside" :class="{ open: narrow && menuOpen }">
+      <div v-if="drawerOpen" class="backdrop" @click="closeMenu()" />
+      <el-aside
+        id="app-nav"
+        width="200px"
+        class="aside"
+        :class="{ open: drawerOpen }"
+        :inert="narrow && !menuOpen"
+        :aria-hidden="narrow && !menuOpen ? 'true' : undefined"
+      >
+        <div v-if="narrow" class="aside-head">
+          <span class="aside-title">导航</span>
+          <button
+            ref="closeButton"
+            type="button"
+            class="aside-close"
+            aria-label="关闭导航"
+            @click="closeMenu()"
+          >
+            关闭
+          </button>
+        </div>
         <el-menu
           :default-active="active"
           :default-openeds="['growth']"
           router
-          @select="menuOpen = false"
+          @select="closeMenu()"
         >
           <el-menu-item
             v-for="item in navItems"
@@ -108,7 +160,7 @@ watch(
           </el-sub-menu>
         </el-menu>
       </el-aside>
-      <el-main>
+      <el-main :inert="drawerOpen" :aria-hidden="drawerOpen ? 'true' : undefined">
         <RouterView />
       </el-main>
     </el-container>
@@ -175,6 +227,31 @@ watch(
   }
   .aside.open {
     transform: translateX(0);
+  }
+  .aside-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px 4px;
+  }
+  .aside-title {
+    font-weight: 600;
+  }
+  .aside-close {
+    padding: 4px 8px;
+    color: var(--el-color-primary);
+    font: inherit;
+    background: transparent;
+    border: 0;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .aside-close:hover {
+    background: var(--el-fill-color-light);
+  }
+  .aside-close:focus-visible {
+    outline: 2px solid var(--el-color-primary);
+    outline-offset: 2px;
   }
   .backdrop {
     position: fixed;
