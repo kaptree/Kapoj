@@ -175,6 +175,93 @@ func (r *Repository) CountUnavailableNodeProblems(ctx context.Context, pathID in
 	return count, err
 }
 
+func (r *Repository) CreateNode(ctx context.Context, n *LearningPathNode) error {
+	return r.db.WithContext(ctx).Create(n).Error
+}
+
+func (r *Repository) FindNode(ctx context.Context, id int64) (*LearningPathNode, error) {
+	var n LearningPathNode
+	if err := r.db.WithContext(ctx).First(&n, id).Error; err != nil {
+		return nil, mapRepoError(err)
+	}
+	return &n, nil
+}
+
+func (r *Repository) UpdateNode(ctx context.Context, n *LearningPathNode) error {
+	n.UpdatedAt = time.Now()
+	updates := map[string]any{
+		"title":            n.Title,
+		"description_md":   n.DescriptionMD,
+		"parent_id":        n.ParentID,
+		"problem_ids_json": n.ProblemIDs,
+		"sort_order":       n.SortOrder,
+		"required_count":   n.RequiredCount,
+		"updated_at":       n.UpdatedAt,
+	}
+	res := r.db.WithContext(ctx).Model(&LearningPathNode{}).
+		Where("id = ? AND path_id = ?", n.ID, n.PathID).Updates(updates)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// DeleteNode removes the node and its per-user progress rows atomically.
+func (r *Repository) DeleteNode(ctx context.Context, n *LearningPathNode) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("node_id = ?", n.ID).Delete(&UserLearningProgress{}).Error; err != nil {
+			return err
+		}
+		res := tx.Where("id = ? AND path_id = ?", n.ID, n.PathID).Delete(&LearningPathNode{})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrNotFound
+		}
+		return nil
+	})
+}
+
+func (r *Repository) CountChildren(ctx context.Context, nodeID int64) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&LearningPathNode{}).
+		Where("parent_id = ?", nodeID).Count(&count).Error
+	return count, err
+}
+
+// ListNodes returns a path's nodes ordered by sort order then id.
+func (r *Repository) ListNodes(ctx context.Context, pathID int64) ([]LearningPathNode, error) {
+	var nodes []LearningPathNode
+	err := r.db.WithContext(ctx).Where("path_id = ?", pathID).
+		Order("sort_order ASC, id ASC").Find(&nodes).Error
+	return nodes, err
+}
+
+// ProblemSummaries returns public problem summaries keyed by problem id.
+// Missing or private problems are simply absent from the result.
+func (r *Repository) ProblemSummaries(ctx context.Context, ids []int64) (map[int64]ProblemSummary, error) {
+	out := make(map[int64]ProblemSummary, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	var rows []ProblemSummary
+	err := r.db.WithContext(ctx).Table("problems").
+		Select("id AS problem_id, title, slug, difficulty").
+		Where("id IN ? AND is_public = ?", ids, true).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		out[row.ProblemID] = row
+	}
+	return out, nil
+}
+
 func mapRepoError(err error) error {
 	if errors.Is(err, ErrNotFound) || errors.Is(err, gorm.ErrRecordNotFound) {
 		return ErrNotFound

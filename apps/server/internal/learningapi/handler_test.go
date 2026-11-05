@@ -20,6 +20,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/config"
 	"github.com/kaptree/kapoj/apps/server/internal/dbtypes"
 	"github.com/kaptree/kapoj/apps/server/internal/learning"
+	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/router"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
@@ -411,4 +412,176 @@ func itemIDs(items []any) []float64 {
 
 func itoa(id int64) string {
 	return strconv.FormatInt(id, 10)
+}
+
+func TestLearningPathAPINodesAndTree(t *testing.T) {
+	f := newFx(t)
+	authorID := f.user("node-author", user.RoleUser)
+	otherID := f.user("node-other", user.RoleUser)
+	adminID := f.user("node-admin", user.RoleProblemAdmin)
+	authorToken := f.token(authorID, user.RoleUser)
+	otherToken := f.token(otherID, user.RoleUser)
+	adminToken := f.token(adminID, user.RoleProblemAdmin)
+
+	addProblem := func(slug string, public bool) *problem.Problem {
+		t.Helper()
+		p := &problem.Problem{
+			Title: "题目-" + slug, Slug: slug, StatementMD: "题干",
+			Type: problem.TypeTraditional, Difficulty: 2,
+			TimeLimitMS: 1000, MemoryLimitMB: 256, IsPublic: public,
+		}
+		require.NoError(t, f.db.Create(p).Error)
+		return p
+	}
+	pub := addProblem("api-node-pub", true)
+	hidden := addProblem("api-node-hidden", false)
+
+	w, resp := f.do(http.MethodPost, "/api/learning-paths", authorToken,
+		map[string]any{"title": "API 节点路线"})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	pathID := int64(responseData(t, resp)["id"].(float64))
+	pathURL := "/api/learning-paths/" + itoa(pathID)
+	nodesURL := pathURL + "/nodes"
+
+	w, resp = f.do(http.MethodPost, nodesURL, "", map[string]any{"title": "游客节点"})
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	requireCode(t, resp, 40100)
+
+	w, resp = f.do(http.MethodPost, nodesURL, otherToken, map[string]any{"title": "他人节点"})
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	requireCode(t, resp, 40400)
+
+	w, resp = f.do(http.MethodPost, nodesURL, authorToken,
+		map[string]any{"title": "", "problemIds": []int64{pub.ID}})
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	requireCode(t, resp, 40001)
+
+	w, resp = f.do(http.MethodPost, nodesURL, authorToken,
+		map[string]any{"title": "私有题节点", "problemIds": []int64{hidden.ID}})
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	requireCode(t, resp, 40001)
+
+	w, resp = f.do(http.MethodPost, nodesURL, authorToken, map[string]any{
+		"title": "根节点", "descriptionMd": "根描述",
+		"problemIds": []int64{pub.ID}, "sortOrder": 2,
+	})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	root := responseData(t, resp)
+	rootID := int64(root["id"].(float64))
+	assert.Equal(t, "根节点", root["title"])
+	assert.Nil(t, root["parentId"])
+	assert.EqualValues(t, 1, root["requiredCount"])
+	assert.EqualValues(t, 0, root["solvedCount"])
+	assert.Equal(t, learning.ProgressActive, root["status"])
+	problems := root["problems"].([]any)
+	require.Len(t, problems, 1)
+	summary := problems[0].(map[string]any)
+	assert.Len(t, summary, 4, "树只返回 problemId/title/slug/difficulty")
+	assert.EqualValues(t, pub.ID, summary["problemId"])
+	assert.Equal(t, "题目-api-node-pub", summary["title"])
+	assert.Equal(t, "api-node-pub", summary["slug"])
+	assert.EqualValues(t, 2, summary["difficulty"])
+
+	w, resp = f.do(http.MethodPost, nodesURL, authorToken, map[string]any{
+		"title": "子节点", "parentId": rootID, "problemIds": []int64{pub.ID},
+		"requiredCount": 1,
+	})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	child := responseData(t, resp)
+	childID := int64(child["id"].(float64))
+	assert.Equal(t, learning.ProgressLocked, child["status"])
+	assert.EqualValues(t, rootID, child["parentId"])
+
+	// 私有路线游客不可见。
+	w, resp = f.do(http.MethodGet, pathURL+"/tree", "", nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	requireCode(t, resp, 40400)
+
+	w, resp = f.do(http.MethodPut, pathURL, authorToken,
+		map[string]any{"title": "API 节点路线", "isPublic": true})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	w, resp = f.do(http.MethodGet, pathURL+"/tree", "", nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	tree := responseData(t, resp)
+	assert.Equal(t, "API 节点路线", tree["path"].(map[string]any)["title"])
+	rootNodes := tree["nodes"].([]any)
+	require.Len(t, rootNodes, 1)
+	rootNode := rootNodes[0].(map[string]any)
+	assert.Equal(t, "根节点", rootNode["title"])
+	assert.Equal(t, learning.ProgressActive, rootNode["status"])
+	children := rootNode["children"].([]any)
+	require.Len(t, children, 1)
+	assert.Equal(t, "子节点", children[0].(map[string]any)["title"])
+	assert.Equal(t, learning.ProgressLocked, children[0].(map[string]any)["status"])
+
+	w, resp = f.do(http.MethodPut, nodesURL+"/"+itoa(childID), authorToken,
+		map[string]any{"title": "改名子节点", "parentId": rootID, "problemIds": []int64{pub.ID}})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, "改名子节点", responseData(t, resp)["title"])
+
+	w, resp = f.do(http.MethodPut, nodesURL+"/"+itoa(childID), otherToken,
+		map[string]any{"title": "他人改名", "problemIds": []int64{pub.ID}})
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	requireCode(t, resp, 40400)
+
+	w, resp = f.do(http.MethodDelete, nodesURL+"/"+itoa(rootID), authorToken, nil)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	requireCode(t, resp, 40001)
+
+	// 节点 id 必须属于 URL 中的路线。
+	otherPath := func() int64 {
+		w, resp := f.do(http.MethodPost, "/api/learning-paths", authorToken,
+			map[string]any{"title": "另一条路线"})
+		require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+		return int64(responseData(t, resp)["id"].(float64))
+	}()
+	w, resp = f.do(http.MethodPut,
+		"/api/learning-paths/"+itoa(otherPath)+"/nodes/"+itoa(childID), authorToken,
+		map[string]any{"title": "跨路线", "problemIds": []int64{pub.ID}})
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	requireCode(t, resp, 40400)
+
+	w, resp = f.do(http.MethodDelete, nodesURL+"/"+itoa(childID), authorToken, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, true, responseData(t, resp)["deleted"])
+	w, resp = f.do(http.MethodDelete, nodesURL+"/"+itoa(rootID), authorToken, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	// 官方路线只有管理员可以写节点。
+	w, resp = f.do(http.MethodPost, "/api/learning-paths", adminToken,
+		map[string]any{"title": "API 官方路线", "isOfficial": true})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	officialURL := "/api/learning-paths/" + itoa(int64(responseData(t, resp)["id"].(float64)))
+	w, resp = f.do(http.MethodPost, officialURL+"/nodes", authorToken,
+		map[string]any{"title": "作者写官方", "problemIds": []int64{pub.ID}})
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	requireCode(t, resp, 40400)
+	w, resp = f.do(http.MethodPost, officialURL+"/nodes", adminToken,
+		map[string]any{"title": "官方节点", "problemIds": []int64{pub.ID}})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+
+	// inactive 路线只有管理员可以写节点。
+	w, resp = f.do(http.MethodPost, "/api/learning-paths", authorToken,
+		map[string]any{"title": "API 下架路线"})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	inactiveURL := "/api/learning-paths/" + itoa(int64(responseData(t, resp)["id"].(float64)))
+	w, resp = f.do(http.MethodDelete, inactiveURL, authorToken, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	w, resp = f.do(http.MethodPost, inactiveURL+"/nodes", authorToken,
+		map[string]any{"title": "作者写下架", "problemIds": []int64{pub.ID}})
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	requireCode(t, resp, 40400)
+	w, resp = f.do(http.MethodPost, inactiveURL+"/nodes", adminToken,
+		map[string]any{"title": "管理员写下架", "problemIds": []int64{pub.ID}})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+
+	w, resp = f.do(http.MethodGet, "/api/learning-paths/999999/tree", "", nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	requireCode(t, resp, 40400)
+
+	w, resp = f.do(http.MethodPut, nodesURL+"/not-a-number", authorToken,
+		map[string]any{"title": "非法 id", "problemIds": []int64{pub.ID}})
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	requireCode(t, resp, 40400)
 }
