@@ -4307,9 +4307,9 @@ export interface components {
             coverUrl?: string;
             /** @description 仅管理员可设置；设为 true 时强制公开 */
             isOfficial?: boolean;
-            /** @description 公开后出现在路线列表，其他用户可查看树并使用自己的进度挑战 */
+            /** @description 公开后出现在路线列表，其他用户可查看树；个人进度挑战待 M4-2B 实现 */
             isPublic?: boolean;
-            /** @description 仅管理员可在更新时设置；false 为软删除，true 为恢复上架 */
+            /** @description 创建/更新时仅管理员可设置；false 为软删除，true 为恢复上架 */
             isActive?: boolean;
             sortOrder?: number;
         };

@@ -2722,8 +2722,8 @@ components:
         descriptionMd: { type: string, maxLength: 50000 }
         coverUrl: { type: string, maxLength: 512, description: 仅 http/https 链接；空字符串表示无封面 }
         isOfficial: { type: boolean, description: 仅管理员可设置；设为 true 时强制公开 }
-        isPublic: { type: boolean, description: 公开后出现在路线列表，其他用户可查看树并使用自己的进度挑战 }
-        isActive: { type: boolean, description: 仅管理员可在更新时设置；false 为软删除，true 为恢复上架 }
+        isPublic: { type: boolean, description: 公开后出现在路线列表，其他用户可查看树；个人进度挑战待 M4-2B 实现 }
+        isActive: { type: boolean, description: 创建/更新时仅管理员可设置；false 为软删除，true 为恢复上架 }
         sortOrder: { type: integer }
     LearningNodeStatus:
       type: string
