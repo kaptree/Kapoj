@@ -2,7 +2,7 @@
 
 打造最有趣味的 Online Judge 平台。规格见 [`DEVELOPMENT.md`](DEVELOPMENT.md)，进度见 [`docs/任务清单.md`](docs/任务清单.md) 与 [`docs/开发日志.md`](docs/开发日志.md)。
 
-当前进度：**M3-A 已完成**（M0–M2 已完成；金币、事件、成就、任务后端已实现；徽章、称号与前端页面待 M3-B/C）。
+当前进度：**M3-B 已完成（后端）**（M0–M2 已完成；M3-A 金币、事件、成就、任务后端与 M3-B 徽章、称号、公开身份后端已实现；成就/任务/徽章/称号前端页面待 M3-C）。
 
 ## 目录结构
 
@@ -77,13 +77,17 @@ docs            任务清单、开发日志、实施计划
 KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/docker-compose.yml --profile app up -d --build
 ```
 
-## 游戏化后端（M3-A）
+## 游戏化后端（M3-A/M3-B）
 
 - `GET /api/coins/transactions`：登录用户查看金币余额与流水（分页）。
 - `GET /api/achievements`、`GET /api/users/me/achievements`：成就列表与我的成就；登录读取会自动补算解锁并发奖，接口仍是幂等的。
 - `GET /api/tasks`、`POST /api/tasks/:id/claim`：任务大厅与领取；领取后 AC 全部题目会自动完成并发金币。
-- 超级管理员可管理成就/任务，并用 `POST /api/admin/users/:id/coins` 调整金币（需填写备注）。
-- 徽章、称号、公开身份与成就/任务前端页面尚未实现，属于 M3-B/C；当前不要按已上线页面的方式使用这些功能。
+- `GET /api/badges`、`POST /api/badges/:id/purchase|equip|unequip`、`GET /api/users/:id/badges`：徽章商城、购买与装备；装备上限由 `KAPOJ_MAX_EQUIPPED_BADGES` 配置（1–10，默认 3）。
+- 徽章图片：管理员通过 `POST /api/badges/:id/image` 上传 PNG/JPEG/WebP/GIF（≤ 2 MiB），文件保存为 `KAPOJ_STORAGE_DIR` 下的 `badges/<id>`，公开接口 `GET /api/badges/:id/image` 读取；数据库中 `imageUrl` 记录为 `/api/badges/<id>/image`。
+- `GET /api/titles`、`POST /api/titles/:id/purchase|equip|unequip`：称号商店、解锁、购买与装备；同一用户同时只装备 1 个称号。
+- 个人主页、测评记录与比赛榜单返回 `equippedBadges`、`equippedTitle` 公开身份字段。
+- 超级管理员可管理成就/任务/徽章/称号，并用 `POST /api/admin/users/:id/coins` 调整金币（需填写备注）。
+- 成就/任务/徽章/称号前端页面（成就页、任务大厅、徽章商城、称号商店、装扮管理）尚未实现，属于 M3-C；当前不要按已上线页面的方式使用这些功能。
 
 ## 测试与检查
 

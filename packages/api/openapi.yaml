@@ -646,7 +646,7 @@ paths:
         '403': { $ref: '#/components/responses/Error' }
     post:
       summary: 创建成就（仅超级管理员）
-      description: code 必须唯一且符合格式；条件配置非法、奖励金币为负或填写 rewardBadgeId 时返回 40001。
+      description: code 必须唯一且符合格式；条件配置非法或奖励金币为负时返回 40001。rewardBadgeId 非空时徽章必须存在且上架，否则返回 40001。
       security: [{ bearer: [] }]
       requestBody:
         required: true
@@ -667,7 +667,7 @@ paths:
       - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
     put:
       summary: 更新成就（仅超级管理员；整体替换，code 创建后不可修改）
-      description: code 留空表示保持原值；尝试修改 code、条件配置非法或填写 rewardBadgeId 时返回 40001。
+      description: code 留空表示保持原值；尝试修改 code 或条件配置非法时返回 40001。rewardBadgeId 为 null 时保持原奖励徽章不变，非空时徽章必须存在且上架。
       security: [{ bearer: [] }]
       requestBody:
         required: true
@@ -831,6 +831,302 @@ paths:
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
+  /badges:
+    get:
+      summary: 徽章商城（游客可访问；登录用户含拥有与装备状态）
+      description: |
+        游客只看到上架徽章；登录用户额外看到自己已拥有的下线徽章，并可继续装备或卸下。
+        includeInactive=true 仅 super_admin 可用，否则返回 40300。列表按 sort_order、id 排序。
+      security: [{}, { bearer: [] }]
+      parameters:
+        - { name: includeInactive, in: query, schema: { type: boolean, default: false }, description: 仅 super_admin 可用；true 时包含全部已下线徽章 }
+      responses:
+        '200':
+          description: 徽章列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BadgeListResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+    post:
+      summary: 创建徽章（仅超级管理员）
+      description: 名称 1–100 字、分类 1–20 字；价格 0–1000000；限量库存不能为负。imageUrl 必须为 http(s) 外链或 /api/badges/<id>/image。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BadgeInput' }
+      responses:
+        '201':
+          description: 创建成功；不含当前用户的拥有状态
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BadgeResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /badges/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    put:
+      summary: 更新徽章（仅超级管理员；整体替换）
+      description: isActive 缺省时保持原值。删除为软下线，已购买用户仍保留并展示。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BadgeInput' }
+      responses:
+        '200':
+          description: 更新后的徽章；不含当前用户的拥有状态
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BadgeResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+    delete:
+      summary: 软删除徽章（仅超级管理员；保留已购买记录与公开展示）
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 已下线
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /badges/{id}/image:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    post:
+      summary: 上传徽章图片（仅超级管理员；multipart）
+      description: |
+        file 字段支持 PNG、JPEG、WebP、GIF，且不超过 2 MiB；保存为 badges/<id>，
+        并把 image_url 写为 /api/badges/<id>/image。缺少文件、格式或大小非法返回 40001。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '200':
+          description: 已上传
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '413': { $ref: '#/components/responses/Error' }
+    get:
+      summary: 读取徽章图片（公开）
+      description: 只返回上传到本地存储的图片；外链、文件缺失或格式非法返回 40400。响应带 Cache-Control public, max-age=3600。
+      responses:
+        '200':
+          description: 原始图片，最大 2 MiB
+          headers:
+            Cache-Control:
+              schema: { type: string }
+              description: public, max-age=3600
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+            image/jpeg:
+              schema: { type: string, format: binary }
+            image/webp:
+              schema: { type: string, format: binary }
+            image/gif:
+              schema: { type: string, format: binary }
+        '404': { $ref: '#/components/responses/Error' }
+  /badges/{id}/purchase:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    post:
+      summary: 购买徽章（登录）
+      description: 在同一事务内校验上架、未拥有、限量库存与金币余额并扣减；已拥有、库存不足、余额不足或已下线返回 40001。成就奖励发放不占用商城库存。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 购买成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /badges/{id}/equip:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    post:
+      summary: 装备徽章（登录）
+      description: 仅能装备已拥有的徽章；已装备时幂等成功。装备上限由 KAPOJ_MAX_EQUIPPED_BADGES 配置（1–10，默认 3），超过上限返回 40001。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 已装备或原本已装备
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /badges/{id}/unequip:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    post:
+      summary: 卸下徽章（登录）
+      description: 未装备时幂等成功；未拥有该徽章返回 40001。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 已卸下或原本未装备
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /users/{id}/badges:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    get:
+      summary: 用户拥有的徽章及装备状态（公开）
+      description: 返回该用户拥有的全部徽章（包括已下线）与装备状态，按 sort_order、id 排序；用户不存在返回 40400。
+      responses:
+        '200':
+          description: 用户徽章列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BadgeListResponse' }
+        '404': { $ref: '#/components/responses/Error' }
+  /titles:
+    get:
+      summary: 称号商店（游客可访问；登录用户含解锁、购买、装备状态与条件进度）
+      description: |
+        登录用户读取时先补算解锁（不扣金币）。已解锁但已下线的称号仍可见，未解锁且已下线的只对管理员可见。
+        includeInactive=true 仅 super_admin 可用，否则返回 40300。列表按 sort_order、id 排序。
+      security: [{}, { bearer: [] }]
+      parameters:
+        - { name: includeInactive, in: query, schema: { type: boolean, default: false }, description: 仅 super_admin 可用；true 时包含全部已下线称号 }
+      responses:
+        '200':
+          description: 称号列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TitleListResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+    post:
+      summary: 创建称号（仅超级管理员）
+      description: 名称 1–100 字；颜色必须为 #RRGGBB；价格 0–1000000；解锁条件必须为正整数阈值、Rating 或符合成就 code 格式的字符串。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TitleInput' }
+      responses:
+        '201':
+          description: 创建成功；不含当前用户的解锁、购买与装备状态
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TitleResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /titles/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    put:
+      summary: 更新称号（仅超级管理员；整体替换）
+      description: isActive 缺省时保持原值。删除为软下线，已解锁/已购买记录保留。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TitleInput' }
+      responses:
+        '200':
+          description: 更新后的称号；不含当前用户的解锁、购买与装备状态
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TitleResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+    delete:
+      summary: 软删除称号（仅超级管理员；保留已解锁与已购买记录）
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 已下线
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /titles/{id}/purchase:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    post:
+      summary: 购买称号（登录）
+      description: 必须已解锁且未购买，并在同一事务内扣除金币、写流水、记录购买时间；未解锁、已购买或余额不足返回 40001。已下线但已解锁的称号仍可购买。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 购买成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /titles/{id}/equip:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    post:
+      summary: 装备称号（登录）
+      description: 必须已购买；同一事务内先卸下该用户全部称号再装备目标称号，重复装备幂等成功。未购买返回 40001。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 已装备或原本已装备
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /titles/{id}/unequip:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    post:
+      summary: 卸下称号（登录）
+      description: 未装备时幂等成功；从未解锁该称号或称号不存在返回 40001。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 已卸下或原本未装备
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
 components:
   securitySchemes:
     bearer:
@@ -876,12 +1172,22 @@ components:
         score: { type: integer }
     ContestRankRow:
       type: object
-      required: [rank, userId, username, nickname, solved, penalty, totalScore, problems]
+      required: [rank, userId, username, nickname, equippedBadges, equippedTitle, solved, penalty, totalScore, problems]
       properties:
         rank: { type: integer }
         userId: { type: integer, format: int64 }
         username: { type: string }
         nickname: { type: string }
+        equippedBadges:
+          type: array
+          description: 已装备徽章，按 sort_order、id 排序；无装备时为空数组
+          items: { $ref: '#/components/schemas/EquippedBadge' }
+        equippedTitle:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/EquippedTitle'
+          description: 已装备称号；无装备时为 null
         solved: { type: integer }
         penalty: { type: integer, description: ICPC 罚时（分钟） }
         totalScore: { type: integer, description: IOI/OI 总分 }
@@ -1070,12 +1376,14 @@ components:
         coins: { type: integer, format: int64 }
         equippedBadges:
           type: array
-          description: M3 上线前恒为空数组
-          items: { type: object }
+          description: 已装备徽章，按 sort_order、id 排序；无装备时为空数组
+          items: { $ref: '#/components/schemas/EquippedBadge' }
         equippedTitle:
           type: object
           nullable: true
-          description: M3 上线前恒为 null
+          allOf:
+            - $ref: '#/components/schemas/EquippedTitle'
+          description: 已装备称号；无装备时为 null
         createdAt: { type: string, format: date-time }
     Session:
       allOf:
@@ -1307,6 +1615,8 @@ components:
         - userId
         - username
         - nickname
+        - equippedBadges
+        - equippedTitle
         - problemId
         - problemTitle
         - problemSlug
@@ -1321,6 +1631,16 @@ components:
         userId: { type: integer, format: int64 }
         username: { type: string }
         nickname: { type: string }
+        equippedBadges:
+          type: array
+          description: 提交者已装备徽章，按 sort_order、id 排序；无装备时为空数组
+          items: { $ref: '#/components/schemas/EquippedBadge' }
+        equippedTitle:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/EquippedTitle'
+          description: 提交者已装备称号；无装备时为 null
         problemId: { type: integer, format: int64 }
         problemTitle: { type: string }
         problemSlug: { type: string }
@@ -1499,11 +1819,11 @@ components:
           description: 固定值 achievement、task、admin_adjust；M3-B 起增加 badge_purchase、title_purchase
         refType:
           type: string
-          description: achievement 或 task；管理员调整时为空字符串
+          description: achievement、task、badge 或 title；管理员调整时为空字符串
         refId:
           type: integer
           format: int64
-          description: 成就或任务 id；管理员调整时为 0
+          description: 对应资源 id；管理员调整时为 0
         note: { type: string, maxLength: 200, description: 管理员调整备注；自动奖励为空字符串 }
         createdAt: { type: string, format: date-time }
     CoinTransactionPage:
@@ -1513,6 +1833,149 @@ components:
         balance: { type: integer, format: int64, description: 当前金币余额，以服务端为准 }
         total: { type: integer, format: int64, description: 流水总条数 }
         items: { type: array, items: { $ref: '#/components/schemas/CoinTransactionItem' } }
+    BadgeInput:
+      type: object
+      required: [name, category]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, maxLength: 500 }
+        imageUrl:
+          type: string
+          maxLength: 512
+          description: http(s) 外链或 /api/badges/<id>/image；留空表示无图片
+        category: { type: string, minLength: 1, maxLength: 20, description: 管理员填写的自由文本分类 }
+        priceCoins: { type: integer, format: int64, minimum: 0, maximum: 1000000 }
+        isLimited: { type: boolean }
+        stock: { type: integer, format: int64, minimum: 0, description: 仅 isLimited=true 时生效；非限量徽章保存为 0 }
+        sortOrder: { type: integer }
+        isActive: { type: boolean, description: 创建时缺省为 true；更新时缺省保持原值 }
+    BadgeItem:
+      type: object
+      required:
+        - id
+        - name
+        - description
+        - imageUrl
+        - category
+        - priceCoins
+        - isLimited
+        - stock
+        - sortOrder
+        - isActive
+        - owned
+        - equipped
+        - purchasedAt
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        description: { type: string }
+        imageUrl: { type: string, description: http(s) 外链、/api/badges/<id>/image 或空字符串 }
+        category: { type: string }
+        priceCoins: { type: integer, format: int64 }
+        isLimited: { type: boolean }
+        stock: { type: integer, format: int64, description: 仅限量徽章有意义；非限量为 0 }
+        sortOrder: { type: integer }
+        isActive: { type: boolean, description: false 表示已下线（软删除） }
+        owned: { type: boolean, description: 当前用户是否已拥有；游客恒为 false }
+        equipped: { type: boolean, description: 当前用户是否已装备；游客恒为 false }
+        purchasedAt: { type: string, format: date-time, nullable: true, description: 未拥有时为 null }
+    TitleUnlockType:
+      type: string
+      description: |
+        称号解锁条件类型：rating 按当前用户 Rating，ac_count 按去重后的 AC 题目数，
+        achievement 按已解锁的成就 code。
+      enum: [rating, ac_count, achievement]
+    TitleUnlockConfig:
+      type: object
+      description: 只提交当前解锁类型使用的字段；服务端保存时会清除其他字段。
+      properties:
+        rating: { type: integer, minimum: 1, description: rating 类型必填，必须为正整数 }
+        threshold: { type: integer, format: int64, minimum: 1, description: ac_count 类型必填，必须为正整数 }
+        achievementCode:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9_-]{1,63}$'
+          description: achievement 类型必填，格式与成就 code 相同
+    TitleProgress:
+      type: object
+      required: [type, current, target, done, achievementCode]
+      properties:
+        type: { $ref: '#/components/schemas/TitleUnlockType' }
+        current: { type: integer, format: int64, description: 当前用户的条件当前值；游客为 0 }
+        target: { type: integer, format: int64, description: 条件目标值 }
+        done: { type: boolean }
+        achievementCode: { type: string, description: achievement 类型的成就 code；其他类型为空字符串 }
+    TitleInput:
+      type: object
+      required: [name, color, unlockConditionType, unlockConditionConfig]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        color: { type: string, pattern: '^#[0-9A-Fa-f]{6}$', description: 称号颜色 }
+        unlockConditionType: { $ref: '#/components/schemas/TitleUnlockType' }
+        unlockConditionConfig: { $ref: '#/components/schemas/TitleUnlockConfig' }
+        priceCoins: { type: integer, format: int64, minimum: 0, maximum: 1000000 }
+        sortOrder: { type: integer }
+        isActive: { type: boolean, description: 创建时缺省为 true；更新时缺省保持原值 }
+    TitleItem:
+      type: object
+      required:
+        - id
+        - name
+        - color
+        - unlockConditionType
+        - unlockConditionConfig
+        - priceCoins
+        - sortOrder
+        - isActive
+        - unlocked
+        - unlockedAt
+        - purchased
+        - purchasedAt
+        - equipped
+        - progress
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        color: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' }
+        unlockConditionType: { $ref: '#/components/schemas/TitleUnlockType' }
+        unlockConditionConfig: { $ref: '#/components/schemas/TitleUnlockConfig' }
+        priceCoins: { type: integer, format: int64 }
+        sortOrder: { type: integer }
+        isActive: { type: boolean, description: false 表示已下线（软删除） }
+        unlocked: { type: boolean, description: 当前用户是否已解锁；游客恒为 false }
+        unlockedAt: { type: string, format: date-time, nullable: true, description: 未解锁时为 null }
+        purchased: { type: boolean }
+        purchasedAt: { type: string, format: date-time, nullable: true, description: 未购买时为 null }
+        equipped: { type: boolean }
+        progress: { $ref: '#/components/schemas/TitleProgress' }
+    EquippedBadge:
+      type: object
+      required: [id, name, imageUrl]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        imageUrl: { type: string, description: http(s) 外链、/api/badges/<id>/image 或空字符串 }
+    EquippedTitle:
+      type: object
+      required: [id, name, color]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        color: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' }
+    PublicIdentity:
+      type: object
+      description: 公开身份结构；Profile、SubmissionListItem、ContestRankRow 的装备字段使用同一形状。
+      required: [equippedBadges, equippedTitle]
+      properties:
+        equippedBadges:
+          type: array
+          description: 已装备徽章，按 sort_order、id 排序；无装备时为空数组
+          items: { $ref: '#/components/schemas/EquippedBadge' }
+        equippedTitle:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/EquippedTitle'
+          description: 已装备称号；无装备时为 null
     AchievementConditionType:
       type: string
       description: 成就条件类型；all_of 组合 2–8 个非 all_of 的子条件，不允许嵌套。
@@ -1576,7 +2039,7 @@ components:
           type: integer
           format: int64
           nullable: true
-          description: M3-A 恒为 null；徽章奖励在 M3-B 开放
+          description: 奖励徽章 id；null 表示未配置。发放时直接写入用户徽章，不占用商城库存
         sortOrder: { type: integer }
         isActive: { type: boolean, description: false 表示已下线（软删除） }
         unlocked: { type: boolean, description: 当前用户是否已解锁；游客恒为 false }
@@ -1601,7 +2064,7 @@ components:
           type: integer
           format: int64
           nullable: true
-          description: M3-A 必须为空；非 null 返回 40001
+          description: 奖励徽章 id；徽章必须存在且上架，否则返回 40001。奖励发放不占用商城库存；更新时 null 表示保持原值
         sortOrder: { type: integer }
         isActive: { type: boolean, description: 创建时缺省为 true；更新时缺省保持原值 }
     TaskStatus:
@@ -1714,3 +2177,35 @@ components:
               required: [balance]
               properties:
                 balance: { type: integer, format: int64, description: 调整后的金币余额 }
+    BadgeListResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items: { $ref: '#/components/schemas/BadgeItem' }
+    BadgeResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/BadgeItem' }
+    TitleListResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items: { $ref: '#/components/schemas/TitleItem' }
+    TitleResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/TitleItem' }

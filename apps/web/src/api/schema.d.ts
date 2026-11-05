@@ -1486,7 +1486,7 @@ export interface paths {
         put?: never;
         /**
          * 创建成就（仅超级管理员）
-         * @description code 必须唯一且符合格式；条件配置非法、奖励金币为负或填写 rewardBadgeId 时返回 40001。
+         * @description code 必须唯一且符合格式；条件配置非法或奖励金币为负时返回 40001。rewardBadgeId 非空时徽章必须存在且上架，否则返回 40001。
          */
         post: {
             parameters: {
@@ -1533,7 +1533,7 @@ export interface paths {
         get?: never;
         /**
          * 更新成就（仅超级管理员；整体替换，code 创建后不可修改）
-         * @description code 留空表示保持原值；尝试修改 code、条件配置非法或填写 rewardBadgeId 时返回 40001。
+         * @description code 留空表示保持原值；尝试修改 code 或条件配置非法时返回 40001。rewardBadgeId 为 null 时保持原奖励徽章不变，非空时徽章必须存在且上架。
          */
         put: {
             parameters: {
@@ -1924,6 +1924,715 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/badges": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 徽章商城（游客可访问；登录用户含拥有与装备状态）
+         * @description 游客只看到上架徽章；登录用户额外看到自己已拥有的下线徽章，并可继续装备或卸下。
+         *     includeInactive=true 仅 super_admin 可用，否则返回 40300。列表按 sort_order、id 排序。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 仅 super_admin 可用；true 时包含全部已下线徽章 */
+                    includeInactive?: boolean;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 徽章列表 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BadgeListResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        /**
+         * 创建徽章（仅超级管理员）
+         * @description 名称 1–100 字、分类 1–20 字；价格 0–1000000；限量库存不能为负。imageUrl 必须为 http(s) 外链或 /api/badges/<id>/image。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["BadgeInput"];
+                };
+            };
+            responses: {
+                /** @description 创建成功；不含当前用户的拥有状态 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BadgeResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/badges/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 更新徽章（仅超级管理员；整体替换）
+         * @description isActive 缺省时保持原值。删除为软下线，已购买用户仍保留并展示。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["BadgeInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的徽章；不含当前用户的拥有状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BadgeResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        /** 软删除徽章（仅超级管理员；保留已购买记录与公开展示） */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已下线 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/badges/{id}/image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * 读取徽章图片（公开）
+         * @description 只返回上传到本地存储的图片；外链、文件缺失或格式非法返回 40400。响应带 Cache-Control public, max-age=3600。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 原始图片，最大 2 MiB */
+                200: {
+                    headers: {
+                        /** @description public, max-age=3600 */
+                        "Cache-Control"?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "image/png": string;
+                        "image/jpeg": string;
+                        "image/webp": string;
+                        "image/gif": string;
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        /**
+         * 上传徽章图片（仅超级管理员；multipart）
+         * @description file 字段支持 PNG、JPEG、WebP、GIF，且不超过 2 MiB；保存为 badges/<id>，
+         *     并把 image_url 写为 /api/badges/<id>/image。缺少文件、格式或大小非法返回 40001。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "multipart/form-data": {
+                        /** Format: binary */
+                        file: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 已上传 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+                413: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/badges/{id}/purchase": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 购买徽章（登录）
+         * @description 在同一事务内校验上架、未拥有、限量库存与金币余额并扣减；已拥有、库存不足、余额不足或已下线返回 40001。成就奖励发放不占用商城库存。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 购买成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/badges/{id}/equip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 装备徽章（登录）
+         * @description 仅能装备已拥有的徽章；已装备时幂等成功。装备上限由 KAPOJ_MAX_EQUIPPED_BADGES 配置（1–10，默认 3），超过上限返回 40001。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已装备或原本已装备 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/badges/{id}/unequip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 卸下徽章（登录）
+         * @description 未装备时幂等成功；未拥有该徽章返回 40001。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已卸下或原本未装备 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{id}/badges": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * 用户拥有的徽章及装备状态（公开）
+         * @description 返回该用户拥有的全部徽章（包括已下线）与装备状态，按 sort_order、id 排序；用户不存在返回 40400。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 用户徽章列表 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BadgeListResponse"];
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/titles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 称号商店（游客可访问；登录用户含解锁、购买、装备状态与条件进度）
+         * @description 登录用户读取时先补算解锁（不扣金币）。已解锁但已下线的称号仍可见，未解锁且已下线的只对管理员可见。
+         *     includeInactive=true 仅 super_admin 可用，否则返回 40300。列表按 sort_order、id 排序。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 仅 super_admin 可用；true 时包含全部已下线称号 */
+                    includeInactive?: boolean;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 称号列表 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TitleListResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        /**
+         * 创建称号（仅超级管理员）
+         * @description 名称 1–100 字；颜色必须为
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["TitleInput"];
+                };
+            };
+            responses: {
+                /** @description 创建成功；不含当前用户的解锁、购买与装备状态 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TitleResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/titles/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 更新称号（仅超级管理员；整体替换）
+         * @description isActive 缺省时保持原值。删除为软下线，已解锁/已购买记录保留。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["TitleInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的称号；不含当前用户的解锁、购买与装备状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TitleResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        /** 软删除称号（仅超级管理员；保留已解锁与已购买记录） */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已下线 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/titles/{id}/purchase": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 购买称号（登录）
+         * @description 必须已解锁且未购买，并在同一事务内扣除金币、写流水、记录购买时间；未解锁、已购买或余额不足返回 40001。已下线但已解锁的称号仍可购买。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 购买成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/titles/{id}/equip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 装备称号（登录）
+         * @description 必须已购买；同一事务内先卸下该用户全部称号再装备目标称号，重复装备幂等成功。未购买返回 40001。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已装备或原本已装备 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/titles/{id}/unequip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 卸下称号（登录）
+         * @description 未装备时幂等成功；从未解锁该称号或称号不存在返回 40001。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已卸下或原本未装备 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1962,6 +2671,10 @@ export interface components {
             userId: number;
             username: string;
             nickname: string;
+            /** @description 已装备徽章，按 sort_order、id 排序；无装备时为空数组 */
+            equippedBadges: components["schemas"]["EquippedBadge"][];
+            /** @description 已装备称号；无装备时为 null */
+            equippedTitle: components["schemas"]["EquippedTitle"] | null;
             solved: number;
             /** @description ICPC 罚时（分钟） */
             penalty: number;
@@ -2130,10 +2843,10 @@ export interface components {
             rating: number;
             /** Format: int64 */
             coins: number;
-            /** @description M3 上线前恒为空数组 */
-            equippedBadges: Record<string, never>[];
-            /** @description M3 上线前恒为 null */
-            equippedTitle: Record<string, never> | null;
+            /** @description 已装备徽章，按 sort_order、id 排序；无装备时为空数组 */
+            equippedBadges: components["schemas"]["EquippedBadge"][];
+            /** @description 已装备称号；无装备时为 null */
+            equippedTitle: components["schemas"]["EquippedTitle"] | null;
             /** Format: date-time */
             createdAt: string;
         };
@@ -2309,6 +3022,10 @@ export interface components {
             userId: number;
             username: string;
             nickname: string;
+            /** @description 提交者已装备徽章，按 sort_order、id 排序；无装备时为空数组 */
+            equippedBadges: components["schemas"]["EquippedBadge"][];
+            /** @description 提交者已装备称号；无装备时为 null */
+            equippedTitle: components["schemas"]["EquippedTitle"] | null;
             /** Format: int64 */
             problemId: number;
             problemTitle: string;
@@ -2413,11 +3130,11 @@ export interface components {
             type: components["schemas"]["CoinType"];
             /** @description 固定值 achievement、task、admin_adjust；M3-B 起增加 badge_purchase、title_purchase */
             reason: string;
-            /** @description achievement 或 task；管理员调整时为空字符串 */
+            /** @description achievement、task、badge 或 title；管理员调整时为空字符串 */
             refType: string;
             /**
              * Format: int64
-             * @description 成就或任务 id；管理员调整时为 0
+             * @description 对应资源 id；管理员调整时为 0
              */
             refId: number;
             /** @description 管理员调整备注；自动奖励为空字符串 */
@@ -2437,6 +3154,148 @@ export interface components {
              */
             total: number;
             items: components["schemas"]["CoinTransactionItem"][];
+        };
+        BadgeInput: {
+            name: string;
+            description?: string;
+            /** @description http(s) 外链或 /api/badges/<id>/image；留空表示无图片 */
+            imageUrl?: string;
+            /** @description 管理员填写的自由文本分类 */
+            category: string;
+            /** Format: int64 */
+            priceCoins?: number;
+            isLimited?: boolean;
+            /**
+             * Format: int64
+             * @description 仅 isLimited=true 时生效；非限量徽章保存为 0
+             */
+            stock?: number;
+            sortOrder?: number;
+            /** @description 创建时缺省为 true；更新时缺省保持原值 */
+            isActive?: boolean;
+        };
+        BadgeItem: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            description: string;
+            /** @description http(s) 外链、/api/badges/<id>/image 或空字符串 */
+            imageUrl: string;
+            category: string;
+            /** Format: int64 */
+            priceCoins: number;
+            isLimited: boolean;
+            /**
+             * Format: int64
+             * @description 仅限量徽章有意义；非限量为 0
+             */
+            stock: number;
+            sortOrder: number;
+            /** @description false 表示已下线（软删除） */
+            isActive: boolean;
+            /** @description 当前用户是否已拥有；游客恒为 false */
+            owned: boolean;
+            /** @description 当前用户是否已装备；游客恒为 false */
+            equipped: boolean;
+            /**
+             * Format: date-time
+             * @description 未拥有时为 null
+             */
+            purchasedAt: string | null;
+        };
+        /**
+         * @description 称号解锁条件类型：rating 按当前用户 Rating，ac_count 按去重后的 AC 题目数，
+         *     achievement 按已解锁的成就 code。
+         * @enum {string}
+         */
+        TitleUnlockType: "rating" | "ac_count" | "achievement";
+        /** @description 只提交当前解锁类型使用的字段；服务端保存时会清除其他字段。 */
+        TitleUnlockConfig: {
+            /** @description rating 类型必填，必须为正整数 */
+            rating?: number;
+            /**
+             * Format: int64
+             * @description ac_count 类型必填，必须为正整数
+             */
+            threshold?: number;
+            /** @description achievement 类型必填，格式与成就 code 相同 */
+            achievementCode?: string;
+        };
+        TitleProgress: {
+            type: components["schemas"]["TitleUnlockType"];
+            /**
+             * Format: int64
+             * @description 当前用户的条件当前值；游客为 0
+             */
+            current: number;
+            /**
+             * Format: int64
+             * @description 条件目标值
+             */
+            target: number;
+            done: boolean;
+            /** @description achievement 类型的成就 code；其他类型为空字符串 */
+            achievementCode: string;
+        };
+        TitleInput: {
+            name: string;
+            /** @description 称号颜色 */
+            color: string;
+            unlockConditionType: components["schemas"]["TitleUnlockType"];
+            unlockConditionConfig: components["schemas"]["TitleUnlockConfig"];
+            /** Format: int64 */
+            priceCoins?: number;
+            sortOrder?: number;
+            /** @description 创建时缺省为 true；更新时缺省保持原值 */
+            isActive?: boolean;
+        };
+        TitleItem: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            color: string;
+            unlockConditionType: components["schemas"]["TitleUnlockType"];
+            unlockConditionConfig: components["schemas"]["TitleUnlockConfig"];
+            /** Format: int64 */
+            priceCoins: number;
+            sortOrder: number;
+            /** @description false 表示已下线（软删除） */
+            isActive: boolean;
+            /** @description 当前用户是否已解锁；游客恒为 false */
+            unlocked: boolean;
+            /**
+             * Format: date-time
+             * @description 未解锁时为 null
+             */
+            unlockedAt: string | null;
+            purchased: boolean;
+            /**
+             * Format: date-time
+             * @description 未购买时为 null
+             */
+            purchasedAt: string | null;
+            equipped: boolean;
+            progress: components["schemas"]["TitleProgress"];
+        };
+        EquippedBadge: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            /** @description http(s) 外链、/api/badges/<id>/image 或空字符串 */
+            imageUrl: string;
+        };
+        EquippedTitle: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            color: string;
+        };
+        /** @description 公开身份结构；Profile、SubmissionListItem、ContestRankRow 的装备字段使用同一形状。 */
+        PublicIdentity: {
+            /** @description 已装备徽章，按 sort_order、id 排序；无装备时为空数组 */
+            equippedBadges: components["schemas"]["EquippedBadge"][];
+            /** @description 已装备称号；无装备时为 null */
+            equippedTitle: components["schemas"]["EquippedTitle"] | null;
         };
         /**
          * @description 成就条件类型；all_of 组合 2–8 个非 all_of 的子条件，不允许嵌套。
@@ -2484,7 +3343,7 @@ export interface components {
             rewardCoins: number;
             /**
              * Format: int64
-             * @description M3-A 恒为 null；徽章奖励在 M3-B 开放
+             * @description 奖励徽章 id；null 表示未配置。发放时直接写入用户徽章，不占用商城库存
              */
             rewardBadgeId: number | null;
             sortOrder: number;
@@ -2512,7 +3371,7 @@ export interface components {
             rewardCoins?: number;
             /**
              * Format: int64
-             * @description M3-A 必须为空；非 null 返回 40001
+             * @description 奖励徽章 id；徽章必须存在且上架，否则返回 40001。奖励发放不占用商城库存；更新时 null 表示保持原值
              */
             rewardBadgeId?: number | null;
             sortOrder?: number;
@@ -2603,6 +3462,18 @@ export interface components {
                  */
                 balance: number;
             };
+        };
+        BadgeListResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["BadgeItem"][];
+        };
+        BadgeResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["BadgeItem"];
+        };
+        TitleListResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["TitleItem"][];
+        };
+        TitleResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["TitleItem"];
         };
     };
     responses: {
