@@ -64,6 +64,7 @@ func (r *Repository) UpdateTaskLocked(
 		if err := tx.Save(&task).Error; err != nil {
 			return err
 		}
+		task.HasRecords = hasRecords
 		result = &task
 		return nil
 	})
@@ -93,6 +94,21 @@ func taskHasRecords(db *gorm.DB, taskID int64) (bool, error) {
 		return false, err
 	}
 	return count > 0, nil
+}
+
+// TaskIDsWithRecords 一次查询返回所有存在领取记录的任务 id，供管理员列表
+// 填充 hasRecords，避免逐任务查询。
+func (r *Repository) TaskIDsWithRecords(ctx context.Context) (map[int64]struct{}, error) {
+	var ids []int64
+	if err := r.db.WithContext(ctx).Model(&UserTaskRecord{}).
+		Distinct().Pluck("task_id", &ids).Error; err != nil {
+		return nil, err
+	}
+	result := make(map[int64]struct{}, len(ids))
+	for _, id := range ids {
+		result[id] = struct{}{}
+	}
+	return result, nil
 }
 
 // CountPublicProblems 统计给定题目中公开存在的数量，用于校验任务题目。

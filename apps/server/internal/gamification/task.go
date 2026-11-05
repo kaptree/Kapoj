@@ -51,6 +51,8 @@ type TaskItem struct {
 	CompletedAt   *time.Time `json:"completedAt"`
 	Progress      int64      `json:"progress"`
 	ProblemCount  int        `json:"problemCount"`
+	// HasRecords 仅对管理员返回，表示任务是否已有任意领取记录；用于冻结题目与奖励。
+	HasRecords bool `json:"hasRecords"`
 }
 
 // TaskItemFromModel 将存储层任务转换为 API 表示；用于创建/更新响应，
@@ -81,9 +83,19 @@ func (s *Service) ListTasks(ctx context.Context, v Viewer, includeInactive bool)
 			return nil, err
 		}
 	}
+	hasRecords := map[int64]struct{}{}
+	if v.IsAdmin {
+		hasRecords, err = s.repo.TaskIDsWithRecords(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
 	now := time.Now()
 	items := make([]TaskItem, 0, len(tasks))
 	for _, task := range tasks {
+		if v.IsAdmin {
+			_, task.HasRecords = hasRecords[task.ID]
+		}
 		record, claimed := records[task.ID]
 		openToGuests := task.IsActive && now.Before(task.EndTime)
 		if !includeInactive && !claimed && !openToGuests {
@@ -275,6 +287,7 @@ func baseTaskItem(task Task, record *UserTaskRecord, now time.Time) TaskItem {
 		IsActive:      task.IsActive,
 		Status:        taskStatus(task, record, now),
 		ProblemCount:  len(task.ProblemIDs),
+		HasRecords:    task.HasRecords,
 	}
 	if record != nil {
 		claimedAt := record.ClaimedAt.UTC()

@@ -3455,6 +3455,8 @@ export interface components {
             progress: number;
             /** @description 任务题目总数 */
             problemCount: number;
+            /** @description 仅管理员可见；true 表示已有任意用户领取记录，题目与奖励已冻结 */
+            hasRecords: boolean;
         };
         /** @description 创建与更新均为整体替换；已有领取记录后 problemIds 与 rewardCoins 被冻结，修改返回 40001。 */
         TaskInput: {

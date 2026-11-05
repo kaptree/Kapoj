@@ -110,6 +110,18 @@ func TestTaskClaimAndAutoComplete(t *testing.T) {
 	assert.EqualValues(t, 0, item.Progress)
 	assert.EqualValues(t, 2, item.ProblemCount)
 	require.NotNil(t, item.ClaimedAt)
+	assert.False(t, task.HasRecords, "创建任务时没有领取记录")
+
+	// 管理员列表能看到领取记录标记；普通用户与游客固定为 false。
+	adminItems, err := e.svc.ListTasks(ctx, adminViewer(e.user.ID), true)
+	require.NoError(t, err)
+	assert.True(t, findTask(t, adminItems, task.ID).HasRecords)
+	userItems, err := e.svc.ListTasks(ctx, gamification.Viewer{UserID: e.user.ID}, false)
+	require.NoError(t, err)
+	assert.False(t, findTask(t, userItems, task.ID).HasRecords)
+	guestItems, err := e.svc.ListTasks(ctx, gamification.Viewer{}, false)
+	require.NoError(t, err)
+	assert.False(t, findTask(t, guestItems, task.ID).HasRecords)
 
 	again := e.claim(t, task.ID)
 	assert.Equal(t, *item.ClaimedAt, *again.ClaimedAt, "重复领取应幂等返回原记录")
@@ -244,6 +256,7 @@ func TestTaskFreezeAfterClaim(t *testing.T) {
 	assert.Equal(t, "改名后的任务", updated.Title)
 	assert.Equal(t, "新的描述", updated.DescriptionMD)
 	assert.WithinDuration(t, now.Add(2*time.Hour), updated.EndTime, time.Second)
+	assert.True(t, updated.HasRecords, "已有领取记录的任务更新响应应带 hasRecords")
 
 	// 尚无领取记录时可以修改题目与奖励。
 	open := e.createTask(t, taskInput("未领取任务", []int64{p1.ID}, 10,
@@ -254,6 +267,7 @@ func TestTaskFreezeAfterClaim(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []int64{p2.ID, p3.ID}, []int64(changedTask.ProblemIDs))
 	assert.EqualValues(t, 20, changedTask.RewardCoins)
+	assert.False(t, changedTask.HasRecords, "未领取任务不应标记 hasRecords")
 }
 
 func TestInactiveClaimedTaskStillCompletes(t *testing.T) {

@@ -2115,6 +2115,7 @@ components:
         - completedAt
         - progress
         - problemCount
+        - hasRecords
       properties:
         id: { type: integer, format: int64 }
         title: { type: string }
@@ -2129,6 +2130,9 @@ components:
         completedAt: { type: string, format: date-time, nullable: true }
         progress: { type: integer, format: int64, description: 已领取后、截止前去重 AC 的题目数 }
         problemCount: { type: integer, description: 任务题目总数 }
+        hasRecords:
+          type: boolean
+          description: 仅管理员可见；true 表示已有任意用户领取记录，题目与奖励已冻结
     TaskInput:
       type: object
       description: 创建与更新均为整体替换；已有领取记录后 problemIds 与 rewardCoins 被冻结，修改返回 40001。

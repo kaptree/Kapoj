@@ -318,6 +318,7 @@ func TestTaskAPI(t *testing.T) {
 	assert.Equal(t, "active", task["status"])
 	assert.EqualValues(t, 2, task["problemCount"])
 	assert.EqualValues(t, 0, task["progress"])
+	assert.Equal(t, false, task["hasRecords"])
 	assert.Nil(t, task["claimedAt"])
 	taskPath := fmt.Sprintf("/api/tasks/%d", taskID)
 
@@ -358,6 +359,21 @@ func TestTaskAPI(t *testing.T) {
 	items = itemsOf(t, resp)
 	require.Len(t, items, 1)
 	assert.Equal(t, "claimed", items[0].(map[string]any)["status"])
+	assert.Equal(t, false, items[0].(map[string]any)["hasRecords"], "普通用户不应看到领取记录标记")
+
+	// 管理员列表能看到该任务已有领取记录；游客固定为 false。
+	w, resp = f.do(http.MethodGet, "/api/tasks?includeInactive=true", adminToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	adminItems, ok := resp["data"].([]any)
+	require.True(t, ok)
+	require.Len(t, adminItems, 1)
+	assert.Equal(t, true, adminItems[0].(map[string]any)["hasRecords"])
+
+	w, resp = f.do(http.MethodGet, "/api/tasks", "", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	guestItems := itemsOf(t, resp)
+	require.Len(t, guestItems, 1)
+	assert.Equal(t, false, guestItems[0].(map[string]any)["hasRecords"])
 
 	// 已有领取记录后冻结题目与奖励。
 	frozenProblems := taskBody("API 任务", []int64{p1.ID}, 80, now.Add(-time.Hour), now.Add(time.Hour))
@@ -376,6 +392,7 @@ func TestTaskAPI(t *testing.T) {
 	w, resp = f.do(http.MethodPut, taskPath, adminToken, editable)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	assert.Equal(t, "改名后的 API 任务", resp["data"].(map[string]any)["title"])
+	assert.Equal(t, true, resp["data"].(map[string]any)["hasRecords"])
 
 	// 领取后 AC 全部题目，读取任务大厅时自动完成并发奖。judged_at 必须晚于
 	// 服务端实际写入的 claimed_at，因此从响应解析而不是使用本地 now。

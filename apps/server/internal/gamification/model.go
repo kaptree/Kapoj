@@ -66,6 +66,8 @@ type Task struct {
 	CreatedBy     int64               `gorm:"not null;default:0"`
 	CreatedAt     time.Time           `gorm:"type:timestamptz;not null"`
 	UpdatedAt     time.Time           `gorm:"type:timestamptz;not null"`
+	// HasRecords 只在管理员列表/更新响应中携带，不落库。
+	HasRecords bool `gorm:"-" json:"-"`
 }
 
 // TaskRecordStatus 是用户任务记录的持久化状态；expired 等展示状态不落库。

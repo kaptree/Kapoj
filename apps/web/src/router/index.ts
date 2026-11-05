@@ -137,6 +137,12 @@ export const router = createRouter({
           meta: { requiresAuth: true, title: '装扮管理' },
         },
         {
+          path: 'admin/gamification',
+          name: 'gamification-admin',
+          component: () => import('@/views/GamificationAdminView.vue'),
+          meta: { requiresAuth: true, roles: ['super_admin'], title: '游戏化管理' },
+        },
+        {
           path: 'forbidden',
           name: 'forbidden',
           component: () => import('@/views/ForbiddenView.vue'),
