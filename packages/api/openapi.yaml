@@ -1285,9 +1285,9 @@ paths:
       description: >-
         只有作者或管理员可以编辑；官方路线仅题目管理员/超级管理员可编辑，已下架路线仅管理员可编辑/恢复。
         标题、描述、封面与 `sortOrder` 为整体替换（未提交的 `sortOrder` 变为 0）；
-        `isOfficial`/`isPublic`/`isActive` 未提交时保持原值。非管理员不能改变 `isOfficial`/`isActive`
-        （提交不同值返回 40300），也不能把自定义路线改为官方。官方路线强制公开。
-        公开自定义路线或恢复上架/官方路线前会校验节点引用的题目仍存在且公开，否则返回 40001。
+        `isPublic`/`isActive` 未提交时保持原值。`isOfficial` 仅可在创建时由管理员设置，创建后不可修改：
+        管理员提交不同值返回 40001（不能把自定义路线提升为官方或取消官方标记），非管理员提交不同值返回 40300。
+        官方路线强制公开。公开自定义路线或恢复上架前会校验节点引用的题目仍存在且公开，否则返回 40001。
       security: [{ bearer: [] }]
       requestBody:
         required: true
@@ -1329,8 +1329,9 @@ paths:
         返回路线元信息、节点层级、节点题目摘要与当前用户进度。可见性与路线详情一致：
         私有路线仅作者/管理员可见，已下架路线仅管理员可见，否则返回 40400。
         节点只返回公开题目的 `problemId/title/slug/difficulty`，不返回题解。
-        当前为 M4-2A 临时状态：根节点 `active`、其余节点 `locked`、`solvedCount=0`；
-        M4-2B 将替换为基于 AC 的服务端进度与完成锁存。
+        公开树对非作者/非管理员仅返回公开题目 id；作者与管理员保留完整存储列表
+        （含已下线/缺失题目）用于编辑。当前为 M4-2A 临时状态：根节点 `active`、其余节点 `locked`、
+        `solvedCount=0`；M4-2B 将替换为基于 AC 的服务端进度与完成锁存。
       security: [{}, { bearer: [] }]
       responses:
         '200':
@@ -2714,14 +2715,15 @@ components:
       type: object
       description: >-
         创建/更新学习路线的可编辑字段。创建时未提交的 `isPublic` 默认 false、
-        `isActive` 默认 true；更新时未提交的 `isOfficial`/`isPublic`/`isActive` 保持原值。
+        `isActive` 默认 true；更新时未提交的 `isPublic`/`isActive` 保持原值。
+        `isOfficial` 仅创建时由管理员设置，创建后不可修改（更新提交不同值返回 40001）。
         普通用户不能创建/编辑官方路线，也不能改变上下架状态。
       required: [title]
       properties:
         title: { type: string, minLength: 1, maxLength: 100, description: trim 后 1–100 个字符 }
         descriptionMd: { type: string, maxLength: 50000 }
         coverUrl: { type: string, maxLength: 512, description: 仅 http/https 链接；空字符串表示无封面 }
-        isOfficial: { type: boolean, description: 仅管理员可设置；设为 true 时强制公开 }
+        isOfficial: { type: boolean, description: 仅创建时管理员可设置；创建后不可修改；设为 true 时强制公开 }
         isPublic: { type: boolean, description: 公开后出现在路线列表，其他用户可查看树；个人进度挑战待 M4-2B 实现 }
         isActive: { type: boolean, description: 创建/更新时仅管理员可设置；false 为软删除，true 为恢复上架 }
         sortOrder: { type: integer }
@@ -2764,7 +2766,9 @@ components:
         descriptionMd: { type: string }
         problemIds:
           type: array
-          description: 节点引用的全部题目 id，按节点配置顺序
+          description: >-
+            节点引用的题目 id，按节点配置顺序；公开树对非作者/非管理员仅返回公开题目 id，
+            作者/管理员返回完整存储列表（含已下线/缺失题目）
           items: { type: integer, format: int64 }
         problems:
           type: array

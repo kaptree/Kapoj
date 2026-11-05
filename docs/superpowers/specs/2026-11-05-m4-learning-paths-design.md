@@ -33,6 +33,7 @@
 - `isActive` 仅管理员可在更新时设置；非管理员提交的 `isActive` 被忽略/拒绝。`PUT` 时未提交的 `isActive`/`isOfficial` 保持原值。
 - 官方路线 `isOfficial=true` 强制 `isPublic=true`；作者不能把自己的自定义路线改为官方。
 - 自定义路线不能标记 `is_official=true`；官方标记仅管理员创建官方路线时使用。
+- `isOfficial` 创建后不可修改：管理员也不能把已有自定义路线提升为官方或取消官方标记，更新提交不同值返回 40001“不能修改路线官方标记”。
 
 ### 3.2 官方路线
 
@@ -114,7 +115,7 @@ user_learning_progress (
 | GET | `/api/learning-paths` | 公开（可选登录） | 官方 + 公开自定义 + 自己创建的私有；`mine=true` 只看自己；`includeInactive=true` 仅管理员 |
 | GET | `/api/learning-paths/:id/tree` | 公开（可选登录） | 树 + 题目 + 当前用户进度；私有路线仅作者/管理员 |
 | POST | `/api/learning-paths` | 登录 | 自定义默认私有；管理员可创建官方 |
-| PUT | `/api/learning-paths/:id` | 作者/管理员 | 官方字段仅管理员；普通用户不能设置 `isOfficial` |
+| PUT | `/api/learning-paths/:id` | 作者/管理员 | `isOfficial` 仅创建时管理员可设、创建后不可修改；普通用户不能设置 |
 | DELETE | `/api/learning-paths/:id` | 作者/管理员 | 软删除 |
 | POST | `/api/learning-paths/:id/nodes` | 作者/管理员 | 创建节点 |
 | PUT | `/api/learning-paths/:id/nodes/:nodeId` | 作者/管理员 | 更新节点（含 parent/sort/required） |
@@ -164,6 +165,7 @@ Tree：
 - 游客 `solvedCount=0`、根 `active`、其余 `locked`。
 - 私有路线对非作者/非管理员返回 40400。
 - 题目只返回 `problemId/title/slug/difficulty`，不返回题解。
+- 公开树的 `problemIds` 对非作者/非管理员只包含公开题目 id；作者/管理员保留完整存储列表（含已下线/缺失题目）用于编辑。
 - 作者/管理员返回 `isActive`、创建者信息；公开列表可不返回敏感字段。
 
 ## 6. 进度计算与事件

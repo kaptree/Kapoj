@@ -294,15 +294,32 @@ func TestPathValidation(t *testing.T) {
 	assert.True(t, inactive.IsPublic)
 	assert.False(t, inactive.IsActive)
 
-	// 管理员可以提升自定义路线为官方，并强制公开。
+	// 官方标记创建后不可修改：管理员不能把自定义路线提升为官方。
 	_, err = e.svc.UpdatePath(ctx, adminView, public.ID, learning.PathInput{
 		Title: "公开路线2", IsOfficial: boolPtr(true), IsPublic: boolPtr(false),
 	})
-	require.NoError(t, err)
+	appErr := requireAppError(t, err, 400, 40001)
+	assert.Equal(t, "不能修改路线官方标记", appErr.Message)
 	var stored learning.LearningPath
 	require.NoError(t, e.db.First(&stored, public.ID).Error)
-	assert.True(t, stored.IsOfficial)
+	assert.False(t, stored.IsOfficial, "提升失败后保持自定义路线")
 	assert.True(t, stored.IsPublic)
+
+	// 管理员仍然可以编辑官方路线的其他字段，但不能取消官方标记。
+	updated, err = e.svc.UpdatePath(ctx, adminView, inactive.ID, learning.PathInput{
+		Title: "管理员改官方路线",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "管理员改官方路线", updated.Title)
+	assert.True(t, updated.IsOfficial)
+	_, err = e.svc.UpdatePath(ctx, adminView, inactive.ID, learning.PathInput{
+		Title: "管理员改官方路线", IsOfficial: boolPtr(false),
+	})
+	appErr = requireAppError(t, err, 400, 40001)
+	assert.Equal(t, "不能修改路线官方标记", appErr.Message)
+	stored = learning.LearningPath{}
+	require.NoError(t, e.db.First(&stored, inactive.ID).Error)
+	assert.True(t, stored.IsOfficial, "官方标记不能被取消")
 }
 
 func TestPublicizeAndRestoreValidateProblems(t *testing.T) {

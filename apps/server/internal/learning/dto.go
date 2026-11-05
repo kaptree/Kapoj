@@ -64,7 +64,8 @@ type ProblemSummary struct {
 }
 
 // NodeItem 是学习路线树中的一个节点。Problems 只包含公开题目的摘要；
-// ProblemIDs 保留节点引用的全部题目顺序。
+// 公开树对非作者/非管理员只返回公开题目的 ProblemIDs，作者/管理员保留
+// 节点引用的全部题目顺序（含已下线/缺失题目）供编辑。
 type NodeItem struct {
 	ID            int64            `json:"id"`
 	ParentID      *int64           `json:"parentId"`

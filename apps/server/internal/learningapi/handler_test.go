@@ -273,6 +273,11 @@ func TestLearningPathAPIOfficialPermissions(t *testing.T) {
 	assert.Equal(t, true, updated["isPublic"])
 	assert.Equal(t, true, updated["isActive"])
 
+	w, resp = f.do(http.MethodPut, pathURL, adminToken,
+		map[string]any{"title": "官方路线2", "isOfficial": false})
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	requireCode(t, resp, 40001)
+
 	w, resp = f.do(http.MethodPut, pathURL, authorToken, map[string]any{"title": "篡改官方"})
 	assert.Equal(t, http.StatusNotFound, w.Code)
 	requireCode(t, resp, 40400)

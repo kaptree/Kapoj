@@ -410,7 +410,7 @@ user_learning_progress (
 ```
 
 - `is_active=false` 为软删除（下架），路线、节点与用户进度都保留；只有管理员可通过 `includeInactive=true` 查看并恢复。
-- `is_official=true` 强制 `is_public=true`；官方标记与上下架状态仅管理员可设置。
+- `is_official=true` 强制 `is_public=true`；官方标记仅创建时由管理员设置、创建后不可修改，上下架状态仅管理员可设置。
 - 节点校验：父节点属于同一路线、不能成环、最大深度 8 层；题目 1–50 道、不重复且存在/公开；`required_count` 为 1–题目数；仅叶子节点可删除。
 - **M4-2A 已完成**：模型/迁移、官方/自定义权限、路线与节点 CRUD、树结构接口。**M4-2B 待办**：服务端进度计算、AC 事件、完成锁存与题目下线守卫；**M4-2C 待办**：前端列表/树/编辑/管理页。
 
@@ -729,7 +729,7 @@ user_ai_configs (
 
 - 节点模型：`learning_path_nodes` 支持 `parent_id` 自关联，形成树；父节点必须属于同一路线，不允许自环/成环，最大深度 8 层。
 - 可见性：官方与公开自定义路线对所有人可见；私有自定义路线仅作者与管理员可见；`is_active=false`（软删除）路线仅管理员可见/恢复。无权限与不存在统一返回 40400。
-- 权限：创建路线需登录；编辑/删除路线与节点仅作者或管理员；官方路线仅管理员可写。`is_official`/`is_active` 仅管理员可设置，`is_official=true` 强制公开。
+- 权限：创建路线需登录；编辑/删除路线与节点仅作者或管理员；官方路线仅管理员可写。`is_official` 仅创建时由管理员设置、创建后不可修改（管理员也不能提升自定义路线为官方），`is_active` 仅管理员可设置，`is_official=true` 强制公开。
 - 节点内容：题目 1–50 道、不重复且必须存在/公开；`required_count` 为 1–题目数，默认题目数；仅叶子节点可删除，有子节点返回 40001。
 - 解锁规则：节点只有在父节点完成后才可挑战；节点完成 = 通过其 `required_count` 道题（默认为节点内全部题目）。根节点默认解锁。进度由服务端根据 AC 计算，不接受客户端上报。
 - 前端用 PrimeVue 4 `TreeTable` 或自定义树形组件可视化。结构是树而非 DAG，每个节点只有一个父节点。
@@ -738,7 +738,7 @@ user_ai_configs (
 
 - 已完成 `learning_paths`、`learning_path_nodes`、`user_learning_progress` 模型/迁移与 OpenAPI/前端类型。
 - 已交付官方/自定义权限、私有/公开/下架可见性、路线 CRUD、软删除/恢复校验、节点 CRUD、父节点/环/深度/题目/`required_count` 校验与叶子删除限制。
-- `GET /api/learning-paths/:id/tree` 当前仅返回结构状态：根节点 `active`、其余 `locked`、`solvedCount=0`；真实进度在 M4-2B 实现。
+- `GET /api/learning-paths/:id/tree` 当前仅返回结构状态：根节点 `active`、其余 `locked`、`solvedCount=0`；真实进度在 M4-2B 实现。公开树对非作者/非管理员只返回公开题目的 `problemIds`，作者/管理员保留完整存储列表供编辑。
 - M4-2B 待办：`EvaluateUser`、AC 事件补算、完成锁存与题目 `LearningGuard`。M4-2C 待办：前端列表/树/编辑/管理页。当前不计算 `myCompletedCount`。
 
 **Codex 提示词（学习路线）**

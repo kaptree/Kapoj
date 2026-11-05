@@ -89,6 +89,11 @@ func (s *Service) UpdatePath(ctx context.Context, v Viewer, id int64, in PathInp
 			return nil, httpx.ErrForbidden
 		}
 	}
+	// 官方标记仅用于创建时区分官方/自定义路线，创建后不可修改；管理员
+	// 也不能把自定义路线提升为官方，或取消已有官方标记。
+	if in.IsOfficial != nil && *in.IsOfficial != p.IsOfficial {
+		return nil, httpx.ErrValidation("不能修改路线官方标记")
+	}
 
 	// 公开或恢复上架前必须确认真实数据库中的节点题目仍然存在且公开。
 	needValidation := in.IsPublic != nil && *in.IsPublic

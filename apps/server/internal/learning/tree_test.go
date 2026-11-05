@@ -47,7 +47,7 @@ func TestTreeStructureAndGuestStatus(t *testing.T) {
 		Title: "子B", ParentID: &rootB.ID, ProblemIDs: []int64{pubA.ID},
 	})
 
-	// 绕过服务写入孤儿节点和已下架题目引用，验证树构建的防御行为。
+	// 绕过服务写入孤儿节点、已下架题目引用与不存在的题目 id，验证树构建的防御行为。
 	orphan := &learning.LearningPathNode{
 		PathID: path.ID, ParentID: nodePtr(999999), Title: "孤儿",
 		ProblemIDs: dbtypes.List[int64]{pubA.ID}, RequiredCount: 1,
@@ -55,6 +55,8 @@ func TestTreeStructureAndGuestStatus(t *testing.T) {
 	require.NoError(t, e.db.Create(orphan).Error)
 	require.NoError(t, e.db.Model(&problem.Problem{}).Where("id = ?", willHide.ID).
 		Update("is_public", false).Error)
+	require.NoError(t, e.db.Model(&learning.LearningPathNode{}).Where("id = ?", childA1.ID).
+		Update("problem_ids_json", dbtypes.List[int64]{willHide.ID, 999999}).Error)
 
 	// 本阶段即使有已完成进度也保持游客态。
 	require.NoError(t, e.db.Create(&learning.UserLearningProgress{
@@ -62,7 +64,7 @@ func TestTreeStructureAndGuestStatus(t *testing.T) {
 		Status: learning.ProgressCompleted, SolvedCount: 5, UpdatedAt: time.Now(),
 	}).Error)
 
-	check := func(t *testing.T, v learning.Viewer) {
+	check := func(t *testing.T, v learning.Viewer, fullProblemIDs bool) {
 		t.Helper()
 		tree, err := e.svc.Tree(ctx, v, path.ID)
 		require.NoError(t, err)
@@ -96,18 +98,26 @@ func TestTreeStructureAndGuestStatus(t *testing.T) {
 		assert.Empty(t, tree.Nodes[2].Children)
 
 		require.Len(t, tree.Nodes[0].Problems, 1)
+		assert.Equal(t, []int64{pubA.ID}, tree.Nodes[0].ProblemIDs, "公开题目 id 对所有查看者可见")
 		assert.Equal(t, learning.ProblemSummary{
 			ProblemID: pubA.ID, Title: "题目-tree-pub-a", Slug: "tree-pub-a", Difficulty: 1,
 		}, tree.Nodes[0].Problems[0])
 
 		hiddenNode := tree.Nodes[0].Children[0]
-		assert.Equal(t, []int64{willHide.ID}, hiddenNode.ProblemIDs,
-			"隐藏题仍保留在 problemIds，但不返回题目摘要")
-		assert.Empty(t, hiddenNode.Problems)
+		assert.Empty(t, hiddenNode.Problems, "只返回公开题目摘要")
+		if fullProblemIDs {
+			assert.Equal(t, []int64{willHide.ID, 999999}, hiddenNode.ProblemIDs,
+				"作者/管理员保留完整存储的题目 id 供编辑")
+		} else {
+			assert.Empty(t, hiddenNode.ProblemIDs,
+				"游客/其他用户只看到公开题目 id，不泄露已下线或缺失题目")
+		}
 	}
 
-	check(t, learning.Viewer{})
-	check(t, authorView)
+	check(t, learning.Viewer{}, false)
+	check(t, viewerFor(e.other), false)
+	check(t, authorView, true)
+	check(t, viewerFor(e.admin), true)
 }
 
 func TestTreePermissions(t *testing.T) {
