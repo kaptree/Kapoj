@@ -18,6 +18,7 @@ const displayName = computed(() => props.name.trim() || '?')
 const parts = computed(() => splitBlackRedName(displayName.value))
 const blackRed = computed(() => isBlackRed(props.level))
 const levelStyle = computed(() => ratingLevelStyle(props.level))
+const accessibleName = computed(() => `${displayName.value}（${props.level.name}）`)
 const firstStyle = computed(() => ({ color: props.level.color }))
 const restStyle = computed(() => ({
   color: props.level.accentColor || BLACK_RED_ACCENT_COLOR,
@@ -29,8 +30,8 @@ const restStyle = computed(() => ({
     class="rating-level-name"
     :class="{ 'rating-level-name--black-red': blackRed }"
     :style="levelStyle"
-    :title="level.name"
-    :aria-label="level.name"
+    :title="accessibleName"
+    :aria-label="accessibleName"
   >
     <template v-if="blackRed">
       <span class="rating-level-name__first" :style="firstStyle">{{ parts.first }}</span>

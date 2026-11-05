@@ -153,6 +153,19 @@ function formatScore(kind: TabKey, score: number): string {
   return kind === 'rating' ? String(score) : score.toLocaleString('zh-CN')
 }
 
+// Server colors go through style bindings only; the level name itself stays
+// in the normal text color so it is readable with or without color.
+function levelBadgeStyle(level: RatingLevel): Record<string, string> {
+  return { borderColor: level.accentColor || level.color }
+}
+
+function levelDotStyle(level: RatingLevel): Record<string, string> {
+  return {
+    backgroundColor: level.color,
+    borderColor: level.accentColor || level.color,
+  }
+}
+
 async function loadSummary() {
   if (!auth.isLoggedIn) {
     summarySeq += 1
@@ -248,9 +261,14 @@ watch(
                   <p class="signin-title">登录后签到领金币</p>
                   <p class="signin-hint">每日签到可获得 5 活跃度与 5 金币。</p>
                 </div>
-                <RouterLink :to="loginTarget">
-                  <Button label="登录 / 注册" icon="pi pi-sign-in" size="small" outlined />
-                </RouterLink>
+                <Button
+                  as="router-link"
+                  :to="loginTarget"
+                  label="登录 / 注册"
+                  icon="pi pi-sign-in"
+                  size="small"
+                  outlined
+                />
               </template>
 
               <AppLoadingState
@@ -314,7 +332,12 @@ watch(
               />
 
               <template v-else>
-                <div class="table-scroll">
+                <div
+                  class="table-scroll"
+                  tabindex="0"
+                  role="region"
+                  aria-label="排行榜表格，可横向滚动"
+                >
                   <DataTable
                     :value="stateOf(tab.key).rows"
                     :loading="stateOf(tab.key).loading"
@@ -337,8 +360,14 @@ watch(
                           <RouterLink
                             :to="{ name: 'user-profile', params: { id: data.userId } }"
                             class="user-link"
+                            :class="{ 'user-link--rating': tab.key === 'rating' }"
                           >
-                            {{ data.nickname || data.username }}
+                            <RatingLevelName
+                              v-if="tab.key === 'rating' && data.level"
+                              :name="data.nickname || data.username"
+                              :level="data.level"
+                            />
+                            <template v-else>{{ data.nickname || data.username }}</template>
                           </RouterLink>
                           <IdentityShowcase
                             :badges="data.equippedBadges"
@@ -355,13 +384,20 @@ watch(
                       </template>
                     </Column>
 
-                    <Column v-if="tab.key === 'rating'" header="等级" style="width: 120px">
+                    <Column v-if="tab.key === 'rating'" header="等级" style="width: 132px">
                       <template #body="{ data }">
-                        <RatingLevelName
+                        <span
                           v-if="data.level"
-                          :name="data.nickname"
-                          :level="data.level"
-                        />
+                          class="level-badge"
+                          :style="levelBadgeStyle(data.level)"
+                        >
+                          <span
+                            class="level-badge__dot"
+                            :style="levelDotStyle(data.level)"
+                            aria-hidden="true"
+                          ></span>
+                          <span class="level-badge__name">{{ data.level.name }}</span>
+                        </span>
                       </template>
                     </Column>
 
@@ -485,6 +521,11 @@ watch(
   border-radius: var(--kapoj-radius-md);
 }
 
+.table-scroll:focus-visible {
+  outline: 2px solid var(--kapoj-primary);
+  outline-offset: 2px;
+}
+
 /* Let the outer .table-scroll own horizontal scrolling on narrow screens
    instead of nesting a second scroll container inside DataTable. */
 .table-scroll :deep(.p-datatable-table-container) {
@@ -546,6 +587,43 @@ watch(
 
 .user-link:hover {
   color: var(--kapoj-primary);
+}
+
+/* The rating palette includes true black, so the rating username gets a light
+   chip to stay readable on the dark-first theme. Activity/sharing links keep
+   the plain treatment. */
+.user-link--rating {
+  padding: 0 6px;
+  color: inherit;
+  background: #f3f4f6;
+  border-radius: var(--kapoj-radius-xs);
+}
+
+.user-link--rating:hover {
+  color: inherit;
+}
+
+.level-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  color: var(--kapoj-text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+  background: var(--kapoj-bg-elevated);
+  border: 1px solid var(--kapoj-border);
+  border-radius: 999px;
+}
+
+.level-badge__dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border: 2px solid transparent;
+  border-radius: 50%;
 }
 
 .score {

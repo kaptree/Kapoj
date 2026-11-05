@@ -25,7 +25,7 @@ export const listActivityLeaderboard = (q: PageQuery) =>
 export const listSharingLeaderboard = (q: PageQuery) =>
   http.get<Page<SharingLeaderboardRow>>('/leaderboard/sharing', { params: pageParams(q) })
 
-export const getRatingHistory = (userId: number | string, q: PageQuery) =>
+export const getRatingHistory = (userId: number, q: PageQuery) =>
   http.get<RatingHistoryPage>(`/users/${userId}/rating-history`, { params: pageParams(q) })
 
 export const getActivitySummary = () => http.get<ActivitySummary>('/activity/summary')

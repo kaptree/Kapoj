@@ -174,6 +174,17 @@ describe('RatingHistoryCard', () => {
     expect(points[0][1]).toBeGreaterThan(points[1][1])
   })
 
+  it('exposes the history table wrapper as a labeled scroll region', async () => {
+    vi.mocked(getRatingHistory).mockResolvedValue(historyPage([historyItem()]))
+    const wrapper = await mountCard()
+
+    const scroll = wrapper.find('.rating-table-scroll')
+    expect(scroll.attributes('tabindex')).toBe('0')
+    expect(scroll.attributes('role')).toBe('region')
+    expect(scroll.attributes('aria-label')).toBe('Rating 历史表格，可横向滚动')
+    expect((scroll.element as HTMLElement).tabIndex).toBe(0)
+  })
+
   it('does not render the SVG chart for a single point', async () => {
     vi.mocked(getRatingHistory).mockResolvedValue(historyPage([historyItem()]))
     const wrapper = await mountCard()

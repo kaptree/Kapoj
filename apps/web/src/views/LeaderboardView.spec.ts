@@ -55,6 +55,17 @@ const ratingRow: RatingLeaderboardRow = {
   equippedTitle: null,
 }
 
+const blackRedRow: RatingLeaderboardRow = {
+  rank: 2,
+  userId: 3,
+  username: 'zhangsan',
+  nickname: '张三',
+  score: 2650,
+  level: { key: 'black_red', name: '黑红名', color: '#000000', accentColor: '#FF0000' },
+  equippedBadges: [],
+  equippedTitle: null,
+}
+
 const activityRow: ActivityLeaderboardRow = {
   rank: 1,
   userId: 2,
@@ -132,7 +143,49 @@ describe('LeaderboardView', () => {
     expect(level.exists()).toBe(true)
     expect(level.props('name')).toBe('m2bsolver1')
     expect(level.props('level').name).toBe('青名')
-    expect(level.attributes('title')).toBe('青名')
+    expect(level.attributes('title')).toBe('m2bsolver1（青名）')
+    expect(level.attributes('aria-label')).toBe('m2bsolver1（青名）')
+  })
+
+  it('shows the level name as text and keeps the black-red username legible', async () => {
+    vi.mocked(listRatingLeaderboard).mockResolvedValue({
+      total: 2,
+      items: [ratingRow, blackRedRow],
+    })
+    const wrapper = await mountPage()
+
+    // RatingLevelName lives in the user column, so the nickname is not repeated.
+    const names = wrapper.findAllComponents(RatingLevelName)
+    expect(names).toHaveLength(2)
+    expect(names[1].text()).toBe('张三')
+    expect(names[1].attributes('aria-label')).toBe('张三（黑红名）')
+
+    const ratingLink = wrapper.findAll('.user-link--rating')[1]
+    expect(ratingLink.text()).toBe('张三')
+    expect(ratingLink.classes()).toContain('user-link--rating')
+    expect(ratingLink.find('.rating-level-name__first').exists()).toBe(true)
+
+    // The level column stays readable without relying on color alone.
+    const badges = wrapper.findAll('.level-badge')
+    expect(badges).toHaveLength(2)
+    expect(badges[0].text()).toBe('青名')
+    expect(badges[1].text()).toBe('黑红名')
+    expect(badges[1].find('.level-badge__name').attributes('style')).toBeUndefined()
+    expect((badges[1].element as HTMLElement).style.borderColor).toBe('rgb(255, 0, 0)')
+
+    const dot = badges[1].find('.level-badge__dot')
+    expect((dot.element as HTMLElement).style.backgroundColor).toBe('rgb(0, 0, 0)')
+    expect((dot.element as HTMLElement).style.borderColor).toBe('rgb(255, 0, 0)')
+  })
+
+  it('exposes the leaderboard table wrapper as a labeled scroll region', async () => {
+    const wrapper = await mountPage()
+
+    const scroll = wrapper.find('.table-scroll')
+    expect(scroll.attributes('tabindex')).toBe('0')
+    expect(scroll.attributes('role')).toBe('region')
+    expect(scroll.attributes('aria-label')).toBe('排行榜表格，可横向滚动')
+    expect((scroll.element as HTMLElement).tabIndex).toBe(0)
   })
 
   it('lazy-loads activity and sharing tabs with formatted scores', async () => {
@@ -161,6 +214,11 @@ describe('LeaderboardView', () => {
     const login = wrapper.findAll('a').find((link) => link.text().includes('登录 / 注册'))
     expect(login).toBeTruthy()
     expect(login!.attributes('href')).toContain('/login?redirect=/leaderboard')
+    // The CTA is a single focusable anchor, not a button nested in a router link.
+    expect(login!.find('button').exists()).toBe(false)
+    expect(wrapper.findAll('a').filter((link) => link.text().includes('登录 / 注册'))).toHaveLength(
+      1,
+    )
   })
 
   it('signs in, refreshes the summary and reloads activity page one', async () => {

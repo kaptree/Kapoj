@@ -96,7 +96,7 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 - `GET /api/titles`、`POST /api/titles/:id/purchase|equip|unequip`：称号商店、解锁、购买与装备；同一用户同时只装备 1 个称号。
 - 个人主页、测评记录与比赛榜单返回 `equippedBadges`、`equippedTitle` 公开身份字段。
 - 超级管理员可在 `/admin/gamification` 管理成就/任务/徽章/称号并上传徽章图片，也可用 `POST /api/admin/users/:id/coins` 调整金币（需填写备注）。
-- M3 不包含排行榜与 Rating；M4-A/M4-B 的 Rating 榜、Rating 历史、活跃度榜、共享榜与签到见下一节。
+- M3 不包含排行榜与 Rating；M4-A～M4-C 的 Rating 榜、Rating 历史、活跃度榜、共享榜与签到见下一节。
 
 ## 排行榜、Rating 与活跃度（M4-A～M4-C）
 

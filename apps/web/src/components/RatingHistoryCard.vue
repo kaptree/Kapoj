@@ -141,7 +141,12 @@ function contestName(item: RatingHistoryItem): string {
 
     <template v-else>
       <figure v-if="chartData" class="rating-history__chart">
-        <svg class="rating-chart" viewBox="0 0 320 80" role="img" :aria-label="chartData.label">
+        <svg
+          class="rating-chart"
+          :viewBox="`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`"
+          role="img"
+          :aria-label="chartData.label"
+        >
           <title>{{ chartData.label }}</title>
           <polyline class="rating-chart__line" :points="chartData.polyline" fill="none" />
           <circle
@@ -155,7 +160,12 @@ function contestName(item: RatingHistoryItem): string {
         </svg>
       </figure>
 
-      <div class="rating-table-scroll">
+      <div
+        class="rating-table-scroll"
+        tabindex="0"
+        role="region"
+        aria-label="Rating 历史表格，可横向滚动"
+      >
         <DataTable :value="items" size="small" class="rating-history-table">
           <Column header="比赛" style="min-width: 180px">
             <template #body="{ data }">
@@ -280,6 +290,11 @@ function contestName(item: RatingHistoryItem): string {
   overflow-x: auto;
   border: 1px solid var(--kapoj-border);
   border-radius: var(--kapoj-radius-md);
+}
+
+.rating-table-scroll:focus-visible {
+  outline: 2px solid var(--kapoj-primary);
+  outline-offset: 2px;
 }
 
 /* Let the wrapper own horizontal scrolling on narrow screens. */

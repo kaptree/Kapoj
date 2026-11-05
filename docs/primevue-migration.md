@@ -483,13 +483,13 @@ M4-C 排行榜、签到与 Rating 历史（UI-30）已直接使用 PrimeVue 4 �
 - `corepack pnpm --filter web lint`：ESLint 与 Prettier 通过。
 - `corepack pnpm --filter web build`：通过；仅有既有的 >500 kB chunk 提示，无新增错误。
 - 浏览器检查（headless Chrome/CDP，Vite 5173 代理后端 18080）：
-  - 游客 `/leaderboard`：Rating/活跃度/共享三个 Tab 正常；Rating 每页 20 行、分页第 2 页 2 行；青名颜色 `rgb(3, 168, 158)`；黑红名首字符 `rgb(0, 0, 0)`、其余 `rgb(255, 0, 0)`，`title`/`aria-label` 为“黑红名”；活跃度/共享榜无等级列，共享榜显示 `m2badmin 120`。
+  - 游客 `/leaderboard`：Rating/活跃度/共享三个 Tab 正常；Rating 每页 20 行、分页第 2 页 2 行；青名颜色 `rgb(3, 168, 158)`；黑红名首字符 `rgb(0, 0, 0)`、其余 `rgb(255, 0, 0)`，用户链接 `title`/`aria-label` 为“昵称（黑红名）”，等级列显示“青名/黑红名”文字并带等级色边框与圆点；活跃度/共享榜无等级列，共享榜显示 `m2badmin 120`。
   - 游客活跃度 Tab 显示登录 CTA；无令牌调用 `POST /api/activity/signin` 返回 401。
   - `m2bsolver1` 活跃度 Tab 显示今日/总活跃度 17，按钮“今日已签到”禁用。一次性用户 `m4ce2e215243` 首次签到 Toast 为 `+5 活跃度 / +5 金币`，摘要 0→5/5、金币 0→5、活跃度榜刷新；重复点击禁用按钮不产生请求，重复 API 返回 `awarded=false`，刷新后状态保持。
   - `/users/2` Rating 历史表格（OI，公共比赛链接 `/contests/3`）和 SVG 折线（2 个数据点）正常；临时私密比赛行显示“私密比赛”且不生成链接；`/users/1` 显示“暂无 Rating 记录”。
   - 临时将所有用户置为 `disabled`（验收后恢复 `active`）验证三榜空态：Rating/活跃度/共享分别显示“暂无 Rating 排行”“暂无活跃度排行”“暂无共享排行”。
   - 首页排行榜快捷入口与 M4-C 系统状态正确；侧栏版本 M4-C、导航“排行榜”可点击。
-  - 375px：页面宽度 375 无横向溢出，`.table-scroll` 287/480 可横向滚动，滚动后等级列完整可见；颜色与装备展示正常。
+  - 375px（headless Chrome/CDP 视口模拟，in-app browser 固定 816px 无法覆盖）：页面宽度 375 无横向溢出，`.table-scroll` 287/480 可横向滚动，滚动后等级列完整可见；颜色与装备展示正常。
   - 控制台无业务错误，仅既有 `favicon.ico` 404；无 CDN/外部请求。
 - 测试夹具：临时分页用户 `m4cp01`～`m4cp14`、临时私密比赛与 `rating_history` 行已在验收后删除；一次性签到用户 `m4ce2e215243` 保留（金币 5、活跃度 5），用于后续签到/榜单排查。
 
@@ -499,7 +499,7 @@ M4-C 排行榜、签到与 Rating 历史（UI-30）已直接使用 PrimeVue 4 �
 2. **PrimeVue locale**：已在 `src/theme/primevue-locale.ts` 补局部中文（DatePicker、Select 空态等）；未覆盖的组件默认文案仍可能为英文，首次使用需确认或显式传中文。
 3. **包体增长**：PrimeVue 主题与 primeicons 增加首屏 CSS/字体体积；Monaco 的既有大 chunk 警告仍在，非本次引入。
 4. **未迁移页面视觉仍为浅色卡片**：暗色 AppShell 已上线，但 Element Plus 卡片仍是浅色内容面板。UI-02 起逐页替换；异常页文字已做临时兼容覆盖。
-5. **浏览器验收限制**：自动化浏览器窗口固定为 816px 宽，桌面 1200px 与手机 390px 布局通过同源 iframe 验证结构与媒体查询，未做真实设备截图。
+5. **浏览器验收限制**：in-app browser 窗口固定为 816px 宽，375px 通过 headless Chrome/CDP 覆盖；桌面 1200px 与手机 390px 布局也通过同源 iframe 验证结构与媒体查询，未做真实设备截图。
 6. **开发期 HMR 警告**：编辑 `DefaultLayout.vue` 时 Vite 可能打印一次 `Cannot access 'DefaultLayout' before initialization` 并提示 HMR 失败；完整刷新后页面正常，生产构建与测试不受影响。根因是根布局被 `router/index.ts` 静态导入；如后续要消除，可评估将根布局改为动态 import（会改变首屏加载方式）。
 7. **客户端校验需同步服务端**：`validation.ts` 是客户端规则的唯一来源，已用 `validation.spec.ts` 覆盖主要边界；服务端规则变更时必须同步更新，服务端仍是最终权威。
 8. **Vite 依赖预构建 504**：首次访问新迁移且引入新 PrimeVue 组件的页面时，开发服务器可能返回 `Outdated Optimize Dep` / 动态模块加载失败；刷新一次后恢复，生产构建不受影响。
