@@ -31,6 +31,12 @@ const quickLinks: HomeLink[] = [
     description: '参加 ICPC / IOI / OI 赛制，挑战实时榜单。',
   },
   {
+    to: '/leaderboard',
+    icon: 'pi pi-chart-line',
+    title: '排行榜',
+    description: '查看 Rating、活跃度与共享榜，每日签到领金币。',
+  },
+  {
     to: '/submissions',
     icon: 'pi pi-list-check',
     title: '测评记录',
@@ -84,7 +90,7 @@ const visibleGrowthLinks = computed(() =>
         <p class="hero__eyebrow">KAPOJ // ONLINE JUDGE</p>
         <h1 id="home-title" class="hero__title">欢迎来到 <span>kapOJ</span></h1>
         <p class="hero__description">
-          题库、比赛、成就与任务已经上线。完成成就与任务赚取金币，再用金币购买并装扮徽章和称号。排行榜前端与更多成长玩法正在路上。
+          题库、比赛、排行榜、成就与任务已经上线。完成成就与任务赚取金币，再用金币购买并装扮徽章和称号。每日签到还能领取活跃度与金币。
         </p>
         <div class="hero__actions">
           <Button
@@ -113,14 +119,15 @@ const visibleGrowthLinks = computed(() =>
             <i />
           </span>
           <span>KAPOJ // STATUS</span>
-          <span class="hero__status-version">M4-A</span>
+          <span class="hero__status-version">M4-C</span>
         </div>
         <ul class="hero__status-list">
           <li><i class="pi pi-check-circle" aria-hidden="true" /> 多语言实时评测</li>
           <li><i class="pi pi-check-circle" aria-hidden="true" /> ICPC / IOI / OI 赛制</li>
           <li><i class="pi pi-check-circle" aria-hidden="true" /> Rating 结算与 8 级等级</li>
+          <li><i class="pi pi-check-circle" aria-hidden="true" /> 排行榜、签到与 Rating 历史</li>
           <li class="is-pending">
-            <i class="pi pi-clock" aria-hidden="true" /> 排行榜前端 · 即将开放
+            <i class="pi pi-clock" aria-hidden="true" /> 学习路线 · 即将开放
           </li>
         </ul>
         <div class="hero__status-foot">

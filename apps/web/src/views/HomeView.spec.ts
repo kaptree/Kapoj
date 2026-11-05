@@ -67,12 +67,13 @@ describe('HomeView', () => {
     const links = hrefs(wrapper)
 
     expect(wrapper.find('h1').text()).toContain('欢迎来到 kapOJ')
-    expect(wrapper.text()).toContain('排行榜前端')
-    expect(wrapper.text()).toContain('M4-A')
+    expect(wrapper.text()).toContain('排行榜、签到与 Rating 历史')
+    expect(wrapper.text()).toContain('M4-C')
     expect(links).toEqual(
       expect.arrayContaining([
         '/problems',
         '/contests',
+        '/leaderboard',
         '/submissions',
         '/achievements',
         '/tasks',

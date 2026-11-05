@@ -51,7 +51,7 @@ const titleId = useId()
       <div class="auth-intro__status">
         <span class="auth-intro__pulse" aria-hidden="true" />
         <span>系统在线</span>
-        <span class="auth-intro__version">M4-A</span>
+        <span class="auth-intro__version">M4-C</span>
       </div>
     </aside>
 

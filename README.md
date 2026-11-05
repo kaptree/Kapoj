@@ -2,7 +2,7 @@
 
 打造最有趣味的 Online Judge 平台。规格见 [`DEVELOPMENT.md`](DEVELOPMENT.md)，进度见 [`docs/任务清单.md`](docs/任务清单.md) 与 [`docs/开发日志.md`](docs/开发日志.md)。
 
-当前进度：**M4-B 已完成**（M0–M3 已完成；M4 进行中。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端，三个榜单 API 均已可用；M4-C 的排行榜前端、用户主页 Rating 历史卡片与真实浏览器验收，以及学习路线、社交、Rating 衰减/赛季重置尚未实现）。前端并行进行 PrimeVue 4 迁移，**UI-00～UI-18 已完成并提交**，剩余题库编辑（UI-19）与异常页（UI-20），详见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。
+当前进度：**M4-C 已完成**（M0–M3 已完成；M4 进行中。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页（Rating/活跃度/共享三 Tab、等级颜色、签到）、用户主页 Rating 历史卡片、导航与首页入口，三个榜单 API 与页面均已可用；学习路线、社交、Rating 衰减/赛季重置尚未实现）。前端并行进行 PrimeVue 4 迁移，**UI-00～UI-18 与 UI-30（M4-C 排行榜/历史）已完成并提交**，剩余题库编辑（UI-19）与异常页（UI-20），详见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。
 
 ## 目录结构
 
@@ -98,7 +98,16 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 - 超级管理员可在 `/admin/gamification` 管理成就/任务/徽章/称号并上传徽章图片，也可用 `POST /api/admin/users/:id/coins` 调整金币（需填写备注）。
 - M3 不包含排行榜与 Rating；M4-A/M4-B 的 Rating 榜、Rating 历史、活跃度榜、共享榜与签到见下一节。
 
-## 排行榜、Rating 与活跃度（M4-A/M4-B）
+## 排行榜、Rating 与活跃度（M4-A～M4-C）
+
+**前端页面**
+
+- 侧边栏「排行榜」`/leaderboard` 已启用：Rating（默认）、活跃度、共享三个 Tab，每个 Tab 独立分页（每页 20 条）并保留各自页码，切换 Tab 不串数据。Rating Tab 按服务端等级显示灰/绿/青/蓝/紫/橙/红/黑红颜色，黑红名首字符黑、其余红；用户列链接个人主页并展示已装备称号/徽章。
+- 活跃度 Tab 展示今日/总活跃度与「签到 +5 金币」按钮：首次签到 +5 活跃度与 +5 金币，成功后刷新用户金币、签到摘要与活跃度榜；当日已签到按钮禁用；游客显示登录入口。重复签到不会重复发币。
+- 用户主页 `/users/:id` 新增「Rating 历史」卡片：最近 20 场比赛表格与简单 SVG 折线；私密比赛显示“私密比赛”且不生成链接；无记录显示“暂无 Rating 记录”。
+- 首页新增排行榜快捷入口与 M4-C 系统状态；侧栏版本为 M4-C。
+
+**接口与规则**
 
 - `GET /api/leaderboard/rating?page=&page_size=`：公开 Rating 榜，只含 `status=active` 用户，按 Rating 降序、用户 ID 升序；行内 `score` 为 Rating，并返回 `level`、`equippedBadges`、`equippedTitle`。
 - `GET /api/users/:id/rating-history?page=&page_size=`：公开 Rating 历史，按时间倒序返回比赛名、名次、赛前/赛后 Rating、`delta` 与 `createdAt`；用户不存在返回 40400。
@@ -112,7 +121,7 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 - 签到金币：`POST /api/activity/signin` 每个本地自然日首次签到额外 +5 金币，签到活跃度、金币流水与余额在同一事务内完成；重复签到返回 `awarded=false`，不重复发币。`GET /api/activity/summary` 返回今日是否签到、今日活跃度与总活跃度。
 - 共享积分：创建或克隆比赛 +20，服务启动时会把已有 `created_by>0` 的比赛幂等回填到 `shared_items`；共享分公式中的“题解被点赞 5/赞”尚未实现，本阶段恒为 0。
 - 三个榜单的基础行都使用 Redis 版本缓存 60 秒，key 形如 `kapoj:leaderboard:<kind>:v<version>:<page>:<size>`；Rating 结算、活跃度写入、共享项写入后递增对应 `kapoj:leaderboard:<kind>:version`。缓存只含基础行，装备在读取后批量装饰；Redis/缓存故障时回退数据库，缓存故障本身不会导致 5xx（身份装饰查询失败仍可能返回 5xx）。
-- 本阶段**未包含**排行榜前端与用户主页 Rating 历史卡片（M4-C）；评论、点赞、关注、题解点赞、通知等社交互动以及 Rating 衰减/赛季重置也未实现，属于后续 M4 阶段。
+- 学习路线、社交互动（评论/点赞/关注/题解点赞/通知）以及 Rating 衰减/赛季重置尚未实现，属于后续 M4 阶段。
 
 ## 测试与检查
 

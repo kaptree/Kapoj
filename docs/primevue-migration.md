@@ -3,22 +3,22 @@
 > 本文档是美化工程的唯一进度来源。每次会话开始先读这里，结束时更新状态、验证结果和设计决策。
 >
 > - 最后更新：2026-11-05
-> - 当前阶段：P2 页面（UI-18 已完成，UI-19 待开始）
+> - 当前阶段：P2 页面（UI-19 待开始）；M4-C 新功能 UI-30 已完成
 > - 工作分支：`feat/m1-problems-judge`
-> - 本次基线：`2703d18 fix(server): mask private rating history and order settlement`
+> - 本次基线：`0f2d62d feat(web): rating history card`
 
 ## 状态汇总
 
 | 状态 | 数量 |
 | --- | ---: |
-| done | 19 |
+| done | 20 |
 | in-progress | 0 |
 | blocked | 0 |
-| todo | 8 |
+| todo | 7 |
 
-其中现有 UI 迁移任务 `UI-00～UI-18` 已完成，剩余 `UI-19` 题库编辑与 `UI-20` 异常页；`UI-30～UI-35` 为尚未实现的新功能，不计入现有页面迁移完成度。
+其中现有 UI 迁移任务 `UI-00～UI-18` 已完成，M4-C 新功能 `UI-30`（排行榜、签到与 Rating 历史卡片）已直接使用 PrimeVue 4 完成；剩余 `UI-19` 题库编辑与 `UI-20` 异常页；`UI-31～UI-35` 为尚未实现的新功能，不计入现有页面迁移完成度。
 
-当前没有检测到正在修改页面的功能分支变更，P1 核心页面可按顺序推进。若后续某页面进入功能开发，先标记 `blocked` 并跳过。
+M4-C 排行榜、签到与 Rating 历史（UI-30）已直接使用 PrimeVue 4 完成；现有页面迁移剩余 UI-19 → UI-20。若后续某页面进入功能开发，先标记 `blocked` 并跳过。
 
 ## 进度表
 
@@ -45,7 +45,7 @@
 | UI-18 | 管理 | `GamificationAdminView` + 4 个 admin panel + spec | P2 | done | UI-00 | 四个 Tab、CRUD、图片上传、题目远程搜索 | 2026-11-05 完成。PrimeVue Tabs/DataTable/Dialog/MultiSelect/ColorPicker；上传与冻结语义保留 |
 | UI-19 | 题库管理 | `ProblemEditView` + `TestcaseManager` + `SampleEditor` + spec | P2 | todo | UI-00 | Markdown、测试点上传/排序、样例编辑 | 建议下一项 |
 | UI-20 | 异常页 | `ForbiddenView`、`NotFoundView` | P2 | todo | UI-00 | 空态/结果页视觉统一 | 最简单，适合收尾 |
-| UI-30 | 新功能 | M4-C 排行榜前端 | P3 | todo | UI-00、UI-10 | 直接使用 PrimeVue；Rating 榜/历史 | 尚未实现 |
+| UI-30 | 新功能 | M4-C 排行榜前端（含签到与 Rating 历史卡片） | P3 | done | UI-00、UI-10 | 直接使用 PrimeVue；Rating 榜/历史 | 2026-11-05 完成。`LeaderboardView` 三 Tab/签到、`RatingLevelName`、`RatingHistoryCard`；复用 Tabs/DataTable/Paginator/Toast |
 | UI-31 | 新功能 | 学习路线 | P3 | todo | UI-00 | 直接使用 PrimeVue；树形/解锁进度 | 尚未实现 |
 | UI-32 | 新功能 | 社交互动 | P3 | todo | UI-00 | 直接使用 PrimeVue；评论/点赞/关注 | 尚未实现 |
 | UI-33 | 新功能 | 证书认证 | P3 | todo | UI-00 | 直接使用 PrimeVue；提交/审核/核验 | 尚未实现 |
@@ -476,6 +476,22 @@
   - 1200px 同源 iframe：管理面板 920px，表格容器 832/832 无横向滚动。
   - 亮色主题：面板白色、文字深色；暗色 token 正常。
   - 首次访问因 Vite 依赖预构建出现 504，刷新后无错误；控制台仅保留验收时故意触发的 500。
+
+### 2026-11-05 / UI-30
+
+- `corepack pnpm --filter web test`：50 个测试文件 / 280 个测试通过。新增/更新 `LeaderboardView`、`RatingHistoryCard`、`RatingLevelName`、`rating` 工具与 `HomeView` 断言；`HomeView` 系统状态更新为 M4-C。
+- `corepack pnpm --filter web lint`：ESLint 与 Prettier 通过。
+- `corepack pnpm --filter web build`：通过；仅有既有的 >500 kB chunk 提示，无新增错误。
+- 浏览器检查（headless Chrome/CDP，Vite 5173 代理后端 18080）：
+  - 游客 `/leaderboard`：Rating/活跃度/共享三个 Tab 正常；Rating 每页 20 行、分页第 2 页 2 行；青名颜色 `rgb(3, 168, 158)`；黑红名首字符 `rgb(0, 0, 0)`、其余 `rgb(255, 0, 0)`，`title`/`aria-label` 为“黑红名”；活跃度/共享榜无等级列，共享榜显示 `m2badmin 120`。
+  - 游客活跃度 Tab 显示登录 CTA；无令牌调用 `POST /api/activity/signin` 返回 401。
+  - `m2bsolver1` 活跃度 Tab 显示今日/总活跃度 17，按钮“今日已签到”禁用。一次性用户 `m4ce2e215243` 首次签到 Toast 为 `+5 活跃度 / +5 金币`，摘要 0→5/5、金币 0→5、活跃度榜刷新；重复点击禁用按钮不产生请求，重复 API 返回 `awarded=false`，刷新后状态保持。
+  - `/users/2` Rating 历史表格（OI，公共比赛链接 `/contests/3`）和 SVG 折线（2 个数据点）正常；临时私密比赛行显示“私密比赛”且不生成链接；`/users/1` 显示“暂无 Rating 记录”。
+  - 临时将所有用户置为 `disabled`（验收后恢复 `active`）验证三榜空态：Rating/活跃度/共享分别显示“暂无 Rating 排行”“暂无活跃度排行”“暂无共享排行”。
+  - 首页排行榜快捷入口与 M4-C 系统状态正确；侧栏版本 M4-C、导航“排行榜”可点击。
+  - 375px：页面宽度 375 无横向溢出，`.table-scroll` 287/480 可横向滚动，滚动后等级列完整可见；颜色与装备展示正常。
+  - 控制台无业务错误，仅既有 `favicon.ico` 404；无 CDN/外部请求。
+- 测试夹具：临时分页用户 `m4cp01`～`m4cp14`、临时私密比赛与 `rating_history` 行已在验收后删除；一次性签到用户 `m4ce2e215243` 保留（金币 5、活跃度 5），用于后续签到/榜单排查。
 
 ## 已知问题与风险
 
