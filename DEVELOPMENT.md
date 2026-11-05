@@ -656,7 +656,7 @@ user_ai_configs (
 
 - 每场 `is_rated=true` 且 `end_time` 已过的比赛由后台扫描器自动结算；结算使用 PostgreSQL 全局 advisory lock 串行、评测宽限与 `rating_history` 唯一约束保证幂等。
 - 比赛开始后不允许修改 `isRated`；`rating_settled_at` 只由结算事务写入，管理员整体更新不会覆盖已写入的结算标记；克隆比赛会清空该标记。
-- ICPC 榜单补齐内部字段 `LastSubmissionAt`（不返回 API），记录报名用户在比赛窗口内最后一次提交时间，用于判断是否参与 Rating；0 提交者不参与。
+- ICPC 榜单补齐内部字段 `LastSubmissionAt`（不返回 API），记录报名用户在比赛窗口内最后一次已判（非 `pending`/`judging`）提交时间，用于判断是否参与 Rating；0 次已判提交者不参与。
 
 **实现状态（M2-C）**
 
@@ -986,7 +986,7 @@ user_ai_configs (
 - 每场 Rated 比赛结束后，根据选手相对排名与对手 Rating，用 Elo 变体算法更新 Rating。
 - 结算时机：Rated 比赛结束后由异步任务结算，结果写入 `rating_history`。每人每场只结算一次（唯一约束），任务可安全重试。
 - 公式：采用 Codeforces 风格的 Elo 变体。具体公式在实现时确定，并在对应代码注释中记录版本。
-- 等级阈值（示例，可配置）：
+- 等级阈值（M4-A 固定阈值）：
 
 | 等级   | 颜色                           | Rating 范围 |
 | ------ | ------------------------------ | ----------- |
@@ -1022,11 +1022,11 @@ user_ai_configs (
 **实现状态（M4-A 已完成；活跃度/共享榜与前端待 M4-B/C）**
 
 - **Rating 算法 v1**：设参与人数 `n`，赛前 Rating 为 `R_i`，期望得分 `E_i = Σ_{j≠i} 1 / (1 + 10^((R_j - R_i)/400))`，实际得分 `A_i = n - rank_i`（并列同名次），`delta_i = round(32 * (A_i - E_i))` 并限制在 `[-100, 100]`，新 Rating 为 `max(0, R_i + delta_i)`；`n <= 1` 时 delta 为 0，仍写历史。同一场使用结算开始时的 Rating 快照。K=32 与 ±100 固定在 `rating/algorithm.go` 的版本注释和测试中。
-- **参与判定**：只统计比赛报名者中在比赛时间窗内至少创建过 1 次提交的用户；0 提交不参与。结算复用现有 ICPC/IOI/OI 榜单，ICPC 路径补齐内部 `LastSubmissionAt`。
+- **参与判定**：只统计比赛报名者中在比赛时间窗内至少有 1 次已判（非 `pending`/`judging`）提交的用户；0 次已判提交不参与。结算复用现有 ICPC/IOI/OI 榜单，ICPC 路径补齐内部 `LastSubmissionAt`；宽限结束后仍只统计已判提交。
 - **结算与幂等**：扫描器默认每 60 秒处理最多 20 场，按 `end_time, id` 升序；结算事务先获取 PostgreSQL 全局事务级 advisory lock，再锁定比赛行并复查 `is_rated && end_time < now && rating_settled_at IS NULL`。不同比赛不会并发读取同一批用户的旧 Rating。逐人 `INSERT rating_history ... ON CONFLICT DO NOTHING`，只有插入成功才更新 `users.rating`；全部完成后设置 `rating_settled_at`，无参与者也会设置；重复扫描/多实例不会重复写历史或重复加分。
 - **评测宽限**：若比赛仍有 `pending`/`judging` 提交且 `now < end_time + KAPOJ_RATING_JUDGE_GRACE`，本轮跳过且不设置标记；超过宽限后按已判结果结算，避免永久卡死。`KAPOJ_RATING_SCAN_INTERVAL` 取值 10s–10m（默认 60s），`KAPOJ_RATING_JUDGE_GRACE` 取值 1m–60m（默认 10m）。
 - **等级**：8 档灰/绿/青/蓝/紫/橙/红/黑红，阈值与颜色见上表；接口返回 `level: {key,name,color,accentColor}`。黑红名 `color=#000000`、`accentColor=#FF0000`，其他等级 `accentColor` 为空字符串。
-- **Rating 榜**：`GET /api/leaderboard/rating?page=&page_size=`，公开；只含 `status=active` 用户，按 Rating 倒序、用户 ID 升序，`score` 为 Rating，行内附带 `equippedBadges`/`equippedTitle`。基础行 Redis 缓存 60 秒，key 为 `kapoj:leaderboard:rating:v<version>:<page>:<size>`；结算成功后递增 `kapoj:leaderboard:rating:version`；Redis 故障降级数据库，不返回 5xx。
+- **Rating 榜**：`GET /api/leaderboard/rating?page=&page_size=`，公开；只含 `status=active` 用户，按 Rating 倒序、用户 ID 升序，`score` 为 Rating，行内附带 `equippedBadges`/`equippedTitle`。基础行 Redis 缓存 60 秒，key 为 `kapoj:leaderboard:rating:v<version>:<page>:<size>`；结算成功后递增 `kapoj:leaderboard:rating:version`；Redis/缓存故障时回退数据库；缓存故障本身不会导致 5xx（身份装饰查询失败仍可能返回 5xx）。
 - **Rating 历史**：`GET /api/users/:id/rating-history?page=&page_size=`，公开；按 `created_at DESC, id DESC` 返回 `kind=contest` 记录，字段为 `contestId`、`contestTitle`、`rank`、`ratingBefore`、`ratingAfter`、`delta`、`createdAt`；用户不存在返回 40400。
 - **尚未实现**：活跃度榜、共享榜与签到金币属于 M4-B；排行榜前端、用户主页 Rating 历史卡片属于 M4-C；学习路线、社交互动、Rating 衰减/赛季重置属于后续 M4 阶段。`rating_history` 的 `kind` 与可空 `contest_id` 已为衰减/赛季预留。
 

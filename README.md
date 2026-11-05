@@ -102,11 +102,11 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 
 - `GET /api/leaderboard/rating?page=&page_size=`：公开 Rating 榜，只含 `status=active` 用户，按 Rating 降序、用户 ID 升序；行内 `score` 为 Rating，并返回 `level`、`equippedBadges`、`equippedTitle`。
 - `GET /api/users/:id/rating-history?page=&page_size=`：公开 Rating 历史，按时间倒序返回比赛名、名次、赛前/赛后 Rating、`delta` 与 `createdAt`；用户不存在返回 40400。
-- Rated 比赛结束后由后台扫描器自动结算，只统计比赛窗口内至少提交过一次的报名者；使用 PostgreSQL 全局 advisory lock 串行处理不同比赛，`rating_history` 部分唯一索引 `(user_id, contest_id) WHERE contest_id IS NOT NULL` 保证重复扫描不会重复写历史或重复更新 Rating。结算完成写入 `contests.rating_settled_at`。
+- Rated 比赛结束后由后台扫描器自动结算，只统计比赛窗口内至少有 1 次已判（非 `pending`/`judging`）提交的报名者；使用 PostgreSQL 全局 advisory lock 串行处理不同比赛，`rating_history` 部分唯一索引 `(user_id, contest_id) WHERE contest_id IS NOT NULL` 保证重复扫描不会重复写历史或重复更新 Rating。结算完成写入 `contests.rating_settled_at`。
 - `KAPOJ_RATING_SCAN_INTERVAL`：扫描间隔，10s–10m，默认 `60s`；每轮最多处理 20 场。
 - `KAPOJ_RATING_JUDGE_GRACE`：比赛结束后等待 `pending`/`judging` 提交的宽限，1m–60m，默认 `10m`；超过宽限按已判结果结算。
 - 等级为灰/绿/青/蓝/紫/橙/红/黑红；黑红名 `color=#000000`、`accentColor=#FF0000`，其他等级 `accentColor` 为空字符串。
-- Rating 榜基础行使用 Redis 缓存 60 秒（key 含版本号），结算后递增版本；Redis 故障自动回退数据库，榜单接口不返回 5xx。
+- Rating 榜基础行使用 Redis 缓存 60 秒（key 含版本号），结算后递增版本；Redis/缓存故障时回退数据库；缓存故障本身不会导致 5xx（身份装饰查询失败仍可能返回 5xx）。
 - 本阶段**未包含**活跃度榜、共享榜、签到金币（M4-B）、排行榜前端与用户主页 Rating 历史卡片（M4-C），也未实现学习路线、社交互动、Rating 衰减/赛季重置。
 
 ## 测试与检查
