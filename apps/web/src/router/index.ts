@@ -107,6 +107,18 @@ export const router = createRouter({
           meta: { requiresAuth: true, roles: ['problem_admin'], title: '编辑题目' },
         },
         {
+          path: 'achievements',
+          name: 'achievements',
+          component: () => import('@/views/AchievementsView.vue'),
+          meta: { title: '成就' },
+        },
+        {
+          path: 'tasks',
+          name: 'tasks',
+          component: () => import('@/views/TasksView.vue'),
+          meta: { title: '任务' },
+        },
+        {
           path: 'forbidden',
           name: 'forbidden',
           component: () => import('@/views/ForbiddenView.vue'),
