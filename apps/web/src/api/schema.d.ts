@@ -2049,8 +2049,9 @@ export interface paths {
         };
         get?: never;
         /**
-         * 更新徽章（仅超级管理员；未提交字段保留）
-         * @description name、category 必填；description、priceCoins、isLimited、sortOrder 按提交值更新。
+         * 更新徽章（仅超级管理员；stock、imageUrl、isActive 可省略保留）
+         * @description name、category 必填；description、priceCoins、isLimited、sortOrder 按提交值更新
+         *     （省略时会写为空字符串、0 或 false，并不会保留旧值）。
          *     isActive 缺省时保持原值；stock 缺省时保持当前库存（不会把并发购买已扣减的库存恢复）；
          *     imageUrl 为空字符串时保持现有图片（上传接口单独写入）。删除为软下线，已购买用户仍保留并展示。
          */

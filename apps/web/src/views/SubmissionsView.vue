@@ -11,6 +11,7 @@ import type {
   SubmissionListItem,
   SubmissionStatus,
 } from '@/api/types'
+import IdentityShowcase from '@/components/IdentityShowcase.vue'
 import { formatDateTime } from '@/utils/format'
 import {
   languageLabel,
@@ -272,11 +273,18 @@ onBeforeUnmount(() => {
       @row-click="openDetail"
     >
       <el-table-column prop="id" label="#" width="80" />
-      <el-table-column label="提交者" min-width="130">
+      <el-table-column label="提交者" min-width="150">
         <template #default="{ row }">
-          <RouterLink :to="{ name: 'user-profile', params: { id: row.userId } }" @click.stop>
-            {{ row.nickname || row.username }}
-          </RouterLink>
+          <div class="user-cell">
+            <RouterLink :to="{ name: 'user-profile', params: { id: row.userId } }" @click.stop>
+              {{ row.nickname || row.username }}
+            </RouterLink>
+            <IdentityShowcase
+              :badges="row.equippedBadges"
+              :title="row.equippedTitle"
+              size="small"
+            />
+          </div>
         </template>
       </el-table-column>
       <el-table-column label="题目" min-width="180">
@@ -329,9 +337,16 @@ onBeforeUnmount(() => {
               {{ statusLabel(detail.status) }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="用户">{{
-            detail.nickname || detail.username
-          }}</el-descriptions-item>
+          <el-descriptions-item label="用户">
+            <div class="user-cell">
+              <span>{{ detail.nickname || detail.username }}</span>
+              <IdentityShowcase
+                :badges="detail.equippedBadges"
+                :title="detail.equippedTitle"
+                size="small"
+              />
+            </div>
+          </el-descriptions-item>
           <el-descriptions-item label="题目">{{ detail.problemTitle }}</el-descriptions-item>
           <el-descriptions-item label="语言">{{
             languageLabel(detail.language)
@@ -393,6 +408,13 @@ onBeforeUnmount(() => {
 }
 .banner {
   margin-bottom: 12px;
+}
+.user-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
 }
 .pager {
   display: flex;

@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { getContestRanklist } from '@/api/contests'
 import { ApiError } from '@/api/http'
 import type { ContestRankCell, ContestRanklist, ContestRankRow } from '@/api/types'
+import IdentityShowcase from '@/components/IdentityShowcase.vue'
 import { formatDateTime } from '@/utils/format'
 
 const props = defineProps<{ contestId: number; refreshTick: number }>()
@@ -65,8 +66,17 @@ onBeforeUnmount(() => {
       </div>
       <el-table :data="ranklist.rows" row-key="userId" empty-text="暂无参赛者">
         <el-table-column prop="rank" label="#" width="60" />
-        <el-table-column label="选手" min-width="140">
-          <template #default="{ row }">{{ row.nickname || row.username }}</template>
+        <el-table-column label="选手" min-width="160">
+          <template #default="{ row }">
+            <div class="player-cell">
+              <span>{{ row.nickname || row.username }}</span>
+              <IdentityShowcase
+                :badges="row.equippedBadges"
+                :title="row.equippedTitle"
+                size="small"
+              />
+            </div>
+          </template>
         </el-table-column>
         <el-table-column :label="ranklist.mode === 'icpc' ? '通过 / 罚时' : '总分'" width="120">
           <template #default="{ row }">{{ rowValue(row) }}</template>
@@ -112,5 +122,12 @@ onBeforeUnmount(() => {
 .accepted {
   color: var(--el-color-success);
   font-weight: 600;
+}
+.player-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
 }
 </style>

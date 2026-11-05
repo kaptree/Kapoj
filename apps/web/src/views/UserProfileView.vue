@@ -5,6 +5,7 @@ import { useRoute } from 'vue-router'
 import { ApiError } from '@/api/http'
 import { getProfile } from '@/api/users'
 import type { Profile } from '@/api/types'
+import IdentityShowcase from '@/components/IdentityShowcase.vue'
 
 const route = useRoute()
 const profile = ref<Profile | null>(null)
@@ -39,8 +40,15 @@ watch(
         <el-avatar :size="64" :src="profile.avatarUrl || undefined">
           {{ profile.nickname.slice(0, 1) }}
         </el-avatar>
-        <div>
-          <h2>{{ profile.nickname }}</h2>
+        <div class="identity">
+          <div class="name-row">
+            <h2>{{ profile.nickname }}</h2>
+            <IdentityShowcase
+              :badges="profile.equippedBadges"
+              :title="profile.equippedTitle"
+              size="small"
+            />
+          </div>
           <div class="username">@{{ profile.username }}</div>
         </div>
       </div>
@@ -67,7 +75,16 @@ watch(
   align-items: center;
   gap: 16px;
 }
-.head h2 {
+.identity {
+  min-width: 0;
+}
+.name-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.name-row h2 {
   margin: 0;
 }
 .username,

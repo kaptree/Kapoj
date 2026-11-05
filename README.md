@@ -2,7 +2,7 @@
 
 打造最有趣味的 Online Judge 平台。规格见 [`DEVELOPMENT.md`](DEVELOPMENT.md)，进度见 [`docs/任务清单.md`](docs/任务清单.md) 与 [`docs/开发日志.md`](docs/开发日志.md)。
 
-当前进度：**M3-B 已完成（后端）**（M0–M2 已完成；M3-A 金币、事件、成就、任务后端与 M3-B 徽章、称号、公开身份后端已实现；成就/任务/徽章/称号前端页面待 M3-C）。
+当前进度：**M3 已完成**（M0–M3 已完成；M3 游戏化模块包含金币、成就、任务、徽章、称号、公开身份与完整前端页面）。M4 排行榜、Rating 与学习路线尚未实现。
 
 ## 目录结构
 
@@ -77,7 +77,16 @@ docs            任务清单、开发日志、实施计划
 KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/docker-compose.yml --profile app up -d --build
 ```
 
-## 游戏化后端（M3-A/M3-B）
+## 游戏化（M3）
+
+**前端页面**
+
+- 侧边栏「成长」子菜单：成就墙 `/achievements`、任务大厅 `/tasks`、徽章商城 `/shop/badges`、称号商店 `/shop/titles`、装扮管理 `/appearance`；`super_admin` 额外显示游戏化管理 `/admin/gamification`（成就/任务/徽章/称号四个 Tab）。
+- 用户菜单显示格式化后的金币余额，并提供「装扮管理」入口；购买/装备后余额以服务端返回为准刷新。
+- 个人主页、测评记录（昵称下方与详情抽屉）和比赛榜单（选手列）展示装备的称号与徽章；空装备不显示占位。
+- 装扮管理展示金币余额与流水，可装备/卸下徽章（显示 n/上限）和称号。
+
+**接口与规则**
 
 - `GET /api/coins/transactions`：登录用户查看金币余额与流水（分页）。
 - `GET /api/achievements`、`GET /api/users/me/achievements`：成就列表与我的成就；登录读取会自动补算解锁并发奖，接口仍是幂等的。
@@ -86,8 +95,8 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 - 徽章图片：管理员通过 `POST /api/badges/:id/image` 上传 PNG/JPEG/WebP/GIF（≤ 2 MiB），文件保存为 `KAPOJ_STORAGE_DIR` 下的 `badges/<id>`，公开接口 `GET /api/badges/:id/image` 读取；数据库中 `imageUrl` 记录为 `/api/badges/<id>/image`。
 - `GET /api/titles`、`POST /api/titles/:id/purchase|equip|unequip`：称号商店、解锁、购买与装备；同一用户同时只装备 1 个称号。
 - 个人主页、测评记录与比赛榜单返回 `equippedBadges`、`equippedTitle` 公开身份字段。
-- 超级管理员可管理成就/任务/徽章/称号，并用 `POST /api/admin/users/:id/coins` 调整金币（需填写备注）。
-- 成就/任务/徽章/称号前端页面（成就页、任务大厅、徽章商城、称号商店、装扮管理）尚未实现，属于 M3-C；当前不要按已上线页面的方式使用这些功能。
+- 超级管理员可在 `/admin/gamification` 管理成就/任务/徽章/称号并上传徽章图片，也可用 `POST /api/admin/users/:id/coins` 调整金币（需填写备注）。
+- M3 不包含 M4 的排行榜、Rating 结算、活跃度/共享积分与学习路线；侧边栏「排行榜」仍标记为 M4 上线。
 
 ## 测试与检查
 

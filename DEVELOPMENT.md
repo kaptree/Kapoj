@@ -3,7 +3,7 @@
 > 本文档基于 `plan.md` 细化，是 kapOJ（Kap Online Judge）平台的详细开发规格说明书。
 > 目标：**打造出最有趣味的 Online Judge 平台**。
 > 文档包含完整的架构设计、数据库设计、模块需求，并为每个模块提供了可直接交给 Codex 的**开发提示词（Prompt）**。
-> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)。当前进度：**M3-B 已完成（后端）**（M3-A 金币、成就、任务后端 + M3-B 徽章、称号、公开身份后端）；M3-C 前端页面与验收待办。
+> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)。当前进度：**M3 已完成**（M0–M3 已完成；M3 游戏化模块包含金币、成就、任务、徽章、称号、公开身份与完整前端页面）。M4 排行榜、Rating 与学习路线尚未实现。
 
 ---
 
@@ -120,7 +120,7 @@ kapoj/
 └── docs/               # 文档
 ```
 
-**当前状态（M1-C）**：已建立 `apps/web`、`apps/server`、`apps/judge`、`packages/api`、`docker`、`docs`。后端按领域分包，位于 `apps/server/internal/`：`config`、`httpx`（统一响应与错误码）、`health`、`db`、`dbtypes`（jsonb 列表类型）、`storage`（文件存储抽象与本地实现）、`user`（模型、仓储、校验、资料服务）、`auth`（令牌与认证服务）、`middleware`、`userapi`（用户 HTTP 接口）、`problem`（题目模型、仓储、校验、服务）、`problemapi`（题目 HTTP 接口）、`submission`（提交模型、仓储、服务、限流）、`submissionapi`（提交 HTTP 接口）、`submissionevents`（Redis→SSE）、`judgequeue`（Asynq 队列契约）、`router`。`apps/judge` 是独立 Go 模块与进程，包含 `config`、`db`、`model`、`queue`、`events`、`reconcile`、`storage`、`verdict`、`sandbox`、`pipeline`、`worker`。本地开发时，docker compose 中的 PostgreSQL 映射到宿主机 5433 端口，Redis 映射到 6380 端口，启动方式见 `README.md`。
+**当前状态（M3）**：已建立 `apps/web`、`apps/server`、`apps/judge`、`packages/api`、`docker`、`docs`。后端按领域分包，位于 `apps/server/internal/`：`config`、`httpx`（统一响应与错误码）、`health`、`db`、`dbtypes`（jsonb 列表类型）、`storage`（文件存储抽象与本地实现）、`user`（模型、仓储、校验、资料服务）、`auth`（令牌与认证服务）、`middleware`、`userapi`（用户 HTTP 接口）、`problem`（题目模型、仓储、校验、服务）、`problemapi`（题目 HTTP 接口）、`submission`（提交模型、仓储、服务、限流）、`submissionapi`（提交 HTTP 接口）、`submissionevents`（Redis→SSE）、`gamification`（金币、成就、任务、徽章、称号与公开身份）、`gamificationapi`（游戏化 HTTP 接口）、`gamequeue`（游戏事件契约与 worker）、`judgequeue`（Asynq 队列契约）、`router`。`apps/judge` 是独立 Go 模块与进程，包含 `config`、`db`、`model`、`queue`、`events`、`gamequeue`、`reconcile`、`storage`、`verdict`、`sandbox`、`pipeline`、`worker`。本地开发时，docker compose 中的 PostgreSQL 映射到宿主机 5433 端口，Redis 映射到 6380 端口，启动方式见 `README.md`。
 
 ---
 
@@ -330,7 +330,7 @@ coin_transactions (
 -- 唯一约束：(user_id, reason, ref_type, ref_id)，防止同一奖励被重复结算
 ```
 
-**实现状态（M3-B，后端已完成）**：金币、事件、成就、任务、徽章、称号与公开身份后端已实现；成就/任务/徽章/称号前端页面与真实浏览器验收属于 M3-C，尚未实现。
+**实现状态（M3 已完成）**：金币、事件、成就、任务、徽章、称号与公开身份后端已实现，成就/任务/徽章/称号前端页面、游戏化管理后台与真实浏览器验收也已完成。
 
 - 已建表：`coin_transactions`、`achievements`、`user_achievements`、`tasks`、`user_task_records`、`user_login_days`、`badges`、`user_badges`、`titles`、`user_titles`；金币余额沿用 `users.coins`（`CHECK coins >= 0`）。
 - `coin_transactions` 增加 `note` 列（管理员调整备注，1–200 字）；唯一约束仍为 `(user_id, reason, ref_type, ref_id)`，仅 `ref_type <> ''` 时生效，管理员调整不参与幂等去重。M3-B 起流水的 `reason` 增加 `badge_purchase`、`title_purchase`，`ref_type` 增加 `badge`、`title`。
@@ -449,6 +449,7 @@ user_ai_configs (
 - 修改资料只写入被修改的字段，不会覆盖同时发生的封禁、角色或金币变动。
 - 被封禁用户无法登录或刷新令牌；已签发的 access token 在过期前（最长 15 分钟）仍然有效。
 - `GET /users/:id/profile` 不返回邮箱和角色；M3-B 起返回真实的 `equippedBadges`（数组，最多 `KAPOJ_MAX_EQUIPPED_BADGES` 个）与 `equippedTitle`（无装备时为 null），已装备但后来下线的徽章/称号仍展示。
+- M3-C 起个人主页昵称旁用 `IdentityShowcase` 展示装备称号与徽章；用户菜单显示金币余额并提供「装扮管理」入口。金币余额以服务端 `GET /users/me` 为准，购买或装备后刷新。
 - `GET /admin/users` 为新增接口，用于超级管理员的用户管理，也用于验收「管理员接口对普通用户返回 403」。
 - 头像上传依赖 MinIO，**未实现**，安排在 M5-8；目前只能填写头像链接。修改密码接口**未实现**。
 
@@ -650,6 +651,7 @@ user_ai_configs (
 - 前端完成比赛列表（公开/我报名的、关键词/赛制/状态筛选、分页、管理员新建/编辑/克隆/删除）、比赛详情（服务端时间校准倒计时、报名、题目入口、公告、榜单）、比赛编辑页（题目整体替换、密码/邀请码留空保留、Markdown 描述）。
 - 比赛提交页接受 `contestId` 查询参数，并在页面显示“比赛提交”、返回比赛链接；草稿按“练习/比赛”作用域隔离。
 - 榜单通过 SSE 自动刷新；OI 赛时显示“仅本人成绩”提示。
+- 榜单选手列展示装备称号与徽章（`IdentityShowcase`，小尺寸），空装备不渲染占位；窄屏下选手信息纵向排列，表格可横向滚动。
 - 比赛列表 `mine=true` 仅返回当前登录用户已报名的比赛（含非公开比赛），`registered` 字段用于显示已报名状态；游客使用 `mine=true` 返回 40001。
 
 **实现状态（M2-B）— 测评记录**
@@ -732,7 +734,7 @@ user_ai_configs (
 
 **实现状态（M2-B）**：比赛进行中，其他用户的比赛提交在列表与详情中隐藏代码、错误信息、测试点详情、耗时、内存与得分，只保留状态和语言；本人、管理员和比赛结束后完整可见。OI 赛时非管理员榜单只返回本人行。
 
-**公开身份展示（M3-B 后端已完成，M3-C 前端待办）**：`GET /submissions`、`GET /submissions/:id` 与 `GET /contests/:id/ranklist` 的每一行现已返回提交者/选手的 `equippedBadges`（数组，最多 `KAPOJ_MAX_EQUIPPED_BADGES` 个）与 `equippedTitle`（无装备时为 null），按页批量查询避免 N+1，已装备但后来下线的徽章/称号仍展示。测评记录页与榜单页的徽章/称号渲染属于 M3-C 前端，尚未实现。
+**公开身份展示（M3 已完成）**：`GET /submissions`、`GET /submissions/:id` 与 `GET /contests/:id/ranklist` 的每一行返回提交者/选手的 `equippedBadges`（数组，最多 `KAPOJ_MAX_EQUIPPED_BADGES` 个）与 `equippedTitle`（无装备时为 null），按页批量查询避免 N+1，已装备但后来下线的徽章/称号仍展示。测评记录页在提交者昵称下方、榜单页在选手昵称下方用 `IdentityShowcase` 渲染，详情抽屉同样展示；空装备时不显示占位。
 
 **Codex 提示词（测评记录）**
 
@@ -778,14 +780,14 @@ user_ai_configs (
 - 条件可配置：`condition_type` + `condition_config_json` 支持计数类、阈值类、组合类。
 - 解锁记录与奖励发放在同一数据库事务中完成，依靠 `user_achievements(user_id, achievement_id)` 唯一约束防止重复发放。
 
-**实现状态（M3-A 完成；M3-B 补充徽章奖励）**
+**实现状态（M3-A 后端、M3-C 前端已完成；M3-B 补充徽章奖励）**
 
 - 接口：`GET /achievements`（公开，可选登录，登录时含解锁状态与逐条件进度；`includeInactive=true` 仅超级管理员）、`GET /users/me/achievements`（登录）、`POST /achievements`、`PUT /achievements/:id`、`DELETE /achievements/:id`（超级管理员）。
 - 条件类型：`ac_count`（去重 AC 题目数）、`contest_count`（报名比赛数）、`login_streak`（截至今天的连续登录天数）、`created_contest`（创建的比赛数）、`all_of`（2–8 个非 `all_of` 子条件，不允许嵌套）；阈值必须为正整数，非法配置返回 40001。
 - 事件：judge 在提交 AC 后投递 `submission.accepted`，注册/登录后投递 `user.login`，比赛报名后投递 `contest.join`；队列 `game`、任务类型 `game:event`，最多重试 5 次。worker 与读取接口都调用同一个 `EvaluateUser`，重复/丢失事件最终收敛。
 - 奖励：金币写入 `coin_transactions`（`reason=achievement`、`ref_type=achievement`），与解锁记录同一事务，唯一约束保证只发一次。M3-B 起 `rewardBadgeId` 生效：配置时徽章必须存在且上架，否则返回 40001；发放时直接写入 `user_badges`，不占用商城库存。
 - 可见性：已解锁成就下线后仍对本人可见；未解锁且已下线的成就仅超级管理员通过 `includeInactive=true` 看到。
-- 前端成就页属于 M3-C，尚未实现。
+- 前端成就页（`/achievements`）已完成：卡片网格、全部/已解锁/未解锁筛选、条件进度、奖励与解锁时间；已接入侧边栏「成长」子菜单。
 
 **Codex 提示词（成就）**
 
@@ -826,7 +828,7 @@ user_ai_configs (
 - **完成**：用户对任务中的全部题目都获得 AC，即视为完成。完成后不可再次领取。
 - **结算**：完成由 AC 事件自动触发并发放金币，无需用户手动提交。同一任务只结算一次（依靠唯一约束，见 2.4 幂等约定）。
 
-**实现状态（M3-A，后端已完成）**
+**实现状态（M3-A 后端、M3-C 前端已完成）**
 
 - 接口：`GET /tasks`（公开，可选登录；`includeInactive=true` 仅超级管理员）、`POST /tasks`、`PUT /tasks/:id`、`DELETE /tasks/:id`（超级管理员）、`POST /tasks/:id/claim`（登录）。
 - 题目为 1–20 个不重复的公开题目；奖励金币 0–1000000；`start_time < end_time`，领取要求 `start <= now < end`。
@@ -834,7 +836,7 @@ user_ai_configs (
 - 完成判定只统计 `claimed_at <= judged_at < end_time` 的去重 AC；领取前已 AC 的题目不计入。事件丢失时，读取任务大厅或登录/AC 事件会补算，`user_task_records` 行锁保证 `claimed → completed` 只发生一次，金币只发一次。
 - 已有任一领取记录后冻结 `problem_ids_json` 与 `reward_coins`，只允许修改标题、描述、时间与上下架；软删除后已领取用户仍可在截止前完成并领奖。
 - 展示状态：`upcoming`、`active`、`claimed`、`completed`、`expired`、`ended`、`inactive`；`expired` 只在读取时按时间计算，不写入数据库。
-- 前端任务大厅属于 M3-C，尚未实现。
+- 前端任务大厅（`/tasks`）已完成：任务卡片显示奖励、时间、题目数、状态与进度；登录后可领取，领取前二次确认，成功后刷新进度；已接入侧边栏「成长」子菜单。
 
 **Codex 提示词（任务）**
 
@@ -874,7 +876,7 @@ user_ai_configs (
 - 公开接口需返回用户装备徽章列表，供测评记录、排行榜、个人中心展示。
 - 限量库存：购买时在同一事务中对徽章行加锁（`SELECT ... FOR UPDATE`）再扣减 `stock`，避免超卖。
 
-**实现状态（M3-B，后端已完成）**
+**实现状态（M3-B 后端、M3-C 前端已完成）**
 
 - 接口：`GET /badges`（公开，可选登录；登录时含 `owned`/`equipped`；`includeInactive=true` 仅超级管理员）、`POST /badges`、`PUT /badges/:id`、`DELETE /badges/:id`（超级管理员）、`POST /badges/:id/image`（超级管理员，multipart 字段 `file`）、`GET /badges/:id/image`（公开）、`POST /badges/:id/purchase|equip|unequip`（登录）、`GET /users/:id/badges`（公开）。
 - 装备上限由 `KAPOJ_MAX_EQUIPPED_BADGES` 配置（1–10，默认 3）；装备前锁定用户行并重新统计，避免并发超限；已装备时重复装备、未装备时卸下均幂等成功。
@@ -882,7 +884,7 @@ user_ai_configs (
 - 管理端更新在同一事务内锁定徽章行并只更新提交字段：`stock` 省略时保留当前库存（包括并发购买扣减），`imageUrl` 留空时保留现有图片，`isActive` 省略时保留上下架状态，避免覆盖并发购买、图片上传或软删除。
 - 图片仅支持 PNG/JPEG/WebP/GIF 且不超过 2 MiB；保存为存储键 `badges/<id>`，`image_url` 写为 `/api/badges/<id>/image`，公开读取响应带 `Cache-Control: public, max-age=3600`。外链或文件缺失返回 40400。
 - 软删除后已购买用户仍保留并展示；成就奖励徽章直接写入 `user_badges`，不占用商城库存。
-- 前端徽章商城与装扮管理属于 M3-C，尚未实现。
+- 前端徽章商城（`/shop/badges`）与装扮管理（`/appearance`）已完成：支持分类筛选、购买确认、余额/库存/拥有状态、装备与卸下，并在购买或装备后刷新用户余额；已接入侧边栏「成长」子菜单。
 
 **Codex 提示词（徽章）**
 
@@ -918,14 +920,14 @@ user_ai_configs (
 - 解锁条件示例：Rating 达到某等级、AC 题数达到阈值、获得特定成就等。
 - 同一用户同时只能装备 1 个称号，装备新称号时自动卸下原称号。
 
-**实现状态（M3-B，后端已完成）**
+**实现状态（M3-B 后端、M3-C 前端已完成）**
 
 - 接口：`GET /titles`（公开，可选登录；登录时含解锁/购买/装备状态与条件进度；`includeInactive=true` 仅超级管理员）、`POST /titles`、`PUT /titles/:id`、`DELETE /titles/:id`（超级管理员）、`POST /titles/:id/purchase|equip|unequip`（登录）。
 - 解锁条件：`rating`（当前 Rating ≥ 阈值）、`ac_count`（去重 AC 题目数 ≥ 阈值）、`achievement`（已解锁指定 code 的成就）；读取列表时先补算解锁，不扣金币。Rating 条件在 M4 上线 Rating 结算后自然可达。
 - 购买要求已解锁且未购买，在同一事务内扣金币、写 `coin_transactions`（`reason=title_purchase`、`ref_type=title`）并记录购买时间；已下线但已解锁的称号仍可购买。
 - 装备要求已购买；同一事务内先卸下该用户全部称号，再装备目标称号，并发下始终最多 1 个；重复装备幂等成功。
 - 软删除后已解锁/已购买记录保留，仍可在“我的称号”和装扮管理中查看、购买（若已解锁未购买）和装备。
-- 前端称号商店与装扮管理属于 M3-C，尚未实现。
+- 前端称号商店（`/shop/titles`）与装扮管理已完成：显示解锁条件进度、未解锁/可购买/已购买/装备中状态、彩色名称，并支持购买、装备与卸下；已接入侧边栏「成长」子菜单。
 
 **Codex 提示词（称号）**
 
@@ -1004,6 +1006,8 @@ user_ai_configs (
 | ---------------- | ---- |
 | 创建比赛         | 20   |
 | 提供的题解被点赞 | 5/赞 |
+
+**实现状态（未实现，计划 M4）**：M4 排行榜、Rating 结算与学习路线均未实现。当前侧边栏「排行榜」仍标记为 M4 上线，`is_rated` 只保存比赛标记；`rating` 字段沿用初始值 1500，没有 Rating 榜、活跃度榜或共享积分。称号的 `rating` 解锁条件也要等 M4 Rating 结算上线后才可达。
 
 **Codex 提示词（排行榜）**
 
@@ -1248,13 +1252,13 @@ problem/
 | M0     | 项目初始化、认证、基础布局             | 可登录的前后端骨架 | ✅   |
 | M1     | 题库/题目 + 沙盒评测 + 测评记录        | 可提交并判题的 MVP | ✅   |
 | M2     | 比赛系统（三种赛制 + 榜单 + 公告）     | 可办比赛的平台     | ✅   |
-| M3     | 游戏化模块（成就/任务/徽章/称号/金币） | 有趣味的成长体系   | 🚧   |
+| M3     | 游戏化模块（成就/任务/徽章/称号/金币） | 有趣味的成长体系   | ✅   |
 | M4     | 排行榜 + Rating + 学习路线             | 社区与成长闭环     | ⬜   |
 | M5     | AI 辅助 + 题目导入 + 证书认证          | 完整版 kapOJ       | ⬜   |
 
 状态图例：✅ 已完成　🚧 进行中　⬜ 未开始。只有模块的验收标准全部满足后才标记 ✅。
 
-M3 进度：M3-A（金币、事件、成就、任务后端）与 M3-B（徽章、称号、公开身份后端）已完成；M3-C（成就页、任务大厅、徽章商城、称号商店、装扮管理、游戏化管理与真实浏览器验收）待办，因此 M3 仍为 🚧。
+M3 进度：M3-A（金币、事件、成就、任务后端）、M3-B（徽章、称号、公开身份后端）与 M3-C（成就页、任务大厅、徽章商城、称号商店、装扮管理、游戏化管理、公开身份接入与真实浏览器验收）均已完成，M3 标记为 ✅。M4 排行榜、Rating 与学习路线尚未实现。
 
 ---
 
