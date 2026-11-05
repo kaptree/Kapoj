@@ -7,6 +7,7 @@ import { ApiError } from '@/api/http'
 import { getProfile } from '@/api/users'
 import type { Profile } from '@/api/types'
 import IdentityShowcase from '@/components/IdentityShowcase.vue'
+import RatingHistoryCard from '@/components/RatingHistoryCard.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
@@ -107,6 +108,8 @@ watch(
         </div>
       </dl>
     </AppSurface>
+
+    <RatingHistoryCard v-if="profile" :user-id="profile.id" :rating="profile.rating" />
   </div>
 </template>
 

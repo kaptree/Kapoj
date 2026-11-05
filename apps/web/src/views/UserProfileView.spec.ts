@@ -6,12 +6,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
 import { ApiError } from '@/api/http'
+import { getRatingHistory } from '@/api/leaderboard'
 import { getProfile } from '@/api/users'
 import type { Profile } from '@/api/types'
 import UserProfileView from './UserProfileView.vue'
 
 vi.mock('@/api/users', () => ({
   getProfile: vi.fn(),
+}))
+
+vi.mock('@/api/leaderboard', () => ({
+  getRatingHistory: vi.fn(),
 }))
 
 function profile(overrides: Partial<Profile> = {}): Profile {
@@ -30,7 +35,10 @@ function profile(overrides: Partial<Profile> = {}): Profile {
   }
 }
 
-const routes = [{ path: '/users/:id', name: 'user-profile', component: { template: '<div />' } }]
+const routes = [
+  { path: '/users/:id', name: 'user-profile', component: { template: '<div />' } },
+  { path: '/contests/:id(\\d+)', name: 'contest-detail', component: { template: '<div />' } },
+]
 
 async function mountPage(path = '/users/7') {
   const router = createRouter({ history: createMemoryHistory(), routes })
@@ -44,6 +52,8 @@ async function mountPage(path = '/users/7') {
 beforeEach(() => {
   vi.mocked(getProfile).mockReset()
   vi.mocked(getProfile).mockResolvedValue(profile())
+  vi.mocked(getRatingHistory).mockReset()
+  vi.mocked(getRatingHistory).mockResolvedValue({ total: 0, items: [] })
 })
 
 describe('UserProfileView', () => {
@@ -62,6 +72,30 @@ describe('UserProfileView', () => {
     expect(wrapper.text()).toContain('注册时间')
     expect(wrapper.text()).toContain(new Date('2026-01-01T00:00:00Z').toLocaleDateString('zh-CN'))
     expect(wrapper.findComponent(Avatar).props('label')).toBe('A')
+    wrapper.unmount()
+  })
+
+  it('renders the rating history card below the profile', async () => {
+    vi.mocked(getRatingHistory).mockResolvedValue({
+      total: 1,
+      items: [
+        {
+          contestId: 5,
+          contestTitle: '春季公开赛',
+          rank: 2,
+          ratingBefore: 1600,
+          ratingAfter: 1624,
+          delta: 24,
+          createdAt: '2026-02-01T10:00:00Z',
+        },
+      ],
+    })
+    const { wrapper } = await mountPage('/users/7')
+
+    expect(getRatingHistory).toHaveBeenCalledWith(7, { page: 1, pageSize: 20 })
+    expect(wrapper.text()).toContain('Rating 历史')
+    expect(wrapper.text()).toContain('春季公开赛')
+    expect(wrapper.text()).toContain('+24')
     wrapper.unmount()
   })
 
