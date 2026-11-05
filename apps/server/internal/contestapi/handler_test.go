@@ -13,19 +13,25 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
+	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/kaptree/kapoj/apps/server/internal/auth"
 	"github.com/kaptree/kapoj/apps/server/internal/config"
+	"github.com/kaptree/kapoj/apps/server/internal/contest"
+	"github.com/kaptree/kapoj/apps/server/internal/contestapi"
 	"github.com/kaptree/kapoj/apps/server/internal/dbtypes"
 	"github.com/kaptree/kapoj/apps/server/internal/gamequeue"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
+	"github.com/kaptree/kapoj/apps/server/internal/middleware"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/router"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
+	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
 
 type noopQueue struct{}
@@ -540,4 +546,138 @@ func TestContestListFilters(t *testing.T) {
 	assert.EqualValues(t, 0, resp["data"].(map[string]any)["total"])
 	w, _ := f.do(http.MethodGet, "/api/contests?status=bogus", "", nil)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+type fakeContestActivity struct {
+	joinUserIDs       []int64
+	joinContestIDs    []int64
+	createdUserIDs    []int64
+	createdContestIDs []int64
+	err               error
+}
+
+func (f *fakeContestActivity) RecordContestJoin(_ context.Context, userID, contestID int64) error {
+	f.joinUserIDs = append(f.joinUserIDs, userID)
+	f.joinContestIDs = append(f.joinContestIDs, contestID)
+	return f.err
+}
+
+func (f *fakeContestActivity) RecordContestCreated(_ context.Context, userID, contestID int64) error {
+	f.createdUserIDs = append(f.createdUserIDs, userID)
+	f.createdContestIDs = append(f.createdContestIDs, contestID)
+	return f.err
+}
+
+// newContestActivityHandler mounts the contest routes with a fake activity
+// hook so hook success/failure can be asserted without the real service.
+func newContestActivityHandler(t *testing.T, hook contestapi.ActivityHook) (
+	h http.Handler, adminToken, userToken string, adminID, userID int64,
+	p1, p2 *problem.Problem,
+) {
+	t.Helper()
+	g := testutil.PG(t)
+	adminID = int64(9201)
+	userID = int64(9202)
+	require.NoError(t, g.Exec(
+		`INSERT INTO users (id, username, nickname, email, password_hash, role, created_at, updated_at)
+		 VALUES (?, 'hookadmin', 'hookadmin', 'hookadmin@example.com', 'x', 'contest_admin', now(), now()),
+		        (?, 'hookuser', 'hookuser', 'hookuser@example.com', 'x', 'user', now(), now())`,
+		adminID, userID,
+	).Error)
+
+	issuer := auth.NewTokenIssuer(strings.Repeat("s", 32), 15*time.Minute)
+	var err error
+	adminToken, err = issuer.IssueAccess(&user.User{ID: adminID, Role: user.RoleContestAdmin})
+	require.NoError(t, err)
+	userToken, err = issuer.IssueAccess(&user.User{ID: userID, Role: user.RoleUser})
+	require.NoError(t, err)
+
+	repo := problem.NewGormRepository(g)
+	makeProblem := func(slug string) *problem.Problem {
+		p := &problem.Problem{
+			Title: "Problem " + slug, Slug: slug, StatementMD: "statement",
+			Type: problem.TypeTraditional, Difficulty: 1, TimeLimitMS: 1000, MemoryLimitMB: 256,
+			IsPublic: true, CreatedBy: adminID,
+		}
+		require.NoError(t, repo.Create(context.Background(), p))
+		return p
+	}
+	p1, p2 = makeProblem("hook-sum"), makeProblem("hook-product")
+
+	engine := gin.New()
+	api := engine.Group("/api", middleware.Authenticate(issuer))
+	contestapi.RegisterRoutes(api, contest.NewService(contest.NewGormRepository(g)),
+		contestapi.Options{ActivityHook: hook})
+	return engine, adminToken, userToken, adminID, userID, p1, p2
+}
+
+func doContestRequest(t *testing.T, h http.Handler, method, path, token string, payload any) (*httptest.ResponseRecorder, map[string]any) {
+	t.Helper()
+	var buf bytes.Buffer
+	if payload != nil {
+		require.NoError(t, json.NewEncoder(&buf).Encode(payload))
+	}
+	req := httptest.NewRequest(method, path, &buf)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	var resp map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	return w, resp
+}
+
+func TestContestActivityHookCreateAndClone(t *testing.T) {
+	hook := &fakeContestActivity{}
+	h, adminToken, _, adminID, _, p1, p2 := newContestActivityHandler(t, hook)
+
+	w, resp := doContestRequest(t, h, http.MethodPost, "/api/contests", adminToken, body(p1.ID, p2.ID))
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	contestID := idOf(resp)
+	require.Len(t, hook.createdContestIDs, 1)
+	assert.Equal(t, []int64{adminID}, hook.createdUserIDs)
+	assert.Equal(t, []int64{contestID}, hook.createdContestIDs)
+
+	w, resp = doContestRequest(t, h, http.MethodPost,
+		fmt.Sprintf("/api/contests/%d/clone", contestID), adminToken, map[string]any{})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	cloneID := idOf(resp)
+	require.Len(t, hook.createdContestIDs, 2)
+	assert.Equal(t, []int64{adminID, adminID}, hook.createdUserIDs)
+	assert.Equal(t, []int64{contestID, cloneID}, hook.createdContestIDs)
+}
+
+func TestContestActivityHookRegister(t *testing.T) {
+	hook := &fakeContestActivity{}
+	h, adminToken, userToken, _, userID, p1, p2 := newContestActivityHandler(t, hook)
+
+	w, resp := doContestRequest(t, h, http.MethodPost, "/api/contests", adminToken, body(p1.ID, p2.ID))
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	contestID := idOf(resp)
+
+	w, _ = doContestRequest(t, h, http.MethodPost,
+		fmt.Sprintf("/api/contests/%d/register", contestID), userToken, map[string]any{})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.Len(t, hook.joinContestIDs, 1)
+	assert.Equal(t, []int64{userID}, hook.joinUserIDs)
+	assert.Equal(t, []int64{contestID}, hook.joinContestIDs)
+}
+
+func TestContestActivityHookFailureDoesNotFailRegisterOrCreate(t *testing.T) {
+	hook := &fakeContestActivity{err: errors.New("activity down")}
+	h, adminToken, userToken, _, _, p1, p2 := newContestActivityHandler(t, hook)
+
+	w, resp := doContestRequest(t, h, http.MethodPost, "/api/contests", adminToken, body(p1.ID, p2.ID))
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	contestID := idOf(resp)
+
+	w, _ = doContestRequest(t, h, http.MethodPost,
+		fmt.Sprintf("/api/contests/%d/clone", contestID), adminToken, map[string]any{})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+
+	w, _ = doContestRequest(t, h, http.MethodPost,
+		fmt.Sprintf("/api/contests/%d/register", contestID), userToken, map[string]any{})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.Len(t, hook.createdContestIDs, 2, "失败后仍尝试记录共享项")
+	require.Len(t, hook.joinContestIDs, 1, "失败后仍尝试记录参赛活跃度")
 }

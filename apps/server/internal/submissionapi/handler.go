@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -22,9 +23,15 @@ type IdentityLookup interface {
 	Identities(ctx context.Context, userIDs []int64) (map[int64]gamification.Identity, error)
 }
 
+// ActivityHook 在提交创建成功后记录活跃度；失败只记录日志，不影响提交响应。
+type ActivityHook interface {
+	RecordSubmission(ctx context.Context, userID, submissionID int64) error
+}
+
 // Options 配置测评记录接口的可选依赖。
 type Options struct {
 	IdentityLookup IdentityLookup
+	ActivityHook   ActivityHook
 }
 
 // RegisterRoutes mounts the submission endpoints. r must already run the
@@ -33,6 +40,7 @@ func RegisterRoutes(r gin.IRouter, s *submission.Service, streamer submissioneve
 	h := &handler{svc: s, streamer: streamer}
 	if len(opts) > 0 {
 		h.identities = opts[0].IdentityLookup
+		h.activityHook = opts[0].ActivityHook
 	}
 	r.GET("/submissions", h.list)
 	r.GET("/submissions/stream", h.stream)
@@ -41,9 +49,10 @@ func RegisterRoutes(r gin.IRouter, s *submission.Service, streamer submissioneve
 }
 
 type handler struct {
-	svc        *submission.Service
-	streamer   submissionevents.Streamer
-	identities IdentityLookup
+	svc          *submission.Service
+	streamer     submissionevents.Streamer
+	identities   IdentityLookup
+	activityHook ActivityHook
 }
 
 // decorateItems 在 service 返回后批量填充当前页的公开身份，避免逐行查询。
@@ -216,6 +225,12 @@ func (h *handler) create(c *gin.Context) {
 	if err != nil {
 		httpx.Fail(c, err)
 		return
+	}
+	if h.activityHook != nil {
+		if err := h.activityHook.RecordSubmission(c.Request.Context(), claims.UserID, sub.ID); err != nil {
+			slog.Warn("activity submission hook failed",
+				"user_id", claims.UserID, "submission_id", sub.ID, "err", err)
+		}
 	}
 	httpx.Created(c, submission.ToCreated(sub))
 }

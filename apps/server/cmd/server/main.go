@@ -15,6 +15,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/kaptree/kapoj/apps/server/internal/activity"
 	"github.com/kaptree/kapoj/apps/server/internal/config"
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/db"
@@ -55,6 +56,10 @@ func run() error {
 	}
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
 	defer func() { _ = rdb.Close() }()
+	activitySvc := activity.NewService(g, rdb)
+	if err := activitySvc.BackfillSharedItems(context.Background()); err != nil {
+		slog.Warn("activity: backfill shared items failed", "err", err)
+	}
 	queue := judgequeue.NewClient(cfg.RedisAddr)
 	defer func() { _ = queue.Close() }()
 	gamePublisher := gamequeue.NewPublisher(cfg.RedisAddr)
@@ -93,7 +98,7 @@ func run() error {
 		Addr: cfg.HTTPAddr,
 		Handler: router.New(router.Deps{
 			DB: g, Redis: rdb, Storage: store, Config: cfg, Enqueuer: queue, Game: gameSvc,
-			Rating: ratingSvc,
+			Rating: ratingSvc, Activity: activitySvc,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}

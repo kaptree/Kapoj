@@ -21,6 +21,13 @@ type GameHook interface {
 	OnContestJoin(ctx context.Context, userID, contestID int64) error
 }
 
+// ActivityHook 在报名/创建比赛成功后记录活跃度与共享项；失败只记录日志，
+// 不影响主请求。
+type ActivityHook interface {
+	RecordContestJoin(ctx context.Context, userID, contestID int64) error
+	RecordContestCreated(ctx context.Context, userID, contestID int64) error
+}
+
 // IdentityLookup 批量读取用户公开身份；由 gamification.Service 实现。
 type IdentityLookup interface {
 	Identities(ctx context.Context, userIDs []int64) (map[int64]gamification.Identity, error)
@@ -30,6 +37,7 @@ type IdentityLookup interface {
 type Options struct {
 	GameHook       GameHook
 	IdentityLookup IdentityLookup
+	ActivityHook   ActivityHook
 }
 
 func RegisterRoutes(r gin.IRouter, s *contest.Service, opts ...Options) {
@@ -37,6 +45,7 @@ func RegisterRoutes(r gin.IRouter, s *contest.Service, opts ...Options) {
 	if len(opts) > 0 {
 		h.gameHook = opts[0].GameHook
 		h.identities = opts[0].IdentityLookup
+		h.activityHook = opts[0].ActivityHook
 	}
 	manage := []gin.HandlerFunc{middleware.RequireAuth(), middleware.RequireRole(user.RoleContestAdmin)}
 	with := func(fn gin.HandlerFunc) []gin.HandlerFunc {
@@ -59,9 +68,10 @@ func RegisterRoutes(r gin.IRouter, s *contest.Service, opts ...Options) {
 }
 
 type handler struct {
-	svc        *contest.Service
-	gameHook   GameHook
-	identities IdentityLookup
+	svc          *contest.Service
+	gameHook     GameHook
+	identities   IdentityLookup
+	activityHook ActivityHook
 }
 
 func viewer(c *gin.Context) contest.Viewer {
@@ -149,12 +159,14 @@ func (h *handler) create(c *gin.Context) {
 	if !ok {
 		return
 	}
-	created, err := h.svc.Create(c.Request.Context(), viewer(c), in)
+	v := viewer(c)
+	created, err := h.svc.Create(c.Request.Context(), v, in)
 	if err != nil {
 		httpx.Fail(c, err)
 		return
 	}
-	detail, err := h.svc.Detail(c.Request.Context(), viewer(c), created.ID)
+	h.recordContestCreated(c.Request.Context(), v.UserID, created.ID)
+	detail, err := h.svc.Detail(c.Request.Context(), v, created.ID)
 	if err != nil {
 		httpx.Fail(c, err)
 		return
@@ -205,12 +217,14 @@ func (h *handler) clone(c *gin.Context) {
 	if !ok {
 		return
 	}
-	created, err := h.svc.Clone(c.Request.Context(), viewer(c), id, in)
+	v := viewer(c)
+	created, err := h.svc.Clone(c.Request.Context(), v, id, in)
 	if err != nil {
 		httpx.Fail(c, err)
 		return
 	}
-	detail, err := h.svc.Detail(c.Request.Context(), viewer(c), created.ID)
+	h.recordContestCreated(c.Request.Context(), v.UserID, created.ID)
+	detail, err := h.svc.Detail(c.Request.Context(), v, created.ID)
 	if err != nil {
 		httpx.Fail(c, err)
 		return
@@ -245,7 +259,25 @@ func (h *handler) register(c *gin.Context) {
 				"user_id", claims.UserID, "contest_id", id, "err", err)
 		}
 	}
+	if h.activityHook != nil {
+		if err := h.activityHook.RecordContestJoin(c.Request.Context(), claims.UserID, id); err != nil {
+			slog.Warn("activity contest join hook failed",
+				"user_id", claims.UserID, "contest_id", id, "err", err)
+		}
+	}
 	httpx.OK(c, gin.H{"registered": true})
+}
+
+// recordContestCreated records a shared contest after a successful create or
+// clone. Hook failures never fail the main request.
+func (h *handler) recordContestCreated(ctx context.Context, userID, contestID int64) {
+	if h.activityHook == nil {
+		return
+	}
+	if err := h.activityHook.RecordContestCreated(ctx, userID, contestID); err != nil {
+		slog.Warn("activity contest created hook failed",
+			"user_id", userID, "contest_id", contestID, "err", err)
+	}
 }
 
 func (h *handler) participants(c *gin.Context) {

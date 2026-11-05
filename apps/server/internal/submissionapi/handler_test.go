@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -12,18 +13,26 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
+	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/kaptree/kapoj/apps/server/internal/auth"
 	"github.com/kaptree/kapoj/apps/server/internal/config"
+	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/dbtypes"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
+	"github.com/kaptree/kapoj/apps/server/internal/middleware"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/router"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
+	"github.com/kaptree/kapoj/apps/server/internal/submission"
+	"github.com/kaptree/kapoj/apps/server/internal/submissionapi"
+	"github.com/kaptree/kapoj/apps/server/internal/submissionevents"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
+	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
 
 type fakeQueue struct {
@@ -410,4 +419,100 @@ func TestCreateSubmissionCodeLimit(t *testing.T) {
 	})
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	assert.EqualValues(t, 40001, resp["code"])
+}
+
+type fakeSubmissionActivity struct {
+	userIDs       []int64
+	submissionIDs []int64
+	err           error
+}
+
+func (f *fakeSubmissionActivity) RecordSubmission(_ context.Context, userID, submissionID int64) error {
+	f.userIDs = append(f.userIDs, userID)
+	f.submissionIDs = append(f.submissionIDs, submissionID)
+	return f.err
+}
+
+// newSubmissionActivityHandler mounts the submission routes with a fake
+// activity hook so hook success/failure can be asserted without the real
+// activity service.
+func newSubmissionActivityHandler(t *testing.T, hook submissionapi.ActivityHook) (http.Handler, string, int64, *problem.Problem) {
+	t.Helper()
+	g := testutil.PG(t)
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+
+	const userID = int64(9101)
+	require.NoError(t, g.Exec(
+		`INSERT INTO users (id, username, nickname, email, password_hash, created_at, updated_at)
+		 VALUES (?, 'hookuser', 'hookuser', 'hookuser@example.com', 'x', now(), now())`,
+		userID,
+	).Error)
+	issuer := auth.NewTokenIssuer(strings.Repeat("s", 32), 15*time.Minute)
+	token, err := issuer.IssueAccess(&user.User{ID: userID, Role: user.RoleUser})
+	require.NoError(t, err)
+
+	problemRepo := problem.NewGormRepository(g)
+	p := &problem.Problem{
+		Title: "Hook problem", Slug: "hook-problem", StatementMD: "statement",
+		Type: problem.TypeTraditional, Difficulty: 1, TimeLimitMS: 1000, MemoryLimitMB: 256,
+		IsPublic: true, CreatedBy: userID,
+	}
+	require.NoError(t, problemRepo.Create(context.Background(), p))
+	require.NoError(t, problemRepo.AddTestcase(context.Background(), &problem.Testcase{
+		ProblemID: p.ID, InputFile: "1.in", OutputFile: "1.out", Score: 10,
+	}))
+
+	svc := submission.NewService(
+		submission.NewGormRepository(g),
+		problemRepo,
+		contest.NewGormRepository(g),
+		&fakeQueue{},
+		submission.NewRedisLimiter(rdb, time.Second),
+		submissionevents.NewRedisPublisher(rdb),
+	)
+	engine := gin.New()
+	api := engine.Group("/api", middleware.Authenticate(issuer))
+	submissionapi.RegisterRoutes(api, svc, submissionevents.NewRedisStreamer(rdb),
+		submissionapi.Options{ActivityHook: hook})
+	return engine, token, userID, p
+}
+
+func doSubmissionRequest(t *testing.T, h http.Handler, token string, problemID int64) (*httptest.ResponseRecorder, map[string]any) {
+	t.Helper()
+	var buf bytes.Buffer
+	require.NoError(t, json.NewEncoder(&buf).Encode(map[string]any{
+		"problemId": problemID, "language": "cpp", "code": "int main(){}",
+	}))
+	req := httptest.NewRequest(http.MethodPost, "/api/submissions", &buf)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	var resp map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	return w, resp
+}
+
+func TestSubmissionActivityHook(t *testing.T) {
+	hook := &fakeSubmissionActivity{}
+	h, token, userID, p := newSubmissionActivityHandler(t, hook)
+
+	w, resp := doSubmissionRequest(t, h, token, p.ID)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	createdID := int64(resp["data"].(map[string]any)["id"].(float64))
+	require.Len(t, hook.submissionIDs, 1)
+	assert.Equal(t, []int64{userID}, hook.userIDs)
+	assert.Equal(t, []int64{createdID}, hook.submissionIDs)
+}
+
+func TestSubmissionActivityHookFailureDoesNotFailRequest(t *testing.T) {
+	hook := &fakeSubmissionActivity{err: errors.New("activity down")}
+	h, token, _, p := newSubmissionActivityHandler(t, hook)
+
+	w, resp := doSubmissionRequest(t, h, token, p.ID)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	assert.EqualValues(t, 0, resp["code"])
+	require.Len(t, hook.submissionIDs, 1, "失败后仍尝试记录一次活跃度")
 }

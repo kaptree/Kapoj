@@ -9,6 +9,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 
+	"github.com/kaptree/kapoj/apps/server/internal/activity"
 	"github.com/kaptree/kapoj/apps/server/internal/auth"
 	"github.com/kaptree/kapoj/apps/server/internal/config"
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
@@ -44,6 +45,7 @@ type Deps struct {
 	Enqueuer submission.Enqueuer
 	Game     *gamification.Service
 	Rating   *rating.Service
+	Activity *activity.Service
 }
 
 func New(d Deps) *gin.Engine {
@@ -92,13 +94,15 @@ func New(d Deps) *gin.Engine {
 	}
 	contestRepo := contest.NewGormRepository(d.DB)
 	contestSvc := contest.NewService(contestRepo)
+	contestOpts := contestapi.Options{}
 	if d.Game != nil {
-		contestapi.RegisterRoutes(api, contestSvc, contestapi.Options{
-			GameHook: d.Game, IdentityLookup: d.Game,
-		})
-	} else {
-		contestapi.RegisterRoutes(api, contestSvc)
+		contestOpts.GameHook = d.Game
+		contestOpts.IdentityLookup = d.Game
 	}
+	if d.Activity != nil {
+		contestOpts.ActivityHook = d.Activity
+	}
+	contestapi.RegisterRoutes(api, contestSvc, contestOpts)
 	problemRepo := problem.NewGormRepository(d.DB)
 	submissionRepo := submission.NewGormRepository(d.DB)
 	problemapi.RegisterRoutes(api, problemJSON, uploads,
@@ -112,12 +116,14 @@ func New(d Deps) *gin.Engine {
 		submissionevents.NewRedisPublisher(d.Redis),
 	)
 	streamer := submissionevents.NewRedisStreamer(d.Redis)
+	submissionOpts := submissionapi.Options{}
 	if d.Game != nil {
-		submissionapi.RegisterRoutes(api, submissionSvc, streamer,
-			submissionapi.Options{IdentityLookup: d.Game})
-	} else {
-		submissionapi.RegisterRoutes(api, submissionSvc, streamer)
+		submissionOpts.IdentityLookup = d.Game
 	}
+	if d.Activity != nil {
+		submissionOpts.ActivityHook = d.Activity
+	}
+	submissionapi.RegisterRoutes(api, submissionSvc, streamer, submissionOpts)
 	return r
 }
 
