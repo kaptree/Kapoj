@@ -3,7 +3,7 @@
 > 本文档基于 `plan.md` 细化，是 kapOJ（Kap Online Judge）平台的详细开发规格说明书。
 > 目标：**打造出最有趣味的 Online Judge 平台**。
 > 文档包含完整的架构设计、数据库设计、模块需求，并为每个模块提供了可直接交给 Codex 的**开发提示词（Prompt）**。
-> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)，前端 UI 迁移见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。当前进度：**M4-A 已完成**（M0–M3 已完成；M4 进行中。M4-A 已交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 的活跃度/签到金币/共享分/三榜、M4-C 的排行榜前端与验收，以及学习路线、社交、Rating 衰减/赛季重置尚未实现）。前端 UI 已完成 UI-00～UI-18 的 PrimeVue 4 迁移，剩余 UI-19 题库编辑与 UI-20 异常页。
+> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)，前端 UI 迁移见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。当前进度：**M4-B 已完成**（M0–M3 已完成；M4 进行中。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端，三个榜单 API 均已可用；M4-C 的排行榜前端与 Rating 历史卡片、学习路线、社交互动、Rating 衰减/赛季重置尚未实现）。前端 UI 已完成 UI-00～UI-18 的 PrimeVue 4 迁移，剩余 UI-19 题库编辑与 UI-20 异常页；该迁移已提交，但 M4-C 排行榜页面尚未开始。
 
 ---
 
@@ -122,7 +122,7 @@ kapoj/
 └── docs/               # 文档
 ```
 
-**当前状态（M4-A）**：已建立 `apps/web`、`apps/server`、`apps/judge`、`packages/api`、`docker`、`docs`。后端按领域分包，位于 `apps/server/internal/`：`config`、`httpx`（统一响应与错误码）、`health`、`db`、`dbtypes`（jsonb 列表类型）、`storage`（文件存储抽象与本地实现）、`user`（模型、仓储、校验、资料服务）、`auth`（令牌与认证服务）、`middleware`、`userapi`（用户 HTTP 接口）、`problem`（题目模型、仓储、校验、服务）、`problemapi`（题目 HTTP 接口）、`submission`（提交模型、仓储、服务、限流）、`submissionapi`（提交 HTTP 接口）、`submissionevents`（Redis→SSE）、`gamification`（金币、成就、任务、徽章、称号与公开身份）、`gamificationapi`（游戏化 HTTP 接口）、`gamequeue`（游戏事件契约与 worker）、`judgequeue`（Asynq 队列契约）、`rating`（Rating 模型、等级、Elo 结算、扫描器、榜单与历史）、`ratingapi`（Rating HTTP 接口）、`router`。`apps/judge` 是独立 Go 模块与进程，包含 `config`、`db`、`model`、`queue`、`events`、`gamequeue`、`reconcile`、`storage`、`verdict`、`sandbox`、`pipeline`、`worker`。本地开发时，docker compose 中的 PostgreSQL 映射到宿主机 5433 端口，Redis 映射到 6380 端口，启动方式见 `README.md`。
+**当前状态（M4-B）**：已建立 `apps/web`、`apps/server`、`apps/judge`、`packages/api`、`docker`、`docs`。后端按领域分包，位于 `apps/server/internal/`：`config`、`httpx`（统一响应与错误码）、`health`、`db`、`dbtypes`（jsonb 列表类型）、`storage`（文件存储抽象与本地实现）、`user`（模型、仓储、校验、资料服务）、`auth`（令牌与认证服务）、`middleware`、`userapi`（用户 HTTP 接口）、`problem`（题目模型、仓储、校验、服务）、`problemapi`（题目 HTTP 接口）、`submission`（提交模型、仓储、服务、限流）、`submissionapi`（提交 HTTP 接口）、`submissionevents`（Redis→SSE）、`gamification`（金币、成就、任务、徽章、称号与公开身份）、`gamificationapi`（游戏化 HTTP 接口）、`gamequeue`（游戏事件契约与 worker）、`judgequeue`（Asynq 队列契约）、`rating`（Rating 模型、等级、Elo 结算、扫描器、榜单与历史）、`ratingapi`（Rating HTTP 接口）、`activity`（活跃度、签到金币、共享积分与活跃度/共享榜）、`activityapi`（活跃度/共享榜与签到 HTTP 接口）、`router`。`apps/judge` 是独立 Go 模块与进程，包含 `config`、`db`、`model`、`queue`、`events`、`gamequeue`、`reconcile`、`storage`、`verdict`、`sandbox`、`pipeline`、`worker`。本地开发时，docker compose 中的 PostgreSQL 映射到宿主机 5433 端口，Redis 映射到 6380 端口，启动方式见 `README.md`。
 
 ---
 
@@ -367,6 +367,13 @@ comments ( id, user_id, target_type, target_id, content, created_at )
 likes    ( id, user_id, target_type, target_id, created_at )
 follows  ( id, follower_id, followee_id, created_at )
 ```
+
+**实现状态（M4-B）**
+
+- 已建表：`activity_logs`、`shared_items`；唯一约束分别为 `(user_id, action, ref_type, ref_id)` 与 `(type, ref_id)`，索引为 `(user_id, created_at)` 与 `(created_at)`。
+- `activity_logs.action` 当前只写 `submission`、`contest_join`、`signin`；`shared_items.type` 当前只写 `contest`，`like_count` 固定为 0，为后续题解点赞预留。
+- `comments`、`likes`、`follows` 仍是设计占位，M4-B 未建表或实现接口；评论、点赞、关注、题解点赞与通知属于后续 M4 阶段。
+- 共享项在比赛创建/克隆成功后写入；服务启动时把已有 `contests.created_by>0` 幂等回填到 `shared_items`。
 
 ### 3.7 证书认证
 
@@ -1014,6 +1021,8 @@ user_ai_configs (
 
 积分防刷规则：每类行为设每日积分上限（如评论、点赞各 20 分），签到每天只计一次；同一对象的重复点赞、重复关注不重复计分。
 
+> M4-B 实现范围只有提交 +2（每日上限 40）、参赛 +10（每日上限 50）与签到 +5；评论、点赞、关注尚未实现，后续阶段接入。
+
 **共享积分（示例）**
 
 | 行为             | 积分 |
@@ -1021,7 +1030,9 @@ user_ai_configs (
 | 创建比赛         | 20   |
 | 提供的题解被点赞 | 5/赞 |
 
-**实现状态（M4-A 已完成；活跃度/共享榜与前端待 M4-B/C）**
+> M4-B 实现创建/克隆比赛 +20；题解点赞与 `like_count` 累计尚未实现，当前恒为 0。
+
+**实现状态（M4-B 已完成；排行榜前端待 M4-C）**
 
 - **Rating 算法 v1**：设参与人数 `n`，赛前 Rating 为 `R_i`，期望得分 `E_i = Σ_{j≠i} 1 / (1 + 10^((R_j - R_i)/400))`，实际得分 `A_i = n - rank_i`（并列同名次），`delta_i = round(32 * (A_i - E_i))` 并限制在 `[-100, 100]`，新 Rating 为 `max(0, R_i + delta_i)`；`n <= 1` 时 delta 为 0，仍写历史。同一场使用结算开始时的 Rating 快照。K=32 与 ±100 固定在 `rating/algorithm.go` 的版本注释和测试中。
 - **参与判定**：只统计比赛报名者中在比赛时间窗内至少有 1 次已判（非 `pending`/`judging`）提交的用户；0 次已判提交不参与。结算复用现有 ICPC/IOI/OI 榜单，ICPC 路径补齐内部 `LastSubmissionAt`；宽限结束后仍只统计已判提交。
@@ -1030,7 +1041,12 @@ user_ai_configs (
 - **等级**：8 档灰/绿/青/蓝/紫/橙/红/黑红，阈值与颜色见上表；接口返回 `level: {key,name,color,accentColor}`。黑红名 `color=#000000`、`accentColor=#FF0000`，其他等级 `accentColor` 为空字符串。
 - **Rating 榜**：`GET /api/leaderboard/rating?page=&page_size=`，公开；只含 `status=active` 用户，按 Rating 倒序、用户 ID 升序，`score` 为 Rating，行内附带 `equippedBadges`/`equippedTitle`。基础行 Redis 缓存 60 秒，key 为 `kapoj:leaderboard:rating:v<version>:<page>:<size>`；结算成功后递增 `kapoj:leaderboard:rating:version`；Redis/缓存故障时回退数据库；缓存故障本身不会导致 5xx（身份装饰查询失败仍可能返回 5xx）。
 - **Rating 历史**：`GET /api/users/:id/rating-history?page=&page_size=`，公开；按 `created_at DESC, id DESC` 返回 `kind=contest` 记录，字段为 `contestId`、`contestTitle`、`rank`、`ratingBefore`、`ratingAfter`、`delta`、`createdAt`；用户不存在返回 40400。
-- **尚未实现**：活跃度榜、共享榜与签到金币属于 M4-B；排行榜前端、用户主页 Rating 历史卡片属于 M4-C；学习路线、社交互动、Rating 衰减/赛季重置属于后续 M4 阶段。`rating_history` 的 `kind` 与可空 `contest_id` 已为衰减/赛季预留。
+- **活跃度（M4-B）**：提交创建成功 +2（每日上限 40）、比赛报名成功 +10（每日上限 50）、每日签到 +5（每天一次）；`activity_logs` 唯一约束 `(user_id, action, ref_type, ref_id)` 保证同一提交/比赛/日期不重复计分。去重、每日上限与用户行锁在同一事务内完成；达到上限返回 no-op，不影响提交/报名主流程。
+- **签到金币（M4-B）**：每个本地自然日首次 `POST /api/activity/signin` 同时奖励 5 活跃度与 5 金币，签到日志、`coin_transactions`（`reason=signin`、`ref_type=day`、`ref_id=YYYYMMDD`）与 `users.coins` 在同一事务内提交；重复签到返回 `awarded=false`、`activityPoints=0`、`coins=0`，不重复发币。`GET /api/activity/summary` 返回 `signedInToday`、`todayPoints`、`totalPoints`。
+- **共享积分（M4-B）**：创建或克隆比赛成功后写入 `shared_items(type=contest)`，每场 20 分；启动时幂等回填已有 `created_by>0` 的比赛。共享分公式为 `20 * 比赛共享数 + 5 * 题解点赞数`，本阶段题解点赞未实现，第二项恒为 0。
+- **活跃度/共享榜（M4-B）**：`GET /api/leaderboard/activity`、`GET /api/leaderboard/sharing`，公开；只含 `status=active` 且分数 > 0 的用户，按分数倒序、用户 ID 升序，分页上限 100。行内 `score` 为积分，并返回 `equippedBadges`/`equippedTitle`；这两个榜不返回 Rating `level`。
+- **榜单缓存（M4-B）**：活跃度/共享榜基础行 Redis 缓存 60 秒，key 为 `kapoj:leaderboard:activity:v<version>:<page>:<size>` 与 `kapoj:leaderboard:sharing:v<version>:<page>:<size>`；活跃度写入后递增 `kapoj:leaderboard:activity:version`，共享项写入/回填后递增 `kapoj:leaderboard:sharing:version`。只缓存基础行，装备变更无需失效；Redis/缓存故障时回退数据库，缓存故障本身不返回 5xx（身份装饰查询失败仍可能返回 5xx）。
+- **尚未实现**：排行榜前端（三 Tab、等级颜色、签到按钮）与用户主页 Rating 历史卡片属于 M4-C；学习路线、社交互动（评论/点赞/关注/题解/通知）与 Rating 衰减/赛季重置属于后续 M4 阶段。`rating_history` 的 `kind` 与可空 `contest_id` 已为衰减/赛季预留，`shared_items.like_count` 已为题解点赞预留。
 
 **Codex 提示词（排行榜）**
 
@@ -1283,7 +1299,7 @@ problem/
 
 M3 进度：M3-A（金币、事件、成就、任务后端）、M3-B（徽章、称号、公开身份后端）与 M3-C（成就页、任务大厅、徽章商城、称号商店、装扮管理、游戏化管理、公开身份接入与真实浏览器验收）均已完成，M3 标记为 ✅。
 
-M4 进度：M4-A（Rating 结算、8 级等级、Rating 历史与 Rating 榜后端）已完成；M4-B（活跃度、签到金币、共享分与三榜后端）、M4-C（排行榜与 Rating 历史前端）、学习路线、社交互动与 Rating 衰减/赛季重置尚未完成，因此 M4 整体保持 🚧。
+M4 进度：M4-A（Rating 结算、8 级等级、Rating 历史与 Rating 榜后端）与 M4-B（活跃度、签到金币、共享分、活跃度/共享榜与三榜缓存）已完成；M4-C（排行榜与 Rating 历史前端）、学习路线、社交互动与 Rating 衰减/赛季重置尚未完成，因此 M4 整体保持 🚧。
 
 ---
 
