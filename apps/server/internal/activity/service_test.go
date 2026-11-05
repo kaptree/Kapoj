@@ -14,6 +14,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/kaptree/kapoj/apps/server/internal/activity"
+	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
 )
@@ -300,4 +301,181 @@ func TestSignInCoinConflictRollsBack(t *testing.T) {
 	assert.EqualValues(t, 0, e.countLogs(t, activity.ActionSignIn))
 	assert.EqualValues(t, 0, e.coins(t))
 	assert.EqualValues(t, 1, e.countCoinTransactions(t))
+}
+
+func TestActivityDailyCapConcurrentSubmissions(t *testing.T) {
+	e := newActivityEnv(t)
+	now := time.Now().In(time.Local)
+	seed := make([]activity.ActivityLog, 0, 19)
+	for i := 0; i < 19; i++ {
+		seed = append(seed, activity.ActivityLog{
+			UserID: testUserID, Action: activity.ActionSubmission, Points: 2,
+			RefType: "submission", RefID: int64(1000 + i), CreatedAt: now,
+		})
+	}
+	require.NoError(t, e.db.Create(&seed).Error)
+	require.EqualValues(t, 38, e.points(t, activity.ActionSubmission))
+
+	const workers = 8
+	errs := make([]error, workers)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			errs[i] = e.svc.RecordSubmission(context.Background(), testUserID, int64(2000+i))
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	for i := 0; i < workers; i++ {
+		require.NoError(t, errs[i])
+	}
+	assert.EqualValues(t, 20, e.countLogs(t, activity.ActionSubmission),
+		"38 分时并发提交只能再成功一次")
+	assert.EqualValues(t, 40, e.points(t, activity.ActionSubmission), "并发提交不能超过每日上限")
+}
+
+func TestActivityDailyCapConcurrentContestJoins(t *testing.T) {
+	e := newActivityEnv(t)
+	now := time.Now().In(time.Local)
+	seed := make([]activity.ActivityLog, 0, 5)
+	for i := 0; i < 5; i++ {
+		seed = append(seed, activity.ActivityLog{
+			UserID: testUserID, Action: activity.ActionContestJoin, Points: 10,
+			RefType: "contest", RefID: int64(3000 + i), CreatedAt: now,
+		})
+	}
+	require.NoError(t, e.db.Create(&seed).Error)
+	require.EqualValues(t, 50, e.points(t, activity.ActionContestJoin))
+
+	const workers = 8
+	errs := make([]error, workers)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			errs[i] = e.svc.RecordContestJoin(context.Background(), testUserID, int64(4000+i))
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	for i := 0; i < workers; i++ {
+		require.NoError(t, errs[i])
+	}
+	assert.EqualValues(t, 5, e.countLogs(t, activity.ActionContestJoin),
+		"已满 50 分时并发参赛不再写日志")
+	assert.EqualValues(t, 50, e.points(t, activity.ActionContestJoin))
+}
+
+func TestActivityDailyCapIgnoresYesterday(t *testing.T) {
+	e := newActivityEnv(t)
+	now := time.Now().In(time.Local)
+	yesterday := now.AddDate(0, 0, -1)
+	seed := make([]activity.ActivityLog, 0, 20)
+	for i := 0; i < 20; i++ {
+		seed = append(seed, activity.ActivityLog{
+			UserID: testUserID, Action: activity.ActionSubmission, Points: 2,
+			RefType: "submission", RefID: int64(5000 + i), CreatedAt: yesterday,
+		})
+	}
+	require.NoError(t, e.db.Create(&seed).Error)
+
+	require.NoError(t, e.svc.RecordSubmission(context.Background(), testUserID, 6000))
+
+	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	dayEnd := dayStart.AddDate(0, 0, 1)
+	var todayPoints int64
+	require.NoError(t, e.db.Model(&activity.ActivityLog{}).
+		Where("user_id = ? AND created_at >= ? AND created_at < ?", testUserID, dayStart, dayEnd).
+		Select("COALESCE(SUM(points), 0)").Scan(&todayPoints).Error)
+	assert.EqualValues(t, 2, todayPoints, "昨日 40 分不应占用今日上限")
+	assert.EqualValues(t, 42, e.points(t, activity.ActionSubmission))
+}
+
+func TestBackfillSharedItems(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr(), MaxRetries: -1})
+	t.Cleanup(func() { _ = rdb.Close() })
+	e := newActivityEnvWithRedis(t, rdb)
+	now := time.Now().In(time.Local)
+
+	ownedA := &contest.Contest{
+		Title: "backfill-a", StartTime: now, EndTime: now.Add(time.Hour),
+		Mode: contest.ModeICPC, CreatedBy: testUserID, IsPublic: true,
+	}
+	ownedB := &contest.Contest{
+		Title: "backfill-b", StartTime: now, EndTime: now.Add(time.Hour),
+		Mode: contest.ModeICPC, CreatedBy: testUserID, IsPublic: true,
+	}
+	orphan := &contest.Contest{
+		Title: "backfill-orphan", StartTime: now, EndTime: now.Add(time.Hour),
+		Mode: contest.ModeICPC, CreatedBy: 0, IsPublic: true,
+	}
+	require.NoError(t, e.db.Create(ownedA).Error)
+	require.NoError(t, e.db.Create(ownedB).Error)
+	require.NoError(t, e.db.Create(orphan).Error)
+
+	// A pre-existing row must stay unique instead of being duplicated.
+	require.NoError(t, e.db.Create(&activity.SharedItem{
+		UserID: testUserID, Type: "contest", RefID: ownedA.ID, CreatedAt: now,
+	}).Error)
+
+	ctx := context.Background()
+	require.NoError(t, e.svc.BackfillSharedItems(ctx))
+	assertSharedItemCount(t, e, "contest", 2)
+	assertSharedItemCount(t, e, "contest", 1, ownedA.ID)
+	assertSharedItemCount(t, e, "contest", 1, ownedB.ID)
+	assertSharedItemCount(t, e, "contest", 0, orphan.ID)
+	version, err := mr.Get(activity.SharingLeaderboardVersionKey)
+	require.NoError(t, err)
+	assert.Equal(t, "1", version)
+
+	// Running the backfill again is idempotent; it still refreshes caches.
+	require.NoError(t, e.svc.BackfillSharedItems(ctx))
+	assertSharedItemCount(t, e, "contest", 2)
+	assertSharedItemCount(t, e, "contest", 1, ownedA.ID)
+	assertSharedItemCount(t, e, "contest", 1, ownedB.ID)
+	version, err = mr.Get(activity.SharingLeaderboardVersionKey)
+	require.NoError(t, err)
+	assert.Equal(t, "2", version)
+
+	var items []activity.SharedItem
+	require.NoError(t, e.db.Where("type = ? AND ref_id IN ?", "contest", []int64{ownedA.ID, ownedB.ID}).
+		Order("ref_id").Find(&items).Error)
+	require.Len(t, items, 2)
+	for _, item := range items {
+		assert.Equal(t, testUserID, item.UserID)
+		assert.Zero(t, item.LikeCount)
+	}
+}
+
+func TestBackfillSharedItemsWithoutRedis(t *testing.T) {
+	e := newActivityEnv(t)
+	now := time.Now().In(time.Local)
+	c := &contest.Contest{
+		Title: "backfill-nil-redis", StartTime: now, EndTime: now.Add(time.Hour),
+		Mode: contest.ModeICPC, CreatedBy: testUserID, IsPublic: true,
+	}
+	require.NoError(t, e.db.Create(c).Error)
+	require.NoError(t, e.svc.BackfillSharedItems(context.Background()))
+	assertSharedItemCount(t, e, "contest", 1, c.ID)
+}
+
+func assertSharedItemCount(t *testing.T, e *activityEnv, itemType string, want int64, refIDs ...int64) {
+	t.Helper()
+	q := e.db.Model(&activity.SharedItem{}).Where("type = ?", itemType)
+	if len(refIDs) > 0 {
+		q = q.Where("ref_id IN ?", refIDs)
+	}
+	var count int64
+	require.NoError(t, q.Count(&count).Error)
+	assert.EqualValues(t, want, count)
 }
