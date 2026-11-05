@@ -40,6 +40,18 @@ describe('MarkdownView', () => {
     expect(w.html()).toContain('int')
   })
 
+  it('applies the requested preview theme', async () => {
+    const light = await render('marker')
+    expect(light.classes()).toContain('markdown-view--light')
+
+    const dark = mount(MarkdownView, {
+      props: { source: 'marker', theme: 'dark' },
+      attachTo: document.body,
+    })
+    expect(dark.classes()).toContain('markdown-view--dark')
+    dark.unmount()
+  })
+
   it('never loads third-party scripts or styles', async () => {
     await render('marker $x^2$\n\n```cpp\nint main() {}\n```\n\n```echarts\n{}\n```')
     const external = [...document.querySelectorAll('script[src], link[href]')]

@@ -3,7 +3,7 @@
 > 本文档基于 `plan.md` 细化，是 kapOJ（Kap Online Judge）平台的详细开发规格说明书。
 > 目标：**打造出最有趣味的 Online Judge 平台**。
 > 文档包含完整的架构设计、数据库设计、模块需求，并为每个模块提供了可直接交给 Codex 的**开发提示词（Prompt）**。
-> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)。当前进度：**M4-A 已完成**（M0–M3 已完成；M4 进行中。M4-A 已交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 的活跃度/签到金币/共享分/三榜、M4-C 的排行榜前端与验收，以及学习路线、社交、Rating 衰减/赛季重置尚未实现）。
+> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)，前端 UI 迁移见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。当前进度：**M4-A 已完成**（M0–M3 已完成；M4 进行中。M4-A 已交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 的活跃度/签到金币/共享分/三榜、M4-C 的排行榜前端与验收，以及学习路线、社交、Rating 衰减/赛季重置尚未实现）。前端 UI 已完成 UI-00～UI-18 的 PrimeVue 4 迁移，剩余 UI-19 题库编辑与 UI-20 异常页。
 
 ---
 
@@ -66,7 +66,7 @@ kapOJ 是一个融合 **竞技评测 + 游戏化成长体系 + AI 辅助** 的�
 
 | 层次     | 技术选型                                                   | 说明                                                                             |
 | -------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| 前端     | Vue 3 + TypeScript + Vite + Pinia + Element Plus + ECharts | SPA，响应式，榜单/统计用 ECharts                                                 |
+| 前端     | Vue 3 + TypeScript + Vite + Pinia + PrimeVue 4 + ECharts | SPA，响应式，榜单/统计用 ECharts；Element Plus 仅保留在未迁移页面 |
 | 编辑器   | md-editor-v3（题面 Markdown）、Monaco Editor（代码）       | 统一题面与代码编辑方案；替代早期的 mavon-editor（维护不活跃，对 Vue 3 支持有限） |
 | 后端     | Go 1.22+ + Gin + GORM                                      | 高性能、高并发、编译为单一二进制部署（既定方案，不随文档调整而变更）             |
 | 数据库   | PostgreSQL 17                                              | 主存储                                                                           |
@@ -78,6 +78,8 @@ kapOJ 是一个融合 **竞技评测 + 游戏化成长体系 + AI 辅助** 的�
 | 部署     | Docker Compose / K8s                                       | 前后端、评测服务容器化                                                           |
 
 **实现差异（M0）**：`apps/server/go.mod` 要求 Go 1.26，因为最新版 go-redis 与 golang.org/x/* 依赖需要它；仍符合「Go 1.22+」。前端 TypeScript 固定为 5.9，因为 TypeScript 7 不再提供 vue-tsc 与 openapi-typescript 依赖的编译器 API。
+
+**前端 UI 栈（2026-11-05，迁移进行中）**：默认 UI 组件库已切换为 PrimeVue `4.5.5`（`@primeuix/themes 1.2.5`、`primeicons 7.0.0`），并落地暗色优先的科技风 tokens、`AppPageHeader` / `AppSurface` / `AppFormField` 等共享组件、框架无关的 `validation.ts` 与局部中文 PrimeVue locale。现有 UI 任务 UI-00～UI-18 已完成迁移；Element Plus 仅作为过渡依赖保留在 UI-19（题库编辑/测试点/样例）与 UI-20（异常页）以及 `main.ts`，allowlist 清零后移除。详细 backlog、设计决策与逐项验证见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。下文历史提示词中的 Element Plus 为初始方案草案，当前实现以本段与迁移文档为准。
 
 ### 2.2 系统架构图
 

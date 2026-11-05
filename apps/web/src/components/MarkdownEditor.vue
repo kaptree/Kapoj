@@ -6,7 +6,10 @@ import '@/markdown'
 import { sanitizeHtml } from '@/utils/sanitize'
 
 const model = defineModel<string>({ required: true })
-withDefaults(defineProps<{ height?: string }>(), { height: '360px' })
+withDefaults(defineProps<{ height?: string; theme?: 'light' | 'dark' }>(), {
+  height: '360px',
+  theme: 'light',
+})
 
 const id = useId()
 
@@ -32,6 +35,7 @@ const toolbarsExclude: ToolbarNames[] = [
     :sanitize="sanitizeHtml"
     :toolbars-exclude="toolbarsExclude"
     :style="{ height }"
+    :theme="theme"
     language="zh-CN"
     no-mermaid
     no-echarts

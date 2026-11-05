@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import Avatar from 'primevue/avatar'
+import Button from 'primevue/button'
+import Column from 'primevue/column'
+import DataTable from 'primevue/datatable'
+import Message from 'primevue/message'
+import Paginator from 'primevue/paginator'
+import Tag from 'primevue/tag'
+import { useToast } from 'primevue/usetoast'
 
 import {
   equipBadge,
@@ -22,6 +29,11 @@ import type {
   TitleItem,
 } from '@/api/types'
 import IdentityShowcase from '@/components/IdentityShowcase.vue'
+import AppEmptyState from '@/components/ui/AppEmptyState.vue'
+import AppErrorState from '@/components/ui/AppErrorState.vue'
+import AppLoadingState from '@/components/ui/AppLoadingState.vue'
+import AppPageHeader from '@/components/ui/AppPageHeader.vue'
+import AppSurface from '@/components/ui/AppSurface.vue'
 import { useAuthStore } from '@/stores/auth'
 import { formatDateTime } from '@/utils/format'
 import {
@@ -34,6 +46,7 @@ import {
 
 const PAGE_SIZE = 20
 const auth = useAuthStore()
+const toast = useToast()
 
 const ownedBadges = ref<BadgeItem[]>([])
 const ownedTitles = ref<TitleItem[]>([])
@@ -46,6 +59,7 @@ const txLoading = ref(false)
 const error = ref('')
 const txError = ref('')
 const actingKey = ref('')
+const failedImages = ref<number[]>([])
 let latest = 0
 
 const balance = computed(() => auth.user?.coins ?? 0)
@@ -69,6 +83,7 @@ const badgeEquipSummary = computed(() =>
     ? `已装备 ${equippedBadgeCount.value} / ${config.value.maxEquippedBadges} 个`
     : `已装备 ${equippedBadgeCount.value} 个`,
 )
+const txFirst = computed(() => (txPage.value - 1) * PAGE_SIZE)
 
 function amountText(amount: number): string {
   const sign = amount > 0 ? '+' : amount < 0 ? '-' : ''
@@ -79,6 +94,18 @@ function amountClass(amount: number): string {
   if (amount > 0) return 'income'
   if (amount < 0) return 'expense'
   return ''
+}
+
+function badgeLabel(item: BadgeItem): string | undefined {
+  return badgeImage(item) ? undefined : badgeInitial(item.name)
+}
+
+function badgeImage(item: BadgeItem): string | undefined {
+  return failedImages.value.includes(item.id) ? undefined : badgeImageSrc(item.imageUrl)
+}
+
+function onBadgeImageError(id: number) {
+  if (!failedImages.value.includes(id)) failedImages.value.push(id)
 }
 
 async function loadTransactions() {
@@ -110,6 +137,7 @@ async function loadPage() {
     ])
     if (seq !== latest) return
     ownedBadges.value = badgeData
+    failedImages.value = []
     ownedTitles.value = titleData.filter((title) => title.purchased)
     // 配置加载失败时不做前端上限拦截，装备仍由服务端校验。
     config.value = configData
@@ -127,6 +155,7 @@ async function refreshBadges() {
   const userId = auth.user?.id
   if (!userId) return
   ownedBadges.value = await listUserBadges(userId)
+  failedImages.value = []
 }
 
 async function refreshTitles() {
@@ -144,10 +173,19 @@ async function runBadgeAction(badge: BadgeItem) {
     } else {
       await equipBadge(badge.id)
     }
-    ElMessage.success(badge.equipped ? '已卸下徽章' : '已装备徽章')
+    toast.add({
+      severity: 'success',
+      summary: badge.equipped ? '已卸下徽章' : '已装备徽章',
+      life: 3000,
+    })
     await refreshBadges()
   } catch (e) {
-    ElMessage.error(e instanceof ApiError ? e.message : '操作失败，请稍后再试')
+    toast.add({
+      severity: 'error',
+      summary: '操作失败',
+      detail: e instanceof ApiError ? e.message : '操作失败，请稍后再试',
+      life: 4000,
+    })
   } finally {
     actingKey.value = ''
   }
@@ -162,17 +200,26 @@ async function runTitleAction(title: TitleItem) {
     } else {
       await equipTitle(title.id)
     }
-    ElMessage.success(title.equipped ? '已卸下称号' : '已装备称号，原称号已自动卸下')
+    toast.add({
+      severity: 'success',
+      summary: title.equipped ? '已卸下称号' : '已装备称号，原称号已自动卸下',
+      life: 3000,
+    })
     await refreshTitles()
   } catch (e) {
-    ElMessage.error(e instanceof ApiError ? e.message : '操作失败，请稍后再试')
+    toast.add({
+      severity: 'error',
+      summary: '操作失败',
+      detail: e instanceof ApiError ? e.message : '操作失败，请稍后再试',
+      life: 4000,
+    })
   } finally {
     actingKey.value = ''
   }
 }
 
-function onTxPageChange(page: number) {
-  txPage.value = page
+function onTxPage(event: { page: number }) {
+  txPage.value = event.page + 1
   void loadTransactions()
 }
 
@@ -187,123 +234,148 @@ watch(
 </script>
 
 <template>
-  <el-card shadow="never">
-    <template #header>
-      <div class="head">
-        <div>
-          <span class="page-title">装扮管理</span>
-          <span class="sub">管理已拥有的徽章与称号，并查看金币流水</span>
-        </div>
-      </div>
-    </template>
+  <div class="appearance-page">
+    <AppPageHeader
+      eyebrow="APPEARANCE // MANAGER"
+      title="装扮管理"
+      description="管理已拥有的徽章与称号，并查看金币流水。"
+    />
 
-    <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" class="banner" />
+    <AppErrorState
+      v-if="error && !ownedBadges.length && !ownedTitles.length"
+      :description="error"
+      @retry="loadPage"
+    />
 
-    <div v-loading="loading" class="content">
-      <div class="overview">
-        <div class="overview-panel">
-          <div class="overview-label">金币余额</div>
-          <div class="balance-value">{{ formatCoins(balance) }} <span>金币</span></div>
-          <div class="muted">余额以服务端返回为准</div>
-        </div>
-        <div class="overview-panel">
-          <div class="overview-label">当前装扮</div>
-          <IdentityShowcase
-            v-if="equippedBadges.length || equippedTitle"
-            :badges="equippedBadges"
-            :title="equippedTitle"
-          />
-          <span v-else class="muted">尚未装备徽章或称号</span>
-        </div>
-      </div>
+    <AppLoadingState v-else-if="loading" label="正在加载装扮信息" />
 
-      <section class="section">
+    <template v-else>
+      <Message v-if="error" severity="error" :closable="false">{{ error }}</Message>
+
+      <AppSurface padding="lg" class="overview-surface">
+        <div class="overview-grid">
+          <div class="overview-panel">
+            <span class="overview-label">金币余额</span>
+            <strong class="balance-value"> {{ formatCoins(balance) }} <span>金币</span> </strong>
+            <span class="muted">余额以服务端返回为准</span>
+          </div>
+          <div class="overview-panel">
+            <span class="overview-label">当前装扮</span>
+            <IdentityShowcase
+              v-if="equippedBadges.length || equippedTitle"
+              :badges="equippedBadges"
+              :title="equippedTitle"
+              class="overview-identity"
+            />
+            <span v-else class="muted">尚未装备徽章或称号</span>
+          </div>
+        </div>
+      </AppSurface>
+
+      <AppSurface padding="lg" class="appearance-section">
         <div class="section-head">
           <div>
             <span class="section-title">我的徽章</span>
             <span class="section-sub">{{ badgeEquipSummary }}</span>
           </div>
           <RouterLink to="/shop/badges">
-            <el-button text type="primary" size="small">前往徽章商城</el-button>
+            <Button label="前往徽章商城" text size="small" icon="pi pi-arrow-right" />
           </RouterLink>
         </div>
 
         <div v-if="badgeLimitReached" class="limit-hint">装备已满，请先卸下一个徽章。</div>
 
-        <el-empty v-if="ownedBadges.length === 0" description="暂无徽章，去商城看看吧" />
+        <AppEmptyState
+          v-if="ownedBadges.length === 0"
+          icon="pi pi-box"
+          title="暂无徽章，去商城看看吧"
+          description="购买徽章后可以在这里装备展示。"
+        />
         <div v-else class="badge-grid">
           <div
-            v-for="badge in ownedBadges"
-            :key="badge.id"
+            v-for="item in ownedBadges"
+            :key="item.id"
             class="owned-card"
-            :class="{ equipped: badge.equipped }"
+            :class="{ 'is-equipped': item.equipped }"
           >
-            <el-avatar :size="48" shape="square" :src="badgeImageSrc(badge.imageUrl)" class="icon">
-              {{ badgeInitial(badge.name) }}
-            </el-avatar>
+            <Avatar
+              :image="badgeImage(item)"
+              :label="badgeLabel(item)"
+              size="large"
+              shape="square"
+              class="owned-icon"
+              :aria-label="`徽章图标：${item.name}`"
+              @error="onBadgeImageError(item.id)"
+            />
             <div class="owned-main">
-              <div class="owned-name">{{ badge.name }}</div>
-              <div class="tags">
-                <el-tag v-if="badge.equipped" type="success" size="small">装备中</el-tag>
-                <el-tag v-if="!badge.isActive" type="info" size="small">已下线</el-tag>
+              <span class="owned-name">{{ item.name }}</span>
+              <div class="owned-tags">
+                <Tag v-if="item.equipped" severity="success" value="装备中" />
+                <Tag v-if="!item.isActive" severity="secondary" value="已下线" />
               </div>
             </div>
-            <el-button
+            <Button
+              :label="item.equipped ? '卸下' : '装备'"
               size="small"
-              :type="badge.equipped ? 'info' : 'primary'"
-              :loading="actingKey === `badge-${badge.id}`"
+              outlined
+              :loading="actingKey === `badge-${item.id}`"
               :disabled="
-                (actingKey !== '' && actingKey !== `badge-${badge.id}`) ||
-                (!badge.equipped && badgeLimitReached)
+                (actingKey !== '' && actingKey !== `badge-${item.id}`) ||
+                (!item.equipped && badgeLimitReached)
               "
-              @click="runBadgeAction(badge)"
-            >
-              {{ badge.equipped ? '卸下' : '装备' }}
-            </el-button>
+              @click="runBadgeAction(item)"
+            />
           </div>
         </div>
-      </section>
+      </AppSurface>
 
-      <section class="section">
+      <AppSurface padding="lg" class="appearance-section">
         <div class="section-head">
           <div>
             <span class="section-title">我的称号</span>
             <span class="section-sub">已购买 {{ ownedTitles.length }} 个</span>
           </div>
           <RouterLink to="/shop/titles">
-            <el-button text type="primary" size="small">前往称号商店</el-button>
+            <Button label="前往称号商店" text size="small" icon="pi pi-arrow-right" />
           </RouterLink>
         </div>
 
-        <el-empty v-if="ownedTitles.length === 0" description="暂无称号，去商店看看吧" />
+        <AppEmptyState
+          v-if="ownedTitles.length === 0"
+          icon="pi pi-id-card"
+          title="暂无称号，去商店看看吧"
+          description="购买称号后可以在这里装备展示。"
+        />
         <div v-else class="title-list">
           <div
-            v-for="title in ownedTitles"
-            :key="title.id"
+            v-for="item in ownedTitles"
+            :key="item.id"
             class="owned-title"
-            :class="{ equipped: title.equipped }"
+            :class="{ 'is-equipped': item.equipped }"
           >
             <div class="title-main">
-              <span class="title-name" :style="{ color: safeTitleColor(title.color) }">
-                {{ title.name }}
+              <span
+                class="title-name"
+                :style="{ color: safeTitleColor(item.color, 'var(--kapoj-text)') }"
+              >
+                {{ item.name }}
               </span>
-              <el-tag v-if="title.equipped" type="success" size="small">装备中</el-tag>
-              <el-tag v-if="!title.isActive" type="info" size="small">已下线</el-tag>
+              <Tag v-if="item.equipped" severity="success" value="装备中" />
+              <Tag v-if="!item.isActive" severity="secondary" value="已下线" />
             </div>
-            <el-button
+            <Button
+              :label="item.equipped ? '卸下' : '装备'"
               size="small"
-              :type="title.equipped ? 'info' : 'primary'"
-              :loading="actingKey === `title-${title.id}`"
-              :disabled="actingKey !== '' && actingKey !== `title-${title.id}`"
-              @click="runTitleAction(title)"
-            >
-              {{ title.equipped ? '卸下' : '装备' }}
-            </el-button>
+              outlined
+              :loading="actingKey === `title-${item.id}`"
+              :disabled="actingKey !== '' && actingKey !== `title-${item.id}`"
+              @click="runTitleAction(item)"
+            />
           </div>
         </div>
-      </section>
+      </AppSurface>
 
-      <section class="section">
+      <AppSurface padding="lg" class="appearance-section">
         <div class="section-head">
           <div>
             <span class="section-title">金币流水</span>
@@ -311,228 +383,291 @@ watch(
           </div>
         </div>
 
-        <el-alert
-          v-if="txError"
-          :title="txError"
-          type="error"
-          show-icon
-          :closable="false"
-          class="banner"
+        <AppErrorState
+          v-if="txError && !transactions.length"
+          :description="txError"
+          @retry="loadTransactions"
         />
-
-        <div v-loading="txLoading">
-          <el-empty v-if="!txLoading && transactions.length === 0" description="暂无金币流水" />
+        <template v-else>
+          <Message v-if="txError" severity="error" :closable="false">
+            {{ txError }}
+          </Message>
+          <AppLoadingState v-if="txLoading && !transactions.length" label="正在加载金币流水" />
+          <AppEmptyState
+            v-else-if="transactions.length === 0"
+            icon="pi pi-coins"
+            title="暂无金币流水"
+            description="获得或消费金币后会显示在这里。"
+          />
           <template v-else>
-            <el-table :data="transactions" stripe>
-              <el-table-column label="时间" min-width="180">
-                <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
-              </el-table-column>
-              <el-table-column label="原因" min-width="180">
-                <template #default="{ row }">
-                  <div>{{ coinReasonLabel(row.reason) }}</div>
-                  <div v-if="row.note" class="note">{{ row.note }}</div>
+            <DataTable
+              :value="transactions"
+              :loading="txLoading"
+              data-key="id"
+              size="small"
+              responsive-layout="scroll"
+              class="transactions-table"
+            >
+              <Column header="时间" style="min-width: 180px">
+                <template #body="{ data }">{{ formatDateTime(data.createdAt) }}</template>
+              </Column>
+              <Column header="原因" style="min-width: 180px">
+                <template #body="{ data }">
+                  <div>{{ coinReasonLabel(data.reason) }}</div>
+                  <div v-if="data.note" class="note">{{ data.note }}</div>
                 </template>
-              </el-table-column>
-              <el-table-column label="金额" width="120" align="right">
-                <template #default="{ row }">
-                  <span class="amount" :class="amountClass(row.amount)">
-                    {{ amountText(row.amount) }}
+              </Column>
+              <Column header="金额" style="width: 120px">
+                <template #body="{ data }">
+                  <span class="amount" :class="amountClass(data.amount)">
+                    {{ amountText(data.amount) }}
                   </span>
                 </template>
-              </el-table-column>
-            </el-table>
-            <div v-if="txTotal > PAGE_SIZE" class="pager">
-              <el-pagination
-                layout="prev, pager, next, total"
-                :current-page="txPage"
-                :page-size="PAGE_SIZE"
-                :total="txTotal"
-                @current-change="onTxPageChange"
-              />
-            </div>
+              </Column>
+            </DataTable>
+            <Paginator
+              v-if="txTotal > PAGE_SIZE"
+              :rows="PAGE_SIZE"
+              :total-records="txTotal"
+              :first="txFirst"
+              :page-link-size="5"
+              template="PrevPageLink PageLinks NextPageLink"
+              class="pager"
+              @page="onTxPage"
+            />
           </template>
-        </div>
-      </section>
-    </div>
-  </el-card>
+        </template>
+      </AppSurface>
+    </template>
+  </div>
 </template>
 
 <style scoped>
-.head {
+.appearance-page {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  flex-direction: column;
+  gap: var(--kapoj-space-4);
+  max-width: var(--kapoj-content-max);
 }
-.page-title {
-  font-size: 18px;
-  font-weight: 600;
-}
-.sub {
-  margin-left: 10px;
-  color: var(--el-text-color-secondary);
-  font-size: 13px;
-}
-.banner {
-  margin-bottom: 12px;
-}
-.content {
-  min-height: 240px;
-}
-.overview {
+
+.overview-grid {
   display: grid;
   grid-template-columns: minmax(200px, 260px) minmax(240px, 1fr);
-  gap: 16px;
+  gap: var(--kapoj-space-4);
 }
+
 .overview-panel {
-  padding: 16px;
-  background: var(--el-fill-color-light);
-  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--kapoj-space-1);
+  min-width: 0;
+  padding: var(--kapoj-space-4);
+  background: var(--kapoj-bg-elevated);
+  border: 1px solid var(--kapoj-border);
+  border-radius: var(--kapoj-radius-sm);
 }
+
 .overview-label {
-  color: var(--el-text-color-secondary);
-  font-size: 13px;
+  color: var(--kapoj-text-muted);
+  font-family: var(--kapoj-font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
+
 .balance-value {
-  margin-top: 6px;
-  font-size: 28px;
-  font-weight: 700;
-  color: var(--el-color-warning);
+  color: var(--kapoj-warning);
+  font-size: 1.75rem;
   line-height: 1.2;
 }
+
 .balance-value span {
-  font-size: 13px;
+  color: var(--kapoj-text-secondary);
+  font-size: 0.8125rem;
   font-weight: 400;
-  color: var(--el-text-color-secondary);
 }
-.overview-panel :deep(.identity-title) {
+
+.overview-identity {
+  margin-top: var(--kapoj-space-1);
+}
+
+.overview-identity :deep(.identity-title) {
   font-size: 18px;
 }
+
 .muted {
-  margin-top: 6px;
-  color: var(--el-text-color-secondary);
+  color: var(--kapoj-text-muted);
   font-size: 12px;
 }
-.section {
-  padding-top: 18px;
-  margin-top: 18px;
-  border-top: 1px solid var(--el-border-color-lighter);
+
+.appearance-section {
+  min-width: 0;
 }
+
 .section-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: var(--kapoj-space-2);
+  margin-bottom: var(--kapoj-space-3);
 }
+
 .section-title {
-  font-size: 16px;
+  color: var(--kapoj-text);
+  font-size: 1rem;
   font-weight: 600;
 }
+
 .section-sub {
-  margin-left: 10px;
-  color: var(--el-text-color-secondary);
+  margin-left: var(--kapoj-space-2);
+  color: var(--kapoj-text-muted);
   font-size: 12px;
 }
+
 .limit-hint {
-  margin-bottom: 10px;
-  color: var(--el-color-warning);
+  margin-bottom: var(--kapoj-space-2);
+  color: var(--kapoj-warning);
   font-size: 12px;
 }
+
 .badge-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 12px;
+  gap: var(--kapoj-space-3);
 }
+
 .owned-card {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px;
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 8px;
+  gap: var(--kapoj-space-3);
+  min-width: 0;
+  padding: var(--kapoj-space-3);
+  border: 1px solid var(--kapoj-border);
+  border-radius: var(--kapoj-radius-sm);
 }
-.owned-card.equipped,
-.owned-title.equipped {
-  border-color: var(--el-color-success);
+
+.owned-card.is-equipped,
+.owned-title.is-equipped {
+  border-color: color-mix(in srgb, var(--kapoj-success) 45%, var(--kapoj-border));
 }
-.icon {
-  flex: none;
-  font-size: 18px;
-  color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
+
+.owned-icon {
+  flex: 0 0 auto;
+  color: var(--kapoj-primary);
+  font-size: 1.1rem;
+  font-weight: 700;
+  background: var(--kapoj-primary-soft);
 }
+
 .owned-main {
   flex: 1;
   min-width: 0;
 }
+
 .owned-name {
+  color: var(--kapoj-text);
   font-weight: 600;
   word-break: break-word;
 }
-.tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 4px;
-}
-.title-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.owned-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 14px;
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 8px;
-}
+
+.owned-tags,
 .title-main {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  min-width: 0;
+  gap: var(--kapoj-space-2);
 }
+
+.owned-tags {
+  gap: var(--kapoj-space-1);
+  margin-top: var(--kapoj-space-1);
+}
+
+.title-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kapoj-space-2);
+}
+
+.owned-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kapoj-space-3);
+  padding: var(--kapoj-space-3);
+  border: 1px solid var(--kapoj-border);
+  border-radius: var(--kapoj-radius-sm);
+}
+
 .title-name {
-  font-size: 16px;
+  font-size: 1rem;
   font-weight: 600;
   word-break: break-word;
 }
+
+.transactions-table {
+  overflow: hidden;
+  border: 1px solid var(--kapoj-border);
+  border-radius: var(--kapoj-radius-md);
+}
+
+.transactions-table :deep(.p-datatable-thead > tr > th) {
+  padding: 8px var(--kapoj-space-3);
+  color: var(--kapoj-text-muted);
+  font-family: var(--kapoj-font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: var(--kapoj-bg-elevated);
+  border-color: var(--kapoj-border);
+}
+
+.transactions-table :deep(.p-datatable-tbody > tr > td) {
+  padding: 8px var(--kapoj-space-3);
+  color: var(--kapoj-text-secondary);
+  border-color: var(--kapoj-border);
+}
+
 .note {
   margin-top: 2px;
-  color: var(--el-text-color-secondary);
+  color: var(--kapoj-text-muted);
   font-size: 12px;
 }
+
 .amount {
+  font-family: var(--kapoj-font-mono);
   font-weight: 600;
 }
+
 .amount.income {
-  color: var(--el-color-success);
+  color: var(--kapoj-success);
 }
+
 .amount.expense {
-  color: var(--el-color-danger);
+  color: var(--kapoj-danger);
 }
+
 .pager {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 12px;
+  align-self: flex-end;
+  margin-top: var(--kapoj-space-2);
 }
+
 @media (max-width: 640px) {
-  .overview {
-    grid-template-columns: 1fr;
-  }
+  .overview-grid,
   .badge-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
-  .sub {
-    display: block;
-    margin: 4px 0 0;
+
+  .owned-title {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .pager {
+    align-self: stretch;
   }
 }
 </style>

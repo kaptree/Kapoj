@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { MdEditor } from 'md-editor-v3'
 
 import MarkdownEditor from './MarkdownEditor.vue'
 
@@ -11,6 +12,15 @@ describe('MarkdownEditor', () => {
     })
     await vi.waitFor(() => expect(w.html()).toContain('marker'), { timeout: 3000 })
     expect(w.find('.md-editor').exists()).toBe(true)
+  })
+
+  it('passes the requested theme to the editor', async () => {
+    const w = mount(MarkdownEditor, {
+      props: { modelValue: 'marker', theme: 'dark' },
+      attachTo: document.body,
+    })
+    await vi.waitFor(() => expect(w.html()).toContain('marker'), { timeout: 3000 })
+    expect(w.findComponent(MdEditor).props('theme')).toBe('dark')
   })
 
   it('never loads third-party scripts or styles', async () => {

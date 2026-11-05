@@ -1,0 +1,68 @@
+import { mount } from '@vue/test-utils'
+import { createMemoryHistory, createRouter } from 'vue-router'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import AppNav from './AppNav.vue'
+
+const auth = vi.hoisted(() => ({
+  user: null as { role: string } | null,
+}))
+
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => auth,
+}))
+
+const routes = [
+  { path: '/', component: { template: '<div />' } },
+  { path: '/problems', component: { template: '<div />' } },
+  { path: '/problems/:id', component: { template: '<div />' } },
+  { path: '/admin/gamification', component: { template: '<div />' } },
+]
+
+async function mountNav(path = '/') {
+  const router = createRouter({ history: createMemoryHistory(), routes })
+  await router.push(path)
+  await router.isReady()
+  return mount(AppNav, { global: { plugins: [router] } })
+}
+
+beforeEach(() => {
+  auth.user = { role: 'user' }
+})
+
+describe('AppNav', () => {
+  it('renders the primary and growth navigation groups', async () => {
+    const wrapper = await mountNav()
+
+    for (const label of ['首页', '题库', '测评记录', '比赛', '排行榜', '成长', '成就', '任务']) {
+      expect(wrapper.text()).toContain(label)
+    }
+    expect(wrapper.find('nav').attributes('aria-label')).toBe('主导航')
+  })
+
+  it('shows the administration entry only to super admins', async () => {
+    let wrapper = await mountNav()
+    expect(wrapper.text()).not.toContain('游戏化管理')
+
+    auth.user = { role: 'super_admin' }
+    wrapper = await mountNav()
+    expect(wrapper.text()).toContain('游戏化管理')
+  })
+
+  it('keeps the leaderboard disabled until M4', async () => {
+    const wrapper = await mountNav()
+    const leaderboard = wrapper.find('[data-nav="leaderboard"]')
+
+    expect(leaderboard.attributes('aria-disabled')).toBe('true')
+    expect(leaderboard.text()).toContain('M4 上线')
+    expect(wrapper.find('a[href="/leaderboard"]').exists()).toBe(false)
+  })
+
+  it('marks prefix routes active and sets aria-current', async () => {
+    const wrapper = await mountNav('/problems/42')
+    const link = wrapper.find('a[href="/problems"]')
+
+    expect(link.classes()).toContain('is-active')
+    expect(link.attributes('aria-current')).toBe('page')
+  })
+})

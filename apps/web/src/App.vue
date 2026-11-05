@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
+import ConfirmDialog from 'primevue/confirmdialog'
+import Toast from 'primevue/toast'
 
 import { useAuthStore } from '@/stores/auth'
 
@@ -13,4 +15,6 @@ onMounted(() => {
 
 <template>
   <RouterView />
+  <Toast position="top-right" />
+  <ConfirmDialog />
 </template>

@@ -1,9 +1,11 @@
+import { flushPromises, mount } from '@vue/test-utils'
+import PrimeVue from 'primevue/config'
+import ToastService from 'primevue/toastservice'
+import { createPinia } from 'pinia'
 import { describe, expect, it, vi } from 'vitest'
 import { reactive } from 'vue'
-import { flushPromises, mount } from '@vue/test-utils'
-import ElementPlus from 'element-plus'
-import { createPinia } from 'pinia'
 
+import { ApiError } from '@/api/http'
 import { getProblem, getStatistics } from '@/api/problems'
 import type { ProblemDetail, ProblemStats } from '@/api/types'
 import ProblemDetailView from './ProblemDetailView.vue'
@@ -15,7 +17,7 @@ vi.mock('vue-router', async (importOriginal) => {
   return { ...actual, useRoute: () => route }
 })
 vi.mock('@/components/MarkdownView.vue', () => ({
-  default: { props: ['source'], template: '<div>{{ source }}</div>' },
+  default: { props: ['source', 'theme'], template: '<div>{{ source }}</div>' },
 }))
 vi.mock('@/api/problems', () => ({
   getProblem: vi.fn(),
@@ -61,7 +63,58 @@ function stats(submitCount: number, acceptCount: number): ProblemStats {
   }
 }
 
+function mountView() {
+  return mount(ProblemDetailView, {
+    global: {
+      plugins: [PrimeVue, ToastService, createPinia()],
+      stubs: { RouterLink: { template: '<a><slot /></a>' } },
+    },
+  })
+}
+
+async function openStatsTab(wrapper: ReturnType<typeof mountView>) {
+  const tab = wrapper.findAll('[role="tab"]').find((el) => el.text() === '提交统计')
+  expect(tab).toBeTruthy()
+  await tab!.trigger('click')
+  await flushPromises()
+}
+
 describe('ProblemDetailView', () => {
+  it('renders the statement, meta and samples', async () => {
+    vi.mocked(getProblem).mockResolvedValue({
+      ...detail(1),
+      title: 'Two Sum',
+      slug: 'two-sum',
+      statementMd: 'statement text',
+      inputFormatMd: 'input format',
+      outputFormatMd: 'output format',
+      samples: [{ input: '1 2', output: '3' }],
+      hintMd: 'hint text',
+      tags: ['math'],
+      source: '测试来源',
+      difficulty: 3,
+    })
+    vi.mocked(getStatistics).mockResolvedValue(stats(10, 5))
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Two Sum')
+    expect(wrapper.text()).toContain('提高')
+    expect(wrapper.text()).toContain('传统题')
+    expect(wrapper.text()).toContain('1000 ms')
+    expect(wrapper.text()).toContain('256 MB')
+    expect(wrapper.text()).toContain('来源：测试来源')
+    expect(wrapper.text()).toContain('math')
+    expect(wrapper.text()).toContain('statement text')
+    expect(wrapper.text()).toContain('input format')
+    expect(wrapper.text()).toContain('output format')
+    expect(wrapper.text()).toContain('输入 1')
+    expect(wrapper.text()).toContain('1 2')
+    expect(wrapper.text()).toContain('hint text')
+    expect(wrapper.text()).toContain('提交代码')
+    wrapper.unmount()
+  })
+
   it('ignores statistics that arrive after the route moved to another problem', async () => {
     const firstDetail = deferred<ProblemDetail>()
     const firstStats = deferred<ProblemStats>()
@@ -75,12 +128,7 @@ describe('ProblemDetailView', () => {
     )
 
     route.params.id = '1'
-    const wrapper = mount(ProblemDetailView, {
-      global: {
-        plugins: [ElementPlus, createPinia()],
-        stubs: { RouterLink: { template: '<a><slot /></a>' } },
-      },
-    })
+    const wrapper = mountView()
 
     firstDetail.resolve(detail(1))
     await flushPromises()
@@ -94,12 +142,25 @@ describe('ProblemDetailView', () => {
 
     secondStats.resolve(stats(10, 5))
     await flushPromises()
+    await openStatsTab(wrapper)
     expect(wrapper.text()).toContain('50.0%')
 
     firstStats.resolve(stats(10, 0))
     await flushPromises()
     expect(wrapper.text()).toContain('50.0%')
 
+    wrapper.unmount()
+  })
+
+  it('shows a not-found error and a return link', async () => {
+    vi.mocked(getProblem).mockRejectedValue(new ApiError(404, 40400, 'not found'))
+    vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('题目不存在')
+    expect(wrapper.text()).toContain('重试')
+    expect(wrapper.text()).toContain('返回题库')
     wrapper.unmount()
   })
 })

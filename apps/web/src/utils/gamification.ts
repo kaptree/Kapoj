@@ -70,8 +70,8 @@ export function coinReasonLabel(reason: string): string {
 }
 
 /** Only accepts an exact #RRGGBB value, so untrusted colors cannot inject CSS. */
-export function safeTitleColor(color: string): string {
-  return /^#[0-9A-Fa-f]{6}$/.test(color) ? color : DEFAULT_TITLE_COLOR
+export function safeTitleColor(color: string, fallback = DEFAULT_TITLE_COLOR): string {
+  return /^#[0-9A-Fa-f]{6}$/.test(color) ? color : fallback
 }
 
 /** Returns the first code point of a badge name, or ? when it is empty. */

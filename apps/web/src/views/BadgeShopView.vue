@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import Avatar from 'primevue/avatar'
+import Button from 'primevue/button'
+import Message from 'primevue/message'
+import SelectButton from 'primevue/selectbutton'
+import Tag from 'primevue/tag'
+import { useConfirm } from 'primevue/useconfirm'
+import { useToast } from 'primevue/usetoast'
 
 import {
   equipBadge,
@@ -12,11 +18,18 @@ import {
 } from '@/api/gamification'
 import { ApiError } from '@/api/http'
 import type { BadgeItem, GamificationConfig } from '@/api/types'
+import AppEmptyState from '@/components/ui/AppEmptyState.vue'
+import AppErrorState from '@/components/ui/AppErrorState.vue'
+import AppLoadingState from '@/components/ui/AppLoadingState.vue'
+import AppPageHeader from '@/components/ui/AppPageHeader.vue'
+import AppSurface from '@/components/ui/AppSurface.vue'
 import { useAuthStore } from '@/stores/auth'
 import { badgeImageSrc, badgeInitial, formatCoins } from '@/utils/gamification'
 
 const route = useRoute()
 const auth = useAuthStore()
+const toast = useToast()
+const confirm = useConfirm()
 
 const badges = ref<BadgeItem[]>([])
 const config = ref<GamificationConfig | null>(null)
@@ -24,8 +37,10 @@ const loading = ref(false)
 const error = ref('')
 const category = ref('')
 const actingId = ref<number | null>(null)
+const failedImages = ref<number[]>([])
 let latest = 0
 
+const isLoggedIn = computed(() => auth.isLoggedIn)
 const categories = computed(() => {
   const seen = new Set<string>()
   const result: string[] = []
@@ -37,11 +52,13 @@ const categories = computed(() => {
   }
   return result
 })
-
+const categoryOptions = computed(() => [
+  { label: '全部', value: '' },
+  ...categories.value.map((item) => ({ label: item, value: item })),
+])
 const filtered = computed(() =>
   category.value ? badges.value.filter((badge) => badge.category === category.value) : badges.value,
 )
-
 const balance = computed(() => auth.user?.coins ?? 0)
 const loginTarget = computed(() => ({ name: 'login', query: { redirect: route.fullPath } }))
 const equippedCount = computed(() => badges.value.filter((badge) => badge.equipped).length)
@@ -54,6 +71,14 @@ const equipSummary = computed(() =>
     : `已装备 ${equippedCount.value} 个`,
 )
 
+function imageSrc(item: BadgeItem): string | undefined {
+  return failedImages.value.includes(item.id) ? undefined : badgeImageSrc(item.imageUrl)
+}
+
+function onImageError(id: number) {
+  if (!failedImages.value.includes(id)) failedImages.value.push(id)
+}
+
 function ownedHint(item: BadgeItem): string {
   if (item.equipped) return '该徽章正在公开展示。'
   if (limitReached.value) return '装备已满，请先卸下一个徽章。'
@@ -61,7 +86,7 @@ function ownedHint(item: BadgeItem): string {
 }
 
 function insufficient(item: BadgeItem): boolean {
-  return auth.isLoggedIn && auth.user !== null && auth.user.coins < item.priceCoins
+  return isLoggedIn.value && auth.user !== null && auth.user.coins < item.priceCoins
 }
 
 function shortfall(item: BadgeItem): number {
@@ -76,6 +101,7 @@ async function load() {
     const data = await listBadges()
     if (seq !== latest) return
     badges.value = data
+    failedImages.value = []
     if (category.value && !data.some((badge) => badge.category === category.value)) {
       category.value = ''
     }
@@ -87,32 +113,38 @@ async function load() {
   }
 }
 
-async function runAction(id: number, action: () => Promise<unknown>, successText: string) {
+async function runAction(id: number, action: () => Promise<unknown>, successSummary: string) {
   actingId.value = id
   try {
     await action()
-    ElMessage.success(successText)
+    toast.add({ severity: 'success', summary: successSummary, life: 3000 })
     await auth.fetchMe().catch(() => undefined)
     await load()
   } catch (e) {
-    ElMessage.error(e instanceof ApiError ? e.message : '操作失败，请稍后再试')
+    toast.add({
+      severity: 'error',
+      summary: '操作失败',
+      detail: e instanceof ApiError ? e.message : '操作失败，请稍后再试',
+      life: 4000,
+    })
   } finally {
     actingId.value = null
   }
 }
 
-async function buy(item: BadgeItem) {
+function buy(item: BadgeItem) {
   const price = item.priceCoins > 0 ? `花费 ${formatCoins(item.priceCoins)} 金币` : '免费'
-  try {
-    await ElMessageBox.confirm(`确定${price}购买徽章「${item.name}」吗？`, '购买徽章', {
-      type: 'info',
-      confirmButtonText: '购买',
-      cancelButtonText: '取消',
-    })
-  } catch {
-    return
-  }
-  await runAction(item.id, () => purchaseBadge(item.id), '购买成功，可在装扮管理中装备')
+  confirm.require({
+    header: '购买徽章',
+    message: `确定${price}购买徽章「${item.name}」吗？`,
+    icon: 'pi pi-shopping-cart',
+    acceptLabel: '购买',
+    rejectLabel: '取消',
+    rejectProps: { severity: 'secondary', outlined: true },
+    accept: () => {
+      void runAction(item.id, () => purchaseBadge(item.id), '购买成功，可在装扮管理中装备')
+    },
+  })
 }
 
 function toggleEquip(item: BadgeItem) {
@@ -144,74 +176,85 @@ watch(
 </script>
 
 <template>
-  <el-card shadow="never">
-    <template #header>
-      <div class="head">
-        <div>
-          <span class="page-title">徽章商城</span>
-          <span class="sub">使用金币购买徽章，装备后可在公开页面展示</span>
-        </div>
-        <div v-if="auth.isLoggedIn" class="head-tags">
-          <el-tag :type="limitReached ? 'warning' : 'success'" effect="plain">
-            {{ equipSummary }}
-          </el-tag>
-          <el-tag type="warning" effect="plain"> 余额 {{ formatCoins(balance) }} 金币 </el-tag>
-        </div>
-      </div>
-    </template>
+  <div class="shop-page">
+    <AppPageHeader
+      eyebrow="SHOP // BADGES"
+      title="徽章商城"
+      description="使用金币购买徽章，装备后可在公开页面展示。"
+    >
+      <template #actions>
+        <template v-if="isLoggedIn">
+          <Tag :severity="limitReached ? 'warn' : 'success'" :value="equipSummary" />
+          <Tag severity="warn" :value="`余额 ${formatCoins(balance)} 金币`" />
+        </template>
+      </template>
+    </AppPageHeader>
 
-    <div v-if="!auth.isLoggedIn" class="cta">
+    <div v-if="!isLoggedIn" class="login-cta">
       <span>登录后可购买徽章并装备展示。</span>
       <RouterLink :to="loginTarget">
-        <el-button type="primary" plain size="small">登录 / 注册</el-button>
+        <Button label="登录 / 注册" icon="pi pi-sign-in" size="small" outlined />
       </RouterLink>
     </div>
 
     <div v-if="categories.length" class="toolbar">
       <span class="filter-label">分类</span>
-      <el-radio-group v-model="category" class="category-filter">
-        <el-radio-button value="">全部</el-radio-button>
-        <el-radio-button v-for="item in categories" :key="item" :value="item">
-          {{ item }}
-        </el-radio-button>
-      </el-radio-group>
+      <SelectButton
+        v-model="category"
+        :options="categoryOptions"
+        option-label="label"
+        option-value="value"
+        :allow-empty="false"
+      />
     </div>
 
-    <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" class="banner" />
+    <AppErrorState v-if="error && !badges.length" :description="error" @retry="load" />
 
-    <div v-loading="loading" class="grid-wrap">
-      <el-empty
-        v-if="!loading && !error && filtered.length === 0"
-        :description="category ? '该分类暂无徽章' : '暂无徽章'"
+    <AppLoadingState v-else-if="loading && !badges.length" label="正在加载徽章商城" />
+
+    <template v-else>
+      <Message v-if="error" severity="error" :closable="false">{{ error }}</Message>
+
+      <AppEmptyState
+        v-if="!error && filtered.length === 0"
+        icon="pi pi-box"
+        :title="category ? '该分类暂无徽章' : '暂无徽章'"
+        description="新的徽章上架后会显示在这里。"
       />
-      <div v-else class="grid">
-        <el-card
+
+      <div v-else class="badge-grid">
+        <AppSurface
           v-for="item in filtered"
           :key="item.id"
-          shadow="hover"
+          as="article"
+          padding="md"
           class="badge-card"
-          :class="{ equipped: item.equipped }"
+          :class="{ 'is-equipped': item.equipped }"
         >
           <div class="card-head">
-            <el-avatar :size="56" shape="square" :src="badgeImageSrc(item.imageUrl)" class="icon">
-              {{ badgeInitial(item.name) }}
-            </el-avatar>
+            <Avatar
+              :image="imageSrc(item)"
+              :label="imageSrc(item) ? undefined : badgeInitial(item.name)"
+              size="large"
+              shape="square"
+              class="badge-icon"
+              :aria-label="`徽章图标：${item.name}`"
+              @error="onImageError(item.id)"
+            />
             <div class="name-wrap">
-              <div class="name">{{ item.name }}</div>
-              <div class="tags">
-                <el-tag v-if="item.category" size="small" effect="plain">{{
-                  item.category
-                }}</el-tag>
-                <el-tag v-if="item.equipped" type="success" size="small">装备中</el-tag>
-                <el-tag v-else-if="item.owned" type="info" size="small">已拥有</el-tag>
-                <el-tag v-if="!item.isActive" type="info" size="small">已下线</el-tag>
+              <h2 class="badge-name">{{ item.name }}</h2>
+              <div class="badge-tags">
+                <Tag v-if="item.category" severity="secondary" :value="item.category" />
+                <Tag v-if="item.equipped" severity="success" value="装备中" />
+                <Tag v-else-if="item.owned" severity="info" value="已拥有" />
+                <Tag v-if="!item.isActive" severity="secondary" value="已下线" />
               </div>
             </div>
           </div>
 
-          <div class="desc">{{ item.description || '暂无描述' }}</div>
+          <p class="badge-desc">{{ item.description || '暂无描述' }}</p>
 
-          <div class="meta">
+          <div class="badge-meta">
             <span class="price">
               {{ item.priceCoins > 0 ? `${formatCoins(item.priceCoins)} 金币` : '免费' }}
             </span>
@@ -222,45 +265,45 @@ watch(
           </div>
 
           <div class="card-foot">
-            <template v-if="!auth.isLoggedIn">
+            <template v-if="!isLoggedIn">
               <RouterLink :to="loginTarget">
-                <el-button type="primary" plain size="small">登录后购买</el-button>
+                <Button label="登录后购买" icon="pi pi-sign-in" size="small" outlined />
               </RouterLink>
             </template>
             <template v-else-if="item.owned">
-              <el-button
-                type="primary"
-                plain
+              <Button
+                :label="item.equipped ? '卸下' : '装备'"
                 size="small"
+                outlined
                 :loading="actingId === item.id"
                 :disabled="
                   (actingId !== null && actingId !== item.id) || (!item.equipped && limitReached)
                 "
                 @click="toggleEquip(item)"
-              >
-                {{ item.equipped ? '卸下' : '装备' }}
-              </el-button>
-              <el-button disabled size="small">已拥有</el-button>
+              />
+              <Button label="已拥有" size="small" disabled />
             </template>
             <template v-else>
-              <el-button v-if="item.isLimited && item.stock <= 0" disabled size="small">
-                已售罄
-              </el-button>
-              <el-button v-else-if="insufficient(item)" disabled size="small">余额不足</el-button>
-              <el-button
+              <Button
+                v-if="item.isLimited && item.stock <= 0"
+                label="已售罄"
+                size="small"
+                disabled
+              />
+              <Button v-else-if="insufficient(item)" label="余额不足" size="small" disabled />
+              <Button
                 v-else
-                type="primary"
+                label="购买"
+                icon="pi pi-shopping-cart"
                 size="small"
                 :loading="actingId === item.id"
                 :disabled="actingId !== null && actingId !== item.id"
                 @click="buy(item)"
-              >
-                购买
-              </el-button>
+              />
             </template>
           </div>
 
-          <div v-if="!auth.isLoggedIn" class="hint">登录后才能购买与装备徽章。</div>
+          <div v-if="!isLoggedIn" class="hint">登录后才能购买与装备徽章。</div>
           <div v-else-if="item.owned" class="hint">{{ ownedHint(item) }}</div>
           <div v-else-if="item.isLimited && item.stock <= 0" class="hint">
             限量库存已售罄，无法购买。
@@ -268,158 +311,156 @@ watch(
           <div v-else-if="insufficient(item)" class="hint">
             余额不足，还差 {{ formatCoins(shortfall(item)) }} 金币。
           </div>
-        </el-card>
+        </AppSurface>
       </div>
-    </div>
-  </el-card>
+    </template>
+  </div>
 </template>
 
 <style scoped>
-.head {
+.shop-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kapoj-space-4);
+  max-width: var(--kapoj-content-max);
+}
+
+.login-cta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--kapoj-space-3);
+  padding: var(--kapoj-space-3) var(--kapoj-space-4);
+  color: var(--kapoj-text-secondary);
+  font-size: 0.875rem;
+  background: var(--kapoj-primary-soft);
+  border: 1px solid color-mix(in srgb, var(--kapoj-primary) 26%, var(--kapoj-border));
+  border-radius: var(--kapoj-radius-md);
 }
-.page-title {
-  font-size: 18px;
-  font-weight: 600;
-}
-.head-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.sub {
-  margin-left: 10px;
-  color: var(--el-text-color-secondary);
-  font-size: 13px;
-}
-.cta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 10px 14px;
-  margin-bottom: 16px;
-  color: var(--el-text-color-regular);
-  background: var(--el-fill-color-light);
-  border-radius: 6px;
-}
+
 .toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 16px;
+  gap: var(--kapoj-space-3);
 }
+
 .filter-label {
-  color: var(--el-text-color-secondary);
+  color: var(--kapoj-text-secondary);
   font-size: 13px;
 }
-.category-filter {
-  display: flex;
-  flex-wrap: wrap;
-}
-.banner {
-  margin-bottom: 12px;
-}
-.grid-wrap {
-  min-height: 180px;
-}
-.grid {
+
+.badge-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 16px;
+  gap: var(--kapoj-space-4);
 }
+
 .badge-card {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  gap: var(--kapoj-space-3);
+  min-width: 0;
 }
-.badge-card.equipped {
-  border-color: var(--el-color-success);
+
+.badge-card.is-equipped {
+  border-color: color-mix(in srgb, var(--kapoj-success) 45%, var(--kapoj-border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--kapoj-success) 18%, transparent);
 }
+
 .card-head {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
+  gap: var(--kapoj-space-3);
 }
-.icon {
-  flex: none;
-  font-size: 20px;
-  color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
+
+.badge-icon {
+  flex: 0 0 auto;
+  width: 56px;
+  height: 56px;
+  color: var(--kapoj-primary);
+  font-size: 1.3rem;
+  font-weight: 700;
+  background: var(--kapoj-primary-soft);
+  border: 1px solid color-mix(in srgb, var(--kapoj-primary) 26%, transparent);
 }
+
 .name-wrap {
   flex: 1;
   min-width: 0;
 }
-.name {
-  font-size: 16px;
-  font-weight: 600;
+
+.badge-name {
+  margin: 0;
+  color: var(--kapoj-text);
+  font-size: 1rem;
+  line-height: 1.35;
   word-break: break-word;
 }
-.tags {
+
+.badge-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 6px;
+  gap: var(--kapoj-space-1);
+  margin-top: var(--kapoj-space-1);
 }
-.desc {
-  margin-top: 12px;
-  color: var(--el-text-color-secondary);
-  font-size: 13px;
-  line-height: 1.5;
+
+.badge-desc {
   display: -webkit-box;
+  margin: 0;
   overflow: hidden;
+  color: var(--kapoj-text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.5;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   line-clamp: 2;
 }
-.meta {
+
+.badge-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
-  padding-top: 12px;
-  margin-top: 12px;
-  font-size: 13px;
-  border-top: 1px solid var(--el-border-color-lighter);
+  gap: var(--kapoj-space-3);
+  padding-top: var(--kapoj-space-3);
+  color: var(--kapoj-text-secondary);
+  font-size: 0.8125rem;
+  border-top: 1px solid var(--kapoj-border);
 }
+
 .price {
+  color: var(--kapoj-warning);
   font-weight: 600;
-  color: var(--el-color-warning);
 }
-.stock {
-  color: var(--el-text-color-secondary);
-}
+
 .stock.empty {
-  color: var(--el-color-danger);
+  color: var(--kapoj-danger);
 }
+
 .card-foot {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--kapoj-space-2);
+  min-height: 40px;
+  padding-top: var(--kapoj-space-3);
   margin-top: auto;
-  padding-top: 12px;
 }
+
 .hint {
-  margin-top: 8px;
-  color: var(--el-text-color-secondary);
+  color: var(--kapoj-text-muted);
   font-size: 12px;
 }
+
 @media (max-width: 640px) {
-  .grid {
-    grid-template-columns: 1fr;
+  .badge-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
-  .sub {
-    display: block;
-    margin: 4px 0 0;
+
+  .login-cta :deep(.p-button) {
+    width: 100%;
   }
 }
 </style>

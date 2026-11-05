@@ -1,13 +1,26 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import Button from 'primevue/button'
+import Column from 'primevue/column'
+import DataTable from 'primevue/datatable'
+import InputText from 'primevue/inputtext'
+import Paginator from 'primevue/paginator'
+import Select from 'primevue/select'
+import ToggleSwitch from 'primevue/toggleswitch'
 
 import { ApiError } from '@/api/http'
 import { listProblems } from '@/api/problems'
 import type { ProblemListItem } from '@/api/types'
+import AppDifficultyTag from '@/components/ui/AppDifficultyTag.vue'
+import AppEmptyState from '@/components/ui/AppEmptyState.vue'
+import AppErrorState from '@/components/ui/AppErrorState.vue'
+import AppLoadingState from '@/components/ui/AppLoadingState.vue'
+import AppPageHeader from '@/components/ui/AppPageHeader.vue'
+import AppSurface from '@/components/ui/AppSurface.vue'
 import { hasRole } from '@/router/guard'
 import { useAuthStore } from '@/stores/auth'
-import { DIFFICULTIES, difficultyLabel } from '@/utils/difficulty'
+import { DIFFICULTIES } from '@/utils/difficulty'
 import { parseProblemQuery, toRouteQuery } from '@/utils/problemQuery'
 
 const PAGE_SIZE = 20
@@ -19,12 +32,14 @@ const auth = useAuthStore()
 const canManage = computed(() => hasRole(auth.user?.role ?? null, ['problem_admin']))
 const query = computed(() => parseProblemQuery(route.query))
 
-const filters = reactive({ keyword: '', tag: '', difficulty: null as number | null })
+const filters = ref({ keyword: '', tag: '', difficulty: null as number | null })
 const showHidden = ref(false)
 const items = ref<ProblemListItem[]>([])
 const total = ref(0)
 const loading = ref(false)
 const error = ref('')
+
+const first = computed(() => (query.value.page - 1) * PAGE_SIZE)
 
 // Only the newest request may update the page; slow older ones are ignored.
 let latest = 0
@@ -54,9 +69,9 @@ watch(
   () => route.query,
   () => {
     const q = query.value
-    filters.keyword = q.keyword
-    filters.tag = q.tag
-    filters.difficulty = q.difficulty
+    filters.value.keyword = q.keyword
+    filters.value.tag = q.tag
+    filters.value.difficulty = q.difficulty
     void load()
   },
   { immediate: true },
@@ -69,9 +84,9 @@ function go(next: Partial<ReturnType<typeof parseProblemQuery>>) {
 
 function search() {
   go({
-    keyword: filters.keyword.trim(),
-    tag: filters.tag.trim(),
-    difficulty: typeof filters.difficulty === 'number' ? filters.difficulty : null,
+    keyword: filters.value.keyword.trim(),
+    tag: filters.value.tag.trim(),
+    difficulty: typeof filters.value.difficulty === 'number' ? filters.value.difficulty : null,
     page: 1,
   })
 }
@@ -80,112 +95,336 @@ function reset() {
   go({ keyword: '', tag: '', difficulty: null, page: 1 })
 }
 
+function onPage(event: { page: number }) {
+  go({ page: event.page + 1 })
+}
+
 function rate(p: ProblemListItem) {
   return p.submitCount === 0 ? '-' : `${Math.round((p.acceptCount / p.submitCount) * 100)}%`
 }
 </script>
 
 <template>
-  <el-card shadow="never">
-    <div class="toolbar">
-      <el-form inline @submit.prevent="search">
-        <el-form-item>
-          <el-input
+  <div class="problem-page">
+    <AppPageHeader
+      eyebrow="PROBLEMS // ARCHIVE"
+      title="题库"
+      description="筛选题目、查看难度与通过率，开始一次练习。"
+    >
+      <template #actions>
+        <span v-if="!loading || total > 0" class="result-count">{{ total }} 道题</span>
+        <Button
+          v-if="canManage"
+          as="router-link"
+          :to="{ name: 'problem-create' }"
+          label="新建题目"
+          icon="pi pi-plus"
+        />
+      </template>
+    </AppPageHeader>
+
+    <AppSurface padding="lg" class="problem-surface">
+      <form class="filter-bar" role="search" @submit.prevent="search">
+        <div class="filter-fields">
+          <InputText
             v-model="filters.keyword"
+            fluid
             placeholder="搜索标题或标识"
-            clearable
-            style="width: 220px"
+            aria-label="搜索标题或标识"
           />
-        </el-form-item>
-        <el-form-item>
-          <el-input v-model="filters.tag" placeholder="标签" clearable style="width: 140px" />
-        </el-form-item>
-        <el-form-item>
-          <el-select v-model="filters.difficulty" placeholder="难度" clearable style="width: 120px">
-            <el-option v-for="d in DIFFICULTIES" :key="d.value" :label="d.label" :value="d.value" />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" native-type="submit">搜索</el-button>
-          <el-button @click="reset">重置</el-button>
-        </el-form-item>
-      </el-form>
-      <div v-if="canManage" class="manage">
-        <el-switch v-model="showHidden" active-text="显示未公开" />
-        <RouterLink :to="{ name: 'problem-create' }">
-          <el-button type="primary">新建题目</el-button>
-        </RouterLink>
-      </div>
-    </div>
+          <InputText v-model="filters.tag" fluid placeholder="标签" aria-label="按标签筛选" />
+          <Select
+            v-model="filters.difficulty"
+            fluid
+            :options="DIFFICULTIES"
+            option-label="label"
+            option-value="value"
+            placeholder="难度"
+            show-clear
+            aria-label="按难度筛选"
+          />
+        </div>
+        <div class="filter-actions">
+          <Button type="submit" label="搜索" icon="pi pi-search" />
+          <Button type="button" label="重置" severity="secondary" text @click="reset" />
+        </div>
+        <div v-if="canManage" class="filter-admin">
+          <ToggleSwitch v-model="showHidden" input-id="show-hidden" />
+          <label for="show-hidden">显示未公开</label>
+        </div>
+      </form>
 
-    <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" class="alert" />
+      <AppErrorState v-if="error" :description="error" class="page-error" @retry="load" />
 
-    <el-table v-loading="loading" :data="items" empty-text="没有找到符合条件的题目">
-      <el-table-column prop="id" label="编号" width="80" />
-      <el-table-column label="题目" min-width="160">
-        <template #default="{ row }">
-          <RouterLink :to="{ name: 'problem-detail', params: { id: row.id } }">{{
-            row.title
-          }}</RouterLink>
-          <el-tag v-if="!row.isPublic" type="warning" size="small" class="gap">未公开</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="难度" width="90">
-        <template #default="{ row }">{{ difficultyLabel(row.difficulty) }}</template>
-      </el-table-column>
-      <el-table-column label="标签" min-width="120">
-        <template #default="{ row }">
-          <el-tag
-            v-for="t in row.tags"
-            :key="t"
-            size="small"
-            class="gap"
-            @click="go({ tag: t, page: 1 })"
-            >{{ t }}</el-tag
+      <AppLoadingState v-if="loading && items.length === 0" label="正在加载题目" />
+      <DataTable
+        v-else-if="!error || items.length > 0"
+        :value="items"
+        :loading="loading"
+        data-key="id"
+        size="small"
+        row-hover
+        responsive-layout="scroll"
+        class="problem-table"
+      >
+        <Column header="编号" style="width: 64px">
+          <template #body="{ data }">
+            <span class="num">{{ data.id }}</span>
+          </template>
+        </Column>
+        <Column header="题目" style="min-width: 190px">
+          <template #body="{ data }">
+            <RouterLink
+              :to="{ name: 'problem-detail', params: { id: data.id } }"
+              class="problem-link"
+            >
+              {{ data.title }}
+            </RouterLink>
+            <span v-if="!data.isPublic" class="private-tag">未公开</span>
+          </template>
+        </Column>
+        <Column header="难度" style="width: 84px">
+          <template #body="{ data }">
+            <AppDifficultyTag :difficulty="data.difficulty" />
+          </template>
+        </Column>
+        <Column header="标签" style="min-width: 120px">
+          <template #body="{ data }">
+            <div class="tag-list">
+              <button
+                v-for="t in data.tags"
+                :key="t"
+                type="button"
+                class="tag-chip"
+                @click="go({ tag: t, page: 1 })"
+              >
+                {{ t }}
+              </button>
+            </div>
+          </template>
+        </Column>
+        <Column header="通过 / 提交" style="width: 140px">
+          <template #body="{ data }">
+            <span class="num">{{ data.acceptCount }} / {{ data.submitCount }}</span>
+            <span class="rate">（{{ rate(data) }}）</span>
+          </template>
+        </Column>
+        <template #empty>
+          <AppEmptyState
+            icon="pi pi-search"
+            title="没有找到符合条件的题目"
+            description="调整筛选条件，或清空搜索后重试。"
           >
+            <template #actions>
+              <Button label="重置筛选" severity="secondary" outlined @click="reset" />
+            </template>
+          </AppEmptyState>
         </template>
-      </el-table-column>
-      <el-table-column label="通过 / 提交" width="150">
-        <template #default="{ row }"
-          >{{ row.acceptCount }} / {{ row.submitCount }}（{{ rate(row) }}）</template
-        >
-      </el-table-column>
-    </el-table>
+      </DataTable>
 
-    <el-pagination
-      v-if="total > PAGE_SIZE"
-      class="pager"
-      layout="prev, pager, next, total"
-      :page-size="PAGE_SIZE"
-      :current-page="query.page"
-      :total="total"
-      @current-change="(p: number) => go({ page: p })"
-    />
-  </el-card>
+      <Paginator
+        v-if="total > PAGE_SIZE"
+        :rows="PAGE_SIZE"
+        :total-records="total"
+        :first="first"
+        :page-link-size="5"
+        template="PrevPageLink PageLinks NextPageLink"
+        class="pager"
+        @page="onPage"
+      />
+    </AppSurface>
+  </div>
 </template>
 
 <style scoped>
-.toolbar {
+.problem-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kapoj-space-5);
+  max-width: var(--kapoj-content-max);
+}
+
+.problem-surface {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kapoj-space-4);
+}
+
+.result-count {
+  color: var(--kapoj-text-muted);
+  font-family: var(--kapoj-font-mono);
+  font-size: 11px;
+}
+
+.filter-bar {
   display: flex;
   flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 8px;
+  align-items: flex-end;
+  gap: var(--kapoj-space-3);
 }
-.manage {
+
+.filter-fields {
+  display: grid;
+  flex: 1 1 520px;
+  grid-template-columns: minmax(180px, 1.4fr) minmax(140px, 0.8fr) minmax(140px, 0.6fr);
+  gap: var(--kapoj-space-2);
+}
+
+.filter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kapoj-space-1);
+}
+
+.filter-admin {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: var(--kapoj-space-2);
+  margin-left: auto;
+  color: var(--kapoj-text-secondary);
+  font-size: 13px;
 }
-.alert {
-  margin-bottom: 12px;
-}
-.gap {
-  margin-left: 6px;
+
+.filter-admin label {
   cursor: pointer;
 }
+
+.page-error {
+  margin-bottom: var(--kapoj-space-1);
+}
+
+.problem-table {
+  overflow: hidden;
+  border: 1px solid var(--kapoj-border);
+  border-radius: var(--kapoj-radius-md);
+}
+
+.problem-table :deep(.p-datatable-table) {
+  min-width: 610px;
+}
+
+.problem-table :deep(.p-datatable-thead > tr > th) {
+  padding: 8px var(--kapoj-space-3);
+  color: var(--kapoj-text-muted);
+  font-family: var(--kapoj-font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: var(--kapoj-bg-elevated);
+  border-color: var(--kapoj-border);
+}
+
+.problem-table :deep(.p-datatable-tbody > tr > td) {
+  padding: 8px var(--kapoj-space-3);
+  color: var(--kapoj-text-secondary);
+  border-color: var(--kapoj-border);
+}
+
+.problem-link {
+  color: var(--kapoj-text);
+  font-weight: 600;
+}
+
+.problem-link:hover {
+  color: var(--kapoj-primary);
+}
+
+.private-tag {
+  display: inline-flex;
+  margin-left: var(--kapoj-space-2);
+  padding: 1px 6px;
+  color: var(--kapoj-warning);
+  font-size: 10px;
+  border: 1px solid color-mix(in srgb, var(--kapoj-warning) 32%, transparent);
+  border-radius: var(--kapoj-radius-xs);
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kapoj-space-1);
+}
+
+.tag-chip {
+  padding: 1px 7px;
+  color: var(--kapoj-primary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  background: var(--kapoj-primary-soft);
+  border: 1px solid color-mix(in srgb, var(--kapoj-primary) 28%, transparent);
+  border-radius: var(--kapoj-radius-xs);
+  transition:
+    color var(--kapoj-transition),
+    background var(--kapoj-transition),
+    border-color var(--kapoj-transition);
+}
+
+.tag-chip:hover {
+  color: var(--kapoj-text);
+  background: color-mix(in srgb, var(--kapoj-primary) 18%, transparent);
+  border-color: var(--kapoj-primary);
+}
+
+.rate {
+  color: var(--kapoj-text-muted);
+  font-size: 12px;
+}
+
 .pager {
-  margin-top: 16px;
-  justify-content: flex-end;
+  align-self: flex-end;
+  margin-top: var(--kapoj-space-1);
+}
+
+@media (max-width: 900px) {
+  .filter-fields {
+    flex-basis: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .filter-fields > :nth-child(3) {
+    grid-column: span 2;
+  }
+
+  .filter-admin {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 600px) {
+  .problem-page {
+    gap: var(--kapoj-space-4);
+  }
+
+  .filter-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .filter-fields > :nth-child(3) {
+    grid-column: auto;
+  }
+
+  .filter-actions {
+    width: 100%;
+  }
+
+  .filter-actions :deep(.p-button) {
+    flex: 1 1 auto;
+  }
+
+  .filter-admin {
+    width: 100%;
+  }
+
+  .pager {
+    align-self: stretch;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tag-chip {
+    transition: none;
+  }
 }
 </style>

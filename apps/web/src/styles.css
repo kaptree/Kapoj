@@ -1,23 +1,98 @@
-html,
-body,
-#app {
-  margin: 0;
-  height: 100%;
+/*
+ * Global styles are split into:
+ *   styles/tokens.css — design tokens shared by migrated and legacy pages
+ *   styles/base.css   — resets, typography and accessibility helpers
+ *
+ * Page-specific styles stay in their SFCs. Add only cross-cutting overrides
+ * here, and prefer tokens over literal color values.
+ */
+
+/* Keep the reject action visually secondary in every confirmation dialog. */
+.p-confirmdialog .p-confirmdialog-reject-button {
+  color: var(--kapoj-text-secondary);
+  background: transparent;
+  border: 1px solid var(--kapoj-border-strong);
 }
 
-body {
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Arial,
-    sans-serif;
-  color: var(--el-text-color-primary);
-  background: var(--el-bg-color-page);
+.p-confirmdialog .p-confirmdialog-reject-button:hover {
+  color: var(--kapoj-text);
+  background: var(--kapoj-surface-hover);
+  border-color: var(--kapoj-border-strong);
 }
 
-a {
-  color: var(--el-color-primary);
-  text-decoration: none;
+/* PrimeVue overlays are teleported outside the SFC scope. */
+.app-drawer,
+.submissions-drawer {
+  background: var(--kapoj-bg-elevated);
 }
 
-a:hover {
-  text-decoration: underline;
+.app-drawer {
+  border-right: 1px solid var(--kapoj-border);
+}
+
+.submissions-drawer {
+  border-left: 1px solid var(--kapoj-border);
+}
+
+.app-drawer .p-drawer-header,
+.submissions-drawer .p-drawer-header {
+  padding: var(--kapoj-space-4);
+  border-bottom: 1px solid var(--kapoj-border);
+}
+
+.app-drawer .p-drawer-content,
+.submissions-drawer .p-drawer-content {
+  padding: var(--kapoj-space-4);
+}
+
+.app-drawer .p-drawer-close-button,
+.submissions-drawer .p-drawer-close-button {
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  color: var(--kapoj-text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--kapoj-radius-sm);
+}
+
+.app-drawer .p-drawer-close-button:hover,
+.submissions-drawer .p-drawer-close-button:hover {
+  color: var(--kapoj-text);
+  background: var(--kapoj-surface-hover);
+  border-color: var(--kapoj-border);
+}
+
+.user-menu__popup {
+  min-width: 230px;
+  background: var(--kapoj-bg-elevated);
+  border: 1px solid var(--kapoj-border);
+  border-radius: var(--kapoj-radius-md);
+  box-shadow: var(--kapoj-shadow-md);
+}
+
+.user-menu__popup .p-menu-item-link {
+  border-radius: var(--kapoj-radius-sm);
+}
+
+.user-menu__popup .p-menu-item-label {
+  font-size: 13px;
+}
+
+.user-menu__popup .p-menu-item-icon {
+  color: var(--kapoj-text-secondary);
+}
+
+/*
+ * Transitional until the result pages are migrated (UI-20): Element Plus
+ * renders these titles outside cards, so they need the dark-canvas colors.
+ */
+.app-main .el-result__title,
+.app-main .el-result__title p {
+  color: var(--kapoj-text);
+}
+
+.app-main .el-result__subtitle,
+.app-main .el-result__subtitle p {
+  color: var(--kapoj-text-secondary);
 }

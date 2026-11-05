@@ -1,14 +1,29 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { computed, onMounted, ref } from 'vue'
+import Button from 'primevue/button'
+import Column from 'primevue/column'
+import DataTable from 'primevue/datatable'
+import DatePicker from 'primevue/datepicker'
+import Dialog from 'primevue/dialog'
+import InputNumber from 'primevue/inputnumber'
+import InputText from 'primevue/inputtext'
+import Message from 'primevue/message'
+import MultiSelect from 'primevue/multiselect'
+import Tag from 'primevue/tag'
+import ToggleSwitch from 'primevue/toggleswitch'
+import { useConfirm } from 'primevue/useconfirm'
+import { useToast } from 'primevue/usetoast'
 
 import { createTask, deleteTask, listTasks, updateTask } from '@/api/gamification'
 import { ApiError } from '@/api/http'
 import { getProblem, listProblems } from '@/api/problems'
-import type { ProblemListItem, TaskInput, TaskItem } from '@/api/types'
+import type { ProblemListItem, TaskInput, TaskItem, TaskStatus } from '@/api/types'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
+import AppEmptyState from '@/components/ui/AppEmptyState.vue'
+import AppErrorState from '@/components/ui/AppErrorState.vue'
 import { formatDateTime } from '@/utils/format'
-import { formatCoins, taskStatusLabel, taskStatusTagType } from '@/utils/gamification'
+import { formatCoins, taskStatusLabel } from '@/utils/gamification'
+import { useTheme } from '@/theme/theme'
 
 interface ProblemOption {
   value: number
@@ -20,11 +35,15 @@ interface FormState {
   descriptionMd: string
   problemIds: number[]
   rewardCoins: number
-  timeRange: [Date, Date] | null
+  startTime: Date | null
+  endTime: Date | null
   isActive: boolean
 }
 
 const MAX_PROBLEMS = 20
+const toast = useToast()
+const confirm = useConfirm()
+const { isDark } = useTheme()
 
 const tasks = ref<TaskItem[]>([])
 const loading = ref(false)
@@ -33,28 +52,30 @@ const dialogVisible = ref(false)
 const saving = ref(false)
 const deletingId = ref<number | null>(null)
 const editing = ref<TaskItem | null>(null)
-const frozen = computed(() => editing.value?.hasRecords === true)
 const problemOptions = ref<ProblemOption[]>([])
 const problemLoading = ref(false)
+const frozen = computed(() => editing.value?.hasRecords === true)
 
-function defaultRange(): [Date, Date] {
+function defaultRange(): { start: Date; end: Date } {
   const start = new Date(Date.now() + 60 * 60 * 1000)
   start.setSeconds(0, 0)
-  return [start, new Date(start.getTime() + 24 * 60 * 60 * 1000)]
+  return { start, end: new Date(start.getTime() + 24 * 60 * 60 * 1000) }
 }
 
 function emptyForm(): FormState {
+  const { start, end } = defaultRange()
   return {
     title: '',
     descriptionMd: '',
     problemIds: [],
     rewardCoins: 0,
-    timeRange: defaultRange(),
+    startTime: start,
+    endTime: end,
     isActive: true,
   }
 }
 
-const form = reactive<FormState>(emptyForm())
+const form = ref<FormState>(emptyForm())
 
 function upsertOption(id: number, title: string) {
   const label = `#${id} ${title}`
@@ -80,23 +101,48 @@ async function searchProblems(keyword: string) {
   }
 }
 
+function onFilterProblems(event: { value: string }) {
+  void searchProblems(event.value)
+}
+
 async function resolveProblemTitles(ids: number[]) {
   for (const id of ids) problemOptions.value.push({ value: id, label: `#${id}` })
   const results = await Promise.allSettled(ids.map((id) => getProblem(id)))
   results.forEach((result, index) => {
-    if (result.status === 'fulfilled') upsertOption(ids[index], result.value.title)
+    if (result.status === 'fulfilled') upsertOption(ids[index]!, result.value.title)
   })
 }
 
 function onProblemsChange(value: number[]) {
   if (value.length > MAX_PROBLEMS) {
-    form.problemIds = value.slice(0, MAX_PROBLEMS)
-    ElMessage.warning(`任务最多选择 ${MAX_PROBLEMS} 道题目`)
+    form.value.problemIds = value.slice(0, MAX_PROBLEMS)
+    toast.add({
+      severity: 'warn',
+      summary: `任务最多选择 ${MAX_PROBLEMS} 道题目`,
+      life: 3000,
+    })
   }
 }
 
 function fail(e: unknown, fallback: string) {
-  ElMessage.error(e instanceof ApiError ? e.message : fallback)
+  toast.add({
+    severity: 'error',
+    summary: '操作失败',
+    detail: e instanceof ApiError ? e.message : fallback,
+    life: 4000,
+  })
+}
+
+function warn(summary: string) {
+  toast.add({ severity: 'warn', summary, life: 3000 })
+}
+
+function taskSeverity(status: TaskStatus): 'success' | 'warn' | 'danger' | 'info' | 'secondary' {
+  if (status === 'active' || status === 'completed') return 'success'
+  if (status === 'claimed') return 'warn'
+  if (status === 'expired') return 'danger'
+  if (status === 'inactive') return 'secondary'
+  return 'info'
 }
 
 async function load() {
@@ -114,7 +160,7 @@ async function load() {
 function openCreate() {
   editing.value = null
   problemOptions.value = []
-  Object.assign(form, emptyForm())
+  form.value = emptyForm()
   dialogVisible.value = true
   void searchProblems('')
 }
@@ -122,29 +168,34 @@ function openCreate() {
 async function openEdit(item: TaskItem) {
   editing.value = item
   problemOptions.value = []
-  Object.assign(form, {
+  form.value = {
     title: item.title,
     descriptionMd: item.descriptionMd,
     problemIds: [...item.problemIds],
     rewardCoins: item.rewardCoins,
-    timeRange: [new Date(item.startTime), new Date(item.endTime)],
+    startTime: new Date(item.startTime),
+    endTime: new Date(item.endTime),
     isActive: item.isActive,
-  })
-  // Resolve titles before the select renders, otherwise Element Plus caches
-  // the temporary #id labels for the already selected values.
+  }
+  // Resolve titles before the select renders so selected ids have labels.
   await resolveProblemTitles(item.problemIds)
   dialogVisible.value = true
   void searchProblems('')
 }
 
 function validate(): string | null {
-  if (!form.title.trim()) return '请填写任务标题'
-  if (form.problemIds.length < 1 || form.problemIds.length > MAX_PROBLEMS) {
+  const current = form.value
+  if (!current.title.trim()) return '请填写任务标题'
+  if (current.problemIds.length < 1 || current.problemIds.length > MAX_PROBLEMS) {
     return `任务题目必须为 1-${MAX_PROBLEMS} 个`
   }
-  if (!form.timeRange || form.timeRange.length !== 2) return '请选择任务时间'
-  if (form.timeRange[0] >= form.timeRange[1]) return '任务开始时间必须早于结束时间'
-  if (!Number.isInteger(form.rewardCoins) || form.rewardCoins < 0 || form.rewardCoins > 1_000_000) {
+  if (!current.startTime || !current.endTime) return '请选择任务时间'
+  if (current.startTime >= current.endTime) return '任务开始时间必须早于结束时间'
+  if (
+    !Number.isInteger(current.rewardCoins) ||
+    current.rewardCoins < 0 ||
+    current.rewardCoins > 1_000_000
+  ) {
     return '任务奖励金币必须为 0-1,000,000 的整数'
   }
   return null
@@ -153,28 +204,28 @@ function validate(): string | null {
 async function save() {
   const problem = validate()
   if (problem) {
-    ElMessage.warning(problem)
+    warn(problem)
     return
   }
-  const [start, end] = form.timeRange!
+  const current = form.value
   const input: TaskInput = {
-    title: form.title.trim(),
-    descriptionMd: form.descriptionMd,
-    problemIds: [...form.problemIds],
-    rewardCoins: form.rewardCoins,
-    startTime: start.toISOString(),
-    endTime: end.toISOString(),
-    isActive: form.isActive,
+    title: current.title.trim(),
+    descriptionMd: current.descriptionMd,
+    problemIds: [...current.problemIds],
+    rewardCoins: current.rewardCoins,
+    startTime: current.startTime!.toISOString(),
+    endTime: current.endTime!.toISOString(),
+    isActive: current.isActive,
   }
 
   saving.value = true
   try {
     if (editing.value) {
       await updateTask(editing.value.id, input)
-      ElMessage.success('任务已更新')
+      toast.add({ severity: 'success', summary: '任务已更新', life: 3000 })
     } else {
       await createTask(input)
-      ElMessage.success('任务已创建')
+      toast.add({ severity: 'success', summary: '任务已创建', life: 3000 })
     }
     dialogVisible.value = false
     await load()
@@ -185,20 +236,26 @@ async function save() {
   }
 }
 
-async function remove(item: TaskItem) {
-  try {
-    await ElMessageBox.confirm(
-      `确定删除任务「${item.title}」吗？删除后任务将下线，已领取的用户仍可在截止前完成。`,
-      '删除任务',
-      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
-    )
-  } catch {
-    return
-  }
+function remove(item: TaskItem) {
+  confirm.require({
+    header: '删除任务',
+    message: `确定删除任务「${item.title}」吗？删除后任务将下线，已领取的用户仍可在截止前完成。`,
+    icon: 'pi pi-exclamation-triangle',
+    acceptLabel: '删除',
+    rejectLabel: '取消',
+    acceptProps: { severity: 'danger' },
+    rejectProps: { severity: 'secondary', outlined: true },
+    accept: () => {
+      void doRemove(item)
+    },
+  })
+}
+
+async function doRemove(item: TaskItem) {
   deletingId.value = item.id
   try {
     await deleteTask(item.id)
-    ElMessage.success('任务已删除')
+    toast.add({ severity: 'success', summary: '任务已删除', life: 3000 })
     await load()
   } catch (e) {
     fail(e, '删除任务失败')
@@ -211,162 +268,294 @@ onMounted(load)
 </script>
 
 <template>
-  <div>
+  <div class="admin-panel">
     <div class="toolbar">
       <span class="count">共 {{ tasks.length }} 个任务</span>
-      <el-button type="primary" @click="openCreate">新建任务</el-button>
+      <Button label="新建任务" icon="pi pi-plus" size="small" @click="openCreate" />
     </div>
 
-    <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" class="banner" />
-
-    <el-table v-loading="loading" :data="tasks" empty-text="暂无任务">
-      <el-table-column prop="title" label="标题" min-width="160" />
-      <el-table-column label="时间" min-width="200">
-        <template #default="{ row }">
-          <div class="time-cell">
-            <span>开始 {{ formatDateTime(row.startTime) }}</span>
-            <span>截止 {{ formatDateTime(row.endTime) }}</span>
-          </div>
-        </template>
-      </el-table-column>
-      <el-table-column label="奖励" width="120">
-        <template #default="{ row }">金币 {{ formatCoins(row.rewardCoins) }}</template>
-      </el-table-column>
-      <el-table-column prop="problemCount" label="题目数" width="90" />
-      <el-table-column label="状态" width="90">
-        <template #default="{ row }">
-          <el-tag :type="taskStatusTagType(row.status)" size="small">
-            {{ taskStatusLabel(row.status) }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="领取记录" width="100">
-        <template #default="{ row }">
-          <el-tag :type="row.hasRecords ? 'warning' : 'info'" size="small">
-            {{ row.hasRecords ? '已有领取' : '无' }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="150" fixed="right">
-        <template #default="{ row }">
-          <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-button link type="danger" :loading="deletingId === row.id" @click="remove(row)"
-            >删除</el-button
+    <AppErrorState v-if="error && !tasks.length" :description="error" @retry="load" />
+    <template v-else>
+      <Message v-if="error" severity="error" :closable="false">{{ error }}</Message>
+      <DataTable
+        :value="tasks"
+        :loading="loading"
+        data-key="id"
+        size="small"
+        responsive-layout="scroll"
+        class="admin-table"
+      >
+        <Column header="标题" style="min-width: 160px">
+          <template #body="{ data }">{{ data.title }}</template>
+        </Column>
+        <Column header="时间" style="min-width: 200px">
+          <template #body="{ data }">
+            <div class="time-cell">
+              <span>开始 {{ formatDateTime(data.startTime) }}</span>
+              <span>截止 {{ formatDateTime(data.endTime) }}</span>
+            </div>
+          </template>
+        </Column>
+        <Column header="奖励" style="width: 120px">
+          <template #body="{ data }">金币 {{ formatCoins(data.rewardCoins) }}</template>
+        </Column>
+        <Column header="题目数" style="width: 90px">
+          <template #body="{ data }"
+            ><span class="num">{{ data.problemCount }}</span></template
           >
-        </template>
-      </el-table-column>
-    </el-table>
+        </Column>
+        <Column header="状态" style="width: 90px">
+          <template #body="{ data }">
+            <Tag :value="taskStatusLabel(data.status)" :severity="taskSeverity(data.status)" />
+          </template>
+        </Column>
+        <Column header="领取记录" style="width: 100px">
+          <template #body="{ data }">
+            <Tag
+              :value="data.hasRecords ? '已有领取' : '无'"
+              :severity="data.hasRecords ? 'warn' : 'secondary'"
+            />
+          </template>
+        </Column>
+        <Column header="操作" style="width: 150px">
+          <template #body="{ data }">
+            <div class="row-actions">
+              <Button label="编辑" text size="small" @click="openEdit(data)" />
+              <Button
+                label="删除"
+                text
+                size="small"
+                severity="danger"
+                :loading="deletingId === data.id"
+                @click="remove(data)"
+              />
+            </div>
+          </template>
+        </Column>
+        <template #empty><AppEmptyState title="暂无任务" /></template>
+      </DataTable>
+    </template>
 
-    <el-dialog
-      v-model="dialogVisible"
-      :title="editing ? '编辑任务' : '新建任务'"
-      width="760px"
-      destroy-on-close
+    <Dialog
+      v-model:visible="dialogVisible"
+      :header="editing ? '编辑任务' : '新建任务'"
+      modal
+      :draggable="false"
+      :style="{ width: 'min(94vw, 760px)' }"
     >
-      <el-alert
-        v-if="frozen"
-        title="已有领取记录，题目与奖励已冻结"
-        type="warning"
-        show-icon
-        :closable="false"
-        class="freeze-hint"
-      />
+      <Message v-if="frozen" severity="warn" :closable="false" class="freeze-hint">
+        已有领取记录，题目与奖励已冻结
+      </Message>
 
-      <el-form label-width="90px">
-        <el-form-item label="标题" required>
-          <el-input v-model="form.title" maxlength="100" show-word-limit />
-        </el-form-item>
-        <el-form-item label="题目" required>
-          <el-select
+      <div class="admin-form">
+        <div class="field span-2">
+          <label for="task-title">标题 <span class="required">*</span></label>
+          <InputText
+            id="task-title"
+            v-model="form.title"
+            class="task-title-input"
+            maxlength="100"
+            fluid
+          />
+        </div>
+
+        <div class="field span-2">
+          <label for="task-problems">题目 <span class="required">*</span></label>
+          <MultiSelect
             v-model="form.problemIds"
-            multiple
-            filterable
-            remote
-            reserve-keyword
-            :remote-method="searchProblems"
+            input-id="task-problems"
+            class="task-problems-select"
+            :options="problemOptions"
+            option-label="label"
+            option-value="value"
+            filter
+            display="chip"
             :loading="problemLoading"
             :disabled="frozen"
             placeholder="输入题目标题搜索"
-            style="width: 100%"
-            @change="onProblemsChange"
-          >
-            <el-option
-              v-for="option in problemOptions"
-              :key="option.value"
-              :label="option.label"
-              :value="option.value"
-            />
-          </el-select>
-          <div class="hint">最多选择 20 道题目；已选 {{ form.problemIds.length }} 道</div>
-        </el-form-item>
-        <el-form-item label="描述">
-          <MarkdownEditor v-model="form.descriptionMd" height="260px" />
-        </el-form-item>
-        <el-form-item label="奖励金币">
-          <el-input-number
+            fluid
+            @filter="onFilterProblems"
+            @update:model-value="onProblemsChange"
+          />
+          <span class="hint">最多选择 20 道题目；已选 {{ form.problemIds.length }} 道</span>
+        </div>
+
+        <div class="field span-2">
+          <span class="field-label">描述</span>
+          <MarkdownEditor
+            v-model="form.descriptionMd"
+            height="260px"
+            :theme="isDark ? 'dark' : 'light'"
+          />
+        </div>
+
+        <div class="field">
+          <label for="task-reward">奖励金币</label>
+          <InputNumber
             v-model="form.rewardCoins"
+            input-id="task-reward"
             :min="0"
             :max="1000000"
             :step="1"
             :disabled="frozen"
+            fluid
           />
-        </el-form-item>
-        <el-form-item label="任务时间" required>
-          <el-date-picker
-            v-model="form.timeRange"
-            type="datetimerange"
-            start-placeholder="开始时间"
-            end-placeholder="结束时间"
-            range-separator="至"
+        </div>
+
+        <div class="field">
+          <label for="task-start">开始时间 <span class="required">*</span></label>
+          <DatePicker
+            v-model="form.startTime"
+            input-id="task-start"
+            show-time
+            show-seconds
+            hour-format="24"
+            date-format="yy-mm-dd"
+            fluid
           />
-        </el-form-item>
-        <el-form-item label="上架">
-          <el-switch v-model="form.isActive" />
-        </el-form-item>
-      </el-form>
+        </div>
+        <div class="field">
+          <label for="task-end">结束时间 <span class="required">*</span></label>
+          <DatePicker
+            v-model="form.endTime"
+            input-id="task-end"
+            show-time
+            show-seconds
+            hour-format="24"
+            date-format="yy-mm-dd"
+            fluid
+          />
+        </div>
+
+        <div class="field toggle-field">
+          <span class="field-label">上架</span>
+          <div class="toggle-row">
+            <ToggleSwitch v-model="form.isActive" input-id="task-active" />
+            <label for="task-active">{{ form.isActive ? '已上架' : '已下线' }}</label>
+          </div>
+        </div>
+      </div>
 
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+        <Button label="取消" severity="secondary" text @click="dialogVisible = false" />
+        <Button label="保存" icon="pi pi-check" :loading="saving" @click="save" />
       </template>
-    </el-dialog>
+    </Dialog>
   </div>
 </template>
 
 <style scoped>
+.admin-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kapoj-space-3);
+  min-width: 0;
+}
+
 .toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: var(--kapoj-space-2);
 }
+
 .count {
-  color: var(--el-text-color-secondary);
+  color: var(--kapoj-text-secondary);
   font-size: 13px;
 }
-.banner {
-  margin-bottom: 12px;
+
+.admin-table {
+  overflow: hidden;
+  border: 1px solid var(--kapoj-border);
+  border-radius: var(--kapoj-radius-md);
 }
+
+.admin-table :deep(.p-datatable-thead > tr > th) {
+  padding: 8px var(--kapoj-space-3);
+  color: var(--kapoj-text-muted);
+  font-family: var(--kapoj-font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: var(--kapoj-bg-elevated);
+  border-color: var(--kapoj-border);
+}
+
+.admin-table :deep(.p-datatable-tbody > tr > td) {
+  padding: 8px var(--kapoj-space-3);
+  color: var(--kapoj-text-secondary);
+  border-color: var(--kapoj-border);
+}
+
 .time-cell {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  font-family: var(--kapoj-font-mono);
   font-size: 12px;
 }
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--kapoj-space-1);
+}
+
+.admin-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--kapoj-space-3);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kapoj-space-1);
+  min-width: 0;
+}
+
+.span-2 {
+  grid-column: 1 / -1;
+}
+
+.field label,
+.field-label {
+  color: var(--kapoj-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.required {
+  color: var(--kapoj-danger);
+}
+
 .hint {
-  width: 100%;
-  margin-top: 4px;
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
+  color: var(--kapoj-text-muted);
+  font-size: 11px;
+  line-height: 1.4;
 }
+
 .freeze-hint {
-  margin-bottom: 16px;
+  margin-bottom: var(--kapoj-space-3);
 }
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: var(--kapoj-space-2);
+}
+
+.toggle-row label {
+  color: var(--kapoj-text);
+  cursor: pointer;
+}
+
 @media (max-width: 640px) {
-  :deep(.el-dialog) {
-    max-width: calc(100vw - 32px);
+  .admin-form {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 </style>

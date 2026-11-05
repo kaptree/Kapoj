@@ -2,17 +2,17 @@
 
 打造最有趣味的 Online Judge 平台。规格见 [`DEVELOPMENT.md`](DEVELOPMENT.md)，进度见 [`docs/任务清单.md`](docs/任务清单.md) 与 [`docs/开发日志.md`](docs/开发日志.md)。
 
-当前进度：**M4-A 已完成**（M0–M3 已完成；M4 进行中。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 的活跃度、签到金币、共享分与三榜，M4-C 的排行榜前端与验收，以及学习路线、社交、Rating 衰减/赛季重置尚未实现）。
+当前进度：**M4-A 已完成**（M0–M3 已完成；M4 进行中。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 的活跃度、签到金币、共享分与三榜，M4-C 的排行榜前端与验收，以及学习路线、社交、Rating 衰减/赛季重置尚未实现）。前端并行进行 PrimeVue 4 迁移，**UI-00～UI-18 已完成**，剩余题库编辑（UI-19）与异常页（UI-20），详见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。
 
 ## 目录结构
 
 ```
 apps/server     Go 后端（Gin + GORM）
 apps/judge      独立评测进程（Asynq + Docker 沙盒）
-apps/web        Vue 3 前端（Element Plus + md-editor-v3 + Monaco）
+apps/web        Vue 3 前端（PrimeVue 4 + md-editor-v3 + Monaco；Element Plus 过渡期仅剩未迁移页面）
 packages/api    OpenAPI 规范，前端类型由此生成
 docker          docker compose（PostgreSQL 17、Redis 7、后端/评测镜像）
-docs            任务清单、开发日志、实施计划
+docs            任务清单、开发日志、PrimeVue 迁移进度、实施计划
 ```
 
 ## 环境要求

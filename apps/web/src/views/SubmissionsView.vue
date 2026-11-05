@@ -1,7 +1,16 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import Button from 'primevue/button'
+import Column from 'primevue/column'
+import DataTable from 'primevue/datatable'
+import Drawer from 'primevue/drawer'
+import InputNumber from 'primevue/inputnumber'
+import InputText from 'primevue/inputtext'
+import Message from 'primevue/message'
+import Paginator from 'primevue/paginator'
+import Select from 'primevue/select'
+import { useToast } from 'primevue/usetoast'
 
 import { ApiError } from '@/api/http'
 import { getSubmission, listSubmissions } from '@/api/submissions'
@@ -12,33 +21,34 @@ import type {
   SubmissionStatus,
 } from '@/api/types'
 import IdentityShowcase from '@/components/IdentityShowcase.vue'
+import AppEmptyState from '@/components/ui/AppEmptyState.vue'
+import AppErrorState from '@/components/ui/AppErrorState.vue'
+import AppLoadingState from '@/components/ui/AppLoadingState.vue'
+import AppPageHeader from '@/components/ui/AppPageHeader.vue'
+import AppStatusTag from '@/components/ui/AppStatusTag.vue'
+import AppSurface from '@/components/ui/AppSurface.vue'
 import { formatDateTime } from '@/utils/format'
-import {
-  languageLabel,
-  statusLabel,
-  statusTagType,
-  SUBMISSION_LANGUAGES,
-  SUBMISSION_STATUSES,
-} from '@/utils/submission'
+import { languageLabel, SUBMISSION_LANGUAGES, SUBMISSION_STATUSES } from '@/utils/submission'
 
 const PAGE_SIZE = 20
 const route = useRoute()
 const router = useRouter()
+const toast = useToast()
 
 interface FilterState {
-  problemId: number | undefined
-  contestId: number | undefined
-  userId: number | undefined
-  language: SubmissionLanguage | ''
-  status: SubmissionStatus | ''
+  problemId: number | null
+  contestId: number | null
+  userId: number | null
+  language: SubmissionLanguage | '' | null
+  status: SubmissionStatus | '' | null
   nickname: string
 }
 
 function emptyFilters(): FilterState {
   return {
-    problemId: undefined,
-    contestId: undefined,
-    userId: undefined,
+    problemId: null,
+    contestId: null,
+    userId: null,
     language: '',
     status: '',
     nickname: '',
@@ -47,8 +57,8 @@ function emptyFilters(): FilterState {
 
 // Draft filters are bound to the form; applied filters come from the URL and
 // are the only ones used by background SSE/pagination reloads.
-const filters = reactive<FilterState>(emptyFilters())
-const applied = reactive<FilterState & { page: number }>({ ...emptyFilters(), page: 1 })
+const filters = ref<FilterState>(emptyFilters())
+const applied = ref<FilterState & { page: number }>({ ...emptyFilters(), page: 1 })
 const items = ref<SubmissionListItem[]>([])
 const total = ref(0)
 const loading = ref(false)
@@ -58,6 +68,10 @@ const live = ref(false)
 const drawer = ref(false)
 const detail = ref<SubmissionDetail | null>(null)
 const detailLoading = ref(false)
+const detailError = ref('')
+const lastDetailRow = ref<SubmissionListItem | null>(null)
+
+const first = computed(() => (applied.value.page - 1) * PAGE_SIZE)
 
 let latest = 0
 let detailSeq = 0
@@ -65,16 +79,16 @@ let source: EventSource | null = null
 let reloadTimer: number | undefined
 let syncTimer: number | undefined
 
-function first(v: unknown): string {
+function firstValue(v: unknown): string {
   const raw = Array.isArray(v) ? v[0] : v
   return typeof raw === 'string' ? raw : ''
 }
 
-function numberQuery(v: unknown): number | undefined {
-  const raw = first(v)
-  if (raw === '') return undefined
+function numberQuery(v: unknown): number | null {
+  const raw = firstValue(v)
+  if (raw === '') return null
   const n = Number(raw)
-  return Number.isInteger(n) && n >= 0 ? n : undefined
+  return Number.isInteger(n) && n >= 0 ? n : null
 }
 
 function applyQuery() {
@@ -82,13 +96,13 @@ function applyQuery() {
     problemId: numberQuery(route.query.problemId),
     contestId: numberQuery(route.query.contestId),
     userId: numberQuery(route.query.userId),
-    language: (first(route.query.language) as SubmissionLanguage | '') || '',
-    status: (first(route.query.status) as SubmissionStatus | '') || '',
-    nickname: first(route.query.nickname),
+    language: (firstValue(route.query.language) as SubmissionLanguage | '') || '',
+    status: (firstValue(route.query.status) as SubmissionStatus | '') || '',
+    nickname: firstValue(route.query.nickname),
   }
-  Object.assign(filters, parsed)
-  Object.assign(applied, parsed)
-  applied.page = numberQuery(route.query.page) ?? 1
+  Object.assign(filters.value, parsed)
+  Object.assign(applied.value, parsed)
+  applied.value.page = numberQuery(route.query.page) ?? 1
 }
 
 async function load() {
@@ -97,13 +111,13 @@ async function load() {
   error.value = ''
   try {
     const data = await listSubmissions({
-      problemId: applied.problemId,
-      contestId: applied.contestId,
-      userId: applied.userId,
-      language: applied.language,
-      status: applied.status,
-      nickname: applied.nickname,
-      page: applied.page,
+      problemId: applied.value.problemId ?? undefined,
+      contestId: applied.value.contestId ?? undefined,
+      userId: applied.value.userId ?? undefined,
+      language: applied.value.language || undefined,
+      status: applied.value.status || undefined,
+      nickname: applied.value.nickname,
+      page: applied.value.page,
       pageSize: PAGE_SIZE,
     })
     if (seq !== latest) return
@@ -130,7 +144,7 @@ function queryFrom(state: FilterState, nextPage: number): Record<string, string>
 }
 
 function search() {
-  void router.push({ name: 'submissions', query: queryFrom(filters, 1) })
+  void router.push({ name: 'submissions', query: queryFrom(filters.value, 1) })
 }
 
 function reset() {
@@ -142,7 +156,11 @@ function reset() {
 }
 
 function changePage(next: number) {
-  void router.push({ name: 'submissions', query: queryFrom(applied, next) })
+  void router.push({ name: 'submissions', query: queryFrom(applied.value, next) })
+}
+
+function onPage(event: { page: number }) {
+  changePage(event.page + 1)
 }
 
 watch(
@@ -154,21 +172,38 @@ watch(
   { immediate: true },
 )
 
+function onRowClick(event: { data: SubmissionListItem }) {
+  void openDetail(event.data)
+}
+
 async function openDetail(row: SubmissionListItem) {
   const seq = ++detailSeq
+  lastDetailRow.value = row
   drawer.value = true
   detail.value = null
+  detailError.value = ''
   detailLoading.value = true
   try {
     const next = await getSubmission(row.id)
     if (seq === detailSeq) detail.value = next
   } catch (e) {
     if (seq === detailSeq) {
-      ElMessage.error(e instanceof ApiError ? e.message : '加载记录详情失败')
+      const message = e instanceof ApiError ? e.message : '加载记录详情失败'
+      detailError.value = message
+      toast.add({
+        severity: 'error',
+        summary: '加载失败',
+        detail: message,
+        life: 4000,
+      })
     }
   } finally {
     if (seq === detailSeq) detailLoading.value = false
   }
+}
+
+function retryDetail() {
+  if (lastDetailRow.value) void openDetail(lastDetailRow.value)
 }
 
 function scheduleReload() {
@@ -204,211 +239,423 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <el-card shadow="never">
-    <template #header>
-      <div class="head">
-        <span>测评记录</span>
-        <el-tag :type="live ? 'success' : 'info'" size="small" effect="plain">
-          {{ live ? '实时刷新' : '连接中断，正在重连' }}
-        </el-tag>
-      </div>
-    </template>
-
-    <el-form inline @submit.prevent="search">
-      <el-form-item label="题目 ID">
-        <el-input-number
-          v-model="filters.problemId"
-          :min="0"
-          :controls="false"
-          style="width: 110px"
-        />
-      </el-form-item>
-      <el-form-item label="比赛 ID">
-        <el-input-number
-          v-model="filters.contestId"
-          :min="0"
-          :controls="false"
-          style="width: 110px"
-        />
-      </el-form-item>
-      <el-form-item label="用户 ID">
-        <el-input-number v-model="filters.userId" :min="0" :controls="false" style="width: 110px" />
-      </el-form-item>
-      <el-form-item label="昵称">
-        <el-input v-model="filters.nickname" clearable style="width: 160px" />
-      </el-form-item>
-      <el-form-item label="语言">
-        <el-select v-model="filters.language" clearable style="width: 120px">
-          <el-option
-            v-for="item in SUBMISSION_LANGUAGES"
-            :key="item.value"
-            :label="item.label"
-            :value="item.value"
-          />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="状态">
-        <el-select v-model="filters.status" clearable style="width: 130px">
-          <el-option
-            v-for="item in SUBMISSION_STATUSES"
-            :key="item.value"
-            :label="item.label"
-            :value="item.value"
-          />
-        </el-select>
-      </el-form-item>
-      <el-form-item>
-        <el-button type="primary" native-type="submit">筛选</el-button>
-        <el-button @click="reset">重置</el-button>
-      </el-form-item>
-    </el-form>
-
-    <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" class="banner" />
-
-    <el-table
-      v-loading="loading"
-      :data="items"
-      row-key="id"
-      empty-text="暂无测评记录"
-      @row-click="openDetail"
+  <div class="submissions-page">
+    <AppPageHeader
+      eyebrow="SUBMISSIONS // LIVE"
+      title="测评记录"
+      description="查看全平台提交状态、耗时与内存；支持实时刷新。"
     >
-      <el-table-column prop="id" label="#" width="80" />
-      <el-table-column label="提交者" min-width="150">
-        <template #default="{ row }">
-          <div class="user-cell">
-            <RouterLink :to="{ name: 'user-profile', params: { id: row.userId } }" @click.stop>
-              {{ row.nickname || row.username }}
-            </RouterLink>
-            <IdentityShowcase
-              :badges="row.equippedBadges"
-              :title="row.equippedTitle"
-              size="small"
+      <template #actions>
+        <span class="live-status" :class="{ 'is-live': live }" role="status" aria-live="polite">
+          <span class="live-dot" aria-hidden="true" />
+          {{ live ? '实时刷新' : '连接中断，正在重连' }}
+        </span>
+        <Button
+          label="刷新"
+          icon="pi pi-refresh"
+          severity="secondary"
+          outlined
+          :loading="loading"
+          @click="load"
+        />
+      </template>
+    </AppPageHeader>
+
+    <AppSurface padding="lg" class="submissions-surface">
+      <form class="filter-bar" role="search" @submit.prevent="search">
+        <div class="filter-grid">
+          <div class="filter-field">
+            <label for="filter-problem">题目 ID</label>
+            <InputNumber
+              v-model="filters.problemId"
+              input-id="filter-problem"
+              :min="0"
+              :show-buttons="false"
+              :use-grouping="false"
+              fluid
             />
           </div>
-        </template>
-      </el-table-column>
-      <el-table-column label="题目" min-width="180">
-        <template #default="{ row }">
-          <RouterLink :to="{ name: 'problem-detail', params: { id: row.problemId } }" @click.stop>
-            {{ row.problemTitle }}
-          </RouterLink>
-        </template>
-      </el-table-column>
-      <el-table-column label="状态" width="110">
-        <template #default="{ row }">
-          <el-tag :type="statusTagType(row.status)" size="small">
-            {{ statusLabel(row.status) }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="语言" width="100">
-        <template #default="{ row }">{{ languageLabel(row.language) }}</template>
-      </el-table-column>
-      <el-table-column label="耗时" width="90">
-        <template #default="{ row }">{{ row.timeUsedMs }} ms</template>
-      </el-table-column>
-      <el-table-column label="内存" width="100">
-        <template #default="{ row }">{{ row.memoryUsedKb }} KB</template>
-      </el-table-column>
-      <el-table-column label="得分" width="70" prop="score" />
-      <el-table-column label="提交时间" min-width="170">
-        <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
-      </el-table-column>
-    </el-table>
+          <div class="filter-field">
+            <label for="filter-contest">比赛 ID</label>
+            <InputNumber
+              v-model="filters.contestId"
+              input-id="filter-contest"
+              :min="0"
+              :show-buttons="false"
+              :use-grouping="false"
+              fluid
+            />
+          </div>
+          <div class="filter-field">
+            <label for="filter-user">用户 ID</label>
+            <InputNumber
+              v-model="filters.userId"
+              input-id="filter-user"
+              :min="0"
+              :show-buttons="false"
+              :use-grouping="false"
+              fluid
+            />
+          </div>
+          <div class="filter-field">
+            <label for="filter-nickname">昵称</label>
+            <InputText id="filter-nickname" v-model="filters.nickname" fluid />
+          </div>
+          <div class="filter-field">
+            <label for="filter-language">语言</label>
+            <Select
+              v-model="filters.language"
+              input-id="filter-language"
+              :options="SUBMISSION_LANGUAGES"
+              option-label="label"
+              option-value="value"
+              show-clear
+              fluid
+            />
+          </div>
+          <div class="filter-field">
+            <label for="filter-status">状态</label>
+            <Select
+              v-model="filters.status"
+              input-id="filter-status"
+              :options="SUBMISSION_STATUSES"
+              option-label="label"
+              option-value="value"
+              show-clear
+              fluid
+            />
+          </div>
+        </div>
+        <div class="filter-actions">
+          <Button type="submit" label="筛选" icon="pi pi-filter" />
+          <Button type="button" label="重置" severity="secondary" text @click="reset" />
+        </div>
+      </form>
 
-    <div class="pager">
-      <el-pagination
-        layout="prev, pager, next, total"
-        :current-page="applied.page"
-        :page-size="PAGE_SIZE"
-        :total="total"
-        @current-change="changePage"
-      />
-    </div>
-  </el-card>
+      <AppErrorState v-if="error" :description="error" @retry="load" />
 
-  <el-drawer v-model="drawer" title="测评详情" size="62%">
-    <div v-loading="detailLoading">
-      <template v-if="detail">
-        <el-descriptions :column="2" border>
-          <el-descriptions-item label="提交">#{{ detail.id }}</el-descriptions-item>
-          <el-descriptions-item label="状态">
-            <el-tag :type="statusTagType(detail.status)" size="small">
-              {{ statusLabel(detail.status) }}
-            </el-tag>
-          </el-descriptions-item>
-          <el-descriptions-item label="用户">
+      <div class="result-bar">
+        <span>共 {{ total }} 条记录</span>
+      </div>
+
+      <AppLoadingState v-if="loading && items.length === 0" label="正在加载测评记录" />
+      <DataTable
+        v-else-if="!error || items.length > 0"
+        :value="items"
+        :loading="loading"
+        data-key="id"
+        size="small"
+        row-hover
+        responsive-layout="scroll"
+        class="submissions-table"
+        @row-click="onRowClick"
+      >
+        <Column header="#" style="width: 50px">
+          <template #body="{ data }">
+            <span class="num">{{ data.id }}</span>
+          </template>
+        </Column>
+        <Column header="提交者" style="width: 120px">
+          <template #body="{ data }">
             <div class="user-cell">
+              <RouterLink :to="{ name: 'user-profile', params: { id: data.userId } }" @click.stop>
+                {{ data.nickname || data.username }}
+              </RouterLink>
+              <IdentityShowcase
+                :badges="data.equippedBadges"
+                :title="data.equippedTitle"
+                size="small"
+              />
+            </div>
+          </template>
+        </Column>
+        <Column header="题目" style="min-width: 150px">
+          <template #body="{ data }">
+            <RouterLink
+              :to="{ name: 'problem-detail', params: { id: data.problemId } }"
+              class="problem-link"
+              @click.stop
+            >
+              {{ data.problemTitle }}
+            </RouterLink>
+          </template>
+        </Column>
+        <Column header="状态" style="width: 95px">
+          <template #body="{ data }">
+            <AppStatusTag :status="data.status" />
+          </template>
+        </Column>
+        <Column header="语言" style="width: 75px">
+          <template #body="{ data }">{{ languageLabel(data.language) }}</template>
+        </Column>
+        <Column header="耗时" style="width: 75px">
+          <template #body="{ data }"
+            ><span class="num">{{ data.timeUsedMs }} ms</span></template
+          >
+        </Column>
+        <Column header="内存" style="width: 80px">
+          <template #body="{ data }">
+            <span class="num">{{ data.memoryUsedKb }} KB</span>
+          </template>
+        </Column>
+        <Column header="得分" style="width: 50px">
+          <template #body="{ data }"
+            ><span class="num">{{ data.score }}</span></template
+          >
+        </Column>
+        <Column header="提交时间" style="min-width: 140px">
+          <template #body="{ data }">{{ formatDateTime(data.createdAt) }}</template>
+        </Column>
+        <template #empty>
+          <AppEmptyState
+            icon="pi pi-inbox"
+            title="暂无测评记录"
+            description="调整筛选条件，或等待新的提交。"
+          />
+        </template>
+      </DataTable>
+
+      <Paginator
+        v-if="total > 0"
+        :rows="PAGE_SIZE"
+        :total-records="total"
+        :first="first"
+        :page-link-size="5"
+        template="PrevPageLink PageLinks NextPageLink"
+        class="pager"
+        @page="onPage"
+      />
+    </AppSurface>
+
+    <Drawer
+      v-model:visible="drawer"
+      position="right"
+      header="测评详情"
+      class="submissions-drawer"
+      :style="{ width: 'min(92vw, 760px)' }"
+      :close-button-props="{ 'aria-label': '关闭测评详情' }"
+      :dismissable="true"
+    >
+      <AppLoadingState v-if="detailLoading" label="正在加载测评详情" />
+      <AppErrorState v-else-if="detailError" :description="detailError" @retry="retryDetail" />
+      <template v-else-if="detail">
+        <dl class="detail-meta">
+          <div>
+            <dt>提交</dt>
+            <dd>#{{ detail.id }}</dd>
+          </div>
+          <div>
+            <dt>状态</dt>
+            <dd><AppStatusTag :status="detail.status" /></dd>
+          </div>
+          <div class="detail-user">
+            <dt>用户</dt>
+            <dd>
               <span>{{ detail.nickname || detail.username }}</span>
               <IdentityShowcase
                 :badges="detail.equippedBadges"
                 :title="detail.equippedTitle"
                 size="small"
               />
-            </div>
-          </el-descriptions-item>
-          <el-descriptions-item label="题目">{{ detail.problemTitle }}</el-descriptions-item>
-          <el-descriptions-item label="语言">{{
-            languageLabel(detail.language)
-          }}</el-descriptions-item>
-          <el-descriptions-item label="得分">{{ detail.score }}</el-descriptions-item>
-          <el-descriptions-item label="耗时">{{ detail.timeUsedMs }} ms</el-descriptions-item>
-          <el-descriptions-item label="内存">{{ detail.memoryUsedKb }} KB</el-descriptions-item>
-          <el-descriptions-item label="提交时间">{{
-            formatDateTime(detail.createdAt)
-          }}</el-descriptions-item>
-          <el-descriptions-item label="评测时间">{{
-            formatDateTime(detail.judgedAt)
-          }}</el-descriptions-item>
-        </el-descriptions>
+            </dd>
+          </div>
+          <div>
+            <dt>题目</dt>
+            <dd>{{ detail.problemTitle }}</dd>
+          </div>
+          <div>
+            <dt>语言</dt>
+            <dd>{{ languageLabel(detail.language) }}</dd>
+          </div>
+          <div>
+            <dt>得分</dt>
+            <dd class="num">{{ detail.score }}</dd>
+          </div>
+          <div>
+            <dt>耗时</dt>
+            <dd class="num">{{ detail.timeUsedMs }} ms</dd>
+          </div>
+          <div>
+            <dt>内存</dt>
+            <dd class="num">{{ detail.memoryUsedKb }} KB</dd>
+          </div>
+          <div>
+            <dt>提交时间</dt>
+            <dd>{{ formatDateTime(detail.createdAt) }}</dd>
+          </div>
+          <div>
+            <dt>评测时间</dt>
+            <dd>{{ formatDateTime(detail.judgedAt) }}</dd>
+          </div>
+        </dl>
 
-        <el-alert
-          v-if="detail.codeHidden"
-          title="比赛进行中，其他选手的代码与测评详情暂不可见。"
-          type="warning"
-          show-icon
-          :closable="false"
-          class="banner"
-        />
+        <Message v-if="detail.codeHidden" severity="warn" :closable="false" class="hidden-banner">
+          比赛进行中，其他选手的代码与测评详情暂不可见。
+        </Message>
+
         <template v-else>
           <h3>代码</h3>
-          <pre class="code">{{ detail.code }}</pre>
+          <pre class="code-block" tabindex="0">{{ detail.code }}</pre>
+
           <template v-if="detail.errorMessage">
             <h3>错误信息</h3>
-            <pre class="code">{{ detail.errorMessage }}</pre>
+            <pre class="code-block" tabindex="0">{{ detail.errorMessage }}</pre>
           </template>
+
           <template v-if="detail.judgeResult.length">
             <h3>测试点</h3>
-            <el-table :data="detail.judgeResult" size="small">
-              <el-table-column prop="testcaseId" label="测试点" width="90" />
-              <el-table-column label="状态" width="110">
-                <template #default="{ row }">
-                  <el-tag :type="statusTagType(row.status)" size="small">
-                    {{ statusLabel(row.status) }}
-                  </el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column prop="timeMs" label="耗时 (ms)" width="110" />
-              <el-table-column prop="memoryKb" label="内存 (KB)" width="110" />
-              <el-table-column prop="message" label="信息" min-width="160" />
-            </el-table>
+            <DataTable
+              :value="detail.judgeResult"
+              size="small"
+              responsive-layout="scroll"
+              class="judge-table"
+            >
+              <Column header="测试点" style="width: 80px">
+                <template #body="{ data }"
+                  ><span class="num">{{ data.testcaseId }}</span></template
+                >
+              </Column>
+              <Column header="状态" style="width: 110px">
+                <template #body="{ data }"><AppStatusTag :status="data.status" /></template>
+              </Column>
+              <Column header="耗时 (ms)" style="width: 110px">
+                <template #body="{ data }"
+                  ><span class="num">{{ data.timeMs }}</span></template
+                >
+              </Column>
+              <Column header="内存 (KB)" style="width: 110px">
+                <template #body="{ data }"
+                  ><span class="num">{{ data.memoryKb }}</span></template
+                >
+              </Column>
+              <Column header="信息" style="min-width: 160px">
+                <template #body="{ data }">{{ data.message }}</template>
+              </Column>
+            </DataTable>
           </template>
         </template>
       </template>
-      <el-empty v-else-if="!detailLoading" description="暂无详情" />
-    </div>
-  </el-drawer>
+      <AppEmptyState v-else title="暂无详情" />
+    </Drawer>
+  </div>
 </template>
 
 <style scoped>
-.head {
+.submissions-page {
   display: flex;
+  flex-direction: column;
+  gap: var(--kapoj-space-4);
+  max-width: var(--kapoj-content-max);
+}
+
+.submissions-surface {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kapoj-space-4);
+}
+
+.live-status {
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
+  gap: var(--kapoj-space-2);
+  padding: 3px var(--kapoj-space-2);
+  color: var(--kapoj-text-muted);
+  font-size: 11px;
+  border: 1px solid var(--kapoj-border);
+  border-radius: var(--kapoj-radius-xs);
 }
-.banner {
-  margin-bottom: 12px;
+
+.live-status.is-live {
+  color: var(--kapoj-success);
+  border-color: color-mix(in srgb, var(--kapoj-success) 32%, transparent);
 }
+
+.live-dot {
+  width: 6px;
+  height: 6px;
+  background: currentColor;
+  border-radius: 50%;
+}
+
+.live-status.is-live .live-dot {
+  box-shadow: 0 0 8px var(--kapoj-success);
+  animation: live-pulse 1.6s ease-in-out infinite;
+}
+
+.filter-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kapoj-space-3);
+}
+
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--kapoj-space-2);
+}
+
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.filter-field label {
+  color: var(--kapoj-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.filter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kapoj-space-1);
+}
+
+.result-bar {
+  display: flex;
+  justify-content: flex-end;
+  color: var(--kapoj-text-muted);
+  font-family: var(--kapoj-font-mono);
+  font-size: 11px;
+}
+
+.submissions-table,
+.judge-table {
+  overflow: hidden;
+  border: 1px solid var(--kapoj-border);
+  border-radius: var(--kapoj-radius-md);
+}
+
+.submissions-table :deep(.p-datatable-table) {
+  min-width: 840px;
+}
+
+.submissions-table :deep(.p-datatable-thead > tr > th),
+.judge-table :deep(.p-datatable-thead > tr > th) {
+  padding: 8px var(--kapoj-space-3);
+  color: var(--kapoj-text-muted);
+  font-family: var(--kapoj-font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: var(--kapoj-bg-elevated);
+  border-color: var(--kapoj-border);
+}
+
+.submissions-table :deep(.p-datatable-tbody > tr > td),
+.judge-table :deep(.p-datatable-tbody > tr > td) {
+  padding: 8px var(--kapoj-space-3);
+  color: var(--kapoj-text-secondary);
+  border-color: var(--kapoj-border);
+}
+
+.submissions-table :deep(.p-datatable-tbody > tr) {
+  cursor: pointer;
+}
+
 .user-cell {
   display: flex;
   flex-direction: column;
@@ -416,21 +663,114 @@ onBeforeUnmount(() => {
   gap: 2px;
   min-width: 0;
 }
+
+.problem-link {
+  color: var(--kapoj-text);
+  font-weight: 600;
+}
+
+.problem-link:hover {
+  color: var(--kapoj-primary);
+}
+
 .pager {
+  align-self: flex-end;
+}
+
+.detail-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--kapoj-space-3);
+  margin: 0;
+}
+
+.detail-meta > div {
   display: flex;
-  justify-content: flex-end;
-  margin-top: 12px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
-.code {
-  padding: 12px;
-  overflow: auto;
-  max-height: 420px;
-  background: var(--el-fill-color-light);
-  border-radius: 4px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  white-space: pre-wrap;
+
+.detail-meta dt {
+  color: var(--kapoj-text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
 }
+
+.detail-meta dd {
+  margin: 0;
+  color: var(--kapoj-text);
+  font-size: 13px;
+}
+
+.detail-user dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--kapoj-space-2);
+}
+
+.hidden-banner {
+  margin-top: var(--kapoj-space-4);
+}
+
 h3 {
-  margin: 20px 0 8px;
+  margin: var(--kapoj-space-5) 0 var(--kapoj-space-2);
+  color: var(--kapoj-text);
+  font-size: 1rem;
+}
+
+.code-block {
+  max-height: 420px;
+  padding: var(--kapoj-space-3);
+  margin: 0;
+  overflow: auto;
+  color: var(--kapoj-text);
+  font-family: var(--kapoj-font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  background: var(--kapoj-bg);
+  border: 1px solid var(--kapoj-border);
+  border-radius: var(--kapoj-radius-sm);
+}
+
+.judge-table {
+  margin-top: var(--kapoj-space-2);
+}
+
+@keyframes live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (max-width: 700px) {
+  .detail-meta {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .filter-actions {
+    width: 100%;
+  }
+
+  .filter-actions :deep(.p-button) {
+    flex: 1 1 auto;
+  }
+
+  .pager {
+    align-self: stretch;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-status.is-live .live-dot {
+    animation: none;
+  }
 }
 </style>

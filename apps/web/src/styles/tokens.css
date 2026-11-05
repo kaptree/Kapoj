@@ -1,0 +1,123 @@
+:root {
+  color-scheme: dark;
+
+  /* Typography */
+  --kapoj-font-sans:
+    'Inter', 'Geist', 'PingFang SC', 'Microsoft YaHei', system-ui, -apple-system,
+    BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --kapoj-font-mono:
+    'JetBrains Mono', 'Fira Code', 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace;
+
+  /* Surfaces */
+  --kapoj-bg: #070b12;
+  --kapoj-bg-elevated: #0c121c;
+  --kapoj-surface: #111927;
+  --kapoj-surface-raised: #162033;
+  --kapoj-surface-hover: #1b2740;
+  --kapoj-border: rgb(148 163 184 / 14%);
+  --kapoj-border-strong: rgb(148 163 184 / 26%);
+  --kapoj-border-focus: rgb(0 217 245 / 55%);
+
+  /* Text */
+  --kapoj-text: #e6edf3;
+  --kapoj-text-secondary: #94a3b8;
+  --kapoj-text-muted: #64748b;
+  --kapoj-text-inverted: #04121a;
+
+  /* Brand and semantic colors */
+  --kapoj-primary: #00d9f5;
+  --kapoj-primary-strong: #4de4f7;
+  --kapoj-primary-soft: rgb(0 217 245 / 12%);
+  --kapoj-success: #22c55e;
+  --kapoj-warning: #f59e0b;
+  --kapoj-danger: #ef4444;
+  --kapoj-info: #38bdf8;
+  --kapoj-special: #8b5cf6;
+  --kapoj-re: #f472b6;
+  --kapoj-se: #fb7185;
+
+  /* Judge status colors */
+  --kapoj-status-ac: var(--kapoj-success);
+  --kapoj-status-wa: var(--kapoj-danger);
+  --kapoj-status-tle: var(--kapoj-warning);
+  --kapoj-status-mle: var(--kapoj-special);
+  --kapoj-status-re: var(--kapoj-re);
+  --kapoj-status-ce: var(--kapoj-text-muted);
+  --kapoj-status-judging: var(--kapoj-primary);
+  --kapoj-status-se: var(--kapoj-se);
+
+  /* Difficulty colors */
+  --kapoj-difficulty-1: #34d399;
+  --kapoj-difficulty-2: #22d3ee;
+  --kapoj-difficulty-3: #f59e0b;
+  --kapoj-difficulty-4: #fb923c;
+  --kapoj-difficulty-5: #ef4444;
+  --kapoj-difficulty-unknown: var(--kapoj-text-muted);
+
+  /* Spacing */
+  --kapoj-space-1: 4px;
+  --kapoj-space-2: 8px;
+  --kapoj-space-3: 12px;
+  --kapoj-space-4: 16px;
+  --kapoj-space-5: 24px;
+  --kapoj-space-6: 32px;
+  --kapoj-space-7: 48px;
+  --kapoj-space-8: 64px;
+
+  /* Radii */
+  --kapoj-radius-xs: 2px;
+  --kapoj-radius-sm: 4px;
+  --kapoj-radius-md: 6px;
+  --kapoj-radius-lg: 8px;
+
+  /* Effects and motion */
+  --kapoj-shadow-sm: 0 1px 2px rgb(0 0 0 / 35%);
+  --kapoj-shadow-md: 0 12px 32px rgb(0 0 0 / 30%);
+  --kapoj-glow-primary: 0 0 0 1px rgb(0 217 245 / 25%), 0 0 24px rgb(0 217 245 / 12%);
+  --kapoj-grid-line: rgb(148 163 184 / 7%);
+  --kapoj-transition: 160ms ease-out;
+  --kapoj-transition-slow: 220ms ease-out;
+
+  /* Layout */
+  --kapoj-header-height: 60px;
+  --kapoj-sidebar-width: 232px;
+  --kapoj-content-max: 1440px;
+
+  /* Focus */
+  --kapoj-focus-ring: 0 0 0 2px var(--kapoj-bg), 0 0 0 4px var(--kapoj-primary);
+}
+
+:root:not(.app-dark) {
+  color-scheme: light;
+  --kapoj-bg: #f4f7fb;
+  --kapoj-bg-elevated: #ffffff;
+  --kapoj-surface: #ffffff;
+  --kapoj-surface-raised: #f8fafc;
+  --kapoj-surface-hover: #eef4fb;
+  --kapoj-border: rgb(15 23 42 / 12%);
+  --kapoj-border-strong: rgb(15 23 42 / 22%);
+  --kapoj-border-focus: rgb(0 127 148 / 55%);
+  --kapoj-text: #0f172a;
+  --kapoj-text-secondary: #475569;
+  --kapoj-text-muted: #64748b;
+  --kapoj-text-inverted: #ffffff;
+  --kapoj-primary: #007f94;
+  --kapoj-primary-strong: #006474;
+  --kapoj-primary-soft: rgb(0 127 148 / 10%);
+  --kapoj-success: #15803d;
+  --kapoj-warning: #b45309;
+  --kapoj-danger: #dc2626;
+  --kapoj-info: #0369a1;
+  --kapoj-special: #7c3aed;
+  --kapoj-re: #be185d;
+  --kapoj-se: #be123c;
+  --kapoj-difficulty-1: #047857;
+  --kapoj-difficulty-2: #0e7490;
+  --kapoj-difficulty-3: #b45309;
+  --kapoj-difficulty-4: #c2410c;
+  --kapoj-difficulty-5: #b91c1c;
+  --kapoj-shadow-sm: 0 1px 2px rgb(15 23 42 / 8%);
+  --kapoj-shadow-md: 0 12px 32px rgb(15 23 42 / 12%);
+  --kapoj-glow-primary: 0 0 0 1px rgb(0 127 148 / 20%), 0 0 20px rgb(0 127 148 / 10%);
+  --kapoj-grid-line: rgb(15 23 42 / 5%);
+}

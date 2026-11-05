@@ -1,27 +1,62 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, type FormInstance } from 'element-plus'
+import Button from 'primevue/button'
+import InputText from 'primevue/inputtext'
+import Message from 'primevue/message'
+import Password from 'primevue/password'
+import { useToast } from 'primevue/usetoast'
 
 import { ApiError } from '@/api/http'
+import AuthLayout from '@/components/auth/AuthLayout.vue'
+import AppFormField from '@/components/ui/AppFormField.vue'
 import { useAuthStore } from '@/stores/auth'
-import { emailRules, nicknameRules, passwordRules, usernameRules } from '@/validation'
+import { validateEmail, validateNickname, validatePassword, validateUsername } from '@/validation'
 
 const auth = useAuthStore()
 const router = useRouter()
+const toast = useToast()
 
-const formRef = ref<FormInstance>()
 const form = reactive({ username: '', email: '', password: '', nickname: '' })
+const errors = reactive({ username: '', email: '', password: '', nickname: '' })
 const submitting = ref(false)
 const error = ref('')
 
+const validators = {
+  username: validateUsername,
+  email: validateEmail,
+  password: validatePassword,
+  nickname: validateNickname,
+}
+
+function validateField(field: keyof typeof errors) {
+  errors[field] = validators[field](form[field]) ?? ''
+}
+
+function clearError(field: keyof typeof errors) {
+  errors[field] = ''
+}
+
+function validateAll() {
+  for (const field of Object.keys(errors) as (keyof typeof errors)[]) {
+    validateField(field)
+  }
+  return !errors.username && !errors.email && !errors.password && !errors.nickname
+}
+
 async function submit() {
-  if (!(await formRef.value?.validate().catch(() => false))) return
+  if (!validateAll()) return
+
   submitting.value = true
   error.value = ''
   try {
     await auth.register(form)
-    ElMessage.success('注册成功')
+    toast.add({
+      severity: 'success',
+      summary: '注册成功',
+      detail: '欢迎加入 kapOJ',
+      life: 3000,
+    })
     await router.replace({ name: 'home' })
   } catch (e) {
     error.value = e instanceof ApiError ? e.message : '注册失败，请稍后再试'
@@ -32,48 +67,121 @@ async function submit() {
 </script>
 
 <template>
-  <el-card class="auth-card" shadow="never">
-    <h2>注册</h2>
-    <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" class="alert" />
-    <el-form ref="formRef" :model="form" label-position="top" @submit.prevent="submit">
-      <el-form-item label="用户名" prop="username" :rules="usernameRules">
-        <el-input v-model="form.username" autocomplete="username" />
-      </el-form-item>
-      <el-form-item label="邮箱" prop="email" :rules="emailRules">
-        <el-input v-model="form.email" autocomplete="email" />
-      </el-form-item>
-      <el-form-item label="密码" prop="password" :rules="passwordRules">
-        <el-input
-          v-model="form.password"
-          type="password"
-          show-password
-          autocomplete="new-password"
-        />
-      </el-form-item>
-      <el-form-item label="昵称（可选，默认与用户名相同）" prop="nickname" :rules="nicknameRules">
-        <el-input v-model="form.nickname" />
-      </el-form-item>
-      <el-button type="primary" native-type="submit" :loading="submitting" class="submit"
-        >注册</el-button
+  <AuthLayout title="注册" description="创建账号，开始记录你的每一次进步。">
+    <Message v-if="error" severity="error" :closable="false" class="form-banner" role="alert">
+      {{ error }}
+    </Message>
+
+    <form class="auth-form" novalidate @submit.prevent="submit">
+      <AppFormField
+        v-slot="{ id, invalid, describedby }"
+        label="用户名"
+        :error="errors.username"
+        hint="3–32 位字母、数字或下划线"
+        required
       >
-    </el-form>
-    <p class="switch">已有账号？<RouterLink to="/login">登录</RouterLink></p>
-  </el-card>
+        <InputText
+          :id="id"
+          v-model="form.username"
+          fluid
+          :invalid="invalid"
+          :aria-describedby="describedby"
+          autocomplete="username"
+          placeholder="alice_01"
+          @blur="validateField('username')"
+          @update:model-value="clearError('username')"
+        />
+      </AppFormField>
+
+      <AppFormField
+        v-slot="{ id, invalid, describedby }"
+        label="邮箱"
+        :error="errors.email"
+        required
+      >
+        <InputText
+          :id="id"
+          v-model="form.email"
+          fluid
+          :invalid="invalid"
+          :aria-describedby="describedby"
+          autocomplete="email"
+          placeholder="alice@example.com"
+          @blur="validateField('email')"
+          @update:model-value="clearError('email')"
+        />
+      </AppFormField>
+
+      <AppFormField
+        v-slot="{ id, invalid, describedby }"
+        label="密码"
+        :error="errors.password"
+        hint="8–72 个字节"
+        required
+      >
+        <Password
+          v-model="form.password"
+          :input-id="id"
+          fluid
+          toggle-mask
+          :feedback="false"
+          :invalid="invalid"
+          :input-props="{
+            autocomplete: 'new-password',
+            'aria-describedby': describedby,
+          }"
+          placeholder="至少 8 个字节"
+          @blur="validateField('password')"
+          @update:model-value="clearError('password')"
+        />
+      </AppFormField>
+
+      <AppFormField
+        v-slot="{ id, invalid, describedby }"
+        label="昵称"
+        :error="errors.nickname"
+        hint="可选，默认与用户名相同"
+        optional
+      >
+        <InputText
+          :id="id"
+          v-model="form.nickname"
+          fluid
+          :invalid="invalid"
+          :aria-describedby="describedby"
+          placeholder="你的展示名称"
+          @blur="validateField('nickname')"
+          @update:model-value="clearError('nickname')"
+        />
+      </AppFormField>
+
+      <Button
+        type="submit"
+        label="注册"
+        icon="pi pi-arrow-right"
+        icon-pos="right"
+        :loading="submitting"
+        fluid
+        class="auth-submit"
+      />
+    </form>
+
+    <template #footer> 已有账号？<RouterLink to="/login">登录</RouterLink> </template>
+  </AuthLayout>
 </template>
 
 <style scoped>
-.auth-card {
-  max-width: 400px;
-  margin: 40px auto;
+.form-banner {
+  margin-bottom: var(--kapoj-space-4);
 }
-.alert {
-  margin-bottom: 16px;
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kapoj-space-4);
 }
-.submit {
-  width: 100%;
-}
-.switch {
-  text-align: center;
-  color: var(--el-text-color-secondary);
+
+.auth-submit {
+  margin-top: var(--kapoj-space-1);
 }
 </style>

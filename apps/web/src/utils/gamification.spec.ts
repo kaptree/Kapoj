@@ -63,6 +63,8 @@ describe('gamification utils', () => {
     ]) {
       expect(safeTitleColor(invalid)).toBe('#303133')
     }
+
+    expect(safeTitleColor('red', 'var(--kapoj-text)')).toBe('var(--kapoj-text)')
   })
 
   it('formats coin reasons', () => {

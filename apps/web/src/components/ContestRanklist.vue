@@ -1,8 +1,16 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import Column from 'primevue/column'
+import DataTable from 'primevue/datatable'
+import Message from 'primevue/message'
+import Tag from 'primevue/tag'
+
 import { getContestRanklist } from '@/api/contests'
 import { ApiError } from '@/api/http'
-import type { ContestRankCell, ContestRanklist, ContestRankRow } from '@/api/types'
+import type { ContestRankCell, ContestRankRow, ContestRanklist } from '@/api/types'
+import AppEmptyState from '@/components/ui/AppEmptyState.vue'
+import AppErrorState from '@/components/ui/AppErrorState.vue'
+import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import IdentityShowcase from '@/components/IdentityShowcase.vue'
 import { formatDateTime } from '@/utils/format'
 
@@ -34,7 +42,8 @@ watch(
 )
 onMounted(load)
 
-function cellText(cell: ContestRankCell, icpc: boolean): string {
+function cellText(cell: ContestRankCell | undefined, icpc: boolean): string {
+  if (!cell) return ''
   if (icpc) {
     if (cell.status === 'accepted') return `AC (${cell.attempts})`
     return cell.attempts > 0 ? `-${cell.attempts}` : ''
@@ -48,86 +57,168 @@ function rowValue(row: ContestRankRow): string {
   return String(row.totalScore)
 }
 
+function acceptedAt(row: ContestRankRow, index: number): string {
+  const cell = row.problems[index]
+  return cell?.acceptedAt ? formatDateTime(cell.acceptedAt) : ''
+}
+
 onBeforeUnmount(() => {
   latest++
 })
 </script>
 
 <template>
-  <div v-loading="loading">
-    <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" class="banner" />
-    <template v-if="ranklist">
-      <div class="meta">
-        <span>{{ ranklist.mode.toUpperCase() }}</span>
+  <div class="contest-ranklist">
+    <AppErrorState v-if="error && !ranklist" :description="error" @retry="load" />
+
+    <AppLoadingState v-else-if="loading && !ranklist" label="正在加载榜单" />
+
+    <template v-else-if="ranklist">
+      <Message v-if="error" severity="error" :closable="false">
+        {{ error }}
+      </Message>
+      <div class="ranklist-meta">
+        <span class="ranklist-mode">{{ ranklist.mode.toUpperCase() }}</span>
         <span>生成于 {{ formatDateTime(ranklist.generatedAt) }}</span>
-        <el-tag v-if="ranklist.selfOnly" type="warning" size="small" effect="plain">
-          OI 赛时仅显示本人成绩，赛后公布完整榜单
-        </el-tag>
+        <Tag
+          v-if="ranklist.selfOnly"
+          value="OI 赛时仅显示本人成绩，赛后公布完整榜单"
+          severity="warn"
+        />
       </div>
-      <el-table :data="ranklist.rows" row-key="userId" empty-text="暂无参赛者">
-        <el-table-column prop="rank" label="#" width="60" />
-        <el-table-column label="选手" min-width="160">
-          <template #default="{ row }">
+
+      <DataTable
+        :value="ranklist.rows"
+        :loading="loading"
+        data-key="userId"
+        size="small"
+        responsive-layout="scroll"
+        class="ranklist-table"
+      >
+        <Column header="#" style="width: 60px">
+          <template #body="{ data }">
+            <span class="num">{{ data.rank }}</span>
+          </template>
+        </Column>
+        <Column header="选手" style="min-width: 160px">
+          <template #body="{ data }">
             <div class="player-cell">
-              <span>{{ row.nickname || row.username }}</span>
+              <span class="player-name">{{ data.nickname || data.username }}</span>
               <IdentityShowcase
-                :badges="row.equippedBadges"
-                :title="row.equippedTitle"
+                :badges="data.equippedBadges"
+                :title="data.equippedTitle"
                 size="small"
               />
             </div>
           </template>
-        </el-table-column>
-        <el-table-column :label="ranklist.mode === 'icpc' ? '通过 / 罚时' : '总分'" width="120">
-          <template #default="{ row }">{{ rowValue(row) }}</template>
-        </el-table-column>
-        <el-table-column
+        </Column>
+        <Column :header="ranklist.mode === 'icpc' ? '通过 / 罚时' : '总分'" style="width: 120px">
+          <template #body="{ data }">
+            <span class="num">{{ rowValue(data) }}</span>
+          </template>
+        </Column>
+        <Column
           v-for="(problem, index) in ranklist.problems"
           :key="problem.problemId"
-          :label="problem.displayId"
-          width="92"
-          align="center"
+          :header="problem.displayId"
+          style="width: 92px"
         >
-          <template #default="{ row }">
+          <template #body="{ data }">
             <span
-              :class="{ accepted: row.problems[index]?.status === 'accepted' }"
-              :title="
-                row.problems[index]?.acceptedAt
-                  ? formatDateTime(row.problems[index].acceptedAt)
-                  : ''
-              "
+              class="cell"
+              :class="{ accepted: data.problems[index]?.status === 'accepted' }"
+              :title="acceptedAt(data, index)"
             >
-              {{ cellText(row.problems[index], ranklist.mode === 'icpc') }}
+              {{ cellText(data.problems[index], ranklist.mode === 'icpc') }}
             </span>
           </template>
-        </el-table-column>
-      </el-table>
+        </Column>
+        <template #empty>
+          <AppEmptyState
+            icon="pi pi-users"
+            title="暂无参赛者"
+            description="比赛开始后，参赛者与成绩会显示在这里。"
+          />
+        </template>
+      </DataTable>
     </template>
   </div>
 </template>
 
 <style scoped>
-.banner {
-  margin-bottom: 12px;
+.contest-ranklist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kapoj-space-3);
+  min-width: 0;
 }
-.meta {
+
+.ranklist-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
   align-items: center;
-  margin-bottom: 8px;
-  color: var(--el-text-color-secondary);
-  font-size: 13px;
+  gap: var(--kapoj-space-3);
+  color: var(--kapoj-text-secondary);
+  font-size: 12px;
 }
-.accepted {
-  color: var(--el-color-success);
+
+.ranklist-mode {
+  color: var(--kapoj-primary);
+  font-family: var(--kapoj-font-mono);
   font-weight: 600;
+  letter-spacing: 0.08em;
 }
+
+.ranklist-table {
+  overflow: hidden;
+  border: 1px solid var(--kapoj-border);
+  border-radius: var(--kapoj-radius-md);
+}
+
+.ranklist-table :deep(.p-datatable-thead > tr > th) {
+  padding: 8px var(--kapoj-space-3);
+  color: var(--kapoj-text-muted);
+  font-family: var(--kapoj-font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: var(--kapoj-bg-elevated);
+  border-color: var(--kapoj-border);
+}
+
+.ranklist-table :deep(.p-datatable-tbody > tr > td) {
+  padding: 8px var(--kapoj-space-3);
+  color: var(--kapoj-text-secondary);
+  border-color: var(--kapoj-border);
+}
+
 .player-cell {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
   min-width: 0;
+}
+
+.player-name {
+  color: var(--kapoj-text);
+  font-weight: 600;
+}
+
+.cell {
+  font-family: var(--kapoj-font-mono);
+  font-size: 12px;
+}
+
+.cell.accepted {
+  color: var(--kapoj-success);
+  font-weight: 700;
+}
+
+@media (max-width: 640px) {
+  .ranklist-meta {
+    gap: var(--kapoj-space-2);
+  }
 }
 </style>
