@@ -20,6 +20,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/activity"
 	"github.com/kaptree/kapoj/apps/server/internal/auth"
 	"github.com/kaptree/kapoj/apps/server/internal/config"
+	"github.com/kaptree/kapoj/apps/server/internal/learning"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
@@ -133,6 +134,34 @@ func TestPanicUsesEnvelope(t *testing.T) {
 	w, resp := call(h, http.MethodGet, "/api/boom", "", "")
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 	assert.EqualValues(t, 50000, resp["code"])
+}
+
+func TestRouterWiresLearningEndpoints(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	store, err := storage.NewLocal(t.TempDir())
+	require.NoError(t, err)
+	g := testutil.PG(t)
+	h := New(Deps{
+		DB: g, Redis: rdb, Storage: store,
+		Config: &config.Config{
+			JWTSecret:       strings.Repeat("s", 32),
+			AccessTokenTTL:  15 * time.Minute,
+			RefreshTokenTTL: time.Hour,
+			SubmitCooldown:  time.Second,
+		},
+		Enqueuer: noopQueue{},
+		Learning: learning.NewService(learning.NewRepository(g)),
+	})
+
+	w, resp := call(h, http.MethodGet, "/api/learning-paths", "", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.EqualValues(t, 0, resp["data"].(map[string]any)["total"])
+
+	w, resp = call(h, http.MethodPost, "/api/learning-paths", "", `{"title":"游客路线"}`)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.EqualValues(t, 40100, resp["code"])
 }
 
 func TestRouterWiresActivityEndpoints(t *testing.T) {

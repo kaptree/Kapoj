@@ -13,6 +13,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/activity"
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
+	"github.com/kaptree/kapoj/apps/server/internal/learning"
 	"github.com/kaptree/kapoj/apps/server/internal/rating"
 )
 
@@ -96,6 +97,26 @@ func TestMigrateCreatesRatingSchema(t *testing.T) {
 			Rank: 0, RatingBefore: 1500, RatingAfter: 1490,
 		}).Error, "contest_id is nullable for future decay/season rows")
 	}
+}
+
+func TestMigrateCreatesLearningSchema(t *testing.T) {
+	dsn := os.Getenv("KAPOJ_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("KAPOJ_TEST_DATABASE_URL not set; skipping database test")
+	}
+	g, err := open(dsn, io.Discard)
+	require.NoError(t, err)
+	require.NoError(t, Migrate(g))
+	sqlDB, err := g.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	for _, table := range []string{"learning_paths", "learning_path_nodes", "user_learning_progress"} {
+		assert.True(t, g.Migrator().HasTable(table), "缺少表 %s", table)
+	}
+	assert.True(t, g.Migrator().HasIndex(&learning.UserLearningProgress{}, "uniq_user_learning_progress"))
+	assert.True(t, g.Migrator().HasColumn(&learning.LearningPath{}, "description_md"))
+	assert.True(t, g.Migrator().HasColumn(&learning.LearningPathNode{}, "problem_ids_json"))
 }
 
 func TestMigrateCreatesActivitySchema(t *testing.T) {

@@ -19,6 +19,8 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/gamificationapi"
 	"github.com/kaptree/kapoj/apps/server/internal/health"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
+	"github.com/kaptree/kapoj/apps/server/internal/learning"
+	"github.com/kaptree/kapoj/apps/server/internal/learningapi"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/problemapi"
@@ -47,6 +49,7 @@ type Deps struct {
 	Game     *gamification.Service
 	Rating   *rating.Service
 	Activity *activity.Service
+	Learning *learning.Service
 }
 
 func New(d Deps) *gin.Engine {
@@ -99,6 +102,9 @@ func New(d Deps) *gin.Engine {
 		} else {
 			activityapi.RegisterRoutes(api, d.Activity)
 		}
+	}
+	if d.Learning != nil {
+		learningapi.RegisterRoutes(api, d.Learning)
 	}
 	contestRepo := contest.NewGormRepository(d.DB)
 	contestSvc := contest.NewService(contestRepo)

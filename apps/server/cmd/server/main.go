@@ -22,6 +22,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/gamequeue"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/judgequeue"
+	"github.com/kaptree/kapoj/apps/server/internal/learning"
 	"github.com/kaptree/kapoj/apps/server/internal/rating"
 	"github.com/kaptree/kapoj/apps/server/internal/router"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
@@ -73,6 +74,7 @@ func run() error {
 		JudgeGrace:   cfg.RatingJudgeGrace,
 		ScanInterval: cfg.RatingScanInterval,
 	})
+	learningSvc := learning.NewService(learning.NewRepository(g))
 
 	gameServer := asynq.NewServer(
 		asynq.RedisClientOpt{Addr: cfg.RedisAddr},
@@ -98,7 +100,7 @@ func run() error {
 		Addr: cfg.HTTPAddr,
 		Handler: router.New(router.Deps{
 			DB: g, Redis: rdb, Storage: store, Config: cfg, Enqueuer: queue, Game: gameSvc,
-			Rating: ratingSvc, Activity: activitySvc,
+			Rating: ratingSvc, Activity: activitySvc, Learning: learningSvc,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
