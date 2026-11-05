@@ -2,7 +2,9 @@
 import { computed, ref } from 'vue'
 
 import AchievementAdminPanel from '@/components/admin/AchievementAdminPanel.vue'
+import BadgeAdminPanel from '@/components/admin/BadgeAdminPanel.vue'
 import TaskAdminPanel from '@/components/admin/TaskAdminPanel.vue'
+import TitleAdminPanel from '@/components/admin/TitleAdminPanel.vue'
 import { hasRole } from '@/router/guard'
 import { useAuthStore } from '@/stores/auth'
 
@@ -37,10 +39,10 @@ const activeTab = ref('achievements')
         <TaskAdminPanel />
       </el-tab-pane>
       <el-tab-pane label="徽章" name="badges" lazy>
-        <el-empty description="徽章管理将在下一任务接入" />
+        <BadgeAdminPanel />
       </el-tab-pane>
       <el-tab-pane label="称号" name="titles" lazy>
-        <el-empty description="称号管理将在下一任务接入" />
+        <TitleAdminPanel />
       </el-tab-pane>
     </el-tabs>
   </el-card>
