@@ -141,10 +141,10 @@ func TestPathPermissionMatrix(t *testing.T) {
 	_, err := e.svc.CreatePath(ctx, authorView, learning.PathInput{
 		Title: "冒充官方", IsOfficial: boolPtr(true),
 	})
-	requireAppError(t, err, 403, 40300)
+	_ = requireAppError(t, err, 403, 40300)
 
 	_, err = e.svc.CreatePath(ctx, learning.Viewer{}, learning.PathInput{Title: "游客路线"})
-	requireAppError(t, err, 401, 40100)
+	_ = requireAppError(t, err, 401, 40100)
 
 	updated, err := e.svc.UpdatePath(ctx, authorView, custom.ID, learning.PathInput{Title: "作者改名"})
 	require.NoError(t, err)
@@ -153,7 +153,7 @@ func TestPathPermissionMatrix(t *testing.T) {
 	assert.True(t, updated.IsActive)
 
 	_, err = e.svc.UpdatePath(ctx, otherView, custom.ID, learning.PathInput{Title: "他人篡改"})
-	requireAppError(t, err, 404, 40400)
+	_ = requireAppError(t, err, 404, 40400)
 
 	updated, err = e.svc.UpdatePath(ctx, adminView, custom.ID, learning.PathInput{Title: "管理员改名"})
 	require.NoError(t, err)
@@ -162,12 +162,12 @@ func TestPathPermissionMatrix(t *testing.T) {
 	_, err = e.svc.UpdatePath(ctx, authorView, custom.ID, learning.PathInput{
 		Title: "作者改官方", IsOfficial: boolPtr(true),
 	})
-	requireAppError(t, err, 403, 40300)
+	_ = requireAppError(t, err, 403, 40300)
 
 	_, err = e.svc.UpdatePath(ctx, authorView, custom.ID, learning.PathInput{
 		Title: "作者下架", IsActive: boolPtr(false),
 	})
-	requireAppError(t, err, 403, 40300)
+	_ = requireAppError(t, err, 403, 40300)
 
 	var stored learning.LearningPath
 	require.NoError(t, e.db.First(&stored, custom.ID).Error)
@@ -179,14 +179,14 @@ func TestPathPermissionMatrix(t *testing.T) {
 	require.NoError(t, e.db.Model(&learning.LearningPath{}).Where("id = ?", official.ID).
 		Update("created_by", e.author.ID).Error)
 	_, err = e.svc.UpdatePath(ctx, authorView, official.ID, learning.PathInput{Title: "作者改官方"})
-	requireAppError(t, err, 403, 40300)
+	_ = requireAppError(t, err, 403, 40300)
 
 	err = e.svc.DeletePath(ctx, otherView, custom.ID)
-	requireAppError(t, err, 404, 40400)
+	_ = requireAppError(t, err, 404, 40400)
 
 	require.NoError(t, e.svc.DeletePath(ctx, adminView, custom.ID))
 	err = e.svc.DeletePath(ctx, otherView, official.ID)
-	requireAppError(t, err, 404, 40400)
+	_ = requireAppError(t, err, 404, 40400)
 	require.NoError(t, e.svc.DeletePath(ctx, adminView, official.ID))
 }
 
@@ -199,7 +199,7 @@ func TestInactivePathVisibilityAndRestore(t *testing.T) {
 	require.NoError(t, e.svc.DeletePath(ctx, authorView, p.ID))
 
 	_, err := e.svc.FindPath(ctx, authorView, p.ID)
-	requireAppError(t, err, 404, 40400)
+	_ = requireAppError(t, err, 404, 40400)
 
 	items, err := e.svc.ListPaths(ctx, authorView, false, false)
 	require.NoError(t, err)
@@ -230,7 +230,7 @@ func TestInactivePathVisibilityAndRestore(t *testing.T) {
 	_, err = e.svc.UpdatePath(ctx, authorView, p.ID, learning.PathInput{
 		Title: "作者恢复", IsActive: boolPtr(true),
 	})
-	requireAppError(t, err, 404, 40400)
+	_ = requireAppError(t, err, 404, 40400)
 
 	restored, err := e.svc.UpdatePath(ctx, adminView, p.ID, learning.PathInput{
 		Title: "管理员恢复", IsActive: boolPtr(true),
@@ -247,7 +247,7 @@ func TestInactivePathVisibilityAndRestore(t *testing.T) {
 	_, err = e.svc.UpdatePath(ctx, authorView, pub.ID, learning.PathInput{
 		Title: "作者恢复公开", IsActive: boolPtr(true),
 	})
-	requireAppError(t, err, 404, 40400)
+	_ = requireAppError(t, err, 404, 40400)
 	restored, err = e.svc.UpdatePath(ctx, adminView, pub.ID, learning.PathInput{
 		Title: "管理员恢复公开", IsActive: boolPtr(true),
 	})
@@ -268,7 +268,7 @@ func TestPathValidation(t *testing.T) {
 		"封面非法":  {Title: "路线", CoverURL: "not a url"},
 	} {
 		_, err := e.svc.CreatePath(ctx, authorView, in)
-		requireAppError(t, err, 400, 40001)
+		_ = requireAppError(t, err, 400, 40001)
 		assert.NotEmpty(t, name)
 	}
 
@@ -331,7 +331,7 @@ func TestPublicizeAndRestoreValidateProblems(t *testing.T) {
 	_, err = e.svc.UpdatePath(ctx, authorView, missing.ID, learning.PathInput{
 		Title: "缺题路线", IsPublic: boolPtr(true),
 	})
-	requireAppError(t, err, 400, 40001)
+	_ = requireAppError(t, err, 400, 40001)
 
 	// 恢复 inactive 路线前必须重新校验节点题目。
 	problemRestore := e.addProblem(t, "learning-restore", true)
@@ -444,9 +444,9 @@ func TestFindPathPermissions(t *testing.T) {
 	}
 
 	_, err := e.svc.FindPath(ctx, learning.Viewer{}, private.ID)
-	requireAppError(t, err, 404, 40400)
+	_ = requireAppError(t, err, 404, 40400)
 	_, err = e.svc.FindPath(ctx, otherView, private.ID)
-	requireAppError(t, err, 404, 40400)
+	_ = requireAppError(t, err, 404, 40400)
 	found, err := e.svc.FindPath(ctx, authorView, private.ID)
 	require.NoError(t, err)
 	assert.Equal(t, private.ID, found.ID)
@@ -456,11 +456,11 @@ func TestFindPathPermissions(t *testing.T) {
 
 	require.NoError(t, e.svc.DeletePath(ctx, authorView, private.ID))
 	_, err = e.svc.FindPath(ctx, authorView, private.ID)
-	requireAppError(t, err, 404, 40400)
+	_ = requireAppError(t, err, 404, 40400)
 	found, err = e.svc.FindPath(ctx, adminView, private.ID)
 	require.NoError(t, err)
 	assert.False(t, found.IsActive)
 
 	_, err = e.svc.FindPath(ctx, authorView, 999999)
-	requireAppError(t, err, 404, 40400)
+	_ = requireAppError(t, err, 404, 40400)
 }

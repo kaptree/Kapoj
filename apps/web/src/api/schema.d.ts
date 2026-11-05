@@ -2927,6 +2927,363 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/learning-paths": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 学习路线列表（游客可访问，可选登录）
+         * @description 返回当前查看者可见的活跃路线：官方路线、公开自定义路线，以及自己创建的私有路线。 私有路线仅作者与题目管理员/超级管理员可见；`mine=true` 只返回自己创建的路线。 `includeInactive=true` 仅对管理员有效，用于查看已下架（软删除）路线；普通用户传入会被忽略。 排序为官方优先，其次 `sortOrder`、`id`。M4-2A 尚未计算进度，`myCompletedCount` 只反映已存储的完成节点数，通常为 0。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 仅返回当前登录用户创建的路线；游客返回空列表 */
+                    mine?: boolean;
+                    /** @description 包含已下架路线；仅题目管理员/超级管理员有效 */
+                    includeInactive?: boolean;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 学习路线列表（不分页） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LearningPathListResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * 创建学习路线（登录）
+         * @description 普通用户创建自定义路线，默认私有（`isPublic=false`）、活跃，且不能设置官方标记； 提交 `isOfficial=true` 返回 40300，非管理员提交的 `isActive` 会被忽略（始终为活跃）。 题目管理员/超级管理员可以创建官方路线并设置 `isOfficial`/`isPublic`/`isActive`； 官方路线强制公开（`isPublic=true`）。标题 1–100 字，描述不超过 50000 字， 封面地址必须为 http/https 且不超过 512 字节。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["LearningPathInput"];
+                };
+            };
+            responses: {
+                /** @description 已创建 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LearningPathResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/learning-paths/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * 学习路线详情（游客可访问，可选登录）
+         * @description 活跃官方/公开路线所有人可见；活跃私有路线仅作者与管理员可见；已下架路线仅管理员可见。 无权限或不存在均返回 40400。M4-2A 尚未计算进度，`myCompletedCount` 通常为 0。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 学习路线元信息 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LearningPathResponse"];
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        /**
+         * 更新学习路线（作者/管理员）
+         * @description 只有作者或管理员可以编辑；官方路线仅题目管理员/超级管理员可编辑，已下架路线仅管理员可编辑/恢复。 标题、描述、封面与 `sortOrder` 为整体替换（未提交的 `sortOrder` 变为 0）； `isOfficial`/`isPublic`/`isActive` 未提交时保持原值。非管理员不能改变 `isOfficial`/`isActive` （提交不同值返回 40300），也不能把自定义路线改为官方。官方路线强制公开。 公开自定义路线或恢复上架/官方路线前会校验节点引用的题目仍存在且公开，否则返回 40001。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["LearningPathInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的学习路线 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LearningPathResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        /**
+         * 下架学习路线（作者/管理员）
+         * @description 软删除（`isActive=false`），不删除节点、题目引用或用户进度。作者可下架自己的自定义路线， 官方路线仅管理员可下架；已下架路线再次删除仅管理员可操作。作者删除后路线从其常规列表消失， 只有管理员可通过 `includeInactive=true` 查看并恢复。
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已下架 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LearningPathDeleteResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/learning-paths/{id}/tree": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * 学习路线树（游客可访问，可选登录）
+         * @description 返回路线元信息、节点层级、节点题目摘要与当前用户进度。可见性与路线详情一致： 私有路线仅作者/管理员可见，已下架路线仅管理员可见，否则返回 40400。 节点只返回公开题目的 `problemId/title/slug/difficulty`，不返回题解。 当前为 M4-2A 临时状态：根节点 `active`、其余节点 `locked`、`solvedCount=0`； M4-2B 将替换为基于 AC 的服务端进度与完成锁存。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 学习路线树 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LearningTreeResponse"];
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/learning-paths/{id}/nodes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 创建学习路线节点（作者/管理员）
+         * @description 只有路线作者或管理员可以写入；官方路线与已下架路线仅管理员可以写入。 校验：标题 1–100 字、描述不超过 50000 字；`problemIds` 为 1–50 道不重复且存在、公开的题目； `requiredCount` 为 1–题目数，未提交时默认等于题目数；`parentId` 必须属于同一路线， 不能是自身或形成环，节点树最大深度 8 层；`parentId` 未提交时为根节点。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["LearningNodeInput"];
+                };
+            };
+            responses: {
+                /** @description 已创建 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LearningNodeResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/learning-paths/{id}/nodes/{nodeId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                nodeId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 更新学习路线节点（作者/管理员）
+         * @description 整体替换节点可编辑字段。权限与校验同创建节点；移动节点时同时校验父节点属于同一路线、 不能是自身或形成环，且移动后的子树深度仍不超过 8 层。`requiredCount` 未提交时按本次 `problemIds` 数量重置，而非保留原值。`nodeId` 必须属于该路线，否则返回 40400。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                    nodeId: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["LearningNodeInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的节点（不含子节点） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LearningNodeResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        /**
+         * 删除学习路线节点（作者/管理员）
+         * @description 仅允许删除叶子节点；存在子节点时返回 40001。删除节点会级联删除该节点的用户进度。 官方路线与已下架路线仅管理员可以删除。
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                    nodeId: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已删除 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LearningPathDeleteResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3909,6 +4266,130 @@ export interface components {
         };
         ActivitySummaryResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["ActivitySummary"];
+        };
+        /** @description 学习路线作者的公开摘要。 */
+        LearningPathAuthor: {
+            /** Format: int64 */
+            id: number;
+            username: string;
+            nickname: string;
+        };
+        /** @description 学习路线元信息，不含节点树；`myCompletedCount` 为当前用户已存储的完成节点数，M4-2A 尚未计算进度时通常为 0。 */
+        LearningPathItem: {
+            /** Format: int64 */
+            id: number;
+            title: string;
+            descriptionMd: string;
+            coverUrl: string;
+            /** @description 官方路线；官方路线强制公开 */
+            isOfficial: boolean;
+            /** @description 公开自定义路线；私有路线仅作者与管理员可见 */
+            isPublic: boolean;
+            /** @description false 表示已下架（软删除），仅管理员可查看/恢复 */
+            isActive: boolean;
+            author: components["schemas"]["LearningPathAuthor"];
+            /** @description 节点总数 */
+            nodeCount: number;
+            /** @description 当前用户已完成节点数；游客为 0 */
+            myCompletedCount: number;
+            sortOrder: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        /** @description 创建/更新学习路线的可编辑字段。创建时未提交的 `isPublic` 默认 false、 `isActive` 默认 true；更新时未提交的 `isOfficial`/`isPublic`/`isActive` 保持原值。 普通用户不能创建/编辑官方路线，也不能改变上下架状态。 */
+        LearningPathInput: {
+            /** @description trim 后 1–100 个字符 */
+            title: string;
+            descriptionMd?: string;
+            /** @description 仅 http/https 链接；空字符串表示无封面 */
+            coverUrl?: string;
+            /** @description 仅管理员可设置；设为 true 时强制公开 */
+            isOfficial?: boolean;
+            /** @description 公开后出现在路线列表，其他用户可查看树并使用自己的进度挑战 */
+            isPublic?: boolean;
+            /** @description 仅管理员可在更新时设置；false 为软删除，true 为恢复上架 */
+            isActive?: boolean;
+            sortOrder?: number;
+        };
+        /**
+         * @description 节点状态；M4-2A 树接口仅返回 active（根节点）与 locked（子节点）。
+         * @enum {string}
+         */
+        LearningNodeStatus: "locked" | "active" | "completed";
+        /** @description 节点树中暴露的公开题目摘要，不包含题干/题解。 */
+        LearningProblemSummary: {
+            /** Format: int64 */
+            problemId: number;
+            title: string;
+            slug: string;
+            difficulty: number;
+        };
+        /** @description 学习路线树中的一个节点；`children` 递归嵌套，按 `sortOrder`、`id` 排序。 */
+        LearningPathNodeItem: {
+            /** Format: int64 */
+            id: number;
+            /**
+             * Format: int64
+             * @description 父节点 id；根节点为 null
+             */
+            parentId: number | null;
+            title: string;
+            descriptionMd: string;
+            /** @description 节点引用的全部题目 id，按节点配置顺序 */
+            problemIds: number[];
+            /** @description 公开题目的摘要；题目下线后可能少于 problemIds */
+            problems: components["schemas"]["LearningProblemSummary"][];
+            sortOrder: number;
+            /** @description 完成本节点所需通过的题数 */
+            requiredCount: number;
+            /** @description 当前用户已通过题数；M4-2A 临时恒为 0 */
+            solvedCount: number;
+            status: components["schemas"]["LearningNodeStatus"];
+            children: components["schemas"]["LearningPathNodeItem"][];
+        };
+        /** @description 创建/更新学习路线节点的可编辑字段；更新为整体替换。 */
+        LearningNodeInput: {
+            /** @description trim 后 1–100 个字符 */
+            title: string;
+            descriptionMd?: string;
+            /**
+             * Format: int64
+             * @description 父节点 id，必须属于同一路线且不能形成环；null 表示根节点
+             */
+            parentId?: number | null;
+            /** @description 1–50 道不重复、存在且公开的题目 */
+            problemIds: number[];
+            sortOrder?: number;
+            /** @description 1–题目数；未提交时默认等于题目数 */
+            requiredCount?: number;
+        };
+        /** @description 学习路线树；`path` 为路线元信息，`nodes` 为根节点数组。 */
+        LearningTree: {
+            path: components["schemas"]["LearningPathItem"];
+            nodes: components["schemas"]["LearningPathNodeItem"][];
+        };
+        LearningPathListResponse: components["schemas"]["Envelope"] & {
+            data: {
+                /** Format: int64 */
+                total: number;
+                items: components["schemas"]["LearningPathItem"][];
+            };
+        };
+        LearningPathResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["LearningPathItem"];
+        };
+        LearningNodeResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["LearningPathNodeItem"];
+        };
+        LearningTreeResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["LearningTree"];
+        };
+        LearningPathDeleteResponse: components["schemas"]["Envelope"] & {
+            data: {
+                deleted: boolean;
+            };
         };
     };
     responses: {

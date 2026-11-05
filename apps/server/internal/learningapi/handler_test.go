@@ -281,7 +281,7 @@ func TestLearningPathAPIOfficialPermissions(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code)
 	requireCode(t, resp, 40400)
 
-	w, resp = f.do(http.MethodDelete, pathURL, adminToken, nil)
+	w, _ = f.do(http.MethodDelete, pathURL, adminToken, nil)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 
 	w, resp = f.do(http.MethodGet, "/api/learning-paths?includeInactive=true", "", nil)
@@ -380,7 +380,7 @@ func TestLearningPathAPIListFilters(t *testing.T) {
 		float64(officialB), float64(officialA), float64(public), float64(private), float64(otherPrivate),
 	}, itemIDs(items))
 
-	w, resp = f.do(http.MethodDelete, "/api/learning-paths/"+itoa(private), authorToken, nil)
+	w, _ = f.do(http.MethodDelete, "/api/learning-paths/"+itoa(private), authorToken, nil)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 
 	w, resp = f.do(http.MethodGet, "/api/learning-paths?mine=true", authorToken, nil)
@@ -497,7 +497,7 @@ func TestLearningPathAPINodesAndTree(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code)
 	requireCode(t, resp, 40400)
 
-	w, resp = f.do(http.MethodPut, pathURL, authorToken,
+	w, _ = f.do(http.MethodPut, pathURL, authorToken,
 		map[string]any{"title": "API 节点路线", "isPublic": true})
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 
@@ -545,7 +545,7 @@ func TestLearningPathAPINodesAndTree(t *testing.T) {
 	w, resp = f.do(http.MethodDelete, nodesURL+"/"+itoa(childID), authorToken, nil)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	assert.Equal(t, true, responseData(t, resp)["deleted"])
-	w, resp = f.do(http.MethodDelete, nodesURL+"/"+itoa(rootID), authorToken, nil)
+	w, _ = f.do(http.MethodDelete, nodesURL+"/"+itoa(rootID), authorToken, nil)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 
 	// 官方路线只有管理员可以写节点。
@@ -557,7 +557,7 @@ func TestLearningPathAPINodesAndTree(t *testing.T) {
 		map[string]any{"title": "作者写官方", "problemIds": []int64{pub.ID}})
 	assert.Equal(t, http.StatusNotFound, w.Code)
 	requireCode(t, resp, 40400)
-	w, resp = f.do(http.MethodPost, officialURL+"/nodes", adminToken,
+	w, _ = f.do(http.MethodPost, officialURL+"/nodes", adminToken,
 		map[string]any{"title": "官方节点", "problemIds": []int64{pub.ID}})
 	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
 
@@ -566,13 +566,13 @@ func TestLearningPathAPINodesAndTree(t *testing.T) {
 		map[string]any{"title": "API 下架路线"})
 	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
 	inactiveURL := "/api/learning-paths/" + itoa(int64(responseData(t, resp)["id"].(float64)))
-	w, resp = f.do(http.MethodDelete, inactiveURL, authorToken, nil)
+	w, _ = f.do(http.MethodDelete, inactiveURL, authorToken, nil)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	w, resp = f.do(http.MethodPost, inactiveURL+"/nodes", authorToken,
 		map[string]any{"title": "作者写下架", "problemIds": []int64{pub.ID}})
 	assert.Equal(t, http.StatusNotFound, w.Code)
 	requireCode(t, resp, 40400)
-	w, resp = f.do(http.MethodPost, inactiveURL+"/nodes", adminToken,
+	w, _ = f.do(http.MethodPost, inactiveURL+"/nodes", adminToken,
 		map[string]any{"title": "管理员写下架", "problemIds": []int64{pub.ID}})
 	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
 

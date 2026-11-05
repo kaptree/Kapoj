@@ -131,9 +131,9 @@ func TestTreePermissions(t *testing.T) {
 	}
 
 	_, err := e.svc.Tree(ctx, learning.Viewer{}, private.ID)
-	requireAppError(t, err, 404, 40400)
+	_ = requireAppError(t, err, 404, 40400)
 	_, err = e.svc.Tree(ctx, otherView, private.ID)
-	requireAppError(t, err, 404, 40400)
+	_ = requireAppError(t, err, 404, 40400)
 	tree, err := e.svc.Tree(ctx, authorView, private.ID)
 	require.NoError(t, err)
 	assert.Equal(t, private.ID, tree.Path.ID)
@@ -141,15 +141,15 @@ func TestTreePermissions(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = e.svc.Tree(ctx, authorView, inactive.ID)
-	requireAppError(t, err, 404, 40400)
+	_ = requireAppError(t, err, 404, 40400)
 	_, err = e.svc.Tree(ctx, learning.Viewer{}, inactive.ID)
-	requireAppError(t, err, 404, 40400)
+	_ = requireAppError(t, err, 404, 40400)
 	tree, err = e.svc.Tree(ctx, adminView, inactive.ID)
 	require.NoError(t, err)
 	assert.False(t, tree.Path.IsActive)
 
 	_, err = e.svc.Tree(ctx, adminView, 999999)
-	requireAppError(t, err, 404, 40400)
+	_ = requireAppError(t, err, 404, 40400)
 }
 
 func nodeTitles(items []learning.NodeItem) []string {

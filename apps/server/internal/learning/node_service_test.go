@@ -73,7 +73,7 @@ func TestNodeValidation(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := e.svc.CreateNode(ctx, authorView, path.ID, tc.in)
-			requireAppError(t, err, 400, 40001)
+			_ = requireAppError(t, err, 400, 40001)
 		})
 	}
 
@@ -108,12 +108,12 @@ func TestNodeValidation(t *testing.T) {
 	_, err := e.svc.UpdateNode(ctx, authorView, path.ID, root.ID, learning.NodeInput{
 		Title: "", ProblemIDs: []int64{pubA.ID},
 	})
-	requireAppError(t, err, 400, 40001)
+	_ = requireAppError(t, err, 400, 40001)
 
 	_, err = e.svc.UpdateNode(ctx, authorView, path.ID, root.ID, learning.NodeInput{
 		Title: "根节点", ParentID: &root.ID, ProblemIDs: []int64{pubA.ID},
 	})
-	requireAppError(t, err, 400, 40001)
+	_ = requireAppError(t, err, 400, 40001)
 
 	_, err = e.svc.UpdateNode(ctx, authorView, path.ID, root.ID, learning.NodeInput{
 		Title: "根节点", ParentID: &child.ID, ProblemIDs: []int64{pubA.ID},
@@ -133,7 +133,7 @@ func TestNodeValidation(t *testing.T) {
 	_, err = e.svc.CreateNode(ctx, authorView, path.ID, learning.NodeInput{
 		Title: "第9层", ParentID: &depthParent, ProblemIDs: []int64{pubA.ID},
 	})
-	requireAppError(t, err, 400, 40001)
+	_ = requireAppError(t, err, 400, 40001)
 
 	// 移动整棵子树时，子树深度也必须满足上限。
 	anchor := e.createNode(t, authorView, path.ID, learning.NodeInput{
@@ -142,7 +142,7 @@ func TestNodeValidation(t *testing.T) {
 	_, err = e.svc.UpdateNode(ctx, authorView, path.ID, root.ID, learning.NodeInput{
 		Title: "根节点", ParentID: &anchor.ID, ProblemIDs: []int64{pubA.ID},
 	})
-	requireAppError(t, err, 400, 40001)
+	_ = requireAppError(t, err, 400, 40001)
 }
 
 func TestNodeUpdateAndLeafOnlyDelete(t *testing.T) {
@@ -201,16 +201,16 @@ func TestNodeUpdateAndLeafOnlyDelete(t *testing.T) {
 	_, err = e.svc.UpdateNode(ctx, authorView, otherPath.ID, root.ID, learning.NodeInput{
 		Title: "跨路径", ProblemIDs: []int64{pubA.ID},
 	})
-	requireAppError(t, err, 404, 40400)
+	_ = requireAppError(t, err, 404, 40400)
 	err = e.svc.DeleteNode(ctx, authorView, otherPath.ID, root.ID)
-	requireAppError(t, err, 404, 40400)
+	_ = requireAppError(t, err, 404, 40400)
 
 	// 只有叶子可删除。
 	err = e.svc.DeleteNode(ctx, authorView, path.ID, anchor.ID)
 	appErr := requireAppError(t, err, 400, 40001)
 	assert.Equal(t, "存在子节点，不能删除", appErr.Message)
 	err = e.svc.DeleteNode(ctx, authorView, path.ID, child.ID)
-	requireAppError(t, err, 400, 40001)
+	_ = requireAppError(t, err, 400, 40001)
 
 	// 节点进度随节点删除级联。
 	require.NoError(t, e.db.Create(&learning.UserLearningProgress{
@@ -229,7 +229,7 @@ func TestNodeUpdateAndLeafOnlyDelete(t *testing.T) {
 	require.NoError(t, e.svc.DeleteNode(ctx, authorView, path.ID, root.ID))
 
 	err = e.svc.DeleteNode(ctx, authorView, path.ID, root.ID)
-	requireAppError(t, err, 404, 40400)
+	_ = requireAppError(t, err, 404, 40400)
 }
 
 func TestNodePermissions(t *testing.T) {
@@ -245,18 +245,18 @@ func TestNodePermissions(t *testing.T) {
 	in := learning.NodeInput{Title: "其他人节点", ProblemIDs: []int64{pub.ID}}
 
 	_, err := e.svc.CreateNode(ctx, otherView, private.ID, in)
-	requireAppError(t, err, 404, 40400)
+	_ = requireAppError(t, err, 404, 40400)
 	_, err = e.svc.UpdateNode(ctx, otherView, private.ID, node.ID, in)
-	requireAppError(t, err, 404, 40400)
+	_ = requireAppError(t, err, 404, 40400)
 	err = e.svc.DeleteNode(ctx, otherView, private.ID, node.ID)
-	requireAppError(t, err, 404, 40400)
+	_ = requireAppError(t, err, 404, 40400)
 
 	_, err = e.svc.CreateNode(ctx, learning.Viewer{}, private.ID, in)
-	requireAppError(t, err, 401, 40100)
+	_ = requireAppError(t, err, 401, 40100)
 	_, err = e.svc.UpdateNode(ctx, learning.Viewer{}, private.ID, node.ID, in)
-	requireAppError(t, err, 401, 40100)
+	_ = requireAppError(t, err, 401, 40100)
 	err = e.svc.DeleteNode(ctx, learning.Viewer{}, private.ID, node.ID)
-	requireAppError(t, err, 401, 40100)
+	_ = requireAppError(t, err, 401, 40100)
 
 	adminNode := e.createNode(t, adminView, private.ID, learning.NodeInput{
 		Title: "管理员节点", ProblemIDs: []int64{pub.ID},
@@ -275,27 +275,27 @@ func TestNodePermissions(t *testing.T) {
 
 	// 非管理员不是官方路线作者：不可见。
 	_, err = e.svc.CreateNode(ctx, authorView, official.ID, in)
-	requireAppError(t, err, 404, 40400)
+	_ = requireAppError(t, err, 404, 40400)
 	_, err = e.svc.UpdateNode(ctx, authorView, official.ID, officialNode.ID, in)
-	requireAppError(t, err, 404, 40400)
+	_ = requireAppError(t, err, 404, 40400)
 	err = e.svc.DeleteNode(ctx, authorView, official.ID, officialNode.ID)
-	requireAppError(t, err, 404, 40400)
+	_ = requireAppError(t, err, 404, 40400)
 
 	// 即使被记录为作者，非管理员也不能编辑官方路线节点。
 	require.NoError(t, e.db.Model(&learning.LearningPath{}).Where("id = ?", official.ID).
 		Update("created_by", e.author.ID).Error)
 	_, err = e.svc.CreateNode(ctx, authorView, official.ID, in)
-	requireAppError(t, err, 403, 40300)
+	_ = requireAppError(t, err, 403, 40300)
 	_, err = e.svc.UpdateNode(ctx, authorView, official.ID, officialNode.ID, in)
-	requireAppError(t, err, 403, 40300)
+	_ = requireAppError(t, err, 403, 40300)
 	err = e.svc.DeleteNode(ctx, authorView, official.ID, officialNode.ID)
-	requireAppError(t, err, 403, 40300)
+	_ = requireAppError(t, err, 403, 40300)
 
 	// inactive 路线只有管理员可以写节点。
 	inactive := e.createPath(t, authorView, learning.PathInput{Title: "已下架路线"})
 	require.NoError(t, e.svc.DeletePath(ctx, authorView, inactive.ID))
 	_, err = e.svc.CreateNode(ctx, authorView, inactive.ID, in)
-	requireAppError(t, err, 404, 40400)
+	_ = requireAppError(t, err, 404, 40400)
 	adminInactive := e.createNode(t, adminView, inactive.ID, learning.NodeInput{
 		Title: "下架路线节点", ProblemIDs: []int64{pub.ID},
 	})

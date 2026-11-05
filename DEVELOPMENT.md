@@ -394,17 +394,25 @@ certificate_types (
 
 ```sql
 learning_paths (
-  id, title, description_md, cover_url, is_official, sort_order
+  id, title, description_md, cover_url,
+  is_official, is_public, is_active, created_by,
+  sort_order, created_at, updated_at
 )
 learning_path_nodes (
   id, path_id, parent_id, title, description_md, problem_ids_json, sort_order,
-  required_count                         -- 完成本节点所需通过题数（默认为节点内题目总数）
+  required_count, created_at, updated_at
+  -- 完成本节点所需通过题数（默认为节点内题目总数）；parent_id 自关联，根节点为 NULL
 )
 user_learning_progress (
-  id, user_id, path_id, node_id, status, solved_count, completed_at
+  id, user_id, path_id, node_id, status, solved_count, completed_at, updated_at
 )
 -- status: locked / active / completed；唯一约束：(user_id, node_id)；进度由服务端根据 AC 事件计算
 ```
+
+- `is_active=false` 为软删除（下架），路线、节点与用户进度都保留；只有管理员可通过 `includeInactive=true` 查看并恢复。
+- `is_official=true` 强制 `is_public=true`；官方标记与上下架状态仅管理员可设置。
+- 节点校验：父节点属于同一路线、不能成环、最大深度 8 层；题目 1–50 道、不重复且存在/公开；`required_count` 为 1–题目数；仅叶子节点可删除。
+- **M4-2A 已完成**：模型/迁移、官方/自定义权限、路线与节点 CRUD、树结构接口。**M4-2B 待办**：服务端进度计算、AC 事件、完成锁存与题目下线守卫；**M4-2C 待办**：前端列表/树/编辑/管理页。
 
 ### 3.9 AI 辅助
 
@@ -711,28 +719,40 @@ user_ai_configs (
 
 **功能需求**
 
-- 学习路线 CRUD（官方可创建，后续可扩展用户自定义）。
+- 学习路线 CRUD：官方路线由题目管理员/超级管理员维护；任意登录用户可创建默认私有的自定义路线，作者可公开，管理员可下架/删除违规公开路线（无审核队列）。
 - 路线内包含按算法组织的题目，呈树状结构（算法模块 → 阶段 → 题目）。
 - 用户按阶段挑战，完成部分算法后可解锁下一个算法模块。
 - 点亮分支结构，点进每个算法模块可查看题目清单。
+- 数据完整性：被活跃路线引用的题目不能下线/删除；已完成节点锁存，不因改题回退。
 
 **关键设计**
 
-- 节点模型：`learning_path_nodes` 支持 `parent_id` 自关联，形成树。
-- 解锁规则：节点只有在父节点完成后才可挑战；节点完成 = 通过其 `required_count` 道题（默认为节点内全部题目）。根节点默认解锁。
-- 前端用 Element Plus Tree 或自定义树形组件可视化。结构是树而非 DAG，每个节点只有一个父节点。
+- 节点模型：`learning_path_nodes` 支持 `parent_id` 自关联，形成树；父节点必须属于同一路线，不允许自环/成环，最大深度 8 层。
+- 可见性：官方与公开自定义路线对所有人可见；私有自定义路线仅作者与管理员可见；`is_active=false`（软删除）路线仅管理员可见/恢复。无权限与不存在统一返回 40400。
+- 权限：创建路线需登录；编辑/删除路线与节点仅作者或管理员；官方路线仅管理员可写。`is_official`/`is_active` 仅管理员可设置，`is_official=true` 强制公开。
+- 节点内容：题目 1–50 道、不重复且必须存在/公开；`required_count` 为 1–题目数，默认题目数；仅叶子节点可删除，有子节点返回 40001。
+- 解锁规则：节点只有在父节点完成后才可挑战；节点完成 = 通过其 `required_count` 道题（默认为节点内全部题目）。根节点默认解锁。进度由服务端根据 AC 计算，不接受客户端上报。
+- 前端用 PrimeVue 4 `TreeTable` 或自定义树形组件可视化。结构是树而非 DAG，每个节点只有一个父节点。
+
+**实现状态（M4-2A）**
+
+- 已完成 `learning_paths`、`learning_path_nodes`、`user_learning_progress` 模型/迁移与 OpenAPI/前端类型。
+- 已交付官方/自定义权限、私有/公开/下架可见性、路线 CRUD、软删除/恢复校验、节点 CRUD、父节点/环/深度/题目/`required_count` 校验与叶子删除限制。
+- `GET /api/learning-paths/:id/tree` 当前仅返回结构状态：根节点 `active`、其余 `locked`、`solvedCount=0`；真实进度在 M4-2B 实现。
+- M4-2B 待办：`EvaluateUser`、AC 事件补算、完成锁存与题目 `LearningGuard`。M4-2C 待办：前端列表/树/编辑/管理页。当前不计算 `myCompletedCount`。
 
 **Codex 提示词（学习路线）**
 
 ```text
 你是一名全栈工程师，请为 kapOJ 实现「学习路线」模块。
 
-技术栈：Go + Gin + GORM + PostgreSQL 后端，Vue3 + Element Plus（Tree/自定义树形可视化）前端。
+技术栈：Go + Gin + GORM + PostgreSQL 后端，Vue3 + PrimeVue 4（TreeTable/自定义树形可视化）前端。
 
 请完成：
-1. 数据模型：LearningPath、LearningPathNode（含 parent_id 自关联）、UserLearningProgress。
+1. 数据模型：LearningPath（含 is_official/is_public/is_active/created_by）、LearningPathNode（含 parent_id 自关联）、UserLearningProgress。
 2. 后端接口：
-   - 学习路线 CRUD：GET/POST/PUT/DELETE /learning-paths（题目管理员及以上）
+   - 学习路线 CRUD：GET/POST/PUT/DELETE /learning-paths（创建登录；编辑/删除作者或管理员；官方路线仅管理员）
+   - 节点 CRUD：POST/PUT/DELETE /learning-paths/:id/nodes...
    - GET /learning-paths/:id/tree：返回完整树结构（节点 + 关联题目 + 用户完成状态）
    - 进度由服务端根据 AC 事件自动计算，不接受客户端上报（防止作弊）；前端只读取树结构与进度
 3. 解锁逻辑：节点仅在父节点完成后可挑战；节点完成条件为通过 required_count 道题（默认为该节点全部题目）。

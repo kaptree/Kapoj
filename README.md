@@ -2,7 +2,7 @@
 
 打造最有趣味的 Online Judge 平台。规格见 [`DEVELOPMENT.md`](DEVELOPMENT.md)，进度见 [`docs/任务清单.md`](docs/任务清单.md) 与 [`docs/开发日志.md`](docs/开发日志.md)。
 
-当前进度：**M4-C 已完成**（M0–M3 已完成；M4 进行中。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页（Rating/活跃度/共享三 Tab、等级颜色、签到）、用户主页 Rating 历史卡片、导航与首页入口，三个榜单 API 与页面均已可用；学习路线、社交、Rating 衰减/赛季重置尚未实现）。前端并行进行 PrimeVue 4 迁移，**UI-00～UI-18 与 UI-30（M4-C 排行榜/历史）已完成并提交**，剩余题库编辑（UI-19）与异常页（UI-20），详见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。
+当前进度：**M4-2A 已完成**（M0–M3 已完成；M4 进行中。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页（Rating/活跃度/共享三 Tab、等级颜色、签到）、用户主页 Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线后端模型、官方/自定义权限、路线/节点 CRUD 与树结构，路线 API 已可用；学习路线进度/事件/守卫与前端、社交、Rating 衰减/赛季重置尚未实现）。前端并行进行 PrimeVue 4 迁移，**UI-00～UI-18 与 UI-30（M4-C 排行榜/历史）已完成并提交**，剩余题库编辑（UI-19）、异常页（UI-20）与学习路线前端（UI-31，M4-2C），详见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。
 
 ## 目录结构
 
@@ -121,7 +121,17 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 - 签到金币：`POST /api/activity/signin` 每个本地自然日首次签到额外 +5 金币，签到活跃度、金币流水与余额在同一事务内完成；重复签到返回 `awarded=false`，不重复发币。`GET /api/activity/summary` 返回今日是否签到、今日活跃度与总活跃度。
 - 共享积分：创建或克隆比赛 +20，服务启动时会把已有 `created_by>0` 的比赛幂等回填到 `shared_items`；共享分公式中的“题解被点赞 5/赞”尚未实现，本阶段恒为 0。
 - 三个榜单的基础行都使用 Redis 版本缓存 60 秒，key 形如 `kapoj:leaderboard:<kind>:v<version>:<page>:<size>`；Rating 结算、活跃度写入、共享项写入后递增对应 `kapoj:leaderboard:<kind>:version`。缓存只含基础行，装备在读取后批量装饰；Redis/缓存故障时回退数据库，缓存故障本身不会导致 5xx（身份装饰查询失败仍可能返回 5xx）。
-- 学习路线、社交互动（评论/点赞/关注/题解点赞/通知）以及 Rating 衰减/赛季重置尚未实现，属于后续 M4 阶段。
+- 学习路线进度/事件/题目守卫与前端页面、社交互动（评论/点赞/关注/题解点赞/通知）以及 Rating 衰减/赛季重置尚未实现，属于后续 M4 阶段。
+
+## 学习路线（M4-2A）
+
+**接口与规则**
+
+- `GET /api/learning-paths`：游客可访问；返回官方路线、公开自定义路线与自己的私有路线，`mine=true` 只看自己创建的路线，`includeInactive=true` 仅管理员可查看已下架路线；排序为官方优先、`sortOrder`、`id`。
+- `GET /api/learning-paths/{id}`、`GET /api/learning-paths/{id}/tree`：返回路线元信息/树结构；私有路线仅作者与管理员可见，已下架路线仅管理员可见，否则 40400。
+- `POST /api/learning-paths`：登录用户创建自定义路线，默认私有；管理员可创建强制公开的官方路线。`PUT`/`DELETE /api/learning-paths/{id}` 仅作者或管理员，删除为软删除（下架），管理员可恢复。
+- 节点接口 `POST/PUT/DELETE /api/learning-paths/{id}/nodes...`：父节点必须同路线、不能成环、最大深度 8；题目 1–50 道且必须存在/公开；`requiredCount` 为 1–题目数；仅叶子节点可删除。
+- 当前树状态为 M4-2A 临时结构状态：根节点 `active`、其余 `locked`、`solvedCount=0`。服务端进度计算、AC 事件与题目下线守卫在 M4-2B 实现；列表/树/编辑/管理前端在 M4-2C 实现，当前尚无学习路线页面与真实进度。
 
 ## 测试与检查
 
