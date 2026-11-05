@@ -12,7 +12,7 @@ import {
 } from '@/api/gamification'
 import { ApiError } from '@/api/http'
 import type { BadgeInput, BadgeItem } from '@/api/types'
-import { badgeImageSrc, badgeInitial, formatCoins } from '@/utils/gamification'
+import { badgeInitial, formatCoins } from '@/utils/gamification'
 
 interface FormState {
   name: string
@@ -29,7 +29,6 @@ interface FormState {
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024
 const IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
 const IMAGE_EXT_RE = /\.(png|jpe?g|webp|gif)$/i
-const HTTP_URL_RE = /^https?:\/\//i
 
 const badges = ref<BadgeItem[]>([])
 const loading = ref(false)
@@ -42,6 +41,7 @@ const adjustStock = ref(false)
 const uploadRef = ref<UploadInstance>()
 const pendingFile = ref<File | null>(null)
 const pendingPreview = ref('')
+const cacheBust = ref(Date.now())
 let previewObjectUrl = ''
 
 function emptyForm(): FormState {
@@ -60,12 +60,32 @@ function emptyForm(): FormState {
 
 const form = reactive<FormState>(emptyForm())
 
-const previewSrc = computed(
-  () => pendingPreview.value || form.imageUrl.trim() || editing.value?.imageUrl || '',
+/** Internal badge images keep a stable URL, so the admin view must bust its own cache. */
+function adminImageSrc(url: string): string {
+  const raw = url.trim()
+  if (!raw || !raw.startsWith('/api/badges/')) return raw
+  const separator = raw.includes('?') ? '&' : '?'
+  return `${raw}${separator}v=${cacheBust.value}`
+}
+
+const previewSrc = computed(() =>
+  pendingPreview.value
+    ? pendingPreview.value
+    : adminImageSrc(form.imageUrl.trim() || editing.value?.imageUrl || ''),
 )
 
 function fail(e: unknown, fallback: string) {
   ElMessage.error(e instanceof ApiError ? e.message : fallback)
+}
+
+/** Mirrors the backend: only absolute http(s) URLs with a host are accepted. */
+function isValidExternalImageUrl(raw: string): boolean {
+  try {
+    const url = new URL(raw)
+    return (url.protocol === 'http:' || url.protocol === 'https:') && url.hostname !== ''
+  } catch {
+    return false
+  }
 }
 
 function clearFile() {
@@ -98,7 +118,15 @@ function onFileChange(file: UploadFile) {
 }
 
 function onLimitedChange(value: boolean) {
-  if (!value) adjustStock.value = false
+  if (!value) {
+    adjustStock.value = false
+    return
+  }
+  // A non-limited badge has no meaningful stock. When it is switched to
+  // limited, force the admin to submit an explicit stock value.
+  if (editing.value && (!Number.isInteger(form.stock) || form.stock <= 0)) {
+    adjustStock.value = true
+  }
 }
 
 async function load() {
@@ -154,8 +182,8 @@ function validate(): string | null {
   if (!Number.isInteger(form.sortOrder)) return '排序必须为整数'
   const imageUrl = form.imageUrl.trim()
   if (imageUrl.length > 512) return '图片地址不能超过 512 字'
-  if (imageUrl && !HTTP_URL_RE.test(imageUrl)) {
-    return '图片外链需以 http:// 或 https:// 开头'
+  if (imageUrl && !isValidExternalImageUrl(imageUrl)) {
+    return '图片外链必须是带域名的 http(s) 地址'
   }
   const changingStock =
     editing.value === null ? form.isLimited : form.isLimited && adjustStock.value
@@ -195,21 +223,42 @@ async function save() {
   }
   const creating = editing.value === null
   saving.value = true
-  let saved: BadgeItem | null = null
   try {
-    saved = creating
-      ? await createBadge(buildInput())
-      : await updateBadge(editing.value!.id, buildInput())
+    let saved: BadgeItem
+    try {
+      saved = creating
+        ? await createBadge(buildInput())
+        : await updateBadge(editing.value!.id, buildInput())
+    } catch (e) {
+      fail(e, creating ? '创建徽章失败' : '保存徽章失败')
+      return
+    }
+
     // Keep the created badge as the edit target so a failed image upload can be
     // retried without creating a duplicate badge.
     editing.value = saved
-    if (pendingFile.value) await uploadBadgeImage(saved.id, pendingFile.value)
     ElMessage.success(creating ? '徽章已创建' : '徽章已更新')
+
+    if (pendingFile.value) {
+      try {
+        await uploadBadgeImage(saved.id, pendingFile.value)
+      } catch (e) {
+        await load()
+        const detail = e instanceof ApiError ? e.message : ''
+        ElMessage.error(
+          detail
+            ? `徽章已保存，但图片上传失败：${detail}`
+            : '徽章已保存，但图片上传失败，请重试上传',
+        )
+        // Keep the dialog open in edit mode with the pending file so the upload
+        // can be retried without saving the badge again from scratch.
+        return
+      }
+      cacheBust.value = Date.now()
+    }
+
     dialogVisible.value = false
     await load()
-  } catch (e) {
-    if (saved) await load()
-    fail(e, creating ? '创建徽章失败' : '保存徽章失败')
   } finally {
     saving.value = false
   }
@@ -256,7 +305,7 @@ onBeforeUnmount(clearFile)
           <el-avatar
             :size="40"
             shape="square"
-            :src="badgeImageSrc(row.imageUrl)"
+            :src="adminImageSrc(row.imageUrl)"
             class="badge-image"
           >
             {{ badgeInitial(row.name) }}
