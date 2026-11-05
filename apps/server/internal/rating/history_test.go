@@ -78,3 +78,42 @@ func TestRatingHistoryOrderAnd404(t *testing.T) {
 	assert.Empty(t, empty.Items)
 	assert.NotNil(t, empty.Items)
 }
+
+func TestRatingHistoryMasksPrivateContest(t *testing.T) {
+	e := newTestEnv(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	public := e.contest("Public Contest", true, now.Add(-4*time.Hour), now.Add(-3*time.Hour))
+	private := e.contest("Secret Invitational", true, now.Add(-3*time.Hour), now.Add(-2*time.Hour))
+	require.NoError(t, e.db.Exec(`UPDATE contests SET is_public = false WHERE id = ?`, private.ID).Error)
+
+	publicID, privateID := public.ID, private.ID
+	require.NoError(t, e.db.Create(&rating.RatingHistory{
+		UserID: userA, ContestID: &publicID, Kind: rating.HistoryContest,
+		Rank: 1, RatingBefore: 1500, RatingAfter: 1532, CreatedAt: now.Add(-2 * time.Hour),
+	}).Error)
+	require.NoError(t, e.db.Create(&rating.RatingHistory{
+		UserID: userA, ContestID: &privateID, Kind: rating.HistoryContest,
+		Rank: 2, RatingBefore: 1480, RatingAfter: 1512, CreatedAt: now.Add(-time.Hour),
+	}).Error)
+
+	page, err := e.svc.RatingHistory(context.Background(), userA, 1, 20)
+	require.NoError(t, err)
+	assert.EqualValues(t, 2, page.Total)
+	require.Len(t, page.Items, 2)
+
+	// The participant still sees that a private contest changed their rating,
+	// but neither its id nor its title is exposed.
+	privateItem := page.Items[0]
+	assert.EqualValues(t, 0, privateItem.ContestID)
+	assert.Equal(t, "私密比赛", privateItem.ContestTitle)
+	assert.Equal(t, 2, privateItem.Rank)
+	assert.Equal(t, 1480, privateItem.RatingBefore)
+	assert.Equal(t, 1512, privateItem.RatingAfter)
+	assert.Equal(t, 32, privateItem.Delta)
+	assert.Equal(t, now.Add(-time.Hour), privateItem.CreatedAt)
+
+	publicItem := page.Items[1]
+	assert.Equal(t, publicID, publicItem.ContestID)
+	assert.Equal(t, "Public Contest", publicItem.ContestTitle)
+	assert.Equal(t, 32, publicItem.Delta)
+}

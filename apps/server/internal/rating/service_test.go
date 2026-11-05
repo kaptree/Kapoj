@@ -291,6 +291,13 @@ func TestSettleDifferentContestsSerialized(t *testing.T) {
 	e.submit(second, userC, "accepted", second.StartTime.Add(20*time.Minute))
 	e.submit(second, userA, "accepted", second.StartTime.Add(30*time.Minute))
 
+	// The scanner must offer only the earlier contest first, even though both
+	// are fully judged and eligible.
+	repo := rating.NewRepository(e.db)
+	ids, err := repo.PendingContestIDs(context.Background(), now, 20)
+	require.NoError(t, err)
+	assert.Equal(t, []int64{first.ID}, ids)
+
 	type result struct {
 		settled bool
 		err     error
@@ -325,6 +332,46 @@ func TestSettleDifferentContestsSerialized(t *testing.T) {
 	}
 }
 
+func TestPendingContestSettlementOrder(t *testing.T) {
+	e := newTestEnv(t)
+	now := time.Now()
+	first := e.contest("first-order", true, now.Add(-3*time.Hour), now.Add(-2*time.Hour))
+	second := e.contest("second-order", true, now.Add(-2*time.Hour), now.Add(-time.Hour))
+	for _, c := range []*contest.Contest{first, second} {
+		e.register(c, userA, userB)
+	}
+	e.submit(first, userA, "accepted", first.StartTime.Add(10*time.Minute))
+	e.submit(first, userB, "accepted", first.StartTime.Add(20*time.Minute))
+	e.submit(second, userA, "accepted", second.StartTime.Add(10*time.Minute))
+	e.submit(second, userB, "accepted", second.StartTime.Add(20*time.Minute))
+
+	repo := rating.NewRepository(e.db)
+	ids, err := repo.PendingContestIDs(context.Background(), now, 20)
+	require.NoError(t, err)
+	require.Equal(t, []int64{first.ID}, ids, "the earlier end_time contest settles first")
+
+	settled, err := e.svc.SettleContest(context.Background(), first.ID)
+	require.NoError(t, err)
+	require.True(t, settled)
+
+	ids, err = repo.PendingContestIDs(context.Background(), now, 20)
+	require.NoError(t, err)
+	require.Equal(t, []int64{second.ID}, ids, "the later contest is only eligible after the first settles")
+
+	settled, err = e.svc.SettleContest(context.Background(), second.ID)
+	require.NoError(t, err)
+	require.True(t, settled)
+
+	firstRows := e.history(first.ID)
+	secondRows := e.history(second.ID)
+	require.Len(t, firstRows, 2)
+	require.Len(t, secondRows, 2)
+	for i := range firstRows {
+		assert.Equal(t, 1500, firstRows[i].RatingBefore, "earlier contest starts from the initial rating")
+		assert.Equal(t, firstRows[i].RatingAfter, secondRows[i].RatingBefore, "the later contest uses the earlier result")
+	}
+}
+
 func TestPendingContestIDsOrder(t *testing.T) {
 	e := newTestEnv(t)
 	now := time.Now()
@@ -339,16 +386,150 @@ func TestPendingContestIDsOrder(t *testing.T) {
 	require.NoError(t, e.db.Exec(`UPDATE contests SET rating_settled_at = now() WHERE id = ?`, settled.ID).Error)
 
 	repo := rating.NewRepository(e.db)
-	ids, err := repo.PendingContestIDs(context.Background(), now, 20)
-	require.NoError(t, err)
-	assert.Equal(t, []int64{tieFirst.ID, tieSecond.ID, middle.ID, last.ID}, ids)
+	pending := func() []int64 {
+		t.Helper()
+		ids, err := repo.PendingContestIDs(context.Background(), now, 20)
+		require.NoError(t, err)
+		return ids
+	}
+	markSettled := func(contestID int64) {
+		t.Helper()
+		require.NoError(t, e.db.Exec(`UPDATE contests SET rating_settled_at = now() WHERE id = ?`, contestID).Error)
+	}
 
-	limited, err := repo.PendingContestIDs(context.Background(), now, 2)
+	// Only the earliest unsettled contest is eligible; later contests must wait
+	// even when a same-time contest has a smaller id.
+	assert.Equal(t, []int64{tieFirst.ID}, pending())
+	markSettled(tieFirst.ID)
+
+	assert.Equal(t, []int64{tieSecond.ID}, pending())
+	markSettled(tieSecond.ID)
+
+	assert.Equal(t, []int64{middle.ID}, pending())
+	markSettled(middle.ID)
+
+	ids := pending()
+	assert.Equal(t, []int64{last.ID}, ids)
+
+	limited, err := repo.PendingContestIDs(context.Background(), now, 1)
 	require.NoError(t, err)
-	assert.Equal(t, []int64{tieFirst.ID, tieSecond.ID}, limited)
+	assert.Equal(t, []int64{last.ID}, limited)
 	assert.NotContains(t, ids, settled.ID)
 	assert.NotContains(t, ids, unrated.ID)
 	assert.NotContains(t, ids, future.ID)
+}
+
+func TestPendingContestIDsWaitsForEarlierContest(t *testing.T) {
+	e := newTestEnv(t)
+	now := time.Now()
+	// The earlier contest still has a pending submission inside the judge
+	// grace window, so it must hold back the later contest even though the
+	// later one is fully judged and eligible on its own.
+	earlier := e.contest("earlier-in-grace", true, now.Add(-3*time.Hour), now.Add(-2*time.Minute))
+	later := e.contest("later-eligible", true, now.Add(-90*time.Minute), now.Add(-time.Minute))
+	for _, c := range []*contest.Contest{earlier, later} {
+		e.register(c, userA, userB)
+	}
+	e.submit(earlier, userA, "accepted", earlier.StartTime.Add(10*time.Minute))
+	e.submit(earlier, userB, "pending", earlier.StartTime.Add(20*time.Minute))
+	e.submit(later, userA, "accepted", later.StartTime.Add(10*time.Minute))
+	e.submit(later, userB, "accepted", later.StartTime.Add(20*time.Minute))
+
+	repo := rating.NewRepository(e.db)
+	ids, err := repo.PendingContestIDs(context.Background(), now, 20)
+	require.NoError(t, err)
+	assert.Equal(t, []int64{earlier.ID}, ids, "the later contest must wait for the earlier one")
+
+	settled, err := e.svc.SettleContest(context.Background(), earlier.ID)
+	require.NoError(t, err)
+	assert.False(t, settled, "the earlier contest is still inside judging grace")
+	ids, err = repo.PendingContestIDs(context.Background(), now, 20)
+	require.NoError(t, err)
+	assert.Equal(t, []int64{earlier.ID}, ids, "the later contest stays blocked while the earlier waits")
+
+	// Once judging finishes, the earlier contest settles, then the later one
+	// becomes eligible. The ratings must form a single chain.
+	require.NoError(t, e.db.Exec(
+		`UPDATE submissions SET status = 'accepted' WHERE contest_id = ? AND user_id = ?`,
+		earlier.ID, userB,
+	).Error)
+	settled, err = e.svc.SettleContest(context.Background(), earlier.ID)
+	require.NoError(t, err)
+	require.True(t, settled)
+
+	ids, err = repo.PendingContestIDs(context.Background(), now, 20)
+	require.NoError(t, err)
+	assert.Equal(t, []int64{later.ID}, ids, "the later contest becomes eligible after the earlier settles")
+
+	settled, err = e.svc.SettleContest(context.Background(), later.ID)
+	require.NoError(t, err)
+	require.True(t, settled)
+
+	for _, userID := range []int64{userA, userB} {
+		rows := e.historyFor(userID)
+		require.Len(t, rows, 2)
+		assert.Equal(t, 1500, rows[0].RatingBefore)
+		assert.Equal(t, rows[0].RatingAfter, rows[1].RatingBefore, "settlement order keeps the rating chain intact")
+		assert.Equal(t, rows[1].RatingAfter, e.rating(userID))
+	}
+	earlierRows := e.history(earlier.ID)
+	laterRows := e.history(later.ID)
+	require.Len(t, earlierRows, 2)
+	require.Len(t, laterRows, 2)
+	for i := range earlierRows {
+		assert.Equal(t, 1500, earlierRows[i].RatingBefore)
+		assert.Equal(t, earlierRows[i].RatingAfter, laterRows[i].RatingBefore)
+	}
+}
+
+func TestSettleContestConcurrentSameContest(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	e := newTestEnvWithRedis(t, rdb)
+	now := time.Now()
+	c := e.contest("concurrent-same", true, now.Add(-2*time.Hour), now.Add(-time.Hour))
+	e.register(c, userA, userB, userC)
+	e.submit(c, userA, "accepted", c.StartTime.Add(10*time.Minute))
+	e.submit(c, userB, "accepted", c.StartTime.Add(20*time.Minute))
+	e.submit(c, userC, "accepted", c.StartTime.Add(30*time.Minute))
+
+	type result struct {
+		settled bool
+		err     error
+	}
+	start := make(chan struct{})
+	results := make(chan result, 2)
+	var wg sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			settled, err := e.svc.SettleContest(context.Background(), c.ID)
+			results <- result{settled: settled, err: err}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+
+	settledCount := 0
+	for res := range results {
+		require.NoError(t, res.err)
+		if res.settled {
+			settledCount++
+		}
+	}
+	assert.Equal(t, 1, settledCount, "exactly one concurrent call settles the contest")
+
+	rows := e.history(c.ID)
+	require.Len(t, rows, 3, "one history row per participant")
+	assert.Equal(t, []int{1532, 1500, 1468}, []int{e.rating(userA), e.rating(userB), e.rating(userC)})
+	assert.NotNil(t, e.settledAt(c.ID))
+	version, err := mr.Get(rating.LeaderboardVersionKey)
+	require.NoError(t, err)
+	assert.Equal(t, "1", version, "the leaderboard version bumps exactly once")
 }
 
 func TestSettleContestRedisFailureDoesNotFailSettlement(t *testing.T) {

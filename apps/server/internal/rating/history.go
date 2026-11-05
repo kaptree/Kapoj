@@ -7,6 +7,11 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 )
 
+// privateContestTitle replaces titles of non-public contests in the public
+// history feed. The contest id is masked to zero as well, so public history
+// never reveals which private contest a rating change came from.
+const privateContestTitle = "私密比赛"
+
 // HistoryItem is one public contest rating change for a user.
 type HistoryItem struct {
 	ContestID    int64     `json:"contestId"`
@@ -55,7 +60,9 @@ func (s *Service) RatingHistory(ctx context.Context, userID int64, page, size in
 		CreatedAt    time.Time `gorm:"column:created_at"`
 	}
 	if err := s.db.WithContext(ctx).Table("rating_history AS rh").
-		Select("rh.contest_id, c.title AS contest_title, rh.rank, rh.rating_before, rh.rating_after, rh.created_at").
+		Select(`CASE WHEN c.is_public THEN rh.contest_id ELSE 0 END AS contest_id,
+			CASE WHEN c.is_public THEN c.title ELSE ? END AS contest_title,
+			rh.rank, rh.rating_before, rh.rating_after, rh.created_at`, privateContestTitle).
 		Joins("JOIN contests AS c ON c.id = rh.contest_id").
 		Where("rh.user_id = ? AND rh.kind = ?", userID, HistoryContest).
 		Order("rh.created_at DESC, rh.id DESC").

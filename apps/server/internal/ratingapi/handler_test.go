@@ -237,6 +237,33 @@ func TestRatingLeaderboardRedisDownStillOK(t *testing.T) {
 	assert.EqualValues(t, 1600, items[0].(map[string]any)["score"])
 }
 
+func TestRatingHistoryMasksPrivateContest(t *testing.T) {
+	f := newFx(t)
+	userID := f.user("masked", 1500)
+	now := time.Now().UTC().Truncate(time.Second)
+	publicID := f.contest("公开比赛")
+	privateID := f.contest("私密邀请赛")
+	require.NoError(t, f.db.Exec(`UPDATE contests SET is_public = false WHERE id = ?`, privateID).Error)
+	f.history(userID, publicID, 1, 1500, 1532, now.Add(-time.Hour))
+	f.history(userID, privateID, 2, 1480, 1512, now)
+
+	w, resp := f.do(http.MethodGet, fmt.Sprintf("/api/users/%d/rating-history", userID))
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	_, items := pageData(t, resp)
+	require.Len(t, items, 2)
+
+	privateRow := items[0].(map[string]any)
+	assert.EqualValues(t, 0, privateRow["contestId"])
+	assert.Equal(t, "私密比赛", privateRow["contestTitle"])
+	assert.EqualValues(t, 2, privateRow["rank"])
+	assert.EqualValues(t, 32, privateRow["delta"])
+
+	publicRow := items[1].(map[string]any)
+	assert.EqualValues(t, publicID, publicRow["contestId"])
+	assert.Equal(t, "公开比赛", publicRow["contestTitle"])
+	assert.NotContains(t, w.Body.String(), "私密邀请赛")
+}
+
 func TestRatingHistoryPublicAndNotFound(t *testing.T) {
 	f := newFx(t)
 	userID := f.user("historian", 1500)

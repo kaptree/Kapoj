@@ -57,13 +57,14 @@ func (s *Service) Leaderboard(ctx context.Context, page, size int) (httpx.Page[L
 	if cacheEnabled {
 		if data, err := s.rdb.Get(ctx, cacheKey).Bytes(); err == nil {
 			var cached httpx.Page[LeaderboardRow]
-			if err := json.Unmarshal(data, &cached); err == nil {
+			decodeErr := json.Unmarshal(data, &cached)
+			if decodeErr == nil {
 				if cached.Items == nil {
 					cached.Items = []LeaderboardRow{}
 				}
 				return cached, nil
 			}
-			slog.Warn("rating: decode leaderboard cache failed", "key", cacheKey, "err", err)
+			slog.Warn("rating: decode leaderboard cache failed", "key", cacheKey, "err", decodeErr)
 		} else if !errors.Is(err, redis.Nil) {
 			slog.Warn("rating: read leaderboard cache failed", "key", cacheKey, "err", err)
 		}
