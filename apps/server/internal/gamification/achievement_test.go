@@ -355,7 +355,7 @@ func TestAchievementValidation(t *testing.T) {
 		{"code 非法", func(in *gamification.AchievementInput) { in.Code = "Bad Code" }, "code"},
 		{"code 过短", func(in *gamification.AchievementInput) { in.Code = "a" }, "code"},
 		{"未知条件", func(in *gamification.AchievementInput) { in.ConditionType = "bogus" }, "条件"},
-		{"奖励徽章 M3-A 不支持", func(in *gamification.AchievementInput) { in.RewardBadgeID = &badgeID }, "M3-B 才支持徽章奖励"},
+		{"奖励徽章不存在", func(in *gamification.AchievementInput) { in.RewardBadgeID = &badgeID }, "徽章"},
 		{"奖励金币为负", func(in *gamification.AchievementInput) { in.RewardCoins = -1 }, "奖励金币"},
 		{"奖励金币过大", func(in *gamification.AchievementInput) { in.RewardCoins = 1_000_001 }, "奖励金币"},
 		{"名称为空", func(in *gamification.AchievementInput) { in.Name = "  " }, "名称"},
@@ -385,9 +385,35 @@ func TestAchievementValidation(t *testing.T) {
 	a := e.create(t, in)
 	assert.True(t, a.IsActive, "创建时未指定 isActive 应默认上架")
 
+	rewardBadge := &gamification.Badge{Name: "回馈徽章", IsActive: true}
+	require.NoError(t, e.db.Create(rewardBadge).Error)
+	withBadge := achievementInput("valid-badge-code", "徽章成就",
+		gamification.ConditionACCount, validCondition, 0)
+	withBadge.RewardBadgeID = &rewardBadge.ID
+	badgeAchievement, err := e.svc.CreateAchievement(context.Background(), viewer, withBadge)
+	require.NoError(t, err)
+	require.NotNil(t, badgeAchievement.RewardBadgeID)
+	assert.Equal(t, rewardBadge.ID, *badgeAchievement.RewardBadgeID)
+
+	inactiveBadge := &gamification.Badge{Name: "下线徽章", IsActive: false}
+	require.NoError(t, e.db.Create(inactiveBadge).Error)
+	inactiveReward := achievementInput("inactive-badge-code", "下线徽章成就",
+		gamification.ConditionACCount, validCondition, 0)
+	inactiveReward.RewardBadgeID = &inactiveBadge.ID
+	_, err = e.svc.CreateAchievement(context.Background(), viewer, inactiveReward)
+	assertCode(t, err, 40001)
+
+	// 更新时省略 rewardBadgeId 保留原奖励徽章。
+	kept := withBadge
+	kept.RewardBadgeID = nil
+	updated, err := e.svc.UpdateAchievement(context.Background(), viewer, badgeAchievement.ID, kept)
+	require.NoError(t, err)
+	require.NotNil(t, updated.RewardBadgeID)
+	assert.Equal(t, rewardBadge.ID, *updated.RewardBadgeID)
+
 	duplicate := achievementInput("valid-code", "重复成就",
 		gamification.ConditionACCount, validCondition, 10)
-	_, err := e.svc.CreateAchievement(context.Background(), viewer, duplicate)
+	_, err = e.svc.CreateAchievement(context.Background(), viewer, duplicate)
 	assertCode(t, err, 40001)
 
 	changed := in

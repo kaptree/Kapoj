@@ -57,7 +57,11 @@ func run() error {
 	defer func() { _ = queue.Close() }()
 	gamePublisher := gamequeue.NewPublisher(cfg.RedisAddr)
 	defer func() { _ = gamePublisher.Close() }()
-	gameSvc := gamification.NewService(gamification.NewRepository(g), gamePublisher)
+	gameSvc := gamification.NewServiceWithOptions(
+		gamification.NewRepository(g),
+		gamification.ServiceOptions{MaxEquippedBadges: cfg.MaxEquippedBadges, Storage: store},
+		gamePublisher,
+	)
 
 	gameServer := asynq.NewServer(
 		asynq.RedisClientOpt{Addr: cfg.RedisAddr},

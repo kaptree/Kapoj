@@ -102,10 +102,11 @@ func (r *Repository) UnlockedAchievementIDs(ctx context.Context, userID int64) (
 func (r *Repository) GrantAchievement(ctx context.Context, userID int64, a Achievement) (bool, error) {
 	unlocked := false
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		now := time.Now()
 		record := &UserAchievement{
 			UserID:        userID,
 			AchievementID: a.ID,
-			UnlockedAt:    time.Now(),
+			UnlockedAt:    now,
 		}
 		res := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(record)
 		if res.Error != nil {
@@ -127,6 +128,17 @@ func (r *Repository) GrantAchievement(ctx context.Context, userID int64, a Achie
 				if err := addUserCoins(tx, userID, a.RewardCoins); err != nil {
 					return err
 				}
+			}
+		}
+		// 成就奖励徽章不检查库存与上下架、不扣商城库存；已拥有时静默跳过。
+		if a.RewardBadgeID != nil {
+			userBadge := &UserBadge{
+				UserID:      userID,
+				BadgeID:     *a.RewardBadgeID,
+				PurchasedAt: now,
+			}
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(userBadge).Error; err != nil {
+				return err
 			}
 		}
 		unlocked = true

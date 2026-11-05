@@ -12,8 +12,9 @@ import (
 )
 
 // RegisterRoutes 挂载游戏化公开/登录/管理员接口；路由组需已运行
-// middleware.Authenticate，以便公开接口识别可选登录用户。
-func RegisterRoutes(r gin.IRouter, s *gamification.Service) {
+// middleware.Authenticate，以便公开接口识别可选登录用户。uploads 是带
+// 较大请求体上限的路由组，用于徽章图片上传。
+func RegisterRoutes(r gin.IRouter, uploads gin.IRouter, s *gamification.Service) {
 	h := &handler{svc: s}
 	admin := func(fn gin.HandlerFunc) []gin.HandlerFunc {
 		return []gin.HandlerFunc{
@@ -35,6 +36,17 @@ func RegisterRoutes(r gin.IRouter, s *gamification.Service) {
 	r.PUT("/tasks/:id", admin(h.updateTask)...)
 	r.DELETE("/tasks/:id", admin(h.deleteTask)...)
 	r.POST("/tasks/:id/claim", middleware.RequireAuth(), h.claimTask)
+
+	r.GET("/badges", h.listBadges)
+	r.POST("/badges", admin(h.createBadge)...)
+	r.PUT("/badges/:id", admin(h.updateBadge)...)
+	r.DELETE("/badges/:id", admin(h.deleteBadge)...)
+	r.GET("/badges/:id/image", h.badgeImage)
+	uploads.POST("/badges/:id/image", admin(h.uploadBadgeImage)...)
+	r.POST("/badges/:id/purchase", middleware.RequireAuth(), h.purchaseBadge)
+	r.POST("/badges/:id/equip", middleware.RequireAuth(), h.equipBadge)
+	r.POST("/badges/:id/unequip", middleware.RequireAuth(), h.unequipBadge)
+	r.GET("/users/:id/badges", h.userBadges)
 }
 
 type handler struct{ svc *gamification.Service }

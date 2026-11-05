@@ -45,6 +45,42 @@ type AchievementItem struct {
 	Progress        []ConditionProgress `json:"progress"`
 }
 
+// BadgeInput 是管理员创建或更新徽章的输入。
+type BadgeInput struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	ImageURL    string `json:"imageUrl"`
+	Category    string `json:"category"`
+	PriceCoins  int64  `json:"priceCoins"`
+	IsLimited   bool   `json:"isLimited"`
+	Stock       int64  `json:"stock"`
+	SortOrder   int    `json:"sortOrder"`
+	IsActive    *bool  `json:"isActive"`
+}
+
+// BadgeItem 是徽章的 API 表示，包含当前用户的拥有与装备状态。
+type BadgeItem struct {
+	ID          int64      `json:"id"`
+	Name        string     `json:"name"`
+	Description string     `json:"description"`
+	ImageURL    string     `json:"imageUrl"`
+	Category    string     `json:"category"`
+	PriceCoins  int64      `json:"priceCoins"`
+	IsLimited   bool       `json:"isLimited"`
+	Stock       int64      `json:"stock"`
+	SortOrder   int        `json:"sortOrder"`
+	IsActive    bool       `json:"isActive"`
+	Owned       bool       `json:"owned"`
+	Equipped    bool       `json:"equipped"`
+	PurchasedAt *time.Time `json:"purchasedAt"`
+}
+
+// BadgeImage 是公开图片接口返回的原始图片。
+type BadgeImage struct {
+	Data        []byte
+	ContentType string
+}
+
 // CoinTransactionItem 是金币流水的 API 表示。
 type CoinTransactionItem struct {
 	ID        int64     `json:"id"`

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -52,7 +53,8 @@ func newFx(t *testing.T) *fx {
 			RefreshTokenTTL: time.Hour, SubmitCooldown: time.Second,
 		},
 		Enqueuer: noopQueue{},
-		Game:     gamification.NewService(gamification.NewRepository(g)),
+		Game: gamification.NewServiceWithOptions(gamification.NewRepository(g),
+			gamification.ServiceOptions{MaxEquippedBadges: 3, Storage: store}),
 	})
 	return &fx{
 		t: t, h: h, db: g,
@@ -234,11 +236,24 @@ func TestAchievementPermissionsAndList(t *testing.T) {
 	assert.EqualValues(t, 40001, resp["code"])
 
 	badgeBody := achievementBody("badge-reward", "徽章奖励", "ac_count", map[string]any{"threshold": 1}, 0)
-	badgeBody["rewardBadgeId"] = 1
+	badgeBody["rewardBadgeId"] = 999999
 	w, resp = f.do(http.MethodPost, "/api/achievements", adminToken, badgeBody)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	assert.EqualValues(t, 40001, resp["code"])
-	assert.Contains(t, resp["message"], "M3-B")
+	assert.Contains(t, resp["message"], "徽章")
+
+	badgeCreate := map[string]any{
+		"name": "成就回馈徽章", "description": "", "imageUrl": "",
+		"category": "成就", "priceCoins": 0, "isLimited": false, "stock": 0, "sortOrder": 1,
+	}
+	w, resp = f.do(http.MethodPost, "/api/badges", adminToken, badgeCreate)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	rewardBadgeID := int64(resp["data"].(map[string]any)["id"].(float64))
+
+	badgeBody["rewardBadgeId"] = rewardBadgeID
+	w, resp = f.do(http.MethodPost, "/api/achievements", adminToken, badgeBody)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	assert.EqualValues(t, rewardBadgeID, resp["data"].(map[string]any)["rewardBadgeId"])
 
 	w, _ = f.do(http.MethodDelete, fmt.Sprintf("/api/achievements/%d", firstID), userToken, nil)
 	assert.Equal(t, http.StatusForbidden, w.Code)
@@ -488,5 +503,246 @@ func TestAdminAdjustCoinsEndpoint(t *testing.T) {
 
 	w, _ = f.do(http.MethodPost, "/api/admin/users/99999/coins", adminToken,
 		map[string]any{"amount": 1, "note": "不存在用户"})
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func (f *fx) upload(path, token, field, filename string, data []byte) (*httptest.ResponseRecorder, map[string]any) {
+	f.t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	part, err := mw.CreateFormFile(field, filename)
+	require.NoError(f.t, err)
+	_, err = part.Write(data)
+	require.NoError(f.t, err)
+	require.NoError(f.t, mw.Close())
+	req := httptest.NewRequest(http.MethodPost, path, &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	w := httptest.NewRecorder()
+	f.h.ServeHTTP(w, req)
+	var resp map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	return w, resp
+}
+
+func badgeBody(name string, price int64) map[string]any {
+	return map[string]any{
+		"name": name, "description": "徽章描述", "imageUrl": "",
+		"category": "测试", "priceCoins": price, "isLimited": false,
+		"stock": 0, "sortOrder": 1,
+	}
+}
+
+var pngBytes = []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0, 0, 0, 0x0d, 'I', 'H', 'D', 'R'}
+
+func TestBadgeAPIPermissionsAndCRUD(t *testing.T) {
+	f := newFx(t)
+	userToken := f.token("user")
+	adminToken := f.token("super_admin")
+
+	w, resp := f.do(http.MethodGet, "/api/badges", "", nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Empty(t, itemsOf(t, resp))
+
+	w, _ = f.do(http.MethodPost, "/api/badges", userToken, badgeBody("无权限徽章", 0))
+	assert.Equal(t, http.StatusForbidden, w.Code)
+
+	w, resp = f.do(http.MethodPost, "/api/badges", adminToken, badgeBody("  ", 0))
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	w, resp = f.do(http.MethodPost, "/api/badges", adminToken, badgeBody("商城徽章", 50))
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	created := resp["data"].(map[string]any)
+	badgeID := int64(created["id"].(float64))
+	assert.Equal(t, true, created["isActive"], "isActive 缺省应为 true")
+	assert.Equal(t, false, created["owned"])
+	badgePath := fmt.Sprintf("/api/badges/%d", badgeID)
+
+	w, resp = f.do(http.MethodGet, "/api/badges", "", nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	items := itemsOf(t, resp)
+	require.Len(t, items, 1)
+	assert.Equal(t, false, items[0].(map[string]any)["owned"])
+	assert.Nil(t, items[0].(map[string]any)["purchasedAt"])
+
+	w, _ = f.do(http.MethodPut, badgePath, userToken, badgeBody("改名", 50))
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	w, _ = f.do(http.MethodDelete, badgePath, userToken, nil)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+
+	update := badgeBody("改名后的徽章", 80)
+	w, resp = f.do(http.MethodPut, badgePath, adminToken, update)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, "改名后的徽章", resp["data"].(map[string]any)["name"])
+	assert.EqualValues(t, 80, resp["data"].(map[string]any)["priceCoins"])
+
+	update["imageUrl"] = "/api/badges/999999/image"
+	w, resp = f.do(http.MethodPut, badgePath, adminToken, update)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	w, _ = f.do(http.MethodPut, fmt.Sprintf("/api/badges/%d", badgeID+1000), adminToken, update)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	w, _ = f.do(http.MethodDelete, fmt.Sprintf("/api/badges/%d", badgeID+1000), adminToken, nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	w, _ = f.do(http.MethodDelete, badgePath, adminToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	w, resp = f.do(http.MethodGet, "/api/badges", "", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Empty(t, itemsOf(t, resp))
+
+	w, resp = f.do(http.MethodGet, "/api/badges?includeInactive=true", adminToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Len(t, itemsOf(t, resp), 1)
+
+	w, _ = f.do(http.MethodGet, "/api/badges?includeInactive=true", userToken, nil)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+func TestBadgePurchaseAndEquipAPI(t *testing.T) {
+	f := newFx(t)
+	userToken := f.token("user")
+	adminToken := f.token("super_admin")
+	userID := f.ids["user"]
+
+	w, resp := f.do(http.MethodPost, "/api/badges", adminToken, badgeBody("付费徽章", 100))
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	badgeID := int64(resp["data"].(map[string]any)["id"].(float64))
+	badgePath := fmt.Sprintf("/api/badges/%d", badgeID)
+
+	w, _ = f.do(http.MethodPost, badgePath+"/purchase", "", nil)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+
+	w, resp = f.do(http.MethodPost, badgePath+"/purchase", userToken, nil)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	w, _ = f.do(http.MethodPost, fmt.Sprintf("/api/admin/users/%d/coins", userID),
+		adminToken, map[string]any{"amount": 100, "note": "购买测试"})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	w, _ = f.do(http.MethodPost, badgePath+"/purchase", userToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	w, resp = f.do(http.MethodGet, "/api/badges", userToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	items := itemsOf(t, resp)
+	require.Len(t, items, 1)
+	assert.Equal(t, true, items[0].(map[string]any)["owned"])
+	assert.Equal(t, false, items[0].(map[string]any)["equipped"])
+	assert.NotNil(t, items[0].(map[string]any)["purchasedAt"])
+
+	w, resp = f.do(http.MethodPost, badgePath+"/purchase", userToken, nil)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	w, resp = f.do(http.MethodGet, "/api/coins/transactions", userToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	coins := resp["data"].(map[string]any)
+	assert.EqualValues(t, 0, coins["balance"])
+	txs := coins["items"].([]any)
+	require.Len(t, txs, 2)
+	// 最新一条是购买流水；管理员调币在前。
+	var purchase map[string]any
+	for _, raw := range txs {
+		tx := raw.(map[string]any)
+		if tx["reason"] == "badge_purchase" {
+			purchase = tx
+		}
+	}
+	require.NotNil(t, purchase)
+	assert.EqualValues(t, -100, purchase["amount"])
+	assert.Equal(t, "spend", purchase["type"])
+	assert.Equal(t, "badge", purchase["refType"])
+	assert.EqualValues(t, badgeID, purchase["refId"])
+
+	w, _ = f.do(http.MethodPost, badgePath+"/equip", "", nil)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	w, _ = f.do(http.MethodPost, badgePath+"/equip", userToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	// 重复装备幂等。
+	w, _ = f.do(http.MethodPost, badgePath+"/equip", userToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/users/%d/badges", userID), "", nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	owned := itemsOf(t, resp)
+	require.Len(t, owned, 1)
+	assert.Equal(t, true, owned[0].(map[string]any)["equipped"])
+
+	w, _ = f.do(http.MethodPost, badgePath+"/unequip", userToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/users/%d/badges", userID), "", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, false, itemsOf(t, resp)[0].(map[string]any)["equipped"])
+
+	w, _ = f.do(http.MethodGet, fmt.Sprintf("/api/users/%d/badges", userID+1000), "", nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	w, _ = f.do(http.MethodPost, fmt.Sprintf("/api/badges/%d/purchase", badgeID+1000), userToken, nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	w, resp = f.do(http.MethodPost, "/api/badges", adminToken, badgeBody("未拥有徽章", 0))
+	require.Equal(t, http.StatusCreated, w.Code)
+	otherID := int64(resp["data"].(map[string]any)["id"].(float64))
+	w, resp = f.do(http.MethodPost, fmt.Sprintf("/api/badges/%d/equip", otherID), userToken, nil)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+	w, resp = f.do(http.MethodPost, fmt.Sprintf("/api/badges/%d/unequip", otherID), userToken, nil)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+}
+
+func TestBadgeImageAPI(t *testing.T) {
+	f := newFx(t)
+	userToken := f.token("user")
+	adminToken := f.token("super_admin")
+
+	w, resp := f.do(http.MethodPost, "/api/badges", adminToken, badgeBody("图片徽章", 0))
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	badgeID := int64(resp["data"].(map[string]any)["id"].(float64))
+	imagePath := fmt.Sprintf("/api/badges/%d/image", badgeID)
+
+	w, _ = f.upload(imagePath, userToken, "file", "badge.png", pngBytes)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+
+	w, _ = f.upload(imagePath, adminToken, "file", "badge.png", pngBytes)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	w, resp = f.do(http.MethodGet, "/api/badges", "", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, imagePath, itemsOf(t, resp)[0].(map[string]any)["imageUrl"])
+
+	req := httptest.NewRequest(http.MethodGet, imagePath, nil)
+	rec := httptest.NewRecorder()
+	f.h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Equal(t, "image/png", rec.Header().Get("Content-Type"))
+	assert.Equal(t, "public, max-age=3600", rec.Header().Get("Cache-Control"))
+	assert.Equal(t, pngBytes, rec.Body.Bytes())
+
+	w, resp = f.upload(imagePath, adminToken, "file", "badge.txt", []byte("plain text"))
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	tooLarge := append(append([]byte{}, pngBytes...), make([]byte, 2<<20)...)
+	w, resp = f.upload(imagePath, adminToken, "file", "big.png", tooLarge)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	w, resp = f.upload(imagePath, adminToken, "wrong", "badge.png", pngBytes)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	w, _ = f.upload(fmt.Sprintf("/api/badges/%d/image", badgeID+1000), adminToken,
+		"file", "badge.png", pngBytes)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	w, _ = f.do(http.MethodGet, fmt.Sprintf("/api/badges/%d/image", badgeID+1000), "", nil)
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }

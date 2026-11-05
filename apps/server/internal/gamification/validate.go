@@ -38,9 +38,6 @@ func normalizeAchievementInput(in AchievementInput, codeRequired bool) (Achievem
 	if err := validateText("成就图标地址", in.IconURL, 0, 512); err != nil {
 		return in, err
 	}
-	if in.RewardBadgeID != nil {
-		return in, httpx.ErrValidation("M3-B 才支持徽章奖励")
-	}
 	if in.RewardCoins < 0 {
 		return in, httpx.ErrValidation("奖励金币不能为负数")
 	}

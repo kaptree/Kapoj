@@ -2,8 +2,11 @@ package gamification
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
+
+	"gorm.io/gorm"
 
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 )
@@ -110,6 +113,9 @@ func (s *Service) CreateAchievement(ctx context.Context, v Viewer, in Achievemen
 	if err != nil {
 		return nil, err
 	}
+	if err := s.validateRewardBadge(ctx, in.RewardBadgeID); err != nil {
+		return nil, err
+	}
 	taken, err := s.repo.AchievementCodeTaken(ctx, in.Code, 0)
 	if err != nil {
 		return nil, err
@@ -155,6 +161,9 @@ func (s *Service) UpdateAchievement(ctx context.Context, v Viewer, id int64, in 
 	if in.Code != "" && in.Code != existing.Code {
 		return nil, httpx.ErrValidation("成就 code 创建后不可修改")
 	}
+	if err := s.validateRewardBadge(ctx, in.RewardBadgeID); err != nil {
+		return nil, err
+	}
 
 	existing.Name = in.Name
 	existing.Description = in.Description
@@ -162,7 +171,10 @@ func (s *Service) UpdateAchievement(ctx context.Context, v Viewer, id int64, in 
 	existing.ConditionType = string(in.ConditionType)
 	existing.ConditionConfig = conditionConfigToJSON(in.ConditionType, in.ConditionConfig)
 	existing.RewardCoins = in.RewardCoins
-	existing.RewardBadgeID = in.RewardBadgeID
+	// nil 表示保持原奖励徽章；M3-B 暂不支持清除奖励徽章。
+	if in.RewardBadgeID != nil {
+		existing.RewardBadgeID = in.RewardBadgeID
+	}
 	existing.SortOrder = in.SortOrder
 	if in.IsActive != nil {
 		existing.IsActive = *in.IsActive
@@ -182,4 +194,25 @@ func (s *Service) DeleteAchievement(ctx context.Context, v Viewer, id int64) err
 		return err
 	}
 	return s.repo.DeactivateAchievement(ctx, id)
+}
+
+// validateRewardBadge 要求奖励徽章存在且上架；nil 表示不配置奖励徽章。
+func (s *Service) validateRewardBadge(ctx context.Context, badgeID *int64) error {
+	if badgeID == nil {
+		return nil
+	}
+	if *badgeID <= 0 {
+		return httpx.ErrValidation("奖励徽章不存在")
+	}
+	badge, err := s.repo.FindBadge(ctx, *badgeID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return httpx.ErrValidation("奖励徽章不存在")
+	}
+	if err != nil {
+		return err
+	}
+	if !badge.IsActive {
+		return httpx.ErrValidation("奖励徽章已下线")
+	}
+	return nil
 }

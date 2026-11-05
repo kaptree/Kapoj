@@ -75,7 +75,7 @@ func New(d Deps) *gin.Engine {
 	uploads := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxUploadBytes))
 	userapi.RegisterRoutes(api, user.NewService(users))
 	if d.Game != nil {
-		gamificationapi.RegisterRoutes(api, d.Game)
+		gamificationapi.RegisterRoutes(api, uploads, d.Game)
 	}
 	contestRepo := contest.NewGormRepository(d.DB)
 	contestapi.RegisterRoutes(api, contest.NewService(contestRepo), gameHooks...)
