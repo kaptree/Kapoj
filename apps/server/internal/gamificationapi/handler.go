@@ -47,6 +47,14 @@ func RegisterRoutes(r gin.IRouter, uploads gin.IRouter, s *gamification.Service)
 	r.POST("/badges/:id/equip", middleware.RequireAuth(), h.equipBadge)
 	r.POST("/badges/:id/unequip", middleware.RequireAuth(), h.unequipBadge)
 	r.GET("/users/:id/badges", h.userBadges)
+
+	r.GET("/titles", h.listTitles)
+	r.POST("/titles", admin(h.createTitle)...)
+	r.PUT("/titles/:id", admin(h.updateTitle)...)
+	r.DELETE("/titles/:id", admin(h.deleteTitle)...)
+	r.POST("/titles/:id/purchase", middleware.RequireAuth(), h.purchaseTitle)
+	r.POST("/titles/:id/equip", middleware.RequireAuth(), h.equipTitle)
+	r.POST("/titles/:id/unequip", middleware.RequireAuth(), h.unequipTitle)
 }
 
 type handler struct{ svc *gamification.Service }
@@ -229,4 +237,96 @@ func (h *handler) adminAdjustCoins(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, gin.H{"balance": balance})
+}
+
+func (h *handler) listTitles(c *gin.Context) {
+	items, err := h.svc.ListTitles(
+		c.Request.Context(), viewer(c), c.Query("includeInactive") == "true",
+	)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, items)
+}
+
+func (h *handler) createTitle(c *gin.Context) {
+	in, ok := httpx.BindJSON[gamification.TitleInput](c)
+	if !ok {
+		return
+	}
+	title, err := h.svc.CreateTitle(c.Request.Context(), viewer(c), in)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.Created(c, gamification.TitleItemFromModel(*title))
+}
+
+func (h *handler) updateTitle(c *gin.Context) {
+	id, ok := pathID(c)
+	if !ok {
+		return
+	}
+	in, ok := httpx.BindJSON[gamification.TitleInput](c)
+	if !ok {
+		return
+	}
+	title, err := h.svc.UpdateTitle(c.Request.Context(), viewer(c), id, in)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, gamification.TitleItemFromModel(*title))
+}
+
+func (h *handler) deleteTitle(c *gin.Context) {
+	id, ok := pathID(c)
+	if !ok {
+		return
+	}
+	if err := h.svc.DeleteTitle(c.Request.Context(), viewer(c), id); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, nil)
+}
+
+func (h *handler) purchaseTitle(c *gin.Context) {
+	id, ok := pathID(c)
+	if !ok {
+		return
+	}
+	claims, _ := middleware.CurrentClaims(c)
+	if err := h.svc.PurchaseTitle(c.Request.Context(), claims.UserID, id); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, nil)
+}
+
+func (h *handler) equipTitle(c *gin.Context) {
+	id, ok := pathID(c)
+	if !ok {
+		return
+	}
+	claims, _ := middleware.CurrentClaims(c)
+	if err := h.svc.EquipTitle(c.Request.Context(), claims.UserID, id); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, nil)
+}
+
+func (h *handler) unequipTitle(c *gin.Context) {
+	id, ok := pathID(c)
+	if !ok {
+		return
+	}
+	claims, _ := middleware.CurrentClaims(c)
+	if err := h.svc.UnequipTitle(c.Request.Context(), claims.UserID, id); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, nil)
 }

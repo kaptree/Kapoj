@@ -11,9 +11,9 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 )
 
-// EvaluateUser 重新计算用户所有上架成就与已领取任务；满足条件的成就原子
-// 解锁并发奖，截止前集齐题目的任务原子完成并发奖。
-// 只使用仓储读取，避免调用 ListAchievements 造成递归。
+// EvaluateUser 重新计算用户所有上架成就、已领取任务与上架称号；满足条件的成就
+// 原子解锁并发奖，截止前集齐题目的任务原子完成并发奖，满足解锁条件的称号写入
+// 解锁记录（不扣金币）。只使用仓储读取，避免调用 ListAchievements 造成递归。
 func (s *Service) EvaluateUser(ctx context.Context, userID int64) error {
 	if userID <= 0 {
 		return nil
@@ -25,34 +25,34 @@ func (s *Service) EvaluateUser(ctx context.Context, userID int64) error {
 	if err != nil {
 		return err
 	}
-	if len(achievements) == 0 {
-		return nil
-	}
-	unlocked, err := s.repo.UnlockedAchievementIDs(ctx, userID)
-	if err != nil {
-		return err
-	}
-	for _, a := range achievements {
-		if _, ok := unlocked[a.ID]; ok {
-			continue
-		}
-		cfg, err := conditionConfigFromJSON(a.ConditionConfig)
-		if err != nil {
-			slog.Warn("跳过条件配置损坏的成就", "achievementId", a.ID, "error", err)
-			continue
-		}
-		done, _, err := s.EvaluateCondition(ctx, userID, ConditionType(a.ConditionType), cfg)
+	if len(achievements) > 0 {
+		unlocked, err := s.repo.UnlockedAchievementIDs(ctx, userID)
 		if err != nil {
 			return err
 		}
-		if !done {
-			continue
-		}
-		if _, err := s.repo.GrantAchievement(ctx, userID, a); err != nil {
-			return err
+		for _, a := range achievements {
+			if _, ok := unlocked[a.ID]; ok {
+				continue
+			}
+			cfg, err := conditionConfigFromJSON(a.ConditionConfig)
+			if err != nil {
+				slog.Warn("跳过条件配置损坏的成就", "achievementId", a.ID, "error", err)
+				continue
+			}
+			done, _, err := s.EvaluateCondition(ctx, userID, ConditionType(a.ConditionType), cfg)
+			if err != nil {
+				return err
+			}
+			if !done {
+				continue
+			}
+			if _, err := s.repo.GrantAchievement(ctx, userID, a); err != nil {
+				return err
+			}
 		}
 	}
-	return nil
+	// 成就解锁后可能满足 achievement 类型称号的解锁条件，因此称号补算最后执行。
+	return s.EvaluateTitles(ctx, userID)
 }
 
 // ListAchievements 返回成就列表。游客只能看到上架成就；登录用户会先补算，

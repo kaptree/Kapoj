@@ -746,3 +746,226 @@ func TestBadgeImageAPI(t *testing.T) {
 	w, _ = f.do(http.MethodGet, fmt.Sprintf("/api/badges/%d/image", badgeID+1000), "", nil)
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
+
+func titleBody(name, color, unlockType string, cfg map[string]any, price int64) map[string]any {
+	return map[string]any{
+		"name": name, "color": color,
+		"unlockConditionType": unlockType, "unlockConditionConfig": cfg,
+		"priceCoins": price, "sortOrder": 1,
+	}
+}
+
+func TestTitleAPIPermissionsAndCRUD(t *testing.T) {
+	f := newFx(t)
+	userToken := f.token("user")
+	adminToken := f.token("super_admin")
+
+	w, resp := f.do(http.MethodGet, "/api/titles", "", nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Empty(t, itemsOf(t, resp))
+
+	body := titleBody("高分称号", "#7C3AED", "rating", map[string]any{"rating": 1600}, 100)
+	w, _ = f.do(http.MethodPost, "/api/titles", userToken, body)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+
+	invalidBody := titleBody("非法颜色", "purple", "rating", map[string]any{"rating": 1600}, 100)
+	w, resp = f.do(http.MethodPost, "/api/titles", adminToken, invalidBody)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	w, resp = f.do(http.MethodPost, "/api/titles", adminToken, body)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	created := resp["data"].(map[string]any)
+	titleID := int64(created["id"].(float64))
+	assert.Equal(t, true, created["isActive"], "isActive 缺省应为 true")
+	assert.Equal(t, false, created["unlocked"])
+	assert.Equal(t, false, created["purchased"])
+	assert.Equal(t, false, created["equipped"])
+	assert.Nil(t, created["unlockedAt"])
+	assert.Nil(t, created["purchasedAt"])
+	assert.Equal(t, "rating", created["unlockConditionType"])
+	progress := created["progress"].(map[string]any)
+	assert.Equal(t, "rating", progress["type"])
+	assert.EqualValues(t, 1600, progress["target"])
+	assert.Equal(t, false, progress["done"])
+	titlePath := fmt.Sprintf("/api/titles/%d", titleID)
+
+	w, resp = f.do(http.MethodGet, "/api/titles", "", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	items := itemsOf(t, resp)
+	require.Len(t, items, 1)
+	assert.Equal(t, false, items[0].(map[string]any)["unlocked"])
+
+	w, _ = f.do(http.MethodGet, "/api/titles?includeInactive=true", "", nil)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	w, _ = f.do(http.MethodGet, "/api/titles?includeInactive=true", userToken, nil)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+
+	update := titleBody("更新后的称号", "#2563EB", "ac_count", map[string]any{"threshold": 3}, 200)
+	w, _ = f.do(http.MethodPut, titlePath, userToken, update)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	w, _ = f.do(http.MethodDelete, titlePath, userToken, nil)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+
+	w, resp = f.do(http.MethodPut, titlePath, adminToken, update)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	updated := resp["data"].(map[string]any)
+	assert.Equal(t, "更新后的称号", updated["name"])
+	assert.Equal(t, "#2563EB", updated["color"])
+	assert.Equal(t, "ac_count", updated["unlockConditionType"])
+	assert.EqualValues(t, 200, updated["priceCoins"])
+	assert.EqualValues(t, 3, updated["progress"].(map[string]any)["target"])
+
+	w, _ = f.do(http.MethodPut, fmt.Sprintf("/api/titles/%d", titleID+1000), adminToken, update)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	w, _ = f.do(http.MethodDelete, fmt.Sprintf("/api/titles/%d", titleID+1000), adminToken, nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	w, _ = f.do(http.MethodDelete, titlePath, adminToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	w, resp = f.do(http.MethodGet, "/api/titles", "", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Empty(t, itemsOf(t, resp))
+	w, resp = f.do(http.MethodGet, "/api/titles?includeInactive=true", adminToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Len(t, itemsOf(t, resp), 1)
+}
+
+func TestTitleAPIUnlockPurchaseAndEquip(t *testing.T) {
+	f := newFx(t)
+	userToken := f.token("user")
+	adminToken := f.token("super_admin")
+	userID := f.ids["user"]
+
+	w, resp := f.do(http.MethodPost, "/api/titles", adminToken,
+		titleBody("首次 AC 称号", "#7C3AED", "ac_count", map[string]any{"threshold": 1}, 100))
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	firstID := int64(resp["data"].(map[string]any)["id"].(float64))
+	firstPath := fmt.Sprintf("/api/titles/%d", firstID)
+
+	// 游客只能看到商店牌面，进度为 0。
+	w, resp = f.do(http.MethodGet, "/api/titles", "", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	guestItem := itemsOf(t, resp)[0].(map[string]any)
+	assert.Equal(t, false, guestItem["unlocked"])
+	assert.EqualValues(t, 0, guestItem["progress"].(map[string]any)["current"])
+	assert.EqualValues(t, 1, guestItem["progress"].(map[string]any)["target"])
+
+	w, _ = f.do(http.MethodPost, firstPath+"/purchase", "", nil)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	w, _ = f.do(http.MethodPost, firstPath+"/equip", "", nil)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	w, _ = f.do(http.MethodPost, firstPath+"/unequip", "", nil)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+
+	// 未解锁不能购买。
+	w, resp = f.do(http.MethodPost, firstPath+"/purchase", userToken, nil)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	f.addAcceptedSubmission(t, userID, "api-title-ac")
+
+	// 读取列表时补算解锁并返回进度。
+	w, resp = f.do(http.MethodGet, "/api/titles", userToken, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	item := itemByID(t, itemsOf(t, resp), firstID)
+	assert.Equal(t, true, item["unlocked"])
+	assert.NotNil(t, item["unlockedAt"])
+	assert.Equal(t, false, item["purchased"])
+	progress := item["progress"].(map[string]any)
+	assert.EqualValues(t, 1, progress["current"])
+	assert.EqualValues(t, 1, progress["target"])
+	assert.Equal(t, true, progress["done"])
+
+	// 已解锁但余额不足。
+	w, resp = f.do(http.MethodPost, firstPath+"/purchase", userToken, nil)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	w, _ = f.do(http.MethodPost, fmt.Sprintf("/api/admin/users/%d/coins", userID),
+		adminToken, map[string]any{"amount": 100, "note": "称号购买测试"})
+	require.Equal(t, http.StatusOK, w.Code)
+
+	w, _ = f.do(http.MethodPost, firstPath+"/purchase", userToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	w, resp = f.do(http.MethodGet, "/api/titles", userToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	item = itemByID(t, itemsOf(t, resp), firstID)
+	assert.Equal(t, true, item["purchased"])
+	assert.NotNil(t, item["purchasedAt"])
+	assert.Equal(t, false, item["equipped"])
+
+	w, resp = f.do(http.MethodPost, firstPath+"/purchase", userToken, nil)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	w, resp = f.do(http.MethodGet, "/api/coins/transactions", userToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	txs := resp["data"].(map[string]any)["items"].([]any)
+	var purchase map[string]any
+	for _, raw := range txs {
+		tx := raw.(map[string]any)
+		if tx["reason"] == "title_purchase" {
+			purchase = tx
+		}
+	}
+	require.NotNil(t, purchase)
+	assert.EqualValues(t, -100, purchase["amount"])
+	assert.Equal(t, "spend", purchase["type"])
+	assert.Equal(t, "title", purchase["refType"])
+	assert.EqualValues(t, firstID, purchase["refId"])
+
+	w, _ = f.do(http.MethodPost, firstPath+"/equip", userToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	w, resp = f.do(http.MethodGet, "/api/titles", userToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, true, itemByID(t, itemsOf(t, resp), firstID)["equipped"])
+
+	// 第二个称号：未购买不能装备；购买并装备后自动卸下第一个。
+	w, resp = f.do(http.MethodPost, "/api/titles", adminToken,
+		titleBody("第二个称号", "#DC2626", "ac_count", map[string]any{"threshold": 1}, 0))
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	secondID := int64(resp["data"].(map[string]any)["id"].(float64))
+	secondPath := fmt.Sprintf("/api/titles/%d", secondID)
+
+	w, resp = f.do(http.MethodGet, "/api/titles", userToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, true, itemByID(t, itemsOf(t, resp), secondID)["unlocked"])
+
+	w, resp = f.do(http.MethodPost, secondPath+"/equip", userToken, nil)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	w, _ = f.do(http.MethodPost, secondPath+"/purchase", userToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	w, _ = f.do(http.MethodPost, secondPath+"/equip", userToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	w, resp = f.do(http.MethodGet, "/api/titles", userToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	items := itemsOf(t, resp)
+	assert.Equal(t, false, itemByID(t, items, firstID)["equipped"])
+	assert.Equal(t, true, itemByID(t, items, secondID)["equipped"])
+
+	w, _ = f.do(http.MethodPost, secondPath+"/unequip", userToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	w, resp = f.do(http.MethodGet, "/api/titles", userToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, false, itemByID(t, itemsOf(t, resp), secondID)["equipped"])
+
+	// 已解锁的下线称号仍对本人可见，游客不可见。
+	w, _ = f.do(http.MethodDelete, secondPath, adminToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	w, resp = f.do(http.MethodGet, "/api/titles", userToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	items = itemsOf(t, resp)
+	assert.Len(t, items, 2)
+	assert.Equal(t, false, itemByID(t, items, secondID)["isActive"])
+	w, resp = f.do(http.MethodGet, "/api/titles", "", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Len(t, itemsOf(t, resp), 1)
+
+	w, _ = f.do(http.MethodPost, fmt.Sprintf("/api/titles/%d/purchase", firstID+1000), userToken, nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}

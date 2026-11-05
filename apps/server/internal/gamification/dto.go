@@ -45,6 +45,51 @@ type AchievementItem struct {
 	Progress        []ConditionProgress `json:"progress"`
 }
 
+// TitleUnlockConfig 是称号解锁条件配置；每种类型只使用对应字段。
+type TitleUnlockConfig struct {
+	Rating          int    `json:"rating,omitempty"`
+	Threshold       int64  `json:"threshold,omitempty"`
+	AchievementCode string `json:"achievementCode,omitempty"`
+}
+
+// TitleInput 是管理员创建或更新称号的输入。
+type TitleInput struct {
+	Name                  string            `json:"name"`
+	Color                 string            `json:"color"`
+	UnlockConditionType   TitleUnlockType   `json:"unlockConditionType"`
+	UnlockConditionConfig TitleUnlockConfig `json:"unlockConditionConfig"`
+	PriceCoins            int64             `json:"priceCoins"`
+	SortOrder             int               `json:"sortOrder"`
+	IsActive              *bool             `json:"isActive"`
+}
+
+// TitleProgress 是称号解锁条件的当前进度。
+type TitleProgress struct {
+	Type            TitleUnlockType `json:"type"`
+	Current         int64           `json:"current"`
+	Target          int64           `json:"target"`
+	Done            bool            `json:"done"`
+	AchievementCode string          `json:"achievementCode"`
+}
+
+// TitleItem 是称号的 API 表示，包含当前用户的解锁、购买与装备状态。
+type TitleItem struct {
+	ID                    int64             `json:"id"`
+	Name                  string            `json:"name"`
+	Color                 string            `json:"color"`
+	UnlockConditionType   TitleUnlockType   `json:"unlockConditionType"`
+	UnlockConditionConfig TitleUnlockConfig `json:"unlockConditionConfig"`
+	PriceCoins            int64             `json:"priceCoins"`
+	SortOrder             int               `json:"sortOrder"`
+	IsActive              bool              `json:"isActive"`
+	Unlocked              bool              `json:"unlocked"`
+	UnlockedAt            *time.Time        `json:"unlockedAt"`
+	Purchased             bool              `json:"purchased"`
+	PurchasedAt           *time.Time        `json:"purchasedAt"`
+	Equipped              bool              `json:"equipped"`
+	Progress              TitleProgress     `json:"progress"`
+}
+
 // BadgeInput 是管理员创建或更新徽章的输入。
 type BadgeInput struct {
 	Name        string `json:"name"`
