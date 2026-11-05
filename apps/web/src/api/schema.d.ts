@@ -2153,7 +2153,6 @@ export interface paths {
                 401: components["responses"]["Error"];
                 403: components["responses"]["Error"];
                 404: components["responses"]["Error"];
-                413: components["responses"]["Error"];
             };
         };
         delete?: never;
@@ -2384,7 +2383,7 @@ export interface paths {
         put?: never;
         /**
          * 创建称号（仅超级管理员）
-         * @description 名称 1–100 字；颜色必须为
+         * @description 名称 1–100 字；颜色必须为 #RRGGBB；价格 0–1000000；解锁条件必须为正整数阈值、Rating 或符合成就 code 格式的字符串。
          */
         post: {
             parameters: {
@@ -3193,9 +3192,9 @@ export interface components {
             sortOrder: number;
             /** @description false 表示已下线（软删除） */
             isActive: boolean;
-            /** @description 当前用户是否已拥有；游客恒为 false */
+            /** @description 是否已拥有：GET /badges 相对当前登录用户（游客恒为 false），GET /users/{id}/badges 相对路径用户 */
             owned: boolean;
-            /** @description 当前用户是否已装备；游客恒为 false */
+            /** @description 是否已装备：GET /badges 相对当前登录用户（游客恒为 false），GET /users/{id}/badges 相对路径用户 */
             equipped: boolean;
             /**
              * Format: date-time

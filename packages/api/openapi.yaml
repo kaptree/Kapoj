@@ -928,7 +928,6 @@ paths:
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
-        '413': { $ref: '#/components/responses/Error' }
     get:
       summary: 读取徽章图片（公开）
       description: 只返回上传到本地存储的图片；外链、文件缺失或格式非法返回 40400。响应带 Cache-Control public, max-age=3600。
@@ -1029,7 +1028,7 @@ paths:
         '403': { $ref: '#/components/responses/Error' }
     post:
       summary: 创建称号（仅超级管理员）
-      description: 名称 1–100 字；颜色必须为 #RRGGBB；价格 0–1000000；解锁条件必须为正整数阈值、Rating 或符合成就 code 格式的字符串。
+      description: '名称 1–100 字；颜色必须为 #RRGGBB；价格 0–1000000；解锁条件必须为正整数阈值、Rating 或符合成就 code 格式的字符串。'
       security: [{ bearer: [] }]
       requestBody:
         required: true
@@ -1876,8 +1875,8 @@ components:
         stock: { type: integer, format: int64, description: 仅限量徽章有意义；非限量为 0 }
         sortOrder: { type: integer }
         isActive: { type: boolean, description: false 表示已下线（软删除） }
-        owned: { type: boolean, description: 当前用户是否已拥有；游客恒为 false }
-        equipped: { type: boolean, description: 当前用户是否已装备；游客恒为 false }
+        owned: { type: boolean, description: '是否已拥有：GET /badges 相对当前登录用户（游客恒为 false），GET /users/{id}/badges 相对路径用户' }
+        equipped: { type: boolean, description: '是否已装备：GET /badges 相对当前登录用户（游客恒为 false），GET /users/{id}/badges 相对路径用户' }
         purchasedAt: { type: string, format: date-time, nullable: true, description: 未拥有时为 null }
     TitleUnlockType:
       type: string
