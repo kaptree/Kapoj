@@ -2,6 +2,7 @@ package activity_test
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
@@ -116,6 +117,25 @@ func TestSharingLeaderboardFromSharedItems(t *testing.T) {
 	assert.EqualValues(t, 2, empty.Total)
 	assert.Empty(t, empty.Items)
 	assert.NotNil(t, empty.Items, "an empty page must serialize as []")
+}
+
+func TestLeaderboardHugePageClamps(t *testing.T) {
+	e := newActivityEnv(t)
+	seedActivityLog(t, e, testUserID, activity.ActionContestJoin, 900, 10)
+	seedSharedItem(t, e, testUserID, "contest", 901, 0)
+	ctx := context.Background()
+
+	activityPage, err := e.svc.ActivityLeaderboard(ctx, math.MaxInt, 100)
+	require.NoError(t, err, "an overflowing page must be clamped instead of failing the query")
+	assert.EqualValues(t, 1, activityPage.Total)
+	assert.Empty(t, activityPage.Items)
+	assert.NotNil(t, activityPage.Items, "an empty page must serialize as []")
+
+	sharingPage, err := e.svc.SharingLeaderboard(ctx, math.MaxInt, 100)
+	require.NoError(t, err, "an overflowing page must be clamped instead of failing the query")
+	assert.EqualValues(t, 1, sharingPage.Total)
+	assert.Empty(t, sharingPage.Items)
+	assert.NotNil(t, sharingPage.Items, "an empty page must serialize as []")
 }
 
 func TestLeaderboardCacheVersionAndFallback(t *testing.T) {

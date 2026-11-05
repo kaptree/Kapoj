@@ -2,6 +2,7 @@ package rating_test
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
@@ -59,6 +60,17 @@ func TestRatingLeaderboardOrderAndPagination(t *testing.T) {
 	assert.EqualValues(t, 3, empty.Total)
 	assert.Empty(t, empty.Items)
 	assert.NotNil(t, empty.Items, "an empty page must serialize as []")
+}
+
+func TestRatingLeaderboardHugePageClamps(t *testing.T) {
+	e := newTestEnv(t)
+	setRating(t, e, userA, 1600)
+
+	page, err := e.svc.Leaderboard(context.Background(), math.MaxInt, 100)
+	require.NoError(t, err, "an overflowing page must be clamped instead of failing the query")
+	assert.EqualValues(t, 5, page.Total)
+	assert.Empty(t, page.Items)
+	assert.NotNil(t, page.Items, "an empty page must serialize as []")
 }
 
 func TestRatingLeaderboardCacheHitAndVersion(t *testing.T) {

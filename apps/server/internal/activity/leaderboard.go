@@ -19,6 +19,7 @@ const (
 	leaderboardCacheTTL            = 60 * time.Second
 	leaderboardDefaultSize         = 20
 	leaderboardMaxSize             = 100
+	leaderboardMaxPage             = 1_000_000
 )
 
 // LeaderboardRow is one public activity or sharing leaderboard entry without
@@ -211,9 +212,7 @@ func (s *Service) querySharingLeaderboard(ctx context.Context, page, size int) (
 }
 
 func normalizePage(page, size int) (int, int) {
-	if page < 1 {
-		page = 1
-	}
+	page = min(max(page, 1), leaderboardMaxPage)
 	if size < 1 {
 		size = leaderboardDefaultSize
 	}

@@ -1046,7 +1046,7 @@ user_ai_configs (
 - **共享积分（M4-B）**：创建或克隆比赛成功后写入 `shared_items(type=contest)`，每场 20 分；启动时幂等回填已有 `created_by>0` 的比赛。共享分公式为 `20 * 比赛共享数 + 5 * 题解点赞数`，本阶段题解点赞未实现，第二项恒为 0。
 - **活跃度/共享榜（M4-B）**：`GET /api/leaderboard/activity`、`GET /api/leaderboard/sharing`，公开；只含 `status=active` 且分数 > 0 的用户，按分数倒序、用户 ID 升序，分页上限 100。行内 `score` 为积分，并返回 `equippedBadges`/`equippedTitle`；这两个榜不返回 Rating `level`。
 - **榜单缓存（M4-B）**：活跃度/共享榜基础行 Redis 缓存 60 秒，key 为 `kapoj:leaderboard:activity:v<version>:<page>:<size>` 与 `kapoj:leaderboard:sharing:v<version>:<page>:<size>`；活跃度写入后递增 `kapoj:leaderboard:activity:version`，共享项写入/回填后递增 `kapoj:leaderboard:sharing:version`。只缓存基础行，装备变更无需失效；Redis/缓存故障时回退数据库，缓存故障本身不返回 5xx（身份装饰查询失败仍可能返回 5xx）。
-- **尚未实现**：排行榜前端（三 Tab、等级颜色、签到按钮）与用户主页 Rating 历史卡片属于 M4-C；学习路线、社交互动（评论/点赞/关注/题解/通知）与 Rating 衰减/赛季重置属于后续 M4 阶段。`rating_history` 的 `kind` 与可空 `contest_id` 已为衰减/赛季预留，`shared_items.like_count` 已为题解点赞预留。
+- **尚未实现**：排行榜前端（三 Tab、等级颜色、签到按钮）与用户主页 Rating 历史卡片属于 M4-C；学习路线、社交互动（评论/点赞/关注/题解点赞/通知）与 Rating 衰减/赛季重置属于后续 M4 阶段。`rating_history` 的 `kind` 与可空 `contest_id` 已为衰减/赛季预留，`shared_items.like_count` 已为题解点赞预留。
 
 **Codex 提示词（排行榜）**
 
