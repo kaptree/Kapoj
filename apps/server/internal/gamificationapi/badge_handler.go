@@ -1,6 +1,8 @@
 package gamificationapi
 
 import (
+	"errors"
+	"mime/multipart"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -70,7 +72,7 @@ func (h *handler) uploadBadgeImage(c *gin.Context) {
 	}
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
-		httpx.Fail(c, httpx.ErrValidation("缺少文件字段 file"))
+		httpx.Fail(c, uploadFormError(err))
 		return
 	}
 	file, err := fileHeader.Open()
@@ -84,6 +86,22 @@ func (h *handler) uploadBadgeImage(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, nil)
+}
+
+// uploadFormError 把 multipart 解析错误映射为精确的中文 40001 提示；文件大小
+// 仍由 service 的 2 MiB 校验兜底。
+func uploadFormError(err error) *httpx.AppError {
+	var maxBytesErr *http.MaxBytesError
+	switch {
+	case errors.As(err, &maxBytesErr), errors.Is(err, multipart.ErrMessageTooLarge):
+		return httpx.ErrValidation("上传文件过大")
+	case errors.Is(err, http.ErrMissingBoundary):
+		return httpx.ErrValidation("上传格式错误")
+	case errors.Is(err, http.ErrMissingFile):
+		return httpx.ErrValidation("缺少文件字段 file")
+	default:
+		return httpx.ErrValidation("上传格式错误")
+	}
 }
 
 func (h *handler) badgeImage(c *gin.Context) {

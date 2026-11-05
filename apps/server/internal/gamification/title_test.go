@@ -439,6 +439,61 @@ func TestTitleConcurrentPurchaseChargesOnce(t *testing.T) {
 	assert.EqualValues(t, 1, equipped)
 }
 
+func TestTitleUpdateDoesNotReviveSoftDeleted(t *testing.T) {
+	e := newTitleEnv(t)
+	ctx := context.Background()
+	title := e.createTitle(t, titleInput(
+		"下线称号", "#7C3AED",
+		gamification.TitleUnlockACCount, gamification.TitleUnlockConfig{Threshold: 1}, 0,
+	))
+	require.NoError(t, e.svc.DeleteTitle(ctx, adminViewer(e.admin.ID), title.ID))
+
+	update := titleInput(
+		"改名后的下线称号", "#2563EB",
+		gamification.TitleUnlockACCount, gamification.TitleUnlockConfig{Threshold: 1}, 0,
+	)
+	updated, err := e.svc.UpdateTitle(ctx, adminViewer(e.admin.ID), title.ID, update)
+	require.NoError(t, err)
+	assert.False(t, updated.IsActive, "省略 isActive 不能复活已软删除的称号")
+
+	stored, err := e.repo.FindTitle(ctx, title.ID)
+	require.NoError(t, err)
+	assert.False(t, stored.IsActive)
+}
+
+func TestTitleListOrder(t *testing.T) {
+	e := newTitleEnv(t)
+	ctx := context.Background()
+
+	// 逆序创建，验证列表按 sort_order、id 升序，而不是按创建/主键顺序。
+	second := e.createTitle(t, func() gamification.TitleInput {
+		in := titleInput("排序二十", "#7C3AED",
+			gamification.TitleUnlockACCount, gamification.TitleUnlockConfig{Threshold: 1}, 0)
+		in.SortOrder = 20
+		return in
+	}())
+	third := e.createTitle(t, func() gamification.TitleInput {
+		in := titleInput("排序十（后建）", "#2563EB",
+			gamification.TitleUnlockACCount, gamification.TitleUnlockConfig{Threshold: 1}, 0)
+		in.SortOrder = 10
+		return in
+	}())
+	first := e.createTitle(t, func() gamification.TitleInput {
+		in := titleInput("排序十（先建）", "#059669",
+			gamification.TitleUnlockACCount, gamification.TitleUnlockConfig{Threshold: 1}, 0)
+		in.SortOrder = 10
+		return in
+	}())
+
+	items, err := e.svc.ListTitles(ctx, gamification.Viewer{}, false)
+	require.NoError(t, err)
+	require.Len(t, items, 3)
+	assert.Equal(t, []int64{third.ID, first.ID, second.ID},
+		[]int64{items[0].ID, items[1].ID, items[2].ID})
+	assert.Equal(t, []int{10, 10, 20},
+		[]int{items[0].SortOrder, items[1].SortOrder, items[2].SortOrder})
+}
+
 func TestTitleCRUDValidation(t *testing.T) {
 	e := newTitleEnv(t)
 	ctx := context.Background()

@@ -113,7 +113,7 @@ func (s *Service) CreateAchievement(ctx context.Context, v Viewer, in Achievemen
 	if err != nil {
 		return nil, err
 	}
-	if err := s.validateRewardBadge(ctx, in.RewardBadgeID); err != nil {
+	if err := s.validateRewardBadge(ctx, in.RewardBadgeID, nil); err != nil {
 		return nil, err
 	}
 	taken, err := s.repo.AchievementCodeTaken(ctx, in.Code, 0)
@@ -161,7 +161,7 @@ func (s *Service) UpdateAchievement(ctx context.Context, v Viewer, id int64, in 
 	if in.Code != "" && in.Code != existing.Code {
 		return nil, httpx.ErrValidation("成就 code 创建后不可修改")
 	}
-	if err := s.validateRewardBadge(ctx, in.RewardBadgeID); err != nil {
+	if err := s.validateRewardBadge(ctx, in.RewardBadgeID, existing.RewardBadgeID); err != nil {
 		return nil, err
 	}
 
@@ -197,7 +197,9 @@ func (s *Service) DeleteAchievement(ctx context.Context, v Viewer, id int64) err
 }
 
 // validateRewardBadge 要求奖励徽章存在且上架；nil 表示不配置奖励徽章。
-func (s *Service) validateRewardBadge(ctx context.Context, badgeID *int64) error {
+// 更新成就时，与现有奖励徽章相同的 id 允许保留（即使徽章后来下线），避免
+// 改名等无关更新被已下线的旧奖励阻塞；新绑定的徽章仍必须上架。
+func (s *Service) validateRewardBadge(ctx context.Context, badgeID, currentBadgeID *int64) error {
 	if badgeID == nil {
 		return nil
 	}
@@ -212,6 +214,9 @@ func (s *Service) validateRewardBadge(ctx context.Context, badgeID *int64) error
 		return err
 	}
 	if !badge.IsActive {
+		if currentBadgeID != nil && *currentBadgeID == *badgeID {
+			return nil
+		}
 		return httpx.ErrValidation("奖励徽章已下线")
 	}
 	return nil

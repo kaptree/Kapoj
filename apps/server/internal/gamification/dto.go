@@ -91,6 +91,8 @@ type TitleItem struct {
 }
 
 // BadgeInput 是管理员创建或更新徽章的输入。
+// Stock 使用指针区分“未提交”和 0：更新时省略表示保留当前库存，创建时省略为 0。
+// ImageURL 在更新时为空表示保留现有图片（图片上传接口会单独写入）。
 type BadgeInput struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
@@ -98,7 +100,7 @@ type BadgeInput struct {
 	Category    string `json:"category"`
 	PriceCoins  int64  `json:"priceCoins"`
 	IsLimited   bool   `json:"isLimited"`
-	Stock       int64  `json:"stock"`
+	Stock       *int64 `json:"stock"`
 	SortOrder   int    `json:"sortOrder"`
 	IsActive    *bool  `json:"isActive"`
 }

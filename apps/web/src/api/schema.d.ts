@@ -2010,8 +2010,10 @@ export interface paths {
         };
         get?: never;
         /**
-         * 更新徽章（仅超级管理员；整体替换）
-         * @description isActive 缺省时保持原值。删除为软下线，已购买用户仍保留并展示。
+         * 更新徽章（仅超级管理员；未提交字段保留）
+         * @description name、category 必填；description、priceCoins、isLimited、sortOrder 按提交值更新。
+         *     isActive 缺省时保持原值；stock 缺省时保持当前库存（不会把并发购买已扣减的库存恢复）；
+         *     imageUrl 为空字符串时保持现有图片（上传接口单独写入）。删除为软下线，已购买用户仍保留并展示。
          */
         put: {
             parameters: {
@@ -3157,7 +3159,7 @@ export interface components {
         BadgeInput: {
             name: string;
             description?: string;
-            /** @description http(s) 外链或 /api/badges/<id>/image；留空表示无图片 */
+            /** @description http(s) 外链或 /api/badges/<id>/image；创建时留空表示无图片，更新时留空保持现有图片（上传接口单独写入） */
             imageUrl?: string;
             /** @description 管理员填写的自由文本分类 */
             category: string;
@@ -3166,7 +3168,7 @@ export interface components {
             isLimited?: boolean;
             /**
              * Format: int64
-             * @description 仅 isLimited=true 时生效；非限量徽章保存为 0
+             * @description 仅 isLimited=true 时生效；创建时省略为 0（限量徽章应显式设置），更新时省略保持当前库存；更新时显式提交且非限量保存为 0
              */
             stock?: number;
             sortOrder?: number;

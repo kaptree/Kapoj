@@ -341,6 +341,40 @@ func TestAchievementProgressAndAllOf(t *testing.T) {
 	assert.True(t, item.Progress[1].Done)
 }
 
+func TestAchievementUpdateKeepsInactiveRewardBadge(t *testing.T) {
+	e := newAchievementEnv(t)
+	ctx := context.Background()
+	viewer := adminViewer(e.user.ID)
+
+	rewardBadge := &gamification.Badge{Name: "原奖励徽章", IsActive: true}
+	require.NoError(t, e.db.Create(rewardBadge).Error)
+	in := achievementInput("keep-inactive-badge", "保留下线奖励", gamification.ConditionACCount,
+		gamification.ConditionConfig{Threshold: 1}, 0)
+	in.RewardBadgeID = &rewardBadge.ID
+	created, err := e.svc.CreateAchievement(ctx, viewer, in)
+	require.NoError(t, err)
+
+	require.NoError(t, e.svc.DeleteBadge(ctx, viewer, rewardBadge.ID))
+
+	// 同名 rewardBadgeId 已下线也应允许无关字段更新。
+	update := in
+	update.Code = ""
+	update.Name = "改名后的成就"
+	updated, err := e.svc.UpdateAchievement(ctx, viewer, created.ID, update)
+	require.NoError(t, err)
+	assert.Equal(t, "改名后的成就", updated.Name)
+	require.NotNil(t, updated.RewardBadgeID)
+	assert.Equal(t, rewardBadge.ID, *updated.RewardBadgeID)
+
+	// 新绑定的已下线徽章仍必须拒绝。
+	another := &gamification.Badge{Name: "另一个下线徽章", IsActive: true}
+	require.NoError(t, e.db.Create(another).Error)
+	require.NoError(t, e.svc.DeleteBadge(ctx, viewer, another.ID))
+	update.RewardBadgeID = &another.ID
+	_, err = e.svc.UpdateAchievement(ctx, viewer, created.ID, update)
+	assertCode(t, err, 40001)
+}
+
 func TestAchievementValidation(t *testing.T) {
 	e := newAchievementEnv(t)
 	viewer := adminViewer(e.user.ID)

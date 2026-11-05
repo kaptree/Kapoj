@@ -111,27 +111,29 @@ func (s *Service) UpdateTitle(ctx context.Context, v Viewer, id int64, in TitleI
 	if !v.IsAdmin {
 		return nil, httpx.ErrForbidden
 	}
-	existing, err := s.findTitle(ctx, id)
+	if id <= 0 {
+		return nil, httpx.ErrNotFound
+	}
+	// 先确认资源存在，保持 404 优先于输入校验；实际写入仍在事务内重新加锁。
+	if _, err := s.findTitle(ctx, id); err != nil {
+		return nil, err
+	}
+	in, err := normalizeTitleInput(in)
 	if err != nil {
 		return nil, err
 	}
-	in, err = normalizeTitleInput(in)
-	if err != nil {
-		return nil, err
-	}
-	existing.Name = in.Name
-	existing.Color = in.Color
-	existing.UnlockConditionType = string(in.UnlockConditionType)
-	existing.UnlockConditionConfig = titleUnlockConfigToJSON(in.UnlockConditionType, in.UnlockConditionConfig)
-	existing.PriceCoins = in.PriceCoins
-	existing.SortOrder = in.SortOrder
-	if in.IsActive != nil {
-		existing.IsActive = *in.IsActive
-	}
-	if err := s.repo.UpdateTitle(ctx, existing); err != nil {
-		return nil, err
-	}
-	return existing, nil
+	return s.repo.UpdateTitleLocked(ctx, id, func(existing *Title) error {
+		existing.Name = in.Name
+		existing.Color = in.Color
+		existing.UnlockConditionType = string(in.UnlockConditionType)
+		existing.UnlockConditionConfig = titleUnlockConfigToJSON(in.UnlockConditionType, in.UnlockConditionConfig)
+		existing.PriceCoins = in.PriceCoins
+		existing.SortOrder = in.SortOrder
+		if in.IsActive != nil {
+			existing.IsActive = *in.IsActive
+		}
+		return nil
+	})
 }
 
 // DeleteTitle 软删除称号，保留已解锁、已购买记录与装备状态。

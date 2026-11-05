@@ -386,6 +386,49 @@ func TestRanklistEquippedIdentity(t *testing.T) {
 	}
 }
 
+func TestRanklistOISelfOnlyKeepsOnlyDecoratedSelfRow(t *testing.T) {
+	f := newFx(t)
+	p1, p2 := f.problem("oi-self-sum"), f.problem("oi-self-product")
+	b := body(p1.ID, p2.ID)
+	b["mode"] = "oi"
+	b["title"] = "OI selfOnly identity"
+	w, resp := f.do(http.MethodPost, "/api/contests", f.token("contest_admin"), b)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	id := idOf(resp)
+
+	userToken := f.token("user")
+	userID := f.ids["user"]
+	otherToken := f.token("problem_admin")
+	otherID := f.ids["problem_admin"]
+	for _, token := range []string{userToken, otherToken} {
+		w, _ = f.do(http.MethodPost, fmt.Sprintf("/api/contests/%d/register", id), token, map[string]any{})
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	}
+	f.equipIdentity(t, userID, []string{"本人徽章"}, "本人称号")
+	f.equipIdentity(t, otherID, []string{"他人徽章"}, "他人称号")
+
+	// 管理员看到两行完整榜单及各自装备。
+	w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/contests/%d/ranklist", id), f.token("contest_admin"), nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data := resp["data"].(map[string]any)
+	assert.Equal(t, false, data["selfOnly"])
+	require.Len(t, data["rows"].([]any), 2)
+
+	// 选手本人只保留自己的一行，并且只装饰该行。
+	w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/contests/%d/ranklist", id), userToken, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data = resp["data"].(map[string]any)
+	assert.Equal(t, true, data["selfOnly"])
+	rows := data["rows"].([]any)
+	require.Len(t, rows, 1, "OI selfOnly 不能改变保留行数")
+	row := rows[0].(map[string]any)
+	assert.EqualValues(t, userID, row["userId"])
+	badges := row["equippedBadges"].([]any)
+	require.Len(t, badges, 1)
+	assert.Equal(t, "本人徽章", badges[0].(map[string]any)["name"])
+	assert.Equal(t, "本人称号", row["equippedTitle"].(map[string]any)["name"])
+}
+
 func TestRanklistWithoutEquipmentUsesEmptyArray(t *testing.T) {
 	f := newFx(t)
 	p1, p2 := f.problem("sum"), f.problem("product")

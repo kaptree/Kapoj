@@ -324,6 +324,37 @@ func TestSubmissionEquippedIdentity(t *testing.T) {
 	assert.Nil(t, data["equippedTitle"])
 }
 
+func TestSubmissionListMixedEquippedIdentity(t *testing.T) {
+	f := newFx(t)
+	f.seedUser(t, 2101, "mixedequipped", "装备用户")
+	f.seedUser(t, 2102, "mixedplain", "普通用户")
+	p := f.problem(t, "mixed-identity", true, problem.TypeTraditional, 1)
+	f.record(t, 2101, p.ID, "cpp", "accepted", "code1", nil)
+	f.record(t, 2102, p.ID, "cpp", "accepted", "code2", nil)
+	f.equipIdentity(t, 2101, []string{"混合徽章"}, "混合称号")
+
+	w, resp := f.do(http.MethodGet, "/api/submissions", "", nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	items := resp["data"].(map[string]any)["items"].([]any)
+	require.Len(t, items, 2)
+
+	byUser := map[int64]map[string]any{}
+	for _, raw := range items {
+		item := raw.(map[string]any)
+		byUser[int64(item["userId"].(float64))] = item
+	}
+	decorated := byUser[2101]
+	require.NotNil(t, decorated)
+	require.Len(t, decorated["equippedBadges"].([]any), 1)
+	assert.Equal(t, "混合徽章", decorated["equippedBadges"].([]any)[0].(map[string]any)["name"])
+	assert.Equal(t, "混合称号", decorated["equippedTitle"].(map[string]any)["name"])
+
+	plain := byUser[2102]
+	require.NotNil(t, plain)
+	assert.Equal(t, []any{}, plain["equippedBadges"])
+	assert.Nil(t, plain["equippedTitle"])
+}
+
 func TestListSubmissionsValidation(t *testing.T) {
 	f := newFx(t)
 	for _, query := range []string{

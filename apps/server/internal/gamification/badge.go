@@ -89,12 +89,12 @@ func (s *Service) ListUserBadges(ctx context.Context, userID int64) ([]BadgeItem
 	return items, nil
 }
 
-// CreateBadge 创建徽章；isActive 缺省为上架。
+// CreateBadge 创建徽章；isActive 缺省为上架，stock 缺省为 0。
 func (s *Service) CreateBadge(ctx context.Context, v Viewer, in BadgeInput) (*Badge, error) {
 	if !v.IsAdmin {
 		return nil, httpx.ErrForbidden
 	}
-	in, err := normalizeBadgeInput(in, 0)
+	in, err := normalizeBadgeInput(in, 0, true)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +109,7 @@ func (s *Service) CreateBadge(ctx context.Context, v Viewer, in BadgeInput) (*Ba
 		PriceCoins:  in.PriceCoins,
 		Category:    in.Category,
 		IsLimited:   in.IsLimited,
-		Stock:       in.Stock,
+		Stock:       *in.Stock,
 		SortOrder:   in.SortOrder,
 		IsActive:    active,
 	}
@@ -119,34 +119,47 @@ func (s *Service) CreateBadge(ctx context.Context, v Viewer, in BadgeInput) (*Ba
 	return badge, nil
 }
 
-// UpdateBadge 更新徽章；isActive 缺省时保留原值。
+// UpdateBadge 更新徽章；isActive 缺省时保留原值，stock 缺省时保留当前库存
+// （包括并发购买已扣减的库存），imageUrl 为空时保留现有图片。
 func (s *Service) UpdateBadge(ctx context.Context, v Viewer, id int64, in BadgeInput) (*Badge, error) {
 	if !v.IsAdmin {
 		return nil, httpx.ErrForbidden
 	}
-	existing, err := s.findBadge(ctx, id)
+	if id <= 0 {
+		return nil, httpx.ErrNotFound
+	}
+	// 先确认资源存在，保持 404 优先于输入校验（尤其是 imageUrl 必须匹配 id）；
+	// 实际写入仍在事务内重新加锁读取，避免覆盖并发变更。
+	if _, err := s.findBadge(ctx, id); err != nil {
+		return nil, err
+	}
+	in, err := normalizeBadgeInput(in, id, false)
 	if err != nil {
 		return nil, err
 	}
-	in, err = normalizeBadgeInput(in, id)
-	if err != nil {
-		return nil, err
-	}
-	existing.Name = in.Name
-	existing.Description = in.Description
-	existing.ImageURL = in.ImageURL
-	existing.PriceCoins = in.PriceCoins
-	existing.Category = in.Category
-	existing.IsLimited = in.IsLimited
-	existing.Stock = in.Stock
-	existing.SortOrder = in.SortOrder
-	if in.IsActive != nil {
-		existing.IsActive = *in.IsActive
-	}
-	if err := s.repo.UpdateBadge(ctx, existing); err != nil {
-		return nil, err
-	}
-	return existing, nil
+	return s.repo.UpdateBadgeLocked(ctx, id, func(existing *Badge) error {
+		existing.Name = in.Name
+		existing.Description = in.Description
+		if in.ImageURL != "" {
+			existing.ImageURL = in.ImageURL
+		}
+		existing.PriceCoins = in.PriceCoins
+		existing.Category = in.Category
+		existing.IsLimited = in.IsLimited
+		if in.Stock != nil {
+			if in.IsLimited {
+				existing.Stock = *in.Stock
+			} else {
+				// 非限量徽章的库存没有意义，显式提交时统一保存为 0。
+				existing.Stock = 0
+			}
+		}
+		existing.SortOrder = in.SortOrder
+		if in.IsActive != nil {
+			existing.IsActive = *in.IsActive
+		}
+		return nil
+	})
 }
 
 // DeleteBadge 软删除徽章，保留已购买记录与公开展示。
@@ -263,7 +276,7 @@ func (s *Service) findBadge(ctx context.Context, id int64) (*Badge, error) {
 	return badge, nil
 }
 
-func normalizeBadgeInput(in BadgeInput, id int64) (BadgeInput, error) {
+func normalizeBadgeInput(in BadgeInput, id int64, creating bool) (BadgeInput, error) {
 	in.Name = strings.TrimSpace(in.Name)
 	in.Description = strings.TrimSpace(in.Description)
 	in.ImageURL = strings.TrimSpace(in.ImageURL)
@@ -290,11 +303,18 @@ func normalizeBadgeInput(in BadgeInput, id int64) (BadgeInput, error) {
 	if in.PriceCoins > maxBadgePriceCoins {
 		return in, httpx.ErrValidation("徽章价格不能超过 " + strconv.Itoa(maxBadgePriceCoins))
 	}
-	if in.IsLimited && in.Stock < 0 {
-		return in, httpx.ErrValidation("限量库存不能为负数")
+	if in.Stock != nil && *in.Stock < 0 {
+		return in, httpx.ErrValidation("徽章库存不能为负数")
 	}
-	if !in.IsLimited {
-		in.Stock = 0
+	if creating {
+		stock := int64(0)
+		if in.Stock != nil {
+			stock = *in.Stock
+		}
+		if !in.IsLimited {
+			stock = 0
+		}
+		in.Stock = &stock
 	}
 	return in, nil
 }

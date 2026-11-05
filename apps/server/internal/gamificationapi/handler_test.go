@@ -738,6 +738,19 @@ func TestBadgeImageAPI(t *testing.T) {
 	w, resp = f.upload(imagePath, adminToken, "wrong", "badge.png", pngBytes)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	assert.EqualValues(t, 40001, resp["code"])
+	assert.Contains(t, resp["message"], "缺少文件字段")
+
+	// multipart 解析失败返回精确提示，而不是误报缺少 file。
+	req = httptest.NewRequest(http.MethodPost, imagePath, strings.NewReader("not a multipart body"))
+	req.Header.Set("Content-Type", "multipart/form-data; boundary=broken")
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	f.h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	var malformed map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &malformed)
+	assert.EqualValues(t, 40001, malformed["code"])
+	assert.Equal(t, "上传格式错误", malformed["message"])
 
 	w, _ = f.upload(fmt.Sprintf("/api/badges/%d/image", badgeID+1000), adminToken,
 		"file", "badge.png", pngBytes)

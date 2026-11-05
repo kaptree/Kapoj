@@ -166,7 +166,7 @@ git commit -m "feat(server): badge and title models"
 **Interfaces:**
 - Consumes: Task 1 的 Badge/UserBadge、`ServiceOptions.Storage`、M3-A 的 `Repository` 与 `addUserCoins`。
 - Produces:
-  - `type BadgeInput struct { Name, Description, ImageURL, Category string; PriceCoins int64; IsLimited bool; Stock int64; SortOrder int; IsActive *bool }`。
+  - `type BadgeInput struct { Name, Description, ImageURL, Category string; PriceCoins int64; IsLimited bool; Stock *int64; SortOrder int; IsActive *bool }`（更新时 Stock 为 nil 表示保留当前库存，ImageURL 为空表示保留现有图片）。
   - `type BadgeItem struct { ... BadgeInput fields; Owned bool; Equipped bool; PurchasedAt *time.Time }`。
   - `type BadgeImage struct { Data []byte; ContentType string }`。
   - `(*Service).ListBadges(ctx, v Viewer, includeInactive bool) ([]BadgeItem, error)`。
@@ -212,7 +212,7 @@ Expected: FAIL。
 - [ ] **Step 3: 实现徽章领域逻辑**
 
 - `ListBadges`：管理员 `includeInactive` 返回全部；游客返回 active；登录用户额外返回已拥有的 inactive。每项填 `owned/equipped/purchasedAt`。
-- `Create/Update/Delete`：super_admin；name 1–100、description ≤500、category 1–20、price 0–1,000,000、limited 时 stock ≥0、imageUrl 为空或 http(s)/内部路径；删除软删除。
+- `Create/Update/Delete`：super_admin；name 1–100、description ≤500、category 1–20、price 0–1,000,000、提交的 stock 必须 ≥0（更新省略时保留当前库存，图片留空时保留现有图片）、imageUrl 为空或 http(s)/内部路径；删除软删除。
 - `PurchaseBadge`：事务内 `SELECT badge FOR UPDATE` → 校验 active → 限量扣库存前检查 `stock>0` → 检查 `user_badges` 是否已拥有 → 锁用户行校验余额 → 插入 user_badges → 写 `coin_transactions`（reason `badge_purchase`, refType `badge`, refID badgeID，amount=-price）→ 更新余额。价格 0 也写 amount 0 流水以保留记录。
 - `EquipBadge`：事务内锁用户行 → 校验拥有 → 已装备则幂等返回 → 统计 `is_equipped=true` 数量 → 达到上限返回 40001 → 更新目标 true。
 - `UnequipBadge`：锁用户行 → 校验拥有 → 更新 false。

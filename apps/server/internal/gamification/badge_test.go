@@ -79,10 +79,12 @@ func badgeInput(name string, price int64) gamification.BadgeInput {
 	}
 }
 
+func int64Ptr(v int64) *int64 { return &v }
+
 func limitedBadgeInput(name string, price, stock int64) gamification.BadgeInput {
 	in := badgeInput(name, price)
 	in.IsLimited = true
-	in.Stock = stock
+	in.Stock = int64Ptr(stock)
 	return in
 }
 
@@ -444,6 +446,104 @@ func TestInactiveOwnedBadgeVisibleAndEquippable(t *testing.T) {
 	assertCode(t, err, 40400)
 }
 
+func TestBadgeUpdatePreservesDecrementedStock(t *testing.T) {
+	e := newBadgeEnv(t, 3)
+	ctx := context.Background()
+	b := e.createBadge(t, limitedBadgeInput("限量库存徽章", 0, 5))
+	require.NoError(t, e.svc.PurchaseBadge(ctx, e.user.ID, b.ID))
+
+	update := badgeInput("改名后的限量徽章", 0)
+	update.IsLimited = true
+	update.Description = "只改名称与描述"
+	updated, err := e.svc.UpdateBadge(ctx, adminViewer(e.admin.ID), b.ID, update)
+	require.NoError(t, err)
+	assert.EqualValues(t, 4, updated.Stock, "省略 stock 不能恢复已扣减的库存")
+
+	stored, err := e.repo.FindBadge(ctx, b.ID)
+	require.NoError(t, err)
+	assert.EqualValues(t, 4, stored.Stock)
+}
+
+func TestBadgeUpdateOmittingStockNeverChangesInventory(t *testing.T) {
+	e := newBadgeEnv(t, 3)
+	ctx := context.Background()
+	b := e.createBadge(t, limitedBadgeInput("库存保护徽章", 0, 5))
+	require.NoError(t, e.svc.PurchaseBadge(ctx, e.user.ID, b.ID))
+
+	// 即使表单未提交 isLimited（零值 false），只要 stock 省略也不能改动库存。
+	update := badgeInput("仅改名称的徽章", 0)
+	updated, err := e.svc.UpdateBadge(ctx, adminViewer(e.admin.ID), b.ID, update)
+	require.NoError(t, err)
+	assert.False(t, updated.IsLimited)
+	assert.EqualValues(t, 4, updated.Stock)
+}
+
+func TestBadgeConcurrentPurchaseAndAdminUpdateKeepsStock(t *testing.T) {
+	e := newBadgeEnv(t, 3)
+	ctx := context.Background()
+	b := e.createBadge(t, limitedBadgeInput("并发库存徽章", 0, 5))
+
+	update := badgeInput("并发改名徽章", 0)
+	update.IsLimited = true
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	errs := make([]error, 2)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		errs[0] = e.svc.PurchaseBadge(ctx, e.user.ID, b.ID)
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		_, errs[1] = e.svc.UpdateBadge(ctx, adminViewer(e.admin.ID), b.ID, update)
+	}()
+	close(start)
+	wg.Wait()
+
+	require.NoError(t, errs[0])
+	require.NoError(t, errs[1])
+	stored, err := e.repo.FindBadge(ctx, b.ID)
+	require.NoError(t, err)
+	assert.EqualValues(t, 4, stored.Stock, "管理端更新不能恢复并发购买扣减的库存")
+}
+
+func TestBadgeUpdateDoesNotReviveSoftDeleted(t *testing.T) {
+	e := newBadgeEnv(t, 3)
+	ctx := context.Background()
+	b := e.createBadge(t, badgeInput("下线徽章", 0))
+	require.NoError(t, e.svc.DeleteBadge(ctx, adminViewer(e.admin.ID), b.ID))
+
+	update := badgeInput("改名后的下线徽章", 0)
+	updated, err := e.svc.UpdateBadge(ctx, adminViewer(e.admin.ID), b.ID, update)
+	require.NoError(t, err)
+	assert.False(t, updated.IsActive, "省略 isActive 不能复活已软删除的徽章")
+
+	stored, err := e.repo.FindBadge(ctx, b.ID)
+	require.NoError(t, err)
+	assert.False(t, stored.IsActive)
+}
+
+func TestBadgeUpdatePreservesUploadedImage(t *testing.T) {
+	e := newBadgeEnv(t, 3)
+	ctx := context.Background()
+	b := e.createBadge(t, badgeInput("图片徽章", 0))
+	require.NoError(t, e.svc.UploadBadgeImage(ctx, adminViewer(e.admin.ID), b.ID, bytes.NewReader(pngMagic)))
+
+	update := badgeInput("改名后的图片徽章", 0)
+	update.Description = "只改名称与描述"
+	updated, err := e.svc.UpdateBadge(ctx, adminViewer(e.admin.ID), b.ID, update)
+	require.NoError(t, err)
+	assert.Equal(t, fmt.Sprintf("/api/badges/%d/image", b.ID), updated.ImageURL,
+		"更新时省略 imageUrl 不能覆盖上传的图片")
+
+	img, err := e.svc.BadgeImage(ctx, b.ID)
+	require.NoError(t, err)
+	assert.Equal(t, pngMagic, img.Data)
+}
+
 func TestBadgeCRUDValidation(t *testing.T) {
 	e := newBadgeEnv(t, 3)
 	ctx := context.Background()
@@ -463,7 +563,8 @@ func TestBadgeCRUDValidation(t *testing.T) {
 		{"分类过长", func(in *gamification.BadgeInput) { in.Category = string(make([]rune, 21)) }},
 		{"价格为负", func(in *gamification.BadgeInput) { in.PriceCoins = -1 }},
 		{"价格过大", func(in *gamification.BadgeInput) { in.PriceCoins = 1_000_001 }},
-		{"限量库存为负", func(in *gamification.BadgeInput) { in.IsLimited = true; in.Stock = -1 }},
+		{"库存为负", func(in *gamification.BadgeInput) { in.Stock = int64Ptr(-1) }},
+		{"限量库存为负", func(in *gamification.BadgeInput) { in.IsLimited = true; in.Stock = int64Ptr(-1) }},
 		{"图片地址非法", func(in *gamification.BadgeInput) { in.ImageURL = "ftp://example.com/x.png" }},
 		{"内部图片地址非法", func(in *gamification.BadgeInput) { in.ImageURL = "/api/badges/not-a-number/image" }},
 	}
@@ -479,7 +580,7 @@ func TestBadgeCRUDValidation(t *testing.T) {
 	b := e.createBadge(t, badgeInput("可更新徽章", 100))
 	update := badgeInput("更新后的徽章", 200)
 	update.IsLimited = true
-	update.Stock = 5
+	update.Stock = int64Ptr(5)
 	updated, err := e.svc.UpdateBadge(ctx, adminViewer(e.admin.ID), b.ID, update)
 	require.NoError(t, err)
 	assert.Equal(t, "更新后的徽章", updated.Name)

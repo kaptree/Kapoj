@@ -54,9 +54,34 @@ func (r *Repository) CreateTitle(ctx context.Context, title *Title) error {
 	return r.db.WithContext(ctx).Create(title).Error
 }
 
-// UpdateTitle 覆盖保存称号。
-func (r *Repository) UpdateTitle(ctx context.Context, title *Title) error {
-	return r.db.WithContext(ctx).Save(title).Error
+// UpdateTitleLocked 锁定称号行后执行 mutate 并保存，避免管理端更新覆盖并发的
+// 上下架等变更。
+func (r *Repository) UpdateTitleLocked(
+	ctx context.Context, id int64, mutate func(title *Title) error,
+) (*Title, error) {
+	var result *Title
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var title Title
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&title, id).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return httpx.ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if err := mutate(&title); err != nil {
+			return err
+		}
+		if err := tx.Save(&title).Error; err != nil {
+			return err
+		}
+		result = &title
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // DeactivateTitle 软删除称号。

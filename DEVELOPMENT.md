@@ -879,6 +879,7 @@ user_ai_configs (
 - 接口：`GET /badges`（公开，可选登录；登录时含 `owned`/`equipped`；`includeInactive=true` 仅超级管理员）、`POST /badges`、`PUT /badges/:id`、`DELETE /badges/:id`（超级管理员）、`POST /badges/:id/image`（超级管理员，multipart 字段 `file`）、`GET /badges/:id/image`（公开）、`POST /badges/:id/purchase|equip|unequip`（登录）、`GET /users/:id/badges`（公开）。
 - 装备上限由 `KAPOJ_MAX_EQUIPPED_BADGES` 配置（1–10，默认 3）；装备前锁定用户行并重新统计，避免并发超限；已装备时重复装备、未装备时卸下均幂等成功。
 - 购买在同一事务内锁定徽章行与用户行，校验上架、未拥有、限量库存与余额，扣库存/扣金币/写 `coin_transactions`（`reason=badge_purchase`、`ref_type=badge`）/写 `user_badges`；已拥有、库存不足、余额不足或已下线返回 40001。
+- 管理端更新在同一事务内锁定徽章行并只更新提交字段：`stock` 省略时保留当前库存（包括并发购买扣减），`imageUrl` 留空时保留现有图片，`isActive` 省略时保留上下架状态，避免覆盖并发购买、图片上传或软删除。
 - 图片仅支持 PNG/JPEG/WebP/GIF 且不超过 2 MiB；保存为存储键 `badges/<id>`，`image_url` 写为 `/api/badges/<id>/image`，公开读取响应带 `Cache-Control: public, max-age=3600`。外链或文件缺失返回 40400。
 - 软删除后已购买用户仍保留并展示；成就奖励徽章直接写入 `user_badges`，不占用商城库存。
 - 前端徽章商城与装扮管理属于 M3-C，尚未实现。

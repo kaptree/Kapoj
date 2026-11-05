@@ -56,9 +56,34 @@ func (r *Repository) CreateBadge(ctx context.Context, badge *Badge) error {
 	return r.db.WithContext(ctx).Create(badge).Error
 }
 
-// UpdateBadge 覆盖保存徽章。
-func (r *Repository) UpdateBadge(ctx context.Context, badge *Badge) error {
-	return r.db.WithContext(ctx).Save(badge).Error
+// UpdateBadgeLocked 锁定徽章行后执行 mutate 并保存。库存、上下架与图片上传
+// 都通过同一行锁串行化，避免管理端更新覆盖并发变更。
+func (r *Repository) UpdateBadgeLocked(
+	ctx context.Context, id int64, mutate func(badge *Badge) error,
+) (*Badge, error) {
+	var result *Badge
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var badge Badge
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&badge, id).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return httpx.ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if err := mutate(&badge); err != nil {
+			return err
+		}
+		if err := tx.Save(&badge).Error; err != nil {
+			return err
+		}
+		result = &badge
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // DeactivateBadge 软删除徽章。
