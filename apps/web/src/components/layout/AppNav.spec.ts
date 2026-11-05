@@ -16,6 +16,7 @@ const routes = [
   { path: '/', component: { template: '<div />' } },
   { path: '/problems', component: { template: '<div />' } },
   { path: '/problems/:id', component: { template: '<div />' } },
+  { path: '/leaderboard', component: { template: '<div />' } },
   { path: '/admin/gamification', component: { template: '<div />' } },
 ]
 
@@ -49,13 +50,13 @@ describe('AppNav', () => {
     expect(wrapper.text()).toContain('游戏化管理')
   })
 
-  it('keeps the leaderboard disabled until M4', async () => {
+  it('links the leaderboard now that it is available', async () => {
     const wrapper = await mountNav()
-    const leaderboard = wrapper.find('[data-nav="leaderboard"]')
+    const leaderboard = wrapper.find('a[href="/leaderboard"]')
 
-    expect(leaderboard.attributes('aria-disabled')).toBe('true')
-    expect(leaderboard.text()).toContain('M4 上线')
-    expect(wrapper.find('a[href="/leaderboard"]').exists()).toBe(false)
+    expect(leaderboard.exists()).toBe(true)
+    expect(leaderboard.text()).toContain('排行榜')
+    expect(leaderboard.attributes('aria-disabled')).toBeUndefined()
   })
 
   it('marks prefix routes active and sets aria-current', async () => {

@@ -61,7 +61,7 @@ watch(
       <div class="app-sidebar__footer">
         <span class="app-sidebar__pulse" aria-hidden="true" />
         <span>系统在线</span>
-        <span class="app-sidebar__version">M4-A</span>
+        <span class="app-sidebar__version">M4-C</span>
       </div>
     </aside>
 

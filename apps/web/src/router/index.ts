@@ -107,6 +107,12 @@ export const router = createRouter({
           meta: { requiresAuth: true, roles: ['problem_admin'], title: '编辑题目' },
         },
         {
+          path: 'leaderboard',
+          name: 'leaderboard',
+          component: () => import('@/views/LeaderboardView.vue'),
+          meta: { title: '排行榜' },
+        },
+        {
           path: 'achievements',
           name: 'achievements',
           component: () => import('@/views/AchievementsView.vue'),

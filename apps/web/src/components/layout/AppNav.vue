@@ -28,13 +28,7 @@ const primaryItems: NavItem[] = [
   { key: 'problems', path: '/problems', label: '题库', icon: 'pi pi-book' },
   { key: 'submissions', path: '/submissions', label: '测评记录', icon: 'pi pi-list-check' },
   { key: 'contests', path: '/contests', label: '比赛', icon: 'pi pi-trophy' },
-  {
-    key: 'leaderboard',
-    path: '/leaderboard',
-    label: '排行榜',
-    icon: 'pi pi-chart-line',
-    milestone: 'M4',
-  },
+  { key: 'leaderboard', path: '/leaderboard', label: '排行榜', icon: 'pi pi-chart-line' },
 ]
 
 const growthItems: NavItem[] = [
