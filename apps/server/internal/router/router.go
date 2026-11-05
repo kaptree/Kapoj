@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/kaptree/kapoj/apps/server/internal/activity"
+	"github.com/kaptree/kapoj/apps/server/internal/activityapi"
 	"github.com/kaptree/kapoj/apps/server/internal/auth"
 	"github.com/kaptree/kapoj/apps/server/internal/config"
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
@@ -90,6 +91,13 @@ func New(d Deps) *gin.Engine {
 			ratingapi.RegisterRoutes(api, d.Rating, ratingapi.Options{IdentityLookup: d.Game})
 		} else {
 			ratingapi.RegisterRoutes(api, d.Rating)
+		}
+	}
+	if d.Activity != nil {
+		if d.Game != nil {
+			activityapi.RegisterRoutes(api, d.Activity, activityapi.Options{IdentityLookup: d.Game})
+		} else {
+			activityapi.RegisterRoutes(api, d.Activity)
 		}
 	}
 	contestRepo := contest.NewGormRepository(d.DB)

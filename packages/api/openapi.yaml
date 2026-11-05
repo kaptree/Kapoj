@@ -144,6 +144,58 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/RatingLeaderboardPageResponse' }
+  /leaderboard/activity:
+    get:
+      summary: 活跃度排行榜（公开）
+      description: 只包含总活跃度 > 0 且状态为 active 的用户，按总分倒序、用户 ID 升序；榜单行附带已装备徽章/称号。游客可访问。
+      security: [{}, { bearer: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: 活跃度排行榜分页
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActivityLeaderboardPageResponse' }
+  /leaderboard/sharing:
+    get:
+      summary: 共享排行榜（公开）
+      description: 只包含共享分 > 0 且状态为 active 的用户，按共享分倒序、用户 ID 升序；榜单行附带已装备徽章/称号。游客可访问。
+      security: [{}, { bearer: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: 共享排行榜分页
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SharingLeaderboardPageResponse' }
+  /activity/summary:
+    get:
+      summary: 我的活跃度摘要（登录）
+      description: 返回今日是否已签到、今日活跃度与总活跃度；日期边界使用服务器本地时区。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 活跃度摘要
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActivitySummaryResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+  /activity/signin:
+    post:
+      summary: 每日签到（登录）
+      description: 每个本地自然日首次签到奖励 5 活跃度与 5 金币；重复签到返回 awarded=false，不重复发放奖励。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 签到结果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActivitySignInResponse' }
+        '401': { $ref: '#/components/responses/Error' }
   /admin/users:
     get:
       summary: 用户列表（仅超级管理员）
@@ -2342,3 +2394,96 @@ components:
           required: [data]
           properties:
             data: { $ref: '#/components/schemas/RatingHistoryPage' }
+    ActivityLeaderboardRow:
+      type: object
+      required: [rank, userId, username, nickname, score, equippedBadges, equippedTitle]
+      properties:
+        rank: { type: integer, minimum: 1 }
+        userId: { type: integer, format: int64 }
+        username: { type: string }
+        nickname: { type: string }
+        score: { type: integer, format: int64, description: 活跃度总分 }
+        equippedBadges:
+          type: array
+          description: 已装备徽章；无装备时为空数组
+          items: { $ref: '#/components/schemas/EquippedBadge' }
+        equippedTitle:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/EquippedTitle'
+          description: 已装备称号；无装备时为 null
+    SharingLeaderboardRow:
+      type: object
+      required: [rank, userId, username, nickname, score, equippedBadges, equippedTitle]
+      properties:
+        rank: { type: integer, minimum: 1 }
+        userId: { type: integer, format: int64 }
+        username: { type: string }
+        nickname: { type: string }
+        score: { type: integer, format: int64, description: 共享分 }
+        equippedBadges:
+          type: array
+          description: 已装备徽章；无装备时为空数组
+          items: { $ref: '#/components/schemas/EquippedBadge' }
+        equippedTitle:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/EquippedTitle'
+          description: 已装备称号；无装备时为 null
+    ActivityLeaderboardPage:
+      type: object
+      required: [total, items]
+      properties:
+        total: { type: integer, format: int64 }
+        items: { type: array, items: { $ref: '#/components/schemas/ActivityLeaderboardRow' } }
+    SharingLeaderboardPage:
+      type: object
+      required: [total, items]
+      properties:
+        total: { type: integer, format: int64 }
+        items: { type: array, items: { $ref: '#/components/schemas/SharingLeaderboardRow' } }
+    ActivitySignInResult:
+      type: object
+      required: [awarded, activityPoints, coins, date]
+      properties:
+        awarded: { type: boolean, description: 本次是否为当日首次签到 }
+        activityPoints: { type: integer, description: 本次获得的活跃度；已签到为 0 }
+        coins: { type: integer, description: 本次获得的金币；已签到为 0 }
+        date: { type: string, format: date, description: 本地日期 YYYY-MM-DD }
+    ActivitySummary:
+      type: object
+      required: [signedInToday, todayPoints, totalPoints]
+      properties:
+        signedInToday: { type: boolean }
+        todayPoints: { type: integer, format: int64, description: 今日活跃度 }
+        totalPoints: { type: integer, format: int64, description: 总活跃度 }
+    ActivityLeaderboardPageResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/ActivityLeaderboardPage' }
+    SharingLeaderboardPageResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/SharingLeaderboardPage' }
+    ActivitySignInResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/ActivitySignInResult' }
+    ActivitySummaryResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/ActivitySummary' }

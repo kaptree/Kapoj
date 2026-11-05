@@ -135,6 +135,41 @@ func TestPanicUsesEnvelope(t *testing.T) {
 	assert.EqualValues(t, 50000, resp["code"])
 }
 
+func TestRouterWiresActivityEndpoints(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	store, err := storage.NewLocal(t.TempDir())
+	require.NoError(t, err)
+	g := testutil.PG(t)
+	h := New(Deps{
+		DB: g, Redis: rdb, Storage: store,
+		Config: &config.Config{
+			JWTSecret:       strings.Repeat("s", 32),
+			AccessTokenTTL:  15 * time.Minute,
+			RefreshTokenTTL: time.Hour,
+			SubmitCooldown:  time.Second,
+		},
+		Enqueuer: noopQueue{},
+		Activity: activity.NewService(g, rdb),
+	})
+
+	for _, path := range []string{"/api/leaderboard/activity", "/api/leaderboard/sharing"} {
+		w, resp := call(h, http.MethodGet, path, "", "")
+		assert.Equal(t, http.StatusOK, w.Code, path)
+		assert.EqualValues(t, 0, resp["data"].(map[string]any)["total"])
+	}
+
+	for _, endpoint := range []struct{ method, path string }{
+		{http.MethodGet, "/api/activity/summary"},
+		{http.MethodPost, "/api/activity/signin"},
+	} {
+		w, resp := call(h, endpoint.method, endpoint.path, "", "")
+		assert.Equal(t, http.StatusUnauthorized, w.Code, endpoint.path)
+		assert.EqualValues(t, 40100, resp["code"], endpoint.path)
+	}
+}
+
 func TestRouterWiresActivityHooksWithoutGameService(t *testing.T) {
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})

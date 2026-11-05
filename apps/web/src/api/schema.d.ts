@@ -362,6 +362,170 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/leaderboard/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 活跃度排行榜（公开）
+         * @description 只包含总活跃度 > 0 且状态为 active 的用户，按总分倒序、用户 ID 升序；榜单行附带已装备徽章/称号。游客可访问。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    page_size?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 活跃度排行榜分页 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ActivityLeaderboardPageResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/leaderboard/sharing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 共享排行榜（公开）
+         * @description 只包含共享分 > 0 且状态为 active 的用户，按共享分倒序、用户 ID 升序；榜单行附带已装备徽章/称号。游客可访问。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    page_size?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 共享排行榜分页 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SharingLeaderboardPageResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/activity/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 我的活跃度摘要（登录）
+         * @description 返回今日是否已签到、今日活跃度与总活跃度；日期边界使用服务器本地时区。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 活跃度摘要 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ActivitySummaryResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/activity/signin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 每日签到（登录）
+         * @description 每个本地自然日首次签到奖励 5 活跃度与 5 金币；重复签到返回 awarded=false，不重复发放奖励。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 签到结果 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ActivitySignInResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/users": {
         parameters: {
             query?: never;
@@ -3665,6 +3829,86 @@ export interface components {
         };
         RatingHistoryPageResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["RatingHistoryPage"];
+        };
+        ActivityLeaderboardRow: {
+            rank: number;
+            /** Format: int64 */
+            userId: number;
+            username: string;
+            nickname: string;
+            /**
+             * Format: int64
+             * @description 活跃度总分
+             */
+            score: number;
+            /** @description 已装备徽章；无装备时为空数组 */
+            equippedBadges: components["schemas"]["EquippedBadge"][];
+            /** @description 已装备称号；无装备时为 null */
+            equippedTitle: components["schemas"]["EquippedTitle"] | null;
+        };
+        SharingLeaderboardRow: {
+            rank: number;
+            /** Format: int64 */
+            userId: number;
+            username: string;
+            nickname: string;
+            /**
+             * Format: int64
+             * @description 共享分
+             */
+            score: number;
+            /** @description 已装备徽章；无装备时为空数组 */
+            equippedBadges: components["schemas"]["EquippedBadge"][];
+            /** @description 已装备称号；无装备时为 null */
+            equippedTitle: components["schemas"]["EquippedTitle"] | null;
+        };
+        ActivityLeaderboardPage: {
+            /** Format: int64 */
+            total: number;
+            items: components["schemas"]["ActivityLeaderboardRow"][];
+        };
+        SharingLeaderboardPage: {
+            /** Format: int64 */
+            total: number;
+            items: components["schemas"]["SharingLeaderboardRow"][];
+        };
+        ActivitySignInResult: {
+            /** @description 本次是否为当日首次签到 */
+            awarded: boolean;
+            /** @description 本次获得的活跃度；已签到为 0 */
+            activityPoints: number;
+            /** @description 本次获得的金币；已签到为 0 */
+            coins: number;
+            /**
+             * Format: date
+             * @description 本地日期 YYYY-MM-DD
+             */
+            date: string;
+        };
+        ActivitySummary: {
+            signedInToday: boolean;
+            /**
+             * Format: int64
+             * @description 今日活跃度
+             */
+            todayPoints: number;
+            /**
+             * Format: int64
+             * @description 总活跃度
+             */
+            totalPoints: number;
+        };
+        ActivityLeaderboardPageResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["ActivityLeaderboardPage"];
+        };
+        SharingLeaderboardPageResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["SharingLeaderboardPage"];
+        };
+        ActivitySignInResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["ActivitySignInResult"];
+        };
+        ActivitySummaryResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["ActivitySummary"];
         };
     };
     responses: {
