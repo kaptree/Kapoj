@@ -60,10 +60,8 @@ func New(d Deps) *gin.Engine {
 		auth.NewLoginLimiter(d.Redis))
 
 	var loginHooks []auth.LoginHook
-	var gameHooks []contestapi.GameHook
 	if d.Game != nil {
 		loginHooks = append(loginHooks, d.Game)
-		gameHooks = append(gameHooks, d.Game)
 	}
 
 	// Auth endpoints identify the caller by the request body, not the bearer
@@ -73,24 +71,43 @@ func New(d Deps) *gin.Engine {
 	api := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxBodyBytes))
 	problemJSON := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxProblemJSONBytes))
 	uploads := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxUploadBytes))
-	userapi.RegisterRoutes(api, user.NewService(users))
+	userSvc := user.NewService(users)
+	if d.Game != nil {
+		userapi.RegisterRoutes(api, userSvc, userapi.Options{IdentityLookup: d.Game})
+	} else {
+		userapi.RegisterRoutes(api, userSvc)
+	}
 	if d.Game != nil {
 		gamificationapi.RegisterRoutes(api, uploads, d.Game)
 	}
 	contestRepo := contest.NewGormRepository(d.DB)
-	contestapi.RegisterRoutes(api, contest.NewService(contestRepo), gameHooks...)
+	contestSvc := contest.NewService(contestRepo)
+	if d.Game != nil {
+		contestapi.RegisterRoutes(api, contestSvc, contestapi.Options{
+			GameHook: d.Game, IdentityLookup: d.Game,
+		})
+	} else {
+		contestapi.RegisterRoutes(api, contestSvc)
+	}
 	problemRepo := problem.NewGormRepository(d.DB)
 	submissionRepo := submission.NewGormRepository(d.DB)
 	problemapi.RegisterRoutes(api, problemJSON, uploads,
 		problem.NewService(problemRepo, d.Storage), submissionRepo, contestRepo)
-	submissionapi.RegisterRoutes(api, submission.NewService(
+	submissionSvc := submission.NewService(
 		submissionRepo,
 		problemRepo,
 		contestRepo,
 		d.Enqueuer,
 		submission.NewRedisLimiter(d.Redis, d.Config.SubmitCooldown),
 		submissionevents.NewRedisPublisher(d.Redis),
-	), submissionevents.NewRedisStreamer(d.Redis))
+	)
+	streamer := submissionevents.NewRedisStreamer(d.Redis)
+	if d.Game != nil {
+		submissionapi.RegisterRoutes(api, submissionSvc, streamer,
+			submissionapi.Options{IdentityLookup: d.Game})
+	} else {
+		submissionapi.RegisterRoutes(api, submissionSvc, streamer)
+	}
 	return r
 }
 

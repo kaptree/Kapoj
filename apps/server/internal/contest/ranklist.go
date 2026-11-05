@@ -4,6 +4,8 @@ import (
 	"context"
 	"sort"
 	"time"
+
+	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 )
 
 type RankSubmission struct {
@@ -28,16 +30,18 @@ type RankCell struct {
 }
 
 type RankRow struct {
-	Rank             int        `json:"rank"`
-	UserID           int64      `json:"userId"`
-	Username         string     `json:"username"`
-	Nickname         string     `json:"nickname"`
-	Solved           int        `json:"solved"`
-	Penalty          int        `json:"penalty"`
-	TotalScore       int        `json:"totalScore"`
-	LastAcceptedAt   *time.Time `json:"lastAcceptedAt,omitempty"`
-	LastSubmissionAt *time.Time `json:"-"`
-	Problems         []RankCell `json:"problems"`
+	Rank             int                         `json:"rank"`
+	UserID           int64                       `json:"userId"`
+	Username         string                      `json:"username"`
+	Nickname         string                      `json:"nickname"`
+	EquippedBadges   []gamification.BadgeSummary `json:"equippedBadges"`
+	EquippedTitle    *gamification.TitleSummary  `json:"equippedTitle"`
+	Solved           int                         `json:"solved"`
+	Penalty          int                         `json:"penalty"`
+	TotalScore       int                         `json:"totalScore"`
+	LastAcceptedAt   *time.Time                  `json:"lastAcceptedAt,omitempty"`
+	LastSubmissionAt *time.Time                  `json:"-"`
+	Problems         []RankCell                  `json:"problems"`
 }
 
 type Ranklist struct {
@@ -92,7 +96,8 @@ func (s *Service) Ranklist(ctx context.Context, v Viewer, id int64) (*Ranklist, 
 	for _, p := range participants {
 		cells := make([]RankCell, len(problems))
 		states[p.UserID] = &rankState{row: RankRow{
-			UserID: p.UserID, Username: p.Username, Nickname: p.Nickname, Problems: cells,
+			UserID: p.UserID, Username: p.Username, Nickname: p.Nickname,
+			EquippedBadges: []gamification.BadgeSummary{}, Problems: cells,
 		}}
 		registerAt[p.UserID] = p.RegisterTime
 		order = append(order, p.UserID)

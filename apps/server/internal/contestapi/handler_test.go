@@ -19,6 +19,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/kaptree/kapoj/apps/server/internal/config"
+	"github.com/kaptree/kapoj/apps/server/internal/dbtypes"
 	"github.com/kaptree/kapoj/apps/server/internal/gamequeue"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
@@ -147,6 +148,34 @@ func body(p1, p2 int64) map[string]any {
 
 func idOf(resp map[string]any) int64 {
 	return int64(resp["data"].(map[string]any)["id"].(float64))
+}
+
+func (f *fx) equipIdentity(t *testing.T, userID int64, badgeNames []string, titleName string) {
+	t.Helper()
+	for i, name := range badgeNames {
+		badge := &gamification.Badge{
+			Name: name, Category: "测试", SortOrder: i, IsActive: true,
+		}
+		require.NoError(t, f.db.Create(badge).Error)
+		require.NoError(t, f.db.Create(&gamification.UserBadge{
+			UserID: userID, BadgeID: badge.ID, IsEquipped: true, PurchasedAt: time.Now(),
+		}).Error)
+	}
+	if titleName == "" {
+		return
+	}
+	title := &gamification.Title{
+		Name: titleName, Color: "#7C3AED",
+		UnlockConditionType: string(gamification.TitleUnlockACCount),
+		UnlockConditionConfig: dbtypes.JSON[map[string]any]{
+			Data: map[string]any{"threshold": 1},
+		},
+		IsActive: true,
+	}
+	require.NoError(t, f.db.Create(title).Error)
+	require.NoError(t, f.db.Create(&gamification.UserTitle{
+		UserID: userID, TitleID: title.ID, IsEquipped: true, UnlockedAt: time.Now(),
+	}).Error)
 }
 
 func TestContestPermissionsAndCrud(t *testing.T) {
@@ -316,6 +345,76 @@ func TestRanklistEndpoint(t *testing.T) {
 	require.Len(t, rows, 1)
 	assert.Contains(t, rows[0].(map[string]any)["username"], "user")
 	assert.EqualValues(t, 1, rows[0].(map[string]any)["rank"])
+}
+
+func TestRanklistEquippedIdentity(t *testing.T) {
+	f := newFx(t)
+	p1, p2 := f.problem("sum"), f.problem("product")
+	userToken := f.token("user")
+	userID := f.ids["user"]
+	f.equipIdentity(t, userID, []string{"徽章一", "徽章二"}, "卷王")
+
+	for _, mode := range []string{"icpc", "ioi", "oi"} {
+		t.Run(mode, func(t *testing.T) {
+			b := body(p1.ID, p2.ID)
+			b["mode"] = mode
+			b["title"] = "Identity " + mode
+			w, resp := f.do(http.MethodPost, "/api/contests", f.token("contest_admin"), b)
+			require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+			id := idOf(resp)
+
+			w, _ = f.do(http.MethodPost, fmt.Sprintf("/api/contests/%d/register", id), userToken, map[string]any{})
+			require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+			w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/contests/%d/ranklist", id), userToken, nil)
+			require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+			data := resp["data"].(map[string]any)
+			rows := data["rows"].([]any)
+			require.Len(t, rows, 1, "装饰身份不能改变 OI selfOnly 行数")
+			row := rows[0].(map[string]any)
+			badges := row["equippedBadges"].([]any)
+			require.Len(t, badges, 2)
+			assert.Equal(t, "徽章一", badges[0].(map[string]any)["name"])
+			assert.Equal(t, "徽章二", badges[1].(map[string]any)["name"])
+			title := row["equippedTitle"].(map[string]any)
+			assert.Equal(t, "卷王", title["name"])
+			assert.Equal(t, "#7C3AED", title["color"])
+			if mode == "oi" {
+				assert.Equal(t, true, data["selfOnly"])
+			}
+		})
+	}
+}
+
+func TestRanklistWithoutEquipmentUsesEmptyArray(t *testing.T) {
+	f := newFx(t)
+	p1, p2 := f.problem("sum"), f.problem("product")
+	w, resp := f.do(http.MethodPost, "/api/contests", f.token("contest_admin"), body(p1.ID, p2.ID))
+	require.Equal(t, http.StatusCreated, w.Code)
+	id := idOf(resp)
+	w, _ = f.do(http.MethodPost, fmt.Sprintf("/api/contests/%d/register", id), f.token("user"), map[string]any{})
+	require.Equal(t, http.StatusOK, w.Code)
+
+	w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/contests/%d/ranklist", id), f.token("user"), nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	rows := resp["data"].(map[string]any)["rows"].([]any)
+	require.Len(t, rows, 1)
+	row := rows[0].(map[string]any)
+	assert.Equal(t, []any{}, row["equippedBadges"])
+	assert.Nil(t, row["equippedTitle"])
+
+	// 未开始的比赛对普通用户返回空榜单，装饰逻辑不报错。
+	future := body(p1.ID, p2.ID)
+	future["title"] = "Future ranklist"
+	future["startTime"] = time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+	future["endTime"] = time.Now().Add(2 * time.Hour).UTC().Format(time.RFC3339)
+	_, resp = f.do(http.MethodPost, "/api/contests", f.token("contest_admin"), future)
+	futureID := idOf(resp)
+	w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/contests/%d/ranklist", futureID), f.token("user"), nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data := resp["data"].(map[string]any)
+	assert.Equal(t, []any{}, data["rows"])
+	assert.Equal(t, false, data["selfOnly"])
 }
 
 func TestAnnouncementPermissionsAndCrud(t *testing.T) {

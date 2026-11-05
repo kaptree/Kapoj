@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
+	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
@@ -20,10 +21,22 @@ type GameHook interface {
 	OnContestJoin(ctx context.Context, userID, contestID int64) error
 }
 
-func RegisterRoutes(r gin.IRouter, s *contest.Service, hooks ...GameHook) {
+// IdentityLookup 批量读取用户公开身份；由 gamification.Service 实现。
+type IdentityLookup interface {
+	Identities(ctx context.Context, userIDs []int64) (map[int64]gamification.Identity, error)
+}
+
+// Options 配置比赛接口的可选依赖。
+type Options struct {
+	GameHook       GameHook
+	IdentityLookup IdentityLookup
+}
+
+func RegisterRoutes(r gin.IRouter, s *contest.Service, opts ...Options) {
 	h := &handler{svc: s}
-	if len(hooks) > 0 {
-		h.gameHook = hooks[0]
+	if len(opts) > 0 {
+		h.gameHook = opts[0].GameHook
+		h.identities = opts[0].IdentityLookup
 	}
 	manage := []gin.HandlerFunc{middleware.RequireAuth(), middleware.RequireRole(user.RoleContestAdmin)}
 	with := func(fn gin.HandlerFunc) []gin.HandlerFunc {
@@ -46,8 +59,9 @@ func RegisterRoutes(r gin.IRouter, s *contest.Service, hooks ...GameHook) {
 }
 
 type handler struct {
-	svc      *contest.Service
-	gameHook GameHook
+	svc        *contest.Service
+	gameHook   GameHook
+	identities IdentityLookup
 }
 
 func viewer(c *gin.Context) contest.Viewer {
@@ -256,6 +270,34 @@ func (h *handler) ranklist(c *gin.Context) {
 	if err != nil {
 		httpx.Fail(c, err)
 		return
+	}
+	if h.identities != nil && len(list.Rows) > 0 {
+		// OI selfOnly 已在 service 内过滤，这里只装饰保留下来的行。
+		ids := make([]int64, 0, len(list.Rows))
+		seen := make(map[int64]struct{}, len(list.Rows))
+		for _, row := range list.Rows {
+			if row.UserID <= 0 {
+				continue
+			}
+			if _, ok := seen[row.UserID]; ok {
+				continue
+			}
+			seen[row.UserID] = struct{}{}
+			ids = append(ids, row.UserID)
+		}
+		identities, err := h.identities.Identities(c.Request.Context(), ids)
+		if err != nil {
+			httpx.Fail(c, err)
+			return
+		}
+		for i := range list.Rows {
+			identity, ok := identities[list.Rows[i].UserID]
+			if !ok {
+				continue
+			}
+			list.Rows[i].EquippedBadges = identity.Badges
+			list.Rows[i].EquippedTitle = identity.Title
+		}
 	}
 	httpx.OK(c, list)
 }

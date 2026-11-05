@@ -18,9 +18,30 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kaptree/kapoj/apps/server/internal/auth"
+	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
+
+type fakeIdentityLookup struct {
+	identities map[int64]gamification.Identity
+	err        error
+	calls      [][]int64
+}
+
+func (f *fakeIdentityLookup) Identities(_ context.Context, userIDs []int64) (map[int64]gamification.Identity, error) {
+	f.calls = append(f.calls, append([]int64{}, userIDs...))
+	if f.err != nil {
+		return nil, f.err
+	}
+	out := make(map[int64]gamification.Identity, len(userIDs))
+	for _, id := range userIDs {
+		if identity, ok := f.identities[id]; ok {
+			out[id] = identity
+		}
+	}
+	return out, nil
+}
 
 type fixture struct {
 	engine *gin.Engine
@@ -31,6 +52,16 @@ type fixture struct {
 
 func setup(t *testing.T) *fixture {
 	t.Helper()
+	return setupWithOptions(t)
+}
+
+func setupWithIdentity(t *testing.T, lookup IdentityLookup) *fixture {
+	t.Helper()
+	return setupWithOptions(t, Options{IdentityLookup: lookup})
+}
+
+func setupWithOptions(t *testing.T, opts ...Options) *fixture {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
@@ -40,7 +71,7 @@ func setup(t *testing.T) *fixture {
 
 	r := gin.New()
 	r.Use(middleware.Authenticate(issuer))
-	RegisterRoutes(r.Group("/api"), user.NewService(repo))
+	RegisterRoutes(r.Group("/api"), user.NewService(repo), opts...)
 	return &fixture{engine: r, repo: repo, auth: authSvc, issuer: issuer}
 }
 
@@ -124,6 +155,44 @@ func TestProfileIsPublicAndHidesEmail(t *testing.T) {
 	assert.Equal(t, []any{}, data["equippedBadges"])
 	assert.Contains(t, data, "equippedTitle")
 	assert.Nil(t, data["equippedTitle"])
+}
+
+func TestProfileIncludesEquippedBadgesAndTitle(t *testing.T) {
+	lookup := &fakeIdentityLookup{identities: map[int64]gamification.Identity{}}
+	f := setupWithIdentity(t, lookup)
+	u, _ := f.register(t, "alice")
+	lookup.identities[u.ID] = gamification.Identity{
+		Badges: []gamification.BadgeSummary{
+			{ID: 7, Name: "早鸟", ImageURL: "/api/badges/7/image"},
+			{ID: 3, Name: "全勤", ImageURL: "/api/badges/3/image"},
+		},
+		Title: &gamification.TitleSummary{ID: 9, Name: "卷王", Color: "#7C3AED"},
+	}
+
+	w, resp := f.do(http.MethodGet, fmt.Sprintf("/api/users/%d/profile", u.ID), "", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data := resp["data"].(map[string]any)
+
+	badges := data["equippedBadges"].([]any)
+	require.Len(t, badges, 2)
+	first := badges[0].(map[string]any)
+	assert.EqualValues(t, 7, first["id"])
+	assert.Equal(t, "早鸟", first["name"])
+	assert.Equal(t, "/api/badges/7/image", first["imageUrl"])
+	assert.Equal(t, "全勤", badges[1].(map[string]any)["name"])
+
+	title := data["equippedTitle"].(map[string]any)
+	assert.EqualValues(t, 9, title["id"])
+	assert.Equal(t, "卷王", title["name"])
+	assert.Equal(t, "#7C3AED", title["color"])
+
+	require.Len(t, lookup.calls, 1)
+	assert.Equal(t, []int64{u.ID}, lookup.calls[0])
+
+	// 游客同样能看到公开身份。
+	w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/users/%d/profile", u.ID), "", "")
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Len(t, resp["data"].(map[string]any)["equippedBadges"], 2)
 }
 
 func TestProfileNotFound(t *testing.T) {

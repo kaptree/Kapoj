@@ -18,6 +18,8 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/kaptree/kapoj/apps/server/internal/config"
+	"github.com/kaptree/kapoj/apps/server/internal/dbtypes"
+	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/router"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
@@ -62,8 +64,37 @@ func newFx(t *testing.T) *fx {
 			SubmitCooldown:  time.Second,
 		},
 		Enqueuer: queue,
+		Game:     gamification.NewService(gamification.NewRepository(g)),
 	})
 	return &fx{t: t, h: h, db: g, queue: queue}
+}
+
+func (f *fx) equipIdentity(t *testing.T, userID int64, badgeNames []string, titleName string) {
+	t.Helper()
+	for i, name := range badgeNames {
+		badge := &gamification.Badge{
+			Name: name, Category: "测试", SortOrder: i, IsActive: true,
+		}
+		require.NoError(t, f.db.Create(badge).Error)
+		require.NoError(t, f.db.Create(&gamification.UserBadge{
+			UserID: userID, BadgeID: badge.ID, IsEquipped: true, PurchasedAt: time.Now(),
+		}).Error)
+	}
+	if titleName == "" {
+		return
+	}
+	title := &gamification.Title{
+		Name: titleName, Color: "#7C3AED",
+		UnlockConditionType: string(gamification.TitleUnlockACCount),
+		UnlockConditionConfig: dbtypes.JSON[map[string]any]{
+			Data: map[string]any{"threshold": 1},
+		},
+		IsActive: true,
+	}
+	require.NoError(t, f.db.Create(title).Error)
+	require.NoError(t, f.db.Create(&gamification.UserTitle{
+		UserID: userID, TitleID: title.ID, IsEquipped: true, UnlockedAt: time.Now(),
+	}).Error)
 }
 
 func (f *fx) do(method, path, token string, body any) (*httptest.ResponseRecorder, map[string]any) {
@@ -248,6 +279,49 @@ func TestListSubmissionsEndpoint(t *testing.T) {
 	assert.EqualValues(t, 2, resp["data"].(map[string]any)["total"])
 	items = resp["data"].(map[string]any)["items"].([]any)
 	assert.EqualValues(t, second, items[0].(map[string]any)["id"], "newest first")
+}
+
+func TestSubmissionEquippedIdentity(t *testing.T) {
+	f := newFx(t)
+	f.seedUser(t, 2001, "equippeduser", "装备用户")
+	f.seedUser(t, 2002, "plainuser", "普通用户")
+	p := f.problem(t, "identity", true, problem.TypeTraditional, 1)
+	equipped := f.record(t, 2001, p.ID, "cpp", "accepted", "code1", nil)
+	plain := f.record(t, 2002, p.ID, "cpp", "accepted", "code2", nil)
+	f.equipIdentity(t, 2001, []string{"徽章一", "徽章二"}, "卷王")
+
+	w, resp := f.do(http.MethodGet, "/api/submissions?userId=2001", "", nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	items := resp["data"].(map[string]any)["items"].([]any)
+	require.Len(t, items, 1)
+	item := items[0].(map[string]any)
+	badges := item["equippedBadges"].([]any)
+	require.Len(t, badges, 2)
+	assert.Equal(t, "徽章一", badges[0].(map[string]any)["name"])
+	assert.Equal(t, "徽章二", badges[1].(map[string]any)["name"])
+	title := item["equippedTitle"].(map[string]any)
+	assert.Equal(t, "卷王", title["name"])
+	assert.Equal(t, "#7C3AED", title["color"])
+
+	w, resp = f.do(http.MethodGet, "/api/submissions?userId=2002", "", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	items = resp["data"].(map[string]any)["items"].([]any)
+	require.Len(t, items, 1)
+	item = items[0].(map[string]any)
+	assert.Equal(t, []any{}, item["equippedBadges"])
+	assert.Nil(t, item["equippedTitle"])
+
+	w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/submissions/%d", equipped), "", nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data := resp["data"].(map[string]any)
+	assert.Len(t, data["equippedBadges"], 2)
+	assert.Equal(t, "卷王", data["equippedTitle"].(map[string]any)["name"])
+
+	w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/submissions/%d", plain), "", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	data = resp["data"].(map[string]any)
+	assert.Equal(t, []any{}, data["equippedBadges"])
+	assert.Nil(t, data["equippedTitle"])
 }
 
 func TestListSubmissionsValidation(t *testing.T) {

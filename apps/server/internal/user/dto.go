@@ -1,6 +1,10 @@
 package user
 
-import "time"
+import (
+	"time"
+
+	"github.com/kaptree/kapoj/apps/server/internal/gamification"
+)
 
 // MeDTO is what a user sees about themselves (and what admins see).
 type MeDTO struct {
@@ -17,19 +21,19 @@ type MeDTO struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
-// ProfileDTO is the public view of a user. Badges and titles are filled in
-// once the gamification modules (M3) exist.
+// ProfileDTO is the public view of a user. Equipped badges and title are
+// filled by the API layer; defaults are an empty slice and nil.
 type ProfileDTO struct {
-	ID             int64     `json:"id"`
-	Username       string    `json:"username"`
-	Nickname       string    `json:"nickname"`
-	AvatarURL      string    `json:"avatarUrl"`
-	Bio            string    `json:"bio"`
-	Rating         int       `json:"rating"`
-	Coins          int64     `json:"coins"`
-	EquippedBadges []any     `json:"equippedBadges"`
-	EquippedTitle  any       `json:"equippedTitle"`
-	CreatedAt      time.Time `json:"createdAt"`
+	ID             int64                       `json:"id"`
+	Username       string                      `json:"username"`
+	Nickname       string                      `json:"nickname"`
+	AvatarURL      string                      `json:"avatarUrl"`
+	Bio            string                      `json:"bio"`
+	Rating         int                         `json:"rating"`
+	Coins          int64                       `json:"coins"`
+	EquippedBadges []gamification.BadgeSummary `json:"equippedBadges"`
+	EquippedTitle  *gamification.TitleSummary  `json:"equippedTitle"`
+	CreatedAt      time.Time                   `json:"createdAt"`
 }
 
 func ToMe(u *User) MeDTO {
@@ -44,6 +48,7 @@ func ToProfile(u *User) ProfileDTO {
 	return ProfileDTO{
 		ID: u.ID, Username: u.Username, Nickname: u.Nickname, AvatarURL: u.AvatarURL,
 		Bio: u.Bio, Rating: u.Rating, Coins: u.Coins,
-		EquippedBadges: []any{}, EquippedTitle: nil, CreatedAt: u.CreatedAt.UTC(),
+		EquippedBadges: []gamification.BadgeSummary{}, EquippedTitle: nil,
+		CreatedAt: u.CreatedAt.UTC(),
 	}
 }
