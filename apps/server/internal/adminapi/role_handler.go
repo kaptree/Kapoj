@@ -16,6 +16,9 @@ import (
 func RegisterRoutes(api gin.IRouter, s *rbac.Service) {
 	h := &handler{svc: s}
 
+	api.GET("/admin/stats", append(requirePermission(s, string(rbac.PermAdminDashboardView)), h.stats)...)
+	api.GET("/admin/audit", append(requirePermission(s, string(rbac.PermAdminAuditView)), h.listAudit)...)
+
 	api.GET("/admin/permissions", append(requirePermission(s, string(rbac.PermRoleRead)), h.listPermissions)...)
 	api.GET("/admin/roles", append(requirePermission(s, string(rbac.PermRoleRead)), h.listRoles)...)
 	api.POST("/admin/roles", append(requirePermission(s, string(rbac.PermRoleCreate)), h.createRole)...)
