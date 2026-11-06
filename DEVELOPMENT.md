@@ -3,7 +3,7 @@
 > 本文档基于 `plan.md` 细化，是 kapOJ（Kap Online Judge）平台的详细开发规格说明书。
 > 目标：**打造出最有趣味的 Online Judge 平台**。
 > 文档包含完整的架构设计、数据库设计、模块需求，并为每个模块提供了可直接交给 Codex 的**开发提示词（Prompt）**。
-> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)，前端 UI 迁移见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。当前进度：**M4-2A 与 RBAC-A 已完成**（M0–M3 已完成；M4 进行中。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页、签到、Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线模型、权限、路线/节点 CRUD 与树结构；RBAC-A 交付权限目录、内置角色、首次 Seed/旧角色映射、实时 Access 解析、权限中间件与 `/users/me` 权限字段。学习路线进度/事件/守卫与前端、社交互动、Rating 衰减/赛季重置、角色管理 API、现有管理接口迁移与管理后台 UI 尚未实现）。前端 UI 已完成 UI-00～UI-18 的 PrimeVue 4 迁移与 UI-30（M4-C 排行榜/历史）直接实现，剩余 UI-19 题库编辑与 UI-20 异常页；该迁移已提交。
+> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)，前端 UI 迁移见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。当前进度：**M4-2A 与 RBAC-B 已完成**（M0–M3 已完成；M4 进行中。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页、签到、Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线模型、权限、路线/节点 CRUD 与树结构；RBAC-A 交付权限目录、内置角色、首次 Seed/旧角色映射、实时 Access 解析、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API。学习路线进度/事件/守卫与前端、社交互动、Rating 衰减/赛季重置、现有管理接口迁移（RBAC-C）与管理后台 UI（RBAC-D）尚未实现）。前端 UI 已完成 UI-00～UI-18 的 PrimeVue 4 迁移与 UI-30（M4-C 排行榜/历史）直接实现，剩余 UI-19 题库编辑与 UI-20 异常页；该迁移已提交。
 
 ---
 
@@ -59,7 +59,7 @@ kapOJ 是一个融合 **竞技评测 + 游戏化成长体系 + AI 辅助** 的�
 | 比赛管理员 | 创建/管理比赛、发布公告                                        |
 | 超级管理员 | 全部权限，含成就/任务/徽章/称号/证书管理、用户管理             |
 
-> **RBAC-A 实现说明（2026-11-06）**：上述固定角色正在升级为「多角色 + 全局权限」模型。`users.role` 与 JWT 中的 `role` 是 legacy 兼容字段：**未迁移的接口仍按它授权；RBAC 权限判断只认 `user_roles` 关联的角色与 `role_permissions`**，RBAC-C 完成全部管理接口迁移后，该字段才只用于展示/兼容。内置角色、权限目录与映射见 4.7。角色管理 API、现有管理接口迁移与管理后台 UI 分别属于 RBAC-B/C/D，尚未实现。
+> **RBAC 实现说明（2026-11-06）**：上述固定角色正在升级为「多角色 + 全局权限」模型。`users.role` 与 JWT 中的 `role` 是 legacy 兼容字段：**未迁移的接口仍按它授权；RBAC 权限判断只认 `user_roles` 关联的角色与 `role_permissions`**，RBAC-C 完成全部管理接口迁移后，该字段才只用于展示/兼容。内置角色、权限目录与映射见 4.7。角色/用户角色/审计/统计管理 API（RBAC-B）已完成；现有管理接口迁移（RBAC-C）与管理后台 UI（RBAC-D）尚未实现。
 
 ---
 
@@ -218,7 +218,7 @@ user_roles (
 admin_audit_logs (
   id, actor_id, action, target_type, target_id NULL, summary, ip, user_agent, created_at
 )
--- actor/action/created_at 建索引；本阶段只建表，审计写入属于 RBAC-B
+-- actor/action/created_at 建索引；审计写入由 RBAC-B 实现
 
 rbac_meta (
   key, value
@@ -496,7 +496,7 @@ user_ai_configs (
 | GET  | /users/me          | 当前用户信息                    |
 | PUT  | /users/me          | 更新资料                        |
 | GET  | /users/:id/profile | 查看他人主页                    |
-| GET  | /admin/users       | 用户分页列表（仅超级管理员）    |
+| GET  | /admin/users       | 用户分页列表（`user.read`，见 4.7） |
 
 **实现状态（M0 ✅）**：上表接口均已实现，完整定义见 `packages/api/openapi.yaml`。
 
@@ -514,7 +514,7 @@ user_ai_configs (
 - 被封禁用户无法登录或刷新令牌；已签发的 access token 在过期前（最长 15 分钟）仍然有效。
 - `GET /users/:id/profile` 不返回邮箱和角色；M3-B 起返回真实的 `equippedBadges`（数组，最多 `KAPOJ_MAX_EQUIPPED_BADGES` 个）与 `equippedTitle`（无装备时为 null），已装备但后来下线的徽章/称号仍展示。
 - M3-C 起个人主页昵称旁用 `IdentityShowcase` 展示装备称号与徽章；用户菜单显示金币余额并提供「装扮管理」入口。金币余额以服务端 `GET /users/me` 为准，购买或装备后刷新。
-- `GET /admin/users` 为新增接口，用于超级管理员的用户管理，也用于验收「管理员接口对普通用户返回 403」。
+- `GET /admin/users` 原为超级管理员的用户分页列表；RBAC-B 起改为 `user.read` 权限（super 绕过），并新增 keyword/status/roleId 筛选，详见 4.7。该接口也用于验收「管理员接口对无权限用户返回 403」。
 - 头像上传依赖 MinIO，**未实现**，安排在 M5-8；目前只能填写头像链接。修改密码接口**未实现**。
 
 **实现状态（RBAC-A，2026-11-06）**
@@ -523,7 +523,13 @@ user_ai_configs (
 - 权限解析使用 `rbac.Service.Access`：每次请求实时查询数据库，要求用户存在且 `status=active`；多角色权限取并集；任一角色为 `super_admin` 时 `isSuperAdmin=true`，中间件直接放行。无角色时 `permissions` 为空数组。
 - 封禁用户的 `/users/me` 保持普通接口既有行为：仍返回基础资料，但 `roles`/`permissions` 为空、`isSuperAdmin=false`；权限中间件对封禁用户返回 403。
 - `middleware.RequirePermission(resolver, codes...)` 与 `RequireAnyPermission` 已实现：未登录 401，解析失败/封禁/权限不足 403，super 绕过；通过后把 `*rbac.Access` 写入 context，可用 `CurrentAccess` 读取。
-- **当前范围（RBAC-A）**：现有管理接口尚未迁移到权限码，仍按 JWT 中的 legacy role 授权（`RequireRole` 或直接读取 `claims.Role`）；角色管理 API、用户角色分配 API、审计写入与管理后台 UI 分别属于 RBAC-B/C/D。因此现阶段要让既有管理接口可用，仍需 `users.role` 为对应管理员并重新登录；要让 `/users/me` 与后续权限中间件识别角色，需要 `user_roles` 关联（首次 Seed 会按旧角色自动映射，见 4.7）。
+- **当前范围（RBAC-A）**：现有管理接口尚未迁移到权限码，仍按 JWT 中的 legacy role 授权（`RequireRole` 或直接读取 `claims.Role`）；角色管理 API、用户角色分配 API、审计写入属于 RBAC-B（已完成），管理后台 UI 属于 RBAC-D。因此现阶段要让既有管理接口可用，仍需 `users.role` 为对应管理员并重新登录；要让 `/users/me` 与后续权限中间件识别角色，需要 `user_roles` 关联（首次 Seed 会按旧角色自动映射，见 4.7）。
+
+**实现状态（RBAC-B，2026-11-06）**
+
+- 新增 `/api/admin/*` 管理接口，全部使用 `RequirePermission`（super 绕过但仍写审计）：角色 CRUD/权限矩阵、权限目录、用户列表/详情/编辑/角色分配/封禁/解封、审计查询、仪表盘统计，接口清单与权限码见 4.7。
+- 敏感变更（角色/权限、用户角色分配、封禁/解封、管理员编辑用户）在同一事务内写审计，失败回滚不留下审计；审计摘要为中文，不含密码/token/代码/测试数据。
+- 保护规则：系统角色不可删除、code/name 不可改；`super_admin` 权限不可修改；只有 super 能授予/移除/封禁/解封 super；禁止封禁自己；禁止移除/封禁最后一个 active super（事务 + PostgreSQL advisory lock 串行化）。详见 4.7。
 
 **Codex 提示词（用户与认证）**
 
@@ -898,9 +904,9 @@ user_ai_configs (
 | `contest_admin` | `contest_admin` |
 | `user` | 不分配管理角色 |
 
-**实现状态（RBAC-A 已完成，2026-11-06）**
+**实现状态（RBAC-A 与 RBAC-B 已完成，2026-11-06）**
 
-- 已建表：`roles`、`permissions`、`role_permissions`、`user_roles`、`admin_audit_logs`、`rbac_meta`；唯一索引见 3.1。`admin_audit_logs` 本阶段只建表，尚未写入审计（RBAC-B）。
+- 已建表：`roles`、`permissions`、`role_permissions`、`user_roles`、`admin_audit_logs`、`rbac_meta`；唯一索引见 3.1。`admin_audit_logs` 的审计写入由 RBAC-B 完成。
 - 权限目录与内置角色定义在 `apps/server/internal/rbac/catalog.go`；测试锁定权限数量/唯一性与内置角色权限集合，名称/描述/分组仅校验非空，不锁定具体中文文案。
 - 启动时在 `db.Migrate` 之后执行 `rbac.Seed`：
   - 仅当 `rbac_meta.seed_version` 不存在时执行完整 seed：插入权限目录、内置角色、内置角色权限（`super_admin` 除外）、按 `users.role` 映射旧账号，最后写入 `seed_version=1`。
@@ -909,14 +915,37 @@ user_ai_configs (
 - `rbac.Service.Access(ctx, userID)` 实时读取数据库：用户不存在/非 active 返回 `ErrNotFound`/`ErrInactive`；角色按 code 排序；多角色权限取并集；`super_admin` 设置 `IsSuper=true`。没有缓存。
 - `RequirePermission` / `RequireAnyPermission` 语义：未登录 401；解析失败、封禁或无权限 403；super 绕过；通过后 `*rbac.Access` 写入 context，可用 `CurrentAccess` 读取。
 - `/users/me` 已返回 `roles`/`permissions`/`isSuperAdmin`；OpenAPI 与前端类型同步更新。登录/注册响应中三个字段默认为空数组/false。
-- **本阶段未做**：角色管理/用户角色分配/审计/统计 API（RBAC-B）；现有题目、比赛、游戏化、学习路线管理接口从 legacy role 判断（`RequireRole` 或直接读取 `claims.Role`）迁移到权限码，以及内容管理审计（RBAC-C）；管理后台前端、`auth.can`、菜单/路由/按钮权限化与真实浏览器 E2E（RBAC-D）。因此当前没有角色管理页面或统一 `/admin` 管理壳，现有管理接口仍以 legacy `users.role`/JWT role 授权。
+
+**RBAC-B 管理接口（全部使用 `RequirePermission`，super 绕过但仍写审计）**
+
+| 方法 | 路径 | 权限码 | 说明 |
+|------|------|--------|------|
+| GET | `/api/admin/stats` | `admin.dashboard.view` | 用户/题目/比赛/提交/角色计数；super 或 `admin.audit.view` 附带最近 10 条审计 |
+| GET | `/api/admin/audit` | `admin.audit.view` | 审计日志分页/筛选（actorId/action/targetType/from/to） |
+| GET | `/api/admin/permissions` | `role.read` | 权限目录（按分组与排序） |
+| GET | `/api/admin/roles` | `role.read` | 角色列表（含权限、用户数） |
+| POST | `/api/admin/roles` | `role.create` | 创建自定义角色 |
+| PUT | `/api/admin/roles/:id` | `role.update` | 改名称/描述；系统角色 code/name 不可改 |
+| DELETE | `/api/admin/roles/:id` | `role.delete` | 删除自定义角色；系统角色 40001 |
+| PUT | `/api/admin/roles/:id/permissions` | `role.permissions.update` | 整体替换权限；`super_admin` 不可改 |
+| GET | `/api/admin/users` | `user.read` | 用户列表（keyword/status/roleId 筛选与分页） |
+| GET | `/api/admin/users/:id` | `user.read` | 用户详情（含角色、isSuperAdmin） |
+| PUT | `/api/admin/users/:id` | `user.update` | 编辑昵称/简介/头像链接 |
+| PUT | `/api/admin/users/:id/roles` | `user.roles.assign` | 整体替换用户角色 |
+| POST | `/api/admin/users/:id/ban` | `user.ban` | 封禁 |
+| POST | `/api/admin/users/:id/unban` | `user.ban` | 解封 |
+
+- **保护规则**：系统角色不可删除、code/name 不可改；`super_admin` 权限不可修改；只有 super 能授予/移除/封禁/解封 super；禁止封禁自己（40001）；禁止移除/封禁最后一个 active super（40001）。角色/权限变更、用户角色分配、封禁/解封、管理员编辑用户在同一事务内写审计，失败回滚。
+- 自定义角色 code 创建后不可修改（`^[a-z][a-z0-9_]{2,63}$`），权限用 code 整体替换、重复去重、非法 code 返回 40001。
+- `POST /api/admin/users/:id/coins`（`user.coins.adjust`）保留为 RBAC-C 迁移对象，RBAC-B 未改动。
+- **本阶段未做**：现有题目、比赛、游戏化、学习路线管理接口从 legacy role 判断（`RequireRole` 或直接读取 `claims.Role`）迁移到权限码，以及内容管理审计（RBAC-C）；管理后台前端、`auth.can`、菜单/路由/按钮权限化与真实浏览器 E2E（RBAC-D）。因此当前没有角色管理页面或统一 `/admin` 管理壳，现有管理接口仍以 legacy `users.role`/JWT role 授权。
 
 **交付拆分**
 
 | 阶段 | 内容 | 状态 |
 |------|------|------|
 | RBAC-A | 权限模型、目录、首次 Seed/旧角色映射、Access 解析、权限中间件、Me 权限字段（后端） | ✅ |
-| RBAC-B | 角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计、仪表盘统计（后端） | ⬜ |
+| RBAC-B | 角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计、仪表盘统计（后端） | ✅ |
 | RBAC-C | 现有管理接口权限码迁移、Viewer 能力拆分、内容管理审计、回归测试 | ⬜ |
 | RBAC-D | AdminLayout、仪表盘/用户/角色/审计页面、`auth.can`、菜单/路由/按钮权限化、文档与浏览器 E2E | ⬜ |
 
@@ -1457,7 +1486,7 @@ M3 进度：M3-A（金币、事件、成就、任务后端）、M3-B（徽章、
 
 M4 进度：M4-A（Rating 结算、8 级等级、Rating 历史与 Rating 榜后端）、M4-B（活跃度、签到金币、共享分、活跃度/共享榜与三榜缓存）、M4-C（排行榜页、每日签到入口、用户主页 Rating 历史卡片、导航与首页入口）与 M4-2A（学习路线模型、权限、路线/节点 CRUD 与树结构）已完成；学习路线进度/事件/守卫与前端、社交互动与 Rating 衰减/赛季重置尚未完成，因此 M4 整体保持 🚧。
 
-平台管理后台/RBAC 进度：RBAC-A（权限模型、权限目录、首次 Seed/旧角色映射、实时 Access、权限中间件、`/users/me` 权限字段）已完成；RBAC-B（角色/用户角色/审计/统计 API）、RBAC-C（现有管理接口迁移）与 RBAC-D（管理后台前端与 E2E）尚未开始。设计与拆分见 [`docs/superpowers/specs/2026-11-06-admin-rbac-design.md`](docs/superpowers/specs/2026-11-06-admin-rbac-design.md)。
+平台管理后台/RBAC 进度：RBAC-A（权限模型、权限目录、首次 Seed/旧角色映射、实时 Access、权限中间件、`/users/me` 权限字段）与 RBAC-B（角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志、仪表盘统计 API）已完成；RBAC-C（现有管理接口迁移）与 RBAC-D（管理后台前端与 E2E）尚未开始。设计与拆分见 [`docs/superpowers/specs/2026-11-06-admin-rbac-design.md`](docs/superpowers/specs/2026-11-06-admin-rbac-design.md)。
 
 ---
 

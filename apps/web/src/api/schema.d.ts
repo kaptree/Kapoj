@@ -526,6 +526,336 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 管理仪表盘统计（admin.dashboard.view）
+         * @description 返回用户/题目/比赛/提交/角色聚合计数；仅 super 或拥有 admin.audit.view 时才附带 recentAudit（最近 10 条审计）。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 仪表盘统计 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminStatsResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 审计日志分页（admin.audit.view）
+         * @description 支持 actorId/action/targetType/from/to 过滤，按 created_at 倒序返回。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    actorId?: number;
+                    action?: string;
+                    targetType?: string;
+                    /** @description RFC3339 或 YYYY-MM-DD（闭区间） */
+                    from?: string;
+                    /** @description RFC3339 或 YYYY-MM-DD（闭区间；日期形式覆盖整天） */
+                    to?: string;
+                    page?: number;
+                    page_size?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 审计分页列表 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminAuditPageResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 权限目录（role.read） */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 权限目录（按分组与排序） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminPermissionListResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 角色列表（role.read） */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 角色列表（含权限与用户数） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminRoleListResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        /**
+         * 创建自定义角色（role.create）
+         * @description code 需符合 `^[a-z][a-z0-9_]{2,63}$`，创建后不可修改；permissionCodes 必须全部存在（重复自动去重）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AdminRoleInput"];
+                };
+            };
+            responses: {
+                /** @description 已创建 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminRoleResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/roles/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 更新角色名称/描述（role.update）
+         * @description 系统角色 code/name 不可改（40001）；自定义角色 code 创建后不可修改（code 传值须与当前一致，否则 40001）。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AdminRoleUpdateInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的角色 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminRoleResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        /**
+         * 删除自定义角色（role.delete）
+         * @description 系统角色不可删除（40001）；删除时清理角色权限与用户关联，并在同一事务写审计。
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已删除 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/roles/{id}/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 整体替换角色权限（role.permissions.update）
+         * @description super_admin 权限不可修改（40001）；permissionCodes 为完整权限集合，空数组表示移除全部权限。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AdminRolePermissionsInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的角色 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminRoleResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/users": {
         parameters: {
             query?: never;
@@ -533,10 +863,17 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 用户列表（仅超级管理员） */
+        /**
+         * 用户列表（user.read）
+         * @description 支持 keyword/status/roleId 过滤与分页；封禁用户同样出现在列表与详情中。
+         */
         get: {
             parameters: {
                 query?: {
+                    /** @description 匹配用户名/昵称/邮箱，不区分大小写，按字面量匹配 */
+                    keyword?: string;
+                    status?: components["schemas"]["Status"];
+                    roleId?: number;
                     page?: number;
                     page_size?: number;
                 };
@@ -552,15 +889,238 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["UserPageResponse"];
+                        "application/json": components["schemas"]["AdminUserPageResponse"];
                     };
                 };
+                400: components["responses"]["Error"];
                 401: components["responses"]["Error"];
                 403: components["responses"]["Error"];
             };
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** 用户详情（user.read） */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 用户详情（含角色与 isSuperAdmin） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminUserDetailResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        /**
+         * 编辑用户资料（user.update）
+         * @description 只更新提供的字段（nickname/bio/avatarUrl），并在同一事务写审计。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AdminUserUpdateInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的用户详情 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminUserDetailResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{id}/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 整体替换用户角色（user.roles.assign）
+         * @description roleIds 为完整角色集合，空数组移除全部角色；只有 super 能授予/移除 super_admin；不能移除最后一个活跃 super。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AdminUserRolesInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的用户详情 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminUserDetailResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{id}/ban": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 封禁用户（user.ban）
+         * @description 禁止封禁自己（40001）；只有 super 能封禁 super；禁止封禁最后一个活跃 super（40001）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AdminUserBanInput"];
+                };
+            };
+            responses: {
+                /** @description 已封禁 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{id}/unban": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 解封用户（user.ban） */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已解封 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -3539,12 +4099,161 @@ export interface components {
         ProfileResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["Profile"];
         };
-        UserPageResponse: components["schemas"]["Envelope"] & {
-            data: {
-                /** Format: int64 */
-                total: number;
-                items: components["schemas"]["Me"][];
-            };
+        AdminPermissionItem: {
+            /** @description 稳定权限码，格式 domain.action */
+            code: string;
+            name: string;
+            groupName: string;
+            description: string;
+            sortOrder: number;
+        };
+        AdminRoleItem: {
+            /** Format: int64 */
+            id: number;
+            code: string;
+            name: string;
+            description: string;
+            /** @description 系统角色不可删除，code/name 不可改 */
+            isSystem: boolean;
+            /** @description 权限码列表，按字典序排列 */
+            permissions: string[];
+            /**
+             * Format: int64
+             * @description 拥有该角色的用户数
+             */
+            userCount: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        AdminRoleInput: {
+            /** @description 创建后不可修改 */
+            code: string;
+            name: string;
+            description?: string;
+            /** @description 权限码集合，必须全部存在；重复自动去重 */
+            permissionCodes: string[];
+        };
+        AdminRoleUpdateInput: {
+            /** @description 可选；传值时必须与当前 code 一致，否则 40001；角色 code 创建后不可修改 */
+            code?: string;
+            name: string;
+            description?: string;
+        };
+        AdminRolePermissionsInput: {
+            /** @description 完整权限码集合，空数组移除全部权限；必须全部存在，重复去重 */
+            permissionCodes: string[];
+        };
+        AdminUserItem: {
+            /** Format: int64 */
+            id: number;
+            username: string;
+            nickname: string;
+            email: string;
+            role: components["schemas"]["Role"];
+            rating: number;
+            /** Format: int64 */
+            coins: number;
+            status: components["schemas"]["Status"];
+            /** @description 实际管理角色集合（RBAC）；无角色时为空数组 */
+            roles: components["schemas"]["RoleSummary"][];
+            /** Format: date-time */
+            createdAt: string;
+        };
+        AdminUserDetail: components["schemas"]["AdminUserItem"] & {
+            /** @description 是否为超级管理员 */
+            isSuperAdmin: boolean;
+        };
+        AdminUserPage: {
+            /** Format: int64 */
+            total: number;
+            items: components["schemas"]["AdminUserItem"][];
+        };
+        /** @description 只更新提供的字段；字段省略或为 null 表示不修改。 */
+        AdminUserUpdateInput: {
+            nickname?: string;
+            bio?: string;
+            avatarUrl?: string;
+        };
+        AdminUserRolesInput: {
+            /** @description 完整角色 id 集合，空数组移除全部角色 */
+            roleIds: number[];
+        };
+        AdminUserBanInput: {
+            /** @description 封禁原因，非空时写入审计摘要 */
+            reason?: string;
+        };
+        AdminAuditItem: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            actorId: number;
+            /** @description 权限码或内部动作码 */
+            action: string;
+            targetType: string;
+            /** Format: int64 */
+            targetId?: number | null;
+            /** @description 中文摘要，不含密码/token/代码等敏感信息 */
+            summary: string;
+            ip: string;
+            userAgent: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        AdminAuditPage: {
+            /** Format: int64 */
+            total: number;
+            items: components["schemas"]["AdminAuditItem"][];
+        };
+        AdminStats: {
+            /**
+             * Format: int64
+             * @description 用户总数（含封禁）
+             */
+            users: number;
+            /** Format: int64 */
+            activeUsers: number;
+            /** Format: int64 */
+            bannedUsers: number;
+            /** Format: int64 */
+            problems: number;
+            /** Format: int64 */
+            publicProblems: number;
+            /** Format: int64 */
+            contests: number;
+            /** Format: int64 */
+            submissions: number;
+            /**
+             * Format: int64
+             * @description 服务器本地日历日内的提交数
+             */
+            todaySubmissions: number;
+            /** Format: int64 */
+            roles: number;
+            /** @description 仅 super 或拥有 admin.audit.view 时附带，最近 10 条，按时间倒序 */
+            recentAudit: components["schemas"]["AdminAuditItem"][];
+        };
+        AdminPermissionListResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AdminPermissionItem"][];
+        };
+        AdminRoleListResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AdminRoleItem"][];
+        };
+        AdminRoleResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AdminRoleItem"];
+        };
+        AdminUserPageResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AdminUserPage"];
+        };
+        AdminUserDetailResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AdminUserDetail"];
+        };
+        AdminAuditPageResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AdminAuditPage"];
+        };
+        AdminStatsResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AdminStats"];
         };
         /** @enum {string} */
         ProblemType: "traditional" | "special" | "interactive";

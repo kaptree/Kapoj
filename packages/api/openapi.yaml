@@ -196,11 +196,150 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ActivitySignInResponse' }
         '401': { $ref: '#/components/responses/Error' }
-  /admin/users:
+  /admin/stats:
     get:
-      summary: 用户列表（仅超级管理员）
+      summary: 管理仪表盘统计（admin.dashboard.view）
+      description: 返回用户/题目/比赛/提交/角色聚合计数；仅 super 或拥有 admin.audit.view 时才附带 recentAudit（最近 10 条审计）。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 仪表盘统计
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminStatsResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /admin/audit:
+    get:
+      summary: 审计日志分页（admin.audit.view）
+      description: 支持 actorId/action/targetType/from/to 过滤，按 created_at 倒序返回。
       security: [{ bearer: [] }]
       parameters:
+        - { name: actorId, in: query, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: action, in: query, schema: { type: string } }
+        - { name: targetType, in: query, schema: { type: string } }
+        - { name: from, in: query, schema: { type: string }, description: RFC3339 或 YYYY-MM-DD（闭区间） }
+        - { name: to, in: query, schema: { type: string }, description: RFC3339 或 YYYY-MM-DD（闭区间；日期形式覆盖整天） }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: 审计分页列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminAuditPageResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /admin/permissions:
+    get:
+      summary: 权限目录（role.read）
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 权限目录（按分组与排序）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminPermissionListResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /admin/roles:
+    get:
+      summary: 角色列表（role.read）
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 角色列表（含权限与用户数）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminRoleListResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+    post:
+      summary: 创建自定义角色（role.create）
+      description: code 需符合 `^[a-z][a-z0-9_]{2,63}$`，创建后不可修改；permissionCodes 必须全部存在（重复自动去重）。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminRoleInput' }
+      responses:
+        '201':
+          description: 已创建
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminRoleResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /admin/roles/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    put:
+      summary: 更新角色名称/描述（role.update）
+      description: 系统角色 code/name 不可改（40001）；自定义角色 code 创建后不可修改（code 传值须与当前一致，否则 40001）。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminRoleUpdateInput' }
+      responses:
+        '200':
+          description: 更新后的角色
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminRoleResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+    delete:
+      summary: 删除自定义角色（role.delete）
+      description: 系统角色不可删除（40001）；删除时清理角色权限与用户关联，并在同一事务写审计。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 已删除
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /admin/roles/{id}/permissions:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    put:
+      summary: 整体替换角色权限（role.permissions.update）
+      description: super_admin 权限不可修改（40001）；permissionCodes 为完整权限集合，空数组表示移除全部权限。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminRolePermissionsInput' }
+      responses:
+        '200':
+          description: 更新后的角色
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminRoleResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /admin/users:
+    get:
+      summary: 用户列表（user.read）
+      description: 支持 keyword/status/roleId 过滤与分页；封禁用户同样出现在列表与详情中。
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: keyword, in: query, schema: { type: string }, description: 匹配用户名/昵称/邮箱，不区分大小写，按字面量匹配 }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/Status' } }
+        - { name: roleId, in: query, schema: { type: integer, format: int64, minimum: 1 } }
         - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
         - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
       responses:
@@ -208,9 +347,104 @@ paths:
           description: 用户分页列表
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/UserPageResponse' }
+              schema: { $ref: '#/components/schemas/AdminUserPageResponse' }
+        '400': { $ref: '#/components/responses/Error' }
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
+  /admin/users/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    get:
+      summary: 用户详情（user.read）
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 用户详情（含角色与 isSuperAdmin）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminUserDetailResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+    put:
+      summary: 编辑用户资料（user.update）
+      description: 只更新提供的字段（nickname/bio/avatarUrl），并在同一事务写审计。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminUserUpdateInput' }
+      responses:
+        '200':
+          description: 更新后的用户详情
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminUserDetailResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /admin/users/{id}/roles:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    put:
+      summary: 整体替换用户角色（user.roles.assign）
+      description: roleIds 为完整角色集合，空数组移除全部角色；只有 super 能授予/移除 super_admin；不能移除最后一个活跃 super。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminUserRolesInput' }
+      responses:
+        '200':
+          description: 更新后的用户详情
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminUserDetailResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /admin/users/{id}/ban:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    post:
+      summary: 封禁用户（user.ban）
+      description: 禁止封禁自己（40001）；只有 super 能封禁 super；禁止封禁最后一个活跃 super（40001）。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminUserBanInput' }
+      responses:
+        '200':
+          description: 已封禁
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /admin/users/{id}/unban:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    post:
+      summary: 解封用户（user.ban）
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 已解封
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
   /contests:
     get:
       summary: 比赛列表（公开；管理员可 includeHidden）
@@ -1738,20 +1972,199 @@ components:
           required: [data]
           properties:
             data: { $ref: '#/components/schemas/Profile' }
-    UserPageResponse:
+    AdminPermissionItem:
+      type: object
+      required: [code, name, groupName, description, sortOrder]
+      properties:
+        code: { type: string, description: 稳定权限码，格式 domain.action }
+        name: { type: string }
+        groupName: { type: string }
+        description: { type: string }
+        sortOrder: { type: integer }
+    AdminRoleItem:
+      type: object
+      required: [id, code, name, description, isSystem, permissions, userCount, createdAt, updatedAt]
+      properties:
+        id: { type: integer, format: int64 }
+        code: { type: string }
+        name: { type: string }
+        description: { type: string }
+        isSystem: { type: boolean, description: 系统角色不可删除，code/name 不可改 }
+        permissions:
+          type: array
+          description: 权限码列表，按字典序排列
+          items: { type: string }
+        userCount: { type: integer, format: int64, description: 拥有该角色的用户数 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AdminRoleInput:
+      type: object
+      required: [code, name, permissionCodes]
+      properties:
+        code: { type: string, pattern: '^[a-z][a-z0-9_]{2,63}$', description: 创建后不可修改 }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, maxLength: 500 }
+        permissionCodes:
+          type: array
+          description: 权限码集合，必须全部存在；重复自动去重
+          items: { type: string }
+    AdminRoleUpdateInput:
+      type: object
+      required: [name]
+      properties:
+        code: { type: string, description: 可选；传值时必须与当前 code 一致，否则 40001；角色 code 创建后不可修改 }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, maxLength: 500 }
+    AdminRolePermissionsInput:
+      type: object
+      required: [permissionCodes]
+      properties:
+        permissionCodes:
+          type: array
+          description: 完整权限码集合，空数组移除全部权限；必须全部存在，重复去重
+          items: { type: string }
+    AdminUserItem:
+      type: object
+      required: [id, username, nickname, email, role, rating, coins, status, roles, createdAt]
+      properties:
+        id: { type: integer, format: int64 }
+        username: { type: string }
+        nickname: { type: string }
+        email: { type: string }
+        role: { $ref: '#/components/schemas/Role' }
+        rating: { type: integer }
+        coins: { type: integer, format: int64 }
+        status: { $ref: '#/components/schemas/Status' }
+        roles:
+          type: array
+          description: 实际管理角色集合（RBAC）；无角色时为空数组
+          items: { $ref: '#/components/schemas/RoleSummary' }
+        createdAt: { type: string, format: date-time }
+    AdminUserDetail:
+      allOf:
+        - $ref: '#/components/schemas/AdminUserItem'
+        - type: object
+          required: [isSuperAdmin]
+          properties:
+            isSuperAdmin: { type: boolean, description: 是否为超级管理员 }
+    AdminUserPage:
+      type: object
+      required: [total, items]
+      properties:
+        total: { type: integer, format: int64 }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AdminUserItem' }
+    AdminUserUpdateInput:
+      type: object
+      description: 只更新提供的字段；字段省略或为 null 表示不修改。
+      properties:
+        nickname: { type: string, minLength: 1, maxLength: 32 }
+        bio: { type: string, maxLength: 200 }
+        avatarUrl: { type: string, maxLength: 512 }
+    AdminUserRolesInput:
+      type: object
+      required: [roleIds]
+      properties:
+        roleIds:
+          type: array
+          description: 完整角色 id 集合，空数组移除全部角色
+          items: { type: integer, format: int64 }
+    AdminUserBanInput:
+      type: object
+      properties:
+        reason: { type: string, maxLength: 500, description: 封禁原因，非空时写入审计摘要 }
+    AdminAuditItem:
+      type: object
+      required: [id, actorId, action, targetType, summary, ip, userAgent, createdAt]
+      properties:
+        id: { type: integer, format: int64 }
+        actorId: { type: integer, format: int64 }
+        action: { type: string, description: 权限码或内部动作码 }
+        targetType: { type: string }
+        targetId: { type: integer, format: int64, nullable: true }
+        summary: { type: string, description: 中文摘要，不含密码/token/代码等敏感信息 }
+        ip: { type: string }
+        userAgent: { type: string }
+        createdAt: { type: string, format: date-time }
+    AdminAuditPage:
+      type: object
+      required: [total, items]
+      properties:
+        total: { type: integer, format: int64 }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AdminAuditItem' }
+    AdminStats:
+      type: object
+      required: [users, activeUsers, bannedUsers, problems, publicProblems, contests, submissions, todaySubmissions, roles, recentAudit]
+      properties:
+        users: { type: integer, format: int64, description: 用户总数（含封禁） }
+        activeUsers: { type: integer, format: int64 }
+        bannedUsers: { type: integer, format: int64 }
+        problems: { type: integer, format: int64 }
+        publicProblems: { type: integer, format: int64 }
+        contests: { type: integer, format: int64 }
+        submissions: { type: integer, format: int64 }
+        todaySubmissions: { type: integer, format: int64, description: 服务器本地日历日内的提交数 }
+        roles: { type: integer, format: int64 }
+        recentAudit:
+          type: array
+          description: 仅 super 或拥有 admin.audit.view 时附带，最近 10 条，按时间倒序
+          items: { $ref: '#/components/schemas/AdminAuditItem' }
+    AdminPermissionListResponse:
       allOf:
         - $ref: '#/components/schemas/Envelope'
         - type: object
           required: [data]
           properties:
             data:
-              type: object
-              required: [total, items]
-              properties:
-                total: { type: integer, format: int64 }
-                items:
-                  type: array
-                  items: { $ref: '#/components/schemas/Me' }
+              type: array
+              items: { $ref: '#/components/schemas/AdminPermissionItem' }
+    AdminRoleListResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items: { $ref: '#/components/schemas/AdminRoleItem' }
+    AdminRoleResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/AdminRoleItem' }
+    AdminUserPageResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/AdminUserPage' }
+    AdminUserDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/AdminUserDetail' }
+    AdminAuditPageResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/AdminAuditPage' }
+    AdminStatsResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/AdminStats' }
     ProblemType:
       type: string
       enum: [traditional, special, interactive]
