@@ -1134,14 +1134,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 比赛列表（公开；管理员可 includeHidden） */
+        /** 比赛列表（公开；contest.view_hidden 可 includeHidden） */
         get: {
             parameters: {
                 query?: {
                     keyword?: string;
                     mode?: components["schemas"]["ContestMode"];
                     status?: components["schemas"]["ContestStatus"];
-                    /** @description 仅比赛管理员有效 */
+                    /** @description 需要 contest.view_hidden 权限；需携带 bearer token */
                     includeHidden?: boolean;
                     /** @description 仅返回当前登录用户已报名的比赛；游客使用返回 40001 */
                     mine?: boolean;
@@ -1168,7 +1168,7 @@ export interface paths {
             };
         };
         put?: never;
-        /** 创建比赛（比赛管理员/超级管理员） */
+        /** 创建比赛（contest.create） */
         post: {
             parameters: {
                 query?: never;
@@ -1211,7 +1211,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** 比赛详情；非公开比赛对非报名者/非管理员返回 40400 */
+        /** 比赛详情；非公开比赛对非报名者且无 contest.view_hidden 者返回 40400 */
         get: {
             parameters: {
                 query?: never;
@@ -1236,7 +1236,7 @@ export interface paths {
                 404: components["responses"]["Error"];
             };
         };
-        /** 整体替换比赛（比赛管理员）；problems 为完整题目列表 */
+        /** 整体替换比赛（contest.update）；problems 为完整题目列表 */
         put: {
             parameters: {
                 query?: never;
@@ -1268,7 +1268,7 @@ export interface paths {
             };
         };
         post?: never;
-        /** 删除比赛（比赛管理员）；级联删除题目关联、报名与公告 */
+        /** 删除比赛（contest.delete）；级联删除题目关联、报名与公告 */
         delete: {
             parameters: {
                 query?: never;
@@ -1310,7 +1310,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 克隆比赛（比赛管理员）；复制配置与题目，不复制报名/公告 */
+        /** 克隆比赛（contest.create）；复制配置与题目，不复制报名/公告 */
         post: {
             parameters: {
                 query?: never;
@@ -1403,7 +1403,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** 报名用户列表（比赛管理员） */
+        /** 报名用户列表（contest.participant.read） */
         get: {
             parameters: {
                 query?: never;
@@ -1446,7 +1446,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** 比赛榜单（ICPC/IOI/OI）；OI 赛时非管理员只返回本人行 */
+        /** 比赛榜单（ICPC/IOI/OI）；OI 赛时无 contest.view_hidden 只返回本人行 */
         get: {
             parameters: {
                 query?: never;
@@ -1488,7 +1488,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** 比赛公告列表；非公开比赛对非报名者/非管理员返回 40400 */
+        /** 比赛公告列表；非公开比赛对非报名者且无 contest.view_hidden 者返回 40400 */
         get: {
             parameters: {
                 query?: never;
@@ -1514,7 +1514,7 @@ export interface paths {
             };
         };
         put?: never;
-        /** 发布公告（比赛管理员） */
+        /** 发布公告（contest.announcement.manage） */
         post: {
             parameters: {
                 query?: never;
@@ -1562,7 +1562,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** 修改公告（比赛管理员） */
+        /** 修改公告（contest.announcement.manage） */
         put: {
             parameters: {
                 query?: never;
@@ -1595,7 +1595,7 @@ export interface paths {
             };
         };
         post?: never;
-        /** 删除公告（比赛管理员） */
+        /** 删除公告（contest.announcement.manage） */
         delete: {
             parameters: {
                 query?: never;
@@ -1642,7 +1642,7 @@ export interface paths {
                     keyword?: string;
                     tag?: string;
                     difficulty?: number;
-                    /** @description 仅题目管理员有效；需要携带 bearer token */
+                    /** @description 需要 problem.view_hidden 权限；需携带 bearer token */
                     includeHidden?: boolean;
                     page?: number;
                     page_size?: number;
@@ -1666,7 +1666,7 @@ export interface paths {
             };
         };
         put?: never;
-        /** 创建题目（题目管理员）；新题目一律为未公开 */
+        /** 创建题目（problem.create）；新题目一律为未公开 */
         post: {
             parameters: {
                 query?: never;
@@ -1711,7 +1711,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** 题目详情；未公开题目对非管理员返回 40400 */
+        /** 题目详情；未公开题目对无 problem.view_hidden 者返回 40400 */
         get: {
             parameters: {
                 query?: never;
@@ -1723,7 +1723,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description 题目详情；题解字段对管理员或本人已通过该题的用户可见 */
+                /** @description 题目详情；题解字段对拥有题目管理权限（problem.update/delete/publish/testcase.manage/checker.manage）或本人已通过该题的用户可见 */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -1736,8 +1736,8 @@ export interface paths {
             };
         };
         /**
-         * 整体替换题目（题目管理员）；必须提交全部可编辑字段
-         * @description PUT 是整体替换：未提交的字段会变成零值（字符串清空、数组清空、isPublic=false）， 不会保留原值。发布需至少 1 个测试点，特判题还需 checker。
+         * 整体替换题目（problem.update；修改 isPublic 另需 problem.publish）；必须提交全部可编辑字段
+         * @description PUT 是整体替换：未提交的字段会变成零值（字符串清空、数组清空、isPublic=false）， 不会保留原值。发布需至少 1 个测试点，特判题还需 checker。 修改 isPublic（公开/下线）需要 problem.update + problem.publish，仅 problem.update 不能发布或下线。
          */
         put: {
             parameters: {
@@ -1772,7 +1772,7 @@ export interface paths {
             };
         };
         post?: never;
-        /** 删除题目；已有提交记录时只下线 */
+        /** 删除题目（problem.delete）；已有提交记录时只下线 */
         delete: {
             parameters: {
                 query?: never;
@@ -1853,7 +1853,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** 测试点列表（题目管理员） */
+        /** 测试点列表（problem.testcase.manage） */
         get: {
             parameters: {
                 query?: never;
@@ -1880,7 +1880,7 @@ export interface paths {
             };
         };
         put?: never;
-        /** 上传测试点（题目管理员）；输入输出文件各不超过 16 MiB，请求体不超过 40 MiB */
+        /** 上传测试点（problem.testcase.manage）；输入输出文件各不超过 16 MiB，请求体不超过 40 MiB */
         post: {
             parameters: {
                 query?: never;
@@ -1938,7 +1938,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** 修改测试点分数或样例标记（只更新提供的字段） */
+        /** 修改测试点分数或样例标记（problem.testcase.manage；只更新提供的字段） */
         put: {
             parameters: {
                 query?: never;
@@ -1971,7 +1971,7 @@ export interface paths {
             };
         };
         post?: never;
-        /** 删除测试点；公开题目不能删除最后一个测试点 */
+        /** 删除测试点（problem.testcase.manage）；公开题目不能删除最后一个测试点 */
         delete: {
             parameters: {
                 query?: never;
@@ -2015,7 +2015,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 调整测试点顺序；ids 必须恰好是该题全部测试点 */
+        /** 调整测试点顺序（problem.testcase.manage）；ids 必须恰好是该题全部测试点 */
         post: {
             parameters: {
                 query?: never;
@@ -2063,7 +2063,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 上传特判 checker（C++ 源码，不超过 256 KiB，仅特判题） */
+        /** 上传特判 checker（problem.checker.manage；C++ 源码，不超过 256 KiB，仅特判题） */
         post: {
             parameters: {
                 query?: never;
@@ -2111,7 +2111,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 测评记录列表（游客可访问） */
+        /** 测评记录列表（游客可访问）；隐藏题的提交需要 problem.view_hidden 才能看到他人记录 */
         get: {
             parameters: {
                 query?: {
@@ -2227,7 +2227,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** 测评记录详情；比赛提交对他人的代码与测评详情暂不可见 */
+        /** 测评记录详情；隐藏题的他人提交需 problem.view_hidden，比赛进行中的他人提交需 submission.view_live_contest */
         get: {
             parameters: {
                 query?: never;
@@ -2269,12 +2269,12 @@ export interface paths {
         /**
          * 成就列表；游客可访问，登录用户含解锁状态与条件进度
          * @description 游客只看到上架成就；登录用户读取时会先补算解锁与奖励，并额外看到自己已解锁但已下线的成就。
-         *     includeInactive=true 仅 super_admin 可用，否则返回 40300。
+         *     includeInactive=true 需要 gamification.achievement.manage 权限，否则返回 40300。
          */
         get: {
             parameters: {
                 query?: {
-                    /** @description 仅 super_admin 可用；true 时包含已下线成就 */
+                    /** @description 需要 gamification.achievement.manage 权限；true 时包含已下线成就 */
                     includeInactive?: boolean;
                 };
                 header?: never;
@@ -2298,7 +2298,7 @@ export interface paths {
         };
         put?: never;
         /**
-         * 创建成就（仅超级管理员）
+         * 创建成就（gamification.achievement.manage）
          * @description code 必须唯一且符合格式；条件配置非法或奖励金币为负时返回 40001。rewardBadgeId 非空时徽章必须存在且上架，否则返回 40001。
          */
         post: {
@@ -2345,7 +2345,7 @@ export interface paths {
         };
         get?: never;
         /**
-         * 更新成就（仅超级管理员；整体替换，code 创建后不可修改）
+         * 更新成就（gamification.achievement.manage；整体替换，code 创建后不可修改）
          * @description code 留空表示保持原值；尝试修改 code 或条件配置非法时返回 40001。rewardBadgeId 为 null 时保持原奖励徽章不变，非空时徽章必须存在且上架。
          */
         put: {
@@ -2379,7 +2379,7 @@ export interface paths {
             };
         };
         post?: never;
-        /** 软删除成就（仅超级管理员；保留已解锁记录与金币流水） */
+        /** 软删除成就（gamification.achievement.manage；保留已解锁记录与金币流水） */
         delete: {
             parameters: {
                 query?: never;
@@ -2458,12 +2458,12 @@ export interface paths {
          * 任务大厅；游客可访问，登录用户含领取状态与进度
          * @description 游客只看到上架且未结束的任务；登录用户读取时会先补算完成与奖励，
          *     并额外看到自己领取过的任务（包括已下线、已结束与已完成）。
-         *     includeInactive=true 仅 super_admin 可用，否则返回 40300。
+         *     includeInactive=true 需要 gamification.task.manage 权限，否则返回 40300。
          */
         get: {
             parameters: {
                 query?: {
-                    /** @description 仅 super_admin 可用；true 时包含已下线与已结束的任务 */
+                    /** @description 需要 gamification.task.manage 权限；true 时包含已下线与已结束的任务 */
                     includeInactive?: boolean;
                 };
                 header?: never;
@@ -2487,7 +2487,7 @@ export interface paths {
         };
         put?: never;
         /**
-         * 创建任务（仅超级管理员）
+         * 创建任务（gamification.task.manage）
          * @description 题目必须为 1–20 个不重复的公开题目；时间非法、奖励为负或超过 1000000 时返回 40001。
          */
         post: {
@@ -2534,7 +2534,7 @@ export interface paths {
         };
         get?: never;
         /**
-         * 更新任务（仅超级管理员；整体替换）
+         * 更新任务（gamification.task.manage；整体替换）
          * @description 已有领取记录后 problemIds 与 rewardCoins 被冻结，修改返回 40001；标题、描述、时间与上下架仍可修改。
          */
         put: {
@@ -2568,7 +2568,7 @@ export interface paths {
             };
         };
         post?: never;
-        /** 软删除任务（仅超级管理员；已领取用户仍可在截止前完成） */
+        /** 软删除任务（gamification.task.manage；已领取用户仍可在截止前完成） */
         delete: {
             parameters: {
                 query?: never;
@@ -2698,8 +2698,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * 管理员调整金币（仅超级管理员；正负均可，附备注）
-         * @description amount 不能为 0，note 为 1–200 字符；调整后余额不能为负。参数非法或余额不足返回 40001，用户不存在返回 40400。
+         * 管理员调整金币（user.coins.adjust；正负均可，附备注，写入审计）
+         * @description amount 不能为 0，note 为 1–200 字符；调整后余额不能为负。参数非法或余额不足返回 40001，用户不存在返回 40400。调整与审计在同一事务内完成，审计失败则回滚。
          */
         post: {
             parameters: {
@@ -2786,12 +2786,12 @@ export interface paths {
         /**
          * 徽章商城（游客可访问；登录用户含拥有与装备状态）
          * @description 游客只看到上架徽章；登录用户额外看到自己已拥有的下线徽章，并可继续装备或卸下。
-         *     includeInactive=true 仅 super_admin 可用，否则返回 40300。列表按 sort_order、id 排序。
+         *     includeInactive=true 需要 gamification.badge.manage 权限，否则返回 40300。列表按 sort_order、id 排序。
          */
         get: {
             parameters: {
                 query?: {
-                    /** @description 仅 super_admin 可用；true 时包含全部已下线徽章 */
+                    /** @description 需要 gamification.badge.manage 权限；true 时包含全部已下线徽章 */
                     includeInactive?: boolean;
                 };
                 header?: never;
@@ -2815,7 +2815,7 @@ export interface paths {
         };
         put?: never;
         /**
-         * 创建徽章（仅超级管理员）
+         * 创建徽章（gamification.badge.manage）
          * @description 名称 1–100 字、分类 1–20 字；价格 0–1000000；限量库存不能为负。imageUrl 必须为 http(s) 外链或 /api/badges/<id>/image。
          */
         post: {
@@ -2862,7 +2862,7 @@ export interface paths {
         };
         get?: never;
         /**
-         * 更新徽章（仅超级管理员；stock、imageUrl、isActive 可省略保留）
+         * 更新徽章（gamification.badge.manage；stock、imageUrl、isActive 可省略保留）
          * @description name、category 必填；description、priceCoins、isLimited、sortOrder 按提交值更新
          *     （省略时会写为空字符串、0 或 false，并不会保留旧值）。
          *     isActive 缺省时保持原值；stock 缺省时保持当前库存（不会把并发购买已扣减的库存恢复）；
@@ -2899,7 +2899,7 @@ export interface paths {
             };
         };
         post?: never;
-        /** 软删除徽章（仅超级管理员；保留已购买记录与公开展示） */
+        /** 软删除徽章（gamification.badge.manage；保留已购买记录与公开展示） */
         delete: {
             parameters: {
                 query?: never;
@@ -2973,7 +2973,7 @@ export interface paths {
         };
         put?: never;
         /**
-         * 上传徽章图片（仅超级管理员；multipart）
+         * 上传徽章图片（gamification.badge.manage；multipart）
          * @description file 字段支持 PNG、JPEG、WebP、GIF，且不超过 2 MiB；保存为 badges/<id>，
          *     并把 image_url 写为 /api/badges/<id>/image。缺少文件、格式或大小非法返回 40001。
          */
@@ -3207,13 +3207,13 @@ export interface paths {
         };
         /**
          * 称号商店（游客可访问；登录用户含解锁、购买、装备状态与条件进度）
-         * @description 登录用户读取时先补算解锁（不扣金币）。已解锁但已下线的称号仍可见，未解锁且已下线的只对管理员可见。
-         *     includeInactive=true 仅 super_admin 可用，否则返回 40300。列表按 sort_order、id 排序。
+         * @description 登录用户读取时先补算解锁（不扣金币）。已解锁但已下线的称号仍可见，未解锁且已下线的只对拥有 gamification.title.manage 者可见。
+         *     includeInactive=true 需要 gamification.title.manage 权限，否则返回 40300。列表按 sort_order、id 排序。
          */
         get: {
             parameters: {
                 query?: {
-                    /** @description 仅 super_admin 可用；true 时包含全部已下线称号 */
+                    /** @description 需要 gamification.title.manage 权限；true 时包含全部已下线称号 */
                     includeInactive?: boolean;
                 };
                 header?: never;
@@ -3237,7 +3237,7 @@ export interface paths {
         };
         put?: never;
         /**
-         * 创建称号（仅超级管理员）
+         * 创建称号（gamification.title.manage）
          * @description 名称 1–100 字；颜色必须为 #RRGGBB；价格 0–1000000；解锁条件必须为正整数阈值、Rating 或符合成就 code 格式的字符串。
          */
         post: {
@@ -3284,7 +3284,7 @@ export interface paths {
         };
         get?: never;
         /**
-         * 更新称号（仅超级管理员；整体替换）
+         * 更新称号（gamification.title.manage；整体替换）
          * @description isActive 缺省时保持原值。删除为软下线，已解锁/已购买记录保留。
          */
         put: {
@@ -3318,7 +3318,7 @@ export interface paths {
             };
         };
         post?: never;
-        /** 软删除称号（仅超级管理员；保留已解锁与已购买记录） */
+        /** 软删除称号（gamification.title.manage；保留已解锁与已购买记录） */
         delete: {
             parameters: {
                 query?: never;
@@ -3496,14 +3496,14 @@ export interface paths {
         };
         /**
          * 学习路线列表（游客可访问，可选登录）
-         * @description 返回当前查看者可见的活跃路线：官方路线、公开自定义路线，以及自己创建的私有路线。 私有路线仅作者与题目管理员/超级管理员可见；`mine=true` 只返回自己创建的路线。 `includeInactive=true` 仅对管理员有效，用于查看已下架（软删除）路线；普通用户传入会被忽略。 排序为官方优先，其次 `sortOrder`、`id`。M4-2A 尚未计算进度，`myCompletedCount` 只反映已存储的完成节点数，通常为 0。
+         * @description 返回当前查看者可见的活跃路线：官方路线、公开自定义路线，以及自己创建的私有路线。 私有路线仅作者与拥有 learning_path.admin.read 或 learning_path.official.manage 者可见；`mine=true` 只返回自己创建的路线。 `includeInactive=true` 需要 learning_path.admin.read 或 learning_path.official.manage，用于查看已下架（软删除）路线；普通用户传入会被忽略。 排序为官方优先，其次 `sortOrder`、`id`。M4-2A 尚未计算进度，`myCompletedCount` 只反映已存储的完成节点数，通常为 0。
          */
         get: {
             parameters: {
                 query?: {
                     /** @description 仅返回当前登录用户创建的路线；游客返回空列表 */
                     mine?: boolean;
-                    /** @description 包含已下架路线；仅题目管理员/超级管理员有效 */
+                    /** @description 包含已下架路线；需要 learning_path.admin.read 或 learning_path.official.manage */
                     includeInactive?: boolean;
                 };
                 header?: never;
@@ -3525,8 +3525,8 @@ export interface paths {
         };
         put?: never;
         /**
-         * 创建学习路线（登录）
-         * @description 普通用户创建自定义路线，默认私有（`isPublic=false`）、活跃，且不能设置官方标记； 提交 `isOfficial=true` 返回 40300，非管理员提交的 `isActive` 会被忽略（始终为活跃）。 题目管理员/超级管理员可以创建官方路线并设置 `isOfficial`/`isPublic`/`isActive`； 官方路线强制公开（`isPublic=true`）。标题 1–100 字，描述不超过 50000 字， 封面地址必须为 http/https 且不超过 512 字节。
+         * 创建学习路线（登录；官方路线需 learning_path.official.manage）
+         * @description 普通用户创建自定义路线，默认私有（`isPublic=false`）、活跃，且不能设置官方标记； 提交 `isOfficial=true` 返回 40300，非管理员提交的 `isActive` 会被忽略（始终为活跃）。 拥有 learning_path.official.manage 者可以创建官方路线并设置 `isOfficial`/`isPublic`/`isActive`； 官方路线强制公开（`isPublic=true`）。标题 1–100 字，描述不超过 50000 字， 封面地址必须为 http/https 且不超过 512 字节。
          */
         post: {
             parameters: {
@@ -3572,7 +3572,7 @@ export interface paths {
         };
         /**
          * 学习路线详情（游客可访问，可选登录）
-         * @description 活跃官方/公开路线所有人可见；活跃私有路线仅作者与管理员可见；已下架路线仅管理员可见。 无权限或不存在均返回 40400。M4-2A 尚未计算进度，`myCompletedCount` 通常为 0。
+         * @description 活跃官方/公开路线所有人可见；活跃私有路线仅作者与拥有 learning_path.admin.read 或 learning_path.official.manage 者可见；已下架路线需要 learning_path.admin.read 或 learning_path.official.manage。无权限或不存在均返回 40400。M4-2A 尚未计算进度，`myCompletedCount` 通常为 0。
          */
         get: {
             parameters: {
@@ -3598,8 +3598,8 @@ export interface paths {
             };
         };
         /**
-         * 更新学习路线（作者/管理员）
-         * @description 只有作者或管理员可以编辑；官方路线仅题目管理员/超级管理员可编辑，已下架路线仅管理员可编辑/恢复。 标题、描述、封面与 `sortOrder` 为整体替换（未提交的 `sortOrder` 变为 0）； `isPublic`/`isActive` 未提交时保持原值。`isOfficial` 仅可在创建时由管理员设置，创建后不可修改： 管理员提交不同值返回 40001（不能把自定义路线提升为官方或取消官方标记），非管理员提交不同值返回 40300。 官方路线强制公开。公开自定义路线或恢复上架前会校验节点引用的题目仍存在且公开，否则返回 40001。
+         * 更新学习路线（作者/learning_path.official.manage）
+         * @description 只有作者或拥有 learning_path.official.manage 者可以编辑；官方路线仅拥有 learning_path.official.manage 者可编辑，已下架路线仅拥有 learning_path.official.manage 者可编辑/恢复（learning_path.admin.read 只读，不参与写授权）。 标题、描述、封面与 `sortOrder` 为整体替换（未提交的 `sortOrder` 变为 0）； `isPublic`/`isActive` 未提交时保持原值。`isOfficial` 仅可在创建时由拥有 learning_path.official.manage 者设置，创建后不可修改： 拥有 learning_path.official.manage 者提交不同值返回 40001（不能把自定义路线提升为官方或取消官方标记），非管理员提交不同值返回 40300。 官方路线强制公开。公开自定义路线或恢复上架前会校验节点引用的题目仍存在且公开，否则返回 40001。
          */
         put: {
             parameters: {
@@ -3633,8 +3633,8 @@ export interface paths {
         };
         post?: never;
         /**
-         * 下架学习路线（作者/管理员）
-         * @description 软删除（`isActive=false`），不删除节点、题目引用或用户进度。作者可下架自己的自定义路线， 官方路线仅管理员可下架；已下架路线再次删除仅管理员可操作。作者删除后路线从其常规列表消失， 只有管理员可通过 `includeInactive=true` 查看并恢复。
+         * 下架学习路线（作者/learning_path.official.manage）
+         * @description 软删除（`isActive=false`），不删除节点、题目引用或用户进度。作者可下架自己的自定义路线， 官方路线仅拥有 learning_path.official.manage 者可下架；已下架路线再次删除仅拥有 learning_path.official.manage 者可操作。作者删除后路线从其常规列表消失， 只有拥有 learning_path.admin.read 或 learning_path.official.manage 者可通过 `includeInactive=true` 查看并恢复。
          */
         delete: {
             parameters: {
@@ -3677,7 +3677,7 @@ export interface paths {
         };
         /**
          * 学习路线树（游客可访问，可选登录）
-         * @description 返回路线元信息、节点层级、节点题目摘要与当前用户进度。可见性与路线详情一致： 私有路线仅作者/管理员可见，已下架路线仅管理员可见，否则返回 40400。 节点只返回公开题目的 `problemId/title/slug/difficulty`，不返回题解。 公开树对非作者/非管理员仅返回公开题目 id；作者与管理员保留完整存储列表 （含已下线/缺失题目）用于编辑。当前为 M4-2A 临时状态：根节点 `active`、其余节点 `locked`、 `solvedCount=0`；M4-2B 将替换为基于 AC 的服务端进度与完成锁存。
+         * @description 返回路线元信息、节点层级、节点题目摘要与当前用户进度。可见性与路线详情一致： 私有路线仅作者或拥有 learning_path.admin.read / learning_path.official.manage 者可见， 已下架路线需要 learning_path.admin.read 或 learning_path.official.manage，否则返回 40400。 节点只返回公开题目的 `problemId/title/slug/difficulty`，不返回题解。 公开树对非作者且无学习路线管理/只读权限者仅返回公开题目 id；作者、拥有 learning_path.admin.read 或 learning_path.official.manage 者保留完整存储列表 （含已下线/缺失题目）用于编辑。当前为 M4-2A 临时状态：根节点 `active`、其余节点 `locked`、 `solvedCount=0`；M4-2B 将替换为基于 AC 的服务端进度与完成锁存。
          */
         get: {
             parameters: {
@@ -3722,8 +3722,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * 创建学习路线节点（作者/管理员）
-         * @description 只有路线作者或管理员可以写入；官方路线与已下架路线仅管理员可以写入。 校验：标题 1–100 字、描述不超过 50000 字；`problemIds` 为 1–50 道不重复且存在、公开的题目； `requiredCount` 为 1–题目数，未提交时默认等于题目数；`parentId` 必须属于同一路线， 不能是自身或形成环，节点树最大深度 8 层；`parentId` 未提交时为根节点。
+         * 创建学习路线节点（作者/learning_path.official.manage）
+         * @description 只有路线作者或拥有 learning_path.official.manage 者可以写入；官方路线与已下架路线 仅拥有 learning_path.official.manage 者可以写入（learning_path.admin.read 只读，不参与写授权）。 校验：标题 1–100 字、描述不超过 50000 字；`problemIds` 为 1–50 道不重复且存在、公开的题目； `requiredCount` 为 1–题目数，未提交时默认等于题目数；`parentId` 必须属于同一路线， 不能是自身或形成环，节点树最大深度 8 层；`parentId` 未提交时为根节点。
          */
         post: {
             parameters: {
@@ -3773,7 +3773,7 @@ export interface paths {
         };
         get?: never;
         /**
-         * 更新学习路线节点（作者/管理员）
+         * 更新学习路线节点（作者/learning_path.official.manage）
          * @description 整体替换节点可编辑字段。权限与校验同创建节点；移动节点时同时校验父节点属于同一路线、 不能是自身或形成环，且移动后的子树深度仍不超过 8 层。`requiredCount` 未提交时按本次 `problemIds` 数量重置，而非保留原值。`nodeId` 必须属于该路线，否则返回 40400。
          */
         put: {
@@ -3809,8 +3809,8 @@ export interface paths {
         };
         post?: never;
         /**
-         * 删除学习路线节点（作者/管理员）
-         * @description 仅允许删除叶子节点；存在子节点时返回 40001。删除节点会级联删除该节点的用户进度。 官方路线与已下架路线仅管理员可以删除。
+         * 删除学习路线节点（作者/learning_path.official.manage）
+         * @description 仅允许删除叶子节点；存在子节点时返回 40001。删除节点会级联删除该节点的用户进度。 官方路线与已下架路线仅拥有 learning_path.official.manage 者可以删除。
          */
         delete: {
             parameters: {
@@ -4279,7 +4279,7 @@ export interface components {
             timeLimitMs?: number;
             /** @description 0 表示默认 256 */
             memoryLimitMb?: number;
-            /** @description 创建时被忽略 */
+            /** @description 创建时被忽略；新题一律未公开 */
             isPublic?: boolean;
             source?: string;
         };
@@ -4302,7 +4302,7 @@ export interface components {
             timeLimitMs: number;
             /** @description 0 表示默认 256 */
             memoryLimitMb: number;
-            /** @description 整体替换；false 会下线题目 */
+            /** @description 整体替换；修改此字段（公开/下线）需要 problem.update + problem.publish，false 会下线题目 */
             isPublic: boolean;
             source: string;
         };
@@ -4329,15 +4329,15 @@ export interface components {
             outputFormatMd: string;
             samples: components["schemas"]["Sample"][];
             hintMd: string;
-            /** @description 管理员或本人已通过该题时可见 */
+            /** @description 拥有题目管理权限（problem.update/delete/publish/testcase.manage/checker.manage）或本人已通过该题时可见 */
             solutionMd?: string;
-            /** @description 管理员或本人已通过该题时可见 */
+            /** @description 拥有题目管理权限或本人已通过该题时可见 */
             solutionCode?: string;
-            /** @description 管理员或本人已通过该题时可见 */
+            /** @description 拥有题目管理权限或本人已通过该题时可见 */
             checkerUploaded?: boolean;
             /**
              * Format: int64
-             * @description 管理员或本人已通过该题时可见
+             * @description 拥有题目管理权限或本人已通过该题时可见
              */
             createdBy?: number;
         };
@@ -4368,7 +4368,7 @@ export interface components {
             problemId: number;
             /**
              * Format: int64
-             * @description 0 表示练习提交；大于 0 时必须是已报名且进行中的比赛（比赛管理员可测试）
+             * @description 0 表示练习提交；大于 0 时必须是已报名且进行中的比赛（拥有 contest.update 可免报名测试）
              */
             contestId?: number;
             language: components["schemas"]["SubmissionLanguage"];
@@ -4416,7 +4416,7 @@ export interface components {
             judgedAt?: string;
         };
         SubmissionDetail: components["schemas"]["SubmissionListItem"] & {
-            /** @description 比赛进行中对他人的提交不返回；本人/管理员/赛后恢复 */
+            /** @description 比赛进行中对他人的提交不返回；本人、拥有 submission.view_live_contest 者或赛后恢复 */
             code?: string;
             codeHidden: boolean;
             errorMessage?: string;
@@ -5005,9 +5005,9 @@ export interface components {
             coverUrl: string;
             /** @description 官方路线；官方路线强制公开 */
             isOfficial: boolean;
-            /** @description 公开自定义路线；私有路线仅作者与管理员可见 */
+            /** @description 公开自定义路线；私有路线仅作者与拥有 learning_path.admin.read 或 learning_path.official.manage 者可见 */
             isPublic: boolean;
-            /** @description false 表示已下架（软删除），仅管理员可查看/恢复 */
+            /** @description false 表示已下架（软删除），仅拥有 learning_path.admin.read 或 learning_path.official.manage 者可查看/恢复 */
             isActive: boolean;
             author: components["schemas"]["LearningPathAuthor"];
             /** @description 节点总数 */
@@ -5020,18 +5020,18 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
-        /** @description 创建/更新学习路线的可编辑字段。创建时未提交的 `isPublic` 默认 false、 `isActive` 默认 true；更新时未提交的 `isPublic`/`isActive` 保持原值。 `isOfficial` 仅创建时由管理员设置，创建后不可修改（更新提交不同值返回 40001）。 普通用户不能创建/编辑官方路线，也不能改变上下架状态。 */
+        /** @description 创建/更新学习路线的可编辑字段。创建时未提交的 `isPublic` 默认 false、 `isActive` 默认 true；更新时未提交的 `isPublic`/`isActive` 保持原值。 `isOfficial` 仅创建时由拥有 learning_path.official.manage 者设置，创建后不可修改（更新提交不同值返回 40001）。 普通用户不能创建/编辑官方路线，也不能改变上下架状态。 */
         LearningPathInput: {
             /** @description trim 后 1–100 个字符 */
             title: string;
             descriptionMd?: string;
             /** @description 仅 http/https 链接；空字符串表示无封面 */
             coverUrl?: string;
-            /** @description 仅创建时管理员可设置；创建后不可修改；设为 true 时强制公开 */
+            /** @description 仅创建时拥有 learning_path.official.manage 者可设置；创建后不可修改；设为 true 时强制公开 */
             isOfficial?: boolean;
             /** @description 公开后出现在路线列表，其他用户可查看树；个人进度挑战待 M4-2B 实现 */
             isPublic?: boolean;
-            /** @description 创建/更新时仅管理员可设置；false 为软删除，true 为恢复上架 */
+            /** @description 创建/更新时仅拥有 learning_path.official.manage 者可设置；false 为软删除，true 为恢复上架 */
             isActive?: boolean;
             sortOrder?: number;
         };
@@ -5059,7 +5059,7 @@ export interface components {
             parentId: number | null;
             title: string;
             descriptionMd: string;
-            /** @description 节点引用的题目 id，按节点配置顺序；公开树对非作者/非管理员仅返回公开题目 id， 作者/管理员返回完整存储列表（含已下线/缺失题目） */
+            /** @description 节点引用的题目 id，按节点配置顺序；公开树对非作者且无学习路线管理/只读权限者仅返回公开题目 id， 作者、拥有 learning_path.admin.read 或 learning_path.official.manage 者返回完整存储列表（含已下线/缺失题目） */
             problemIds: number[];
             /** @description 公开题目的摘要；题目下线后可能少于 problemIds */
             problems: components["schemas"]["LearningProblemSummary"][];

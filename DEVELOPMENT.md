@@ -3,7 +3,7 @@
 > 本文档基于 `plan.md` 细化，是 kapOJ（Kap Online Judge）平台的详细开发规格说明书。
 > 目标：**打造出最有趣味的 Online Judge 平台**。
 > 文档包含完整的架构设计、数据库设计、模块需求，并为每个模块提供了可直接交给 Codex 的**开发提示词（Prompt）**。
-> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)，前端 UI 迁移见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。当前进度：**M4-2A 与 RBAC-B 已完成**（M0–M3 已完成；M4 进行中。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页、签到、Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线模型、权限、路线/节点 CRUD 与树结构；RBAC-A 交付权限目录、内置角色、首次 Seed/旧角色映射、实时 Access 解析、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API。学习路线进度/事件/守卫与前端、社交互动、Rating 衰减/赛季重置、现有管理接口迁移（RBAC-C）与管理后台 UI（RBAC-D）尚未实现）。前端 UI 已完成 UI-00～UI-18 的 PrimeVue 4 迁移与 UI-30（M4-C 排行榜/历史）直接实现，剩余 UI-19 题库编辑与 UI-20 异常页；该迁移已提交。
+> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)，前端 UI 迁移见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。当前进度：**M4-2A 与 RBAC-C 已完成**（M0–M3 已完成；M4 进行中。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页、签到、Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线模型、权限、路线/节点 CRUD 与树结构；RBAC-A 交付权限目录、内置角色、首次 Seed/旧角色映射、实时 Access 解析、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计。学习路线进度/事件/守卫与前端、社交互动、Rating 衰减/赛季重置与管理后台 UI（RBAC-D）尚未实现）。前端 UI 已完成 UI-00～UI-18 的 PrimeVue 4 迁移与 UI-30（M4-C 排行榜/历史）直接实现，剩余 UI-19 题库编辑与 UI-20 异常页；该迁移已提交。
 
 ---
 
@@ -59,7 +59,7 @@ kapOJ 是一个融合 **竞技评测 + 游戏化成长体系 + AI 辅助** 的�
 | 比赛管理员 | 创建/管理比赛、发布公告                                        |
 | 超级管理员 | 全部权限，含成就/任务/徽章/称号/证书管理、用户管理             |
 
-> **RBAC 实现说明（2026-11-06）**：上述固定角色正在升级为「多角色 + 全局权限」模型。`users.role` 与 JWT 中的 `role` 是 legacy 兼容字段：**未迁移的接口仍按它授权；RBAC 权限判断只认 `user_roles` 关联的角色与 `role_permissions`**，RBAC-C 完成全部管理接口迁移后，该字段才只用于展示/兼容。内置角色、权限目录与映射见 4.7。角色/用户角色/审计/统计管理 API（RBAC-B）已完成；现有管理接口迁移（RBAC-C）与管理后台 UI（RBAC-D）尚未实现。
+> **RBAC 实现说明（2026-11-06）**：上述固定角色已升级为「多角色 + 全局权限」模型。`users.role` 与 JWT 中的 `role` 是 legacy 兼容字段，**自 RBAC-C 起不再参与任何管理授权，仅用于展示/兼容**；管理授权只认 `user_roles` 关联的角色与 `role_permissions`。内置角色、权限目录与映射见 4.7。角色/用户角色/审计/统计管理 API（RBAC-B）与内容管理接口迁移（RBAC-C）已完成；管理后台 UI（RBAC-D）尚未实现。
 
 ---
 
@@ -174,7 +174,7 @@ kapoj/
 ```sql
 users (
   id, username, nickname, email, password_hash, avatar_url,
-  role,            -- legacy 兼容字段：user / problem_admin / contest_admin / super_admin；未迁移接口仍用其授权，RBAC-C 完成后才只用于展示
+  role,            -- legacy 兼容字段：user / problem_admin / contest_admin / super_admin；自 RBAC-C 起仅用于展示，不再参与管理授权
   rating,          -- 当前比赛 Rating（由 rating_history 结算得出，此处为缓存）
   coins,           -- 金币余额，不允许为负（CHECK coins >= 0）
   bio, status,     -- active / banned
@@ -218,7 +218,7 @@ user_roles (
 admin_audit_logs (
   id, actor_id, action, target_type, target_id NULL, summary, ip, user_agent, created_at
 )
--- actor/action/created_at 建索引；审计写入由 RBAC-B 实现
+-- actor/action/created_at 建索引；审计写入由 RBAC-B（敏感操作）与 RBAC-C（内容管理）实现
 
 rbac_meta (
   key, value
@@ -226,8 +226,8 @@ rbac_meta (
 -- key 为主键；Seed 写入 key=seed_version、value=1
 
 -- 实现差异（RBAC-A）：
--- users.role 继续保留，是 legacy 兼容字段：未迁移接口仍按它授权；RBAC 权限判断只认
--- user_roles/role_permissions，RBAC-C 完成迁移后才只用于展示；
+-- users.role 继续保留，是 legacy 兼容字段：自 RBAC-C 起不再参与任何管理授权，仅用于展示；
+-- RBAC 权限判断只认 user_roles/role_permissions；
 -- 权限来源为 users → user_roles → roles → role_permissions → permissions 的并集；
 -- 唯一索引为 uniq_roles_code、uniq_permissions_code、uniq_role_permissions、uniq_user_roles；
 -- 首次 Seed 的判定标记为 rbac_meta.seed_version，详细语义见 4.7。
@@ -483,7 +483,7 @@ user_ai_configs (
 - 注册、登录（用户名/邮箱 + 密码）、JWT 鉴权、刷新令牌。refresh token 保存在 Redis 中，登出或修改密码后立即吊销。
 - 登录失败次数限制（如 5 分钟内最多 10 次），防止暴力破解。
 - 个人中心：查看/编辑资料、头像上传、我的成就/徽章/称号/金币、装扮管理。
-- 角色与权限（RBAC）：多角色 + 全局权限；`users.role` 保留为 legacy/展示字段，权限由 `roles`/`permissions` 实时解析；当前未迁移接口仍用 legacy role 授权，RBAC-C 完成后只用于展示。内置角色、权限码与迁移语义见 4.7。
+- 角色与权限（RBAC）：多角色 + 全局权限；`users.role` 保留为 legacy/展示字段，权限由 `roles`/`permissions` 实时解析；自 RBAC-C 起 legacy role 不再授权，只用于展示。内置角色、权限码与迁移语义见 4.7。
 
 **关键接口**
 
@@ -523,7 +523,7 @@ user_ai_configs (
 - 权限解析使用 `rbac.Service.Access`：每次请求实时查询数据库，要求用户存在且 `status=active`；多角色权限取并集；任一角色为 `super_admin` 时 `isSuperAdmin=true`，中间件直接放行。无角色时 `permissions` 为空数组。
 - 封禁用户的 `/users/me` 保持普通接口既有行为：仍返回基础资料，但 `roles`/`permissions` 为空、`isSuperAdmin=false`；权限中间件对封禁用户返回 403。
 - `middleware.RequirePermission(resolver, codes...)` 与 `RequireAnyPermission` 已实现：未登录 401，解析失败/封禁/权限不足 403，super 绕过；通过后把 `*rbac.Access` 写入 context，可用 `CurrentAccess` 读取。
-- **当前范围（RBAC-A）**：现有管理接口尚未迁移到权限码，仍按 JWT 中的 legacy role 授权（`RequireRole` 或直接读取 `claims.Role`）；角色管理 API、用户角色分配 API、审计写入属于 RBAC-B（已完成），管理后台 UI 属于 RBAC-D。因此现阶段要让既有管理接口可用，仍需 `users.role` 为对应管理员并重新登录；要让 `/users/me` 与后续权限中间件识别角色，需要 `user_roles` 关联（首次 Seed 会按旧角色自动映射，见 4.7）。
+- **当前范围（RBAC-A，历史记录）**：RBAC-A 只提供权限基础设施；管理接口迁移到权限码、Viewer 能力拆分与内容管理审计随后由 RBAC-C 完成，管理后台 UI 属于 RBAC-D。因此现阶段既有管理接口已全部改为权限码授权，无需再依赖 `users.role` 为对应管理员；`/users/me` 与权限中间件识别角色依赖 `user_roles` 关联（首次 Seed 会按旧角色自动映射，见 4.7）。
 
 **实现状态（RBAC-B，2026-11-06）**
 
@@ -654,12 +654,12 @@ user_ai_configs (
 **实现状态（M1-A）**
 
 - 后端题目 CRUD、测试数据管理、checker 上传与前端题目列表、详情、编辑页、测评记录页、Monaco 提交页均已完成；提交、评测与 SSE 实时刷新已在 M1-B/M1-C 交付。
-- 权限：写接口需要 `problem_admin` 或 `super_admin`（`super_admin` 总是放行）；`contest_admin` 不能管理题目。未公开题目对非管理员返回 40400，与不存在一致。
+- 权限（RBAC-C）：`POST /problems` 需要 `problem.create`；`PUT /problems/:id` 需要 `problem.update`，修改 `isPublic`（公开/下线）额外要求 `problem.publish`（仅 `problem.update` 不能发布/下线）；`DELETE` 需要 `problem.delete`；测试点与排序需要 `problem.testcase.manage`；checker 上传需要 `problem.checker.manage`。`super_admin` 总是放行。未公开题目对无 `problem.view_hidden` 者返回 40400，与不存在一致；`contest_admin` 不因比赛管理权限看到隐藏题。
 - 创建时忽略 `isPublic`，新题一律未公开；发布需至少 1 个测试点，特判题还需已上传 checker；公开题目不能删除最后一个测试点。发布校验与删除保护都在题目行锁事务内完成，并发删除测试点不会让公开题目变成 0 个测试点。
 - **更新是整体替换**：`PUT /problems/:id` 必须提交全部可编辑字段；未提交的字符串/数组会清空，`isPublic` 缺省为 `false`（即下线）。前端编辑页会先加载完整题目再提交。题目创建/更新的 JSON 请求体上限为 4 MiB。
 - 难度为整数 1–5（入门、普及、提高、省选、NOI）。
-- 列表筛选：`keyword` 同时匹配标题与 slug（不区分大小写、按字面量匹配，`%`/`_` 不作通配符）；`tag` 精确匹配整个标签；`difficulty` 精确匹配；`includeHidden` 仅对题目管理员有效。
-- 题解可见性：`solutionMd`、`solutionCode`、`checkerUploaded`、`createdBy` 返回给题目管理员，或本人已在该题有 `accepted` 提交的普通用户；`hintMd` 对所有人生效。
+- 列表筛选：`keyword` 同时匹配标题与 slug（不区分大小写、按字面量匹配，`%`/`_` 不作通配符）；`tag` 精确匹配整个标签；`difficulty` 精确匹配；`includeHidden` 需要 `problem.view_hidden` 权限（需携带 bearer token）。
+- 题解可见性：`solutionMd`、`solutionCode`、`checkerUploaded`、`createdBy` 返回给拥有题目管理权限（`problem.update`/`problem.delete`/`problem.publish`/`problem.testcase.manage`/`problem.checker.manage` 任一）的用户，或本人已在该题有 `accepted` 提交的普通用户；`problem.view_hidden` 只放开题面，不放开题解；`hintMd` 对所有人生效。
 - 交互题允许创建与存储，M1 不参与评测；提交时的拒绝逻辑在 M1-B。
 - 前端使用 md-editor-v3 编辑与渲染 Markdown，渲染结果统一经 `sanitize-html` 净化；KaTeX 与 highlight.js 使用本地实例，不加载 CDN 资源。
 - 关联比赛：M2 之前详情页显示「比赛功能将在 M2 上线」。
@@ -705,7 +705,7 @@ user_ai_configs (
 **实现状态（M2-A）**
 
 - 后端已完成比赛 CRUD、克隆、比赛题目整体替换、报名（open/password/invite）、报名用户列表、公告 CRUD。
-- 权限：写操作仅 `contest_admin`/`super_admin`；非公开比赛对非报名者/非管理员返回 40400；开赛前比赛题目仅管理员可见。
+- 权限（RBAC-C）：`POST /contests` 与克隆需要 `contest.create`；`PUT` 需要 `contest.update`；`DELETE` 需要 `contest.delete`；报名用户列表需要 `contest.participant.read`；公告写需要 `contest.announcement.manage`；非公开比赛、开赛前题目与榜单读取需要 `contest.view_hidden`。非公开比赛对非报名者且无 `contest.view_hidden` 者返回 40400；`super_admin` 总是放行。
 - 密码与邀请码只存 bcrypt 哈希；响应 DTO 不包含哈希；日志只记录请求路径与状态。
 - 比赛状态由服务器时间计算为 `upcoming`/`running`/`ended`；`is_rated` 在开赛后冻结（再修改返回 40001），Rating 结算在 M4-A 实现（见 5.5）。
 - 比赛题目最多 26 题，`displayId` 为 A–Z 且同一比赛唯一；更新时整体替换题目列表。
@@ -714,7 +714,7 @@ user_ai_configs (
 
 **实现状态（M2-B）**
 
-- 比赛提交复用 M1 提交/评测管线：`POST /submissions` 带 `contestId`，校验比赛存在、`[start,end)`、报名状态、题目归属；比赛管理员可跳过报名用于测试。
+- 比赛提交复用 M1 提交/评测管线：`POST /submissions` 带 `contestId`，校验比赛存在、`[start,end)`、报名状态、题目归属；拥有 `contest.update` 者可跳过报名用于测试。
 - 赛时保护覆盖列表与详情：进行中且非本人/非管理员时，只保留状态与语言，代码、错误信息、测试点详情、耗时、内存、得分全部隐藏；本人/管理员/比赛结束后完整可见。
 - `GET /contests/:id/ranklist`：
   - ICPC：通过题数降序、总罚时升序（首次 AC 分钟 + 首次 AC 前未通过次数 × 20），并列同名次，包含 0 提交报名者。
@@ -783,8 +783,8 @@ user_ai_configs (
 **关键设计**
 
 - 节点模型：`learning_path_nodes` 支持 `parent_id` 自关联，形成树；父节点必须属于同一路线，不允许自环/成环，最大深度 8 层。
-- 可见性：官方与公开自定义路线对所有人可见；私有自定义路线仅作者与管理员可见；`is_active=false`（软删除）路线仅管理员可见/恢复。无权限与不存在统一返回 40400。
-- 权限：创建路线需登录；编辑/删除路线与节点仅作者或管理员；官方路线仅管理员可写。`is_official` 仅创建时由管理员设置、创建后不可修改（管理员也不能提升自定义路线为官方），`is_active` 仅管理员可设置，`is_official=true` 强制公开。
+- 可见性：官方与公开自定义路线对所有人可见；私有自定义路线仅作者与拥有 `learning_path.admin.read` 或 `learning_path.official.manage` 者可见；`is_active=false`（软删除）路线需要 `learning_path.admin.read` 或 `learning_path.official.manage` 才可见/恢复。无权限与不存在统一返回 40400。
+- 权限（RBAC-C）：创建路线需登录；编辑/删除路线与节点仅作者或拥有 `learning_path.official.manage` 者；官方路线仅拥有 `learning_path.official.manage` 者可写；`learning_path.admin.read` 只读查看全部/下架/完整题目 ID，不参与写授权。`is_official` 仅创建时由拥有 `learning_path.official.manage` 者设置、创建后不可修改（拥有该权限者也不能提升自定义路线为官方），`is_active` 仅拥有 `learning_path.official.manage` 者可设置，`is_official=true` 强制公开。
 - 节点内容：题目 1–50 道、不重复且必须存在/公开；`required_count` 为 1–题目数，默认题目数；仅叶子节点可删除，有子节点返回 40001。
 - 解锁规则：节点只有在父节点完成后才可挑战；节点完成 = 通过其 `required_count` 道题（默认为节点内全部题目）。根节点默认解锁。进度由服务端根据 AC 计算，不接受客户端上报。
 - 前端用 PrimeVue 4 `TreeTable` 或自定义树形组件可视化。结构是树而非 DAG，每个节点只有一个父节点。
@@ -793,7 +793,7 @@ user_ai_configs (
 
 - 已完成 `learning_paths`、`learning_path_nodes`、`user_learning_progress` 模型/迁移与 OpenAPI/前端类型。
 - 已交付官方/自定义权限、私有/公开/下架可见性、路线 CRUD、软删除/恢复校验、节点 CRUD、父节点/环/深度/题目/`required_count` 校验与叶子删除限制。
-- `GET /api/learning-paths/:id/tree` 当前仅返回结构状态：根节点 `active`、其余 `locked`、`solvedCount=0`；真实进度在 M4-2B 实现。公开树对非作者/非管理员只返回公开题目的 `problemIds`，作者/管理员保留完整存储列表供编辑。
+- `GET /api/learning-paths/:id/tree` 当前仅返回结构状态：根节点 `active`、其余 `locked`、`solvedCount=0`；真实进度在 M4-2B 实现。公开树对非作者且无学习路线管理/只读权限者只返回公开题目的 `problemIds`，作者、拥有 `learning_path.admin.read` 或 `learning_path.official.manage` 者保留完整存储列表供编辑。
 - M4-2B 待办：`EvaluateUser`、AC 事件补算、完成锁存与题目 `LearningGuard`。M4-2C 待办：前端列表/树/编辑/管理页。当前不计算 `myCompletedCount`。
 
 **Codex 提示词（学习路线）**
@@ -852,7 +852,7 @@ user_ai_configs (
 
 - 接口：`GET /submissions`（公开，分页 + problemId/contestId/language/status/userId/nickname 筛选）、`GET /submissions/:id`（公开，返回代码与逐测试点结果）、`GET /submissions/stream`（SSE，事件只含 `{"submissionId": id}`）。
 - 排序为提交 id 倒序；`contestId=0` 表示练习提交，`contestId>0` 表示指定比赛。比赛提交在 M2 赛时保护完成前，非本人/非管理员只返回 `codeHidden=true`，不返回代码、错误信息与测试点详情。
-- 隐藏题目：公开列表只显示 `problems.is_public=true` 的提交（登录用户额外可看到自己的提交）；详情仅本人、题目管理员或超级管理员可见，其他用户返回 40400；`contest_admin` 不因比赛管理权限看到隐藏题。
+- 隐藏题目：公开列表只显示 `problems.is_public=true` 的提交（登录用户额外可看到自己的提交）；他人隐藏题的提交列表/详情需要 `problem.view_hidden`，其他用户返回 40400；`contest_admin` 不因比赛管理权限看到隐藏题。比赛进行中他人提交的代码/成绩/测试点需要 `submission.view_live_contest` 才可查看（本人、赛后恢复）。
 - 昵称为不区分大小写的模糊匹配，按字面量转义 `%`/`_`；非法 status/language/负 id 返回 40001。
 - Web 在创建提交（pending）与入队失败（system_error）、judge 在领取任务（judging）与写入终态后，都会向 Redis 频道 `kapoj:submissions` 发布 submission id；Web 端 SSE 订阅该频道，连接建立时立即发送注释行、每 15 秒 keep-alive，浏览器断线由 EventSource 自动重连。前端在 `onopen` 补拉一次并每 30 秒兜底刷新，避免 Redis/网络短暂中断造成列表长期停留在旧状态。
 - 前端：`/submissions` 记录页（筛选、分页、状态彩色标签、详情抽屉、SSE 自动刷新）；`/problems/:id/submit` 提交页（Monaco、语言切换、代码改动 500ms 防抖写入本地草稿，存储异常不影响提交）；题目详情页在本人 AC 后显示「解题思路」「解题代码」。
@@ -867,7 +867,7 @@ user_ai_configs (
 - 把固定 `users.role` 枚举升级为可配置的「多角色 + 全局权限」体系：权限码按资源分组，账号可拥有多个角色，权限取并集。
 - 权限变更实时生效：后端每次管理请求都按用户 ID 查询用户状态、角色与权限，不把权限写入 JWT，也不使用权限缓存。
 - 统一 `/admin` 管理后台：仪表盘、用户管理、角色权限、审计日志；现有题目/比赛/游戏化页面先迁移权限判断并沿用入口。
-- 兼容迁移现有 `super_admin` / `problem_admin` / `contest_admin` 账号；`users.role` 与 JWT role 保留为 legacy/展示字段，当前未迁移接口仍用 legacy role 授权，RBAC-C 完成后只用于展示。
+- 兼容迁移现有 `super_admin` / `problem_admin` / `contest_admin` 账号；`users.role` 与 JWT role 保留为 legacy/展示字段，自 RBAC-C 起不再参与任何管理授权，只用于展示。
 
 **权限目录（34 个权限码，稳定不可改名）**
 
@@ -904,9 +904,9 @@ user_ai_configs (
 | `contest_admin` | `contest_admin` |
 | `user` | 不分配管理角色 |
 
-**实现状态（RBAC-A 与 RBAC-B 已完成，2026-11-06）**
+**实现状态（RBAC-A、RBAC-B 与 RBAC-C 已完成，2026-11-06）**
 
-- 已建表：`roles`、`permissions`、`role_permissions`、`user_roles`、`admin_audit_logs`、`rbac_meta`；唯一索引见 3.1。`admin_audit_logs` 的审计写入由 RBAC-B 完成。
+- 已建表：`roles`、`permissions`、`role_permissions`、`user_roles`、`admin_audit_logs`、`rbac_meta`；唯一索引见 3.1。`admin_audit_logs` 的审计写入由 RBAC-B（敏感操作，事务内）与 RBAC-C（内容管理，best-effort）完成。
 - 权限目录与内置角色定义在 `apps/server/internal/rbac/catalog.go`；测试锁定权限数量/唯一性与内置角色权限集合，名称/描述/分组仅校验非空，不锁定具体中文文案。
 - 启动时在 `db.Migrate` 之后执行 `rbac.Seed`：
   - 仅当 `rbac_meta.seed_version` 不存在时执行完整 seed：插入权限目录、内置角色、内置角色权限（`super_admin` 除外）、按 `users.role` 映射旧账号，最后写入 `seed_version=1`。
@@ -937,8 +937,18 @@ user_ai_configs (
 
 - **保护规则**：系统角色不可删除、code/name 不可改；`super_admin` 权限不可修改；只有 super 能授予/移除/封禁/解封 super；禁止封禁自己（40001）；禁止移除/封禁最后一个 active super（40001）。角色/权限变更、用户角色分配、封禁/解封、管理员编辑用户在同一事务内写审计，失败回滚。
 - 自定义角色 code 创建后不可修改（`^[a-z][a-z0-9_]{2,63}$`），权限用 code 整体替换、重复去重、非法 code 返回 40001。
-- `POST /api/admin/users/:id/coins`（`user.coins.adjust`）保留为 RBAC-C 迁移对象，RBAC-B 未改动。
-- **本阶段未做**：现有题目、比赛、游戏化、学习路线管理接口从 legacy role 判断（`RequireRole` 或直接读取 `claims.Role`）迁移到权限码，以及内容管理审计（RBAC-C）；管理后台前端、`auth.can`、菜单/路由/按钮权限化与真实浏览器 E2E（RBAC-D）。因此当前没有角色管理页面或统一 `/admin` 管理壳，现有管理接口仍以 legacy `users.role`/JWT role 授权。
+- `POST /api/admin/users/:id/coins`（`user.coins.adjust`）在 RBAC-C 迁移到 `adminapi`，调整与审计在同一事务内完成，审计失败回滚。
+
+**RBAC-C 内容管理接口迁移（所有管理写接口与隐藏读取已迁移到权限码）**
+
+- 题目：`problem.view_hidden`（隐藏题列表/详情/统计与隐藏题提交）、`problem.create`/`problem.update`/`problem.delete`、`problem.publish`（修改 `isPublic` 需 `problem.update` + `problem.publish`）、`problem.testcase.manage`、`problem.checker.manage`。`problem.Viewer` 拆 `CanViewHidden`/`CanViewSolution`，`problem.view_hidden` 只放开题面不放开题解。
+- 比赛：`contest.view_hidden`（非公开/开赛前/榜单读取）、`contest.create`（含克隆）、`contest.update`、`contest.delete`、`contest.participant.read`、`contest.announcement.manage`。`contest.Viewer` 拆六个能力字段，`canManage` 由任一管理能力派生。
+- 测评：`problem.view_hidden`（隐藏题提交）、`submission.view_live_contest`（赛时保护绕过）、`contest.update`（免报名比赛测试提交）。读取路由仍公开，`submission.Viewer` 拆 `CanViewHiddenProblems`/`CanViewLiveContest`/`CanManageContest`。
+- 游戏化：成就/任务/徽章/称号各用 `gamification.*.manage`（含 `includeInactive`）；`gamification.config` 仍公开只读（`gamification.config.manage` 暂无写接口）。金币调整 → `user.coins.adjust`（事务内审计）。
+- 学习路线：`learning_path.official.manage`（写/管理官方与任意路线、上下架/恢复/节点，保留内容管理员既有行为）、`learning_path.admin.read`（只读查看全部/下架/完整题目 ID，不参与写授权）；普通作者自定义路线规则保留。`learning.Viewer` 拆 `CanManageOfficial`/`CanViewAll`。
+- 内容管理审计：题目/比赛/游戏化/学习路线写操作经 `AuditAdminAction` best-effort 写审计（仅 2xx 且 actor 拥有对应权限码时），action 为权限码，target type 为 `problem`/`contest`/`gamification_achievement`/`gamification_task`/`gamification_badge`/`gamification_title`/`learning_path`，仅记录 method/path/status/target，失败只记日志不阻断业务。
+- **legacy role 不再授权**：RBAC-C 完成后，任何管理授权不再调用 `RequireRole` 或读取 `claims.Role`；`users.role`/JWT role 仅保留展示/兼容。
+- **本阶段未做（RBAC-D）**：管理后台前端 `AdminLayout`、仪表盘/用户管理/角色权限/审计页面、`auth.can`、菜单/路由/按钮权限化与真实浏览器 E2E。因此当前没有统一 `/admin` 管理壳，游戏化管理仍沿用现有 `/admin/gamification` 页面。
 
 **交付拆分**
 
@@ -946,7 +956,7 @@ user_ai_configs (
 |------|------|------|
 | RBAC-A | 权限模型、目录、首次 Seed/旧角色映射、Access 解析、权限中间件、Me 权限字段（后端） | ✅ |
 | RBAC-B | 角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计、仪表盘统计（后端） | ✅ |
-| RBAC-C | 现有管理接口权限码迁移、Viewer 能力拆分、内容管理审计、回归测试 | ⬜ |
+| RBAC-C | 现有管理接口权限码迁移、Viewer 能力拆分、内容管理审计、回归测试 | ✅ |
 | RBAC-D | AdminLayout、仪表盘/用户/角色/审计页面、`auth.can`、菜单/路由/按钮权限化、文档与浏览器 E2E | ⬜ |
 
 **Codex 提示词（RBAC 后端核心）**
@@ -961,7 +971,7 @@ user_ai_configs (
 2. 权限目录按资源分组，权限码格式 domain.action；内置 super_admin/content_admin/contest_admin/gamification_admin/user_admin/security_admin/auditor 七个角色。
 3. 启动时幂等 Seed：首次写入权限、角色、角色权限并按 users.role 映射旧账号；写 rbac_meta.seed_version；后续启动不恢复管理员删除的角色权限。
 4. rbac.Service.Access 实时解析用户 active 状态、多角色权限并集与 super 标记；RequirePermission/RequireAnyPermission 未登录 401、无权限/封禁 403、super 绕过。
-5. GET /users/me 返回 roles、permissions、isSuperAdmin；users.role 仅作 legacy 兼容展示（RBAC-C 完成前未迁移接口仍用其授权）。
+5. GET /users/me 返回 roles、permissions、isSuperAdmin；users.role 仅作 legacy 兼容展示（RBAC-C 起不再参与管理授权）。
 6. 验收：多角色并集、封禁拒绝、权限变更后旧 token 立即生效、Seed 幂等且不恢复已删除权限。
 ```
 
@@ -985,11 +995,11 @@ user_ai_configs (
 
 **实现状态（M3-A 后端、M3-C 前端已完成；M3-B 补充徽章奖励）**
 
-- 接口：`GET /achievements`（公开，可选登录，登录时含解锁状态与逐条件进度；`includeInactive=true` 仅超级管理员）、`GET /users/me/achievements`（登录）、`POST /achievements`、`PUT /achievements/:id`、`DELETE /achievements/:id`（超级管理员）。
+- 接口：`GET /achievements`（公开，可选登录，登录时含解锁状态与逐条件进度；`includeInactive=true` 需要 `gamification.achievement.manage`）、`GET /users/me/achievements`（登录）、`POST /achievements`、`PUT /achievements/:id`、`DELETE /achievements/:id`（`gamification.achievement.manage`）。
 - 条件类型：`ac_count`（去重 AC 题目数）、`contest_count`（报名比赛数）、`login_streak`（截至今天的连续登录天数）、`created_contest`（创建的比赛数）、`all_of`（2–8 个非 `all_of` 子条件，不允许嵌套）；阈值必须为正整数，非法配置返回 40001。
 - 事件：judge 在提交 AC 后投递 `submission.accepted`，注册/登录后投递 `user.login`，比赛报名后投递 `contest.join`；队列 `game`、任务类型 `game:event`，最多重试 5 次。worker 与读取接口都调用同一个 `EvaluateUser`，重复/丢失事件最终收敛。
 - 奖励：金币写入 `coin_transactions`（`reason=achievement`、`ref_type=achievement`），与解锁记录同一事务，唯一约束保证只发一次。M3-B 起 `rewardBadgeId` 生效：配置时徽章必须存在且上架，否则返回 40001；发放时直接写入 `user_badges`，不占用商城库存。
-- 可见性：已解锁成就下线后仍对本人可见；未解锁且已下线的成就仅超级管理员通过 `includeInactive=true` 看到。
+- 可见性：已解锁成就下线后仍对本人可见；未解锁且已下线的成就仅拥有 `gamification.achievement.manage` 者通过 `includeInactive=true` 看到。
 - 前端成就页（`/achievements`）已完成：卡片网格、全部/已解锁/未解锁筛选、条件进度、奖励与解锁时间；已接入侧边栏「成长」子菜单。
 
 **Codex 提示词（成就）**
@@ -1033,7 +1043,7 @@ user_ai_configs (
 
 **实现状态（M3-A 后端、M3-C 前端已完成）**
 
-- 接口：`GET /tasks`（公开，可选登录；`includeInactive=true` 仅超级管理员）、`POST /tasks`、`PUT /tasks/:id`、`DELETE /tasks/:id`（超级管理员）、`POST /tasks/:id/claim`（登录）。
+- 接口：`GET /tasks`（公开，可选登录；`includeInactive=true` 需要 `gamification.task.manage`）、`POST /tasks`、`PUT /tasks/:id`、`DELETE /tasks/:id`（`gamification.task.manage`）、`POST /tasks/:id/claim`（登录）。
 - 题目为 1–20 个不重复的公开题目；奖励金币 0–1000000；`start_time < end_time`，领取要求 `start <= now < end`。
 - 在领取窗口内重复领取返回当前记录（幂等）；任务已完成、未开始、已截止或已下线返回 40001；任务不存在返回 40400。
 - 完成判定只统计 `claimed_at <= judged_at < end_time` 的去重 AC；领取前已 AC 的题目不计入。事件丢失时，读取任务大厅或登录/AC 事件会补算，`user_task_records` 行锁保证 `claimed → completed` 只发生一次，金币只发一次。
@@ -1081,7 +1091,7 @@ user_ai_configs (
 
 **实现状态（M3-B 后端、M3-C 前端已完成）**
 
-- 接口：`GET /badges`（公开，可选登录；登录时含 `owned`/`equipped`；`includeInactive=true` 仅超级管理员）、`POST /badges`、`PUT /badges/:id`、`DELETE /badges/:id`（超级管理员）、`POST /badges/:id/image`（超级管理员，multipart 字段 `file`）、`GET /badges/:id/image`（公开）、`POST /badges/:id/purchase|equip|unequip`（登录）、`GET /users/:id/badges`（公开）。
+- 接口：`GET /badges`（公开，可选登录；登录时含 `owned`/`equipped`；`includeInactive=true` 需要 `gamification.badge.manage`）、`POST /badges`、`PUT /badges/:id`、`DELETE /badges/:id`（`gamification.badge.manage`）、`POST /badges/:id/image`（`gamification.badge.manage`，multipart 字段 `file`）、`GET /badges/:id/image`（公开）、`POST /badges/:id/purchase|equip|unequip`（登录）、`GET /users/:id/badges`（公开）。
 - 装备上限由 `KAPOJ_MAX_EQUIPPED_BADGES` 配置（1–10，默认 3）；装备前锁定用户行并重新统计，避免并发超限；已装备时重复装备、未装备时卸下均幂等成功。
 - 购买在同一事务内锁定徽章行与用户行，校验上架、未拥有、限量库存与余额，扣库存/扣金币/写 `coin_transactions`（`reason=badge_purchase`、`ref_type=badge`）/写 `user_badges`；已拥有、库存不足、余额不足或已下线返回 40001。
 - 管理端更新在同一事务内锁定徽章行并只更新提交字段：`stock` 省略时保留当前库存（包括并发购买扣减），`imageUrl` 留空时保留现有图片，`isActive` 省略时保留上下架状态，避免覆盖并发购买、图片上传或软删除。
@@ -1125,7 +1135,7 @@ user_ai_configs (
 
 **实现状态（M3-B 后端、M3-C 前端已完成）**
 
-- 接口：`GET /titles`（公开，可选登录；登录时含解锁/购买/装备状态与条件进度；`includeInactive=true` 仅超级管理员）、`POST /titles`、`PUT /titles/:id`、`DELETE /titles/:id`（超级管理员）、`POST /titles/:id/purchase|equip|unequip`（登录）。
+- 接口：`GET /titles`（公开，可选登录；登录时含解锁/购买/装备状态与条件进度；`includeInactive=true` 需要 `gamification.title.manage`）、`POST /titles`、`PUT /titles/:id`、`DELETE /titles/:id`（`gamification.title.manage`）、`POST /titles/:id/purchase|equip|unequip`（登录）。
 - 解锁条件：`rating`（当前 Rating ≥ 阈值）、`ac_count`（去重 AC 题目数 ≥ 阈值）、`achievement`（已解锁指定 code 的成就）；读取列表时先补算解锁，不扣金币。M4-A 已实现 Rating 结算，Rating 条件自然可达。
 - 购买要求已解锁且未购买，在同一事务内扣金币、写 `coin_transactions`（`reason=title_purchase`、`ref_type=title`）并记录购买时间；已下线但已解锁的称号仍可购买。
 - 装备要求已购买；同一事务内先卸下该用户全部称号，再装备目标称号，并发下始终最多 1 个；重复装备幂等成功。
