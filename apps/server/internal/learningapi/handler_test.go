@@ -21,6 +21,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/dbtypes"
 	"github.com/kaptree/kapoj/apps/server/internal/learning"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
+	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 	"github.com/kaptree/kapoj/apps/server/internal/router"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
@@ -34,14 +35,16 @@ type noopQueue struct{}
 func (noopQueue) Enqueue(context.Context, int64) error { return nil }
 
 type fx struct {
-	t  *testing.T
-	h  http.Handler
-	db *gorm.DB
+	t    *testing.T
+	h    http.Handler
+	db   *gorm.DB
+	rbac *rbac.Service
 }
 
 func newFx(t *testing.T) *fx {
 	t.Helper()
 	g := testutil.PG(t)
+	rbacSvc := testutil.SeedRBAC(t, g)
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr(), MaxRetries: -1})
 	t.Cleanup(func() { _ = rdb.Close() })
@@ -50,12 +53,13 @@ func newFx(t *testing.T) *fx {
 	h := router.New(router.Deps{
 		DB: g, Redis: rdb, Storage: store, Enqueuer: noopQueue{},
 		Learning: learning.NewService(learning.NewRepository(g)),
+		RBAC:     rbacSvc,
 		Config: &config.Config{
 			JWTSecret: testJWTSecret, AccessTokenTTL: 15 * time.Minute,
 			RefreshTokenTTL: time.Hour, SubmitCooldown: time.Second,
 		},
 	})
-	return &fx{t: t, h: h, db: g}
+	return &fx{t: t, h: h, db: g, rbac: rbacSvc}
 }
 
 func (f *fx) user(username string, role user.Role) int64 {
@@ -72,10 +76,34 @@ func (f *fx) user(username string, role user.Role) int64 {
 
 func (f *fx) token(userID int64, role user.Role) string {
 	f.t.Helper()
+	testutil.AssignLegacyRole(f.t, f.db, userID, role)
 	token, err := auth.NewTokenIssuer(testJWTSecret, 15*time.Minute).
 		IssueAccess(&user.User{ID: userID, Role: role})
 	require.NoError(f.t, err)
 	return token
+}
+
+// legacyToken 签发携带旧 role 的 token，但不分配任何 RBAC 角色，用于证明旧
+// role 不再授权管理操作。
+func (f *fx) legacyToken(userID int64, role user.Role) string {
+	f.t.Helper()
+	token, err := auth.NewTokenIssuer(testJWTSecret, 15*time.Minute).
+		IssueAccess(&user.User{ID: userID, Role: role})
+	require.NoError(f.t, err)
+	return token
+}
+
+// createRole 创建持有给定权限码的自定义角色，供细粒度权限测试使用。
+func (f *fx) createRole(code string, perms ...rbac.PermissionCode) {
+	f.t.Helper()
+	codes := make([]string, len(perms))
+	for i, p := range perms {
+		codes[i] = string(p)
+	}
+	_, err := f.rbac.CreateRole(context.Background(), rbac.AuditMeta{ActorID: 1}, rbac.RoleInput{
+		Code: code, Name: code, PermissionCodes: codes,
+	})
+	require.NoError(f.t, err)
 }
 
 func (f *fx) do(method, path, token string, body any) (*httptest.ResponseRecorder, map[string]any) {
@@ -589,4 +617,247 @@ func TestLearningPathAPINodesAndTree(t *testing.T) {
 		map[string]any{"title": "非法 id", "problemIds": []int64{pub.ID}})
 	assert.Equal(t, http.StatusNotFound, w.Code)
 	requireCode(t, resp, 40400)
+}
+
+func addTestProblem(f *fx, slug string, public bool) *problem.Problem {
+	f.t.Helper()
+	p := &problem.Problem{
+		Title: "题目-" + slug, Slug: slug, StatementMD: "题干",
+		Type: problem.TypeTraditional, Difficulty: 1,
+		TimeLimitMS: 1000, MemoryLimitMB: 256, IsPublic: public,
+	}
+	require.NoError(f.t, f.db.Create(p).Error)
+	return p
+}
+
+func addTestNode(f *fx, pathID int64, problemIDs ...int64) *learning.LearningPathNode {
+	f.t.Helper()
+	n := &learning.LearningPathNode{
+		PathID: pathID, Title: "节点", ProblemIDs: dbtypes.List[int64](problemIDs),
+		SortOrder: 0, RequiredCount: 1,
+	}
+	require.NoError(f.t, f.db.Create(n).Error)
+	return n
+}
+
+func TestLearningPathViewerPermissions(t *testing.T) {
+	f := newFx(t)
+
+	// content_admin（official.manage + admin.read）。
+	adminID := f.user("vp-admin", user.RoleProblemAdmin)
+	adminToken := f.token(adminID, user.RoleProblemAdmin)
+
+	// admin.read-only（仅 learning_path.admin.read）。
+	f.createRole("learning_read_only", rbac.PermLearningPathAdminRead)
+	readID := f.user("vp-read", user.RoleUser)
+	testutil.AssignRole(t, f.db, readID, "learning_read_only")
+	readToken := f.token(readID, user.RoleUser)
+
+	authorID := f.user("vp-author", user.RoleUser)
+	authorToken := f.token(authorID, user.RoleUser)
+	otherID := f.user("vp-other", user.RoleUser)
+	otherToken := f.token(otherID, user.RoleUser)
+
+	// content_admin 创建官方路线并管理任意路线。
+	w, resp := f.do(http.MethodPost, "/api/learning-paths", adminToken,
+		map[string]any{"title": "官方路线", "isOfficial": true})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	officialID := int64(responseData(t, resp)["id"].(float64))
+
+	w, resp = f.do(http.MethodPost, "/api/learning-paths", authorToken,
+		map[string]any{"title": "作者自定义"})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	customID := int64(responseData(t, resp)["id"].(float64))
+
+	w, _ = f.do(http.MethodPut, "/api/learning-paths/"+itoa(customID), adminToken,
+		map[string]any{"title": "管理员改名"})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	// admin.read-only 可读（includeInactive/详情/tree 200）。
+	w, _ = f.do(http.MethodGet, "/api/learning-paths?includeInactive=true", readToken, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	w, _ = f.do(http.MethodGet, "/api/learning-paths/"+itoa(customID), readToken, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	w, _ = f.do(http.MethodGet, "/api/learning-paths/"+itoa(customID)+"/tree", readToken, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	// admin.read-only 不能写：创建官方 403，更新/删除/写节点 404。
+	w, _ = f.do(http.MethodPost, "/api/learning-paths", readToken,
+		map[string]any{"title": "冒充官方", "isOfficial": true})
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	w, _ = f.do(http.MethodPut, "/api/learning-paths/"+itoa(customID), readToken,
+		map[string]any{"title": "只读改名"})
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	w, _ = f.do(http.MethodDelete, "/api/learning-paths/"+itoa(customID), readToken, nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	w, _ = f.do(http.MethodPost, "/api/learning-paths/"+itoa(customID)+"/nodes", readToken,
+		map[string]any{"title": "只读节点"})
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	// 普通作者：自己的自定义路线 CRUD 成功。
+	w, _ = f.do(http.MethodPut, "/api/learning-paths/"+itoa(customID), authorToken,
+		map[string]any{"title": "作者改名"})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	// 普通作者不能创建官方路线（403），不能管理官方路线（非作者 404），
+	// 不能管理他人路线（404）。
+	w, _ = f.do(http.MethodPost, "/api/learning-paths", authorToken,
+		map[string]any{"title": "作者冒充官方", "isOfficial": true})
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	w, _ = f.do(http.MethodPut, "/api/learning-paths/"+itoa(officialID), authorToken,
+		map[string]any{"title": "作者改官方"})
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	w, _ = f.do(http.MethodPut, "/api/learning-paths/"+itoa(customID), otherToken,
+		map[string]any{"title": "他人改"})
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	// 旧 role 不再授权：problem_admin token 但未分配 RBAC 角色 → 无管理能力。
+	legacyAdminID := f.user("vp-legacy-admin", user.RoleProblemAdmin)
+	legacyAdminToken := f.legacyToken(legacyAdminID, user.RoleProblemAdmin)
+	w, _ = f.do(http.MethodPost, "/api/learning-paths", legacyAdminToken,
+		map[string]any{"title": "旧角色冒充官方", "isOfficial": true})
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+func TestLearningPathInactiveVisibility(t *testing.T) {
+	f := newFx(t)
+	authorID := f.user("iv-author", user.RoleUser)
+	authorToken := f.token(authorID, user.RoleUser)
+	adminID := f.user("iv-admin", user.RoleProblemAdmin)
+	adminToken := f.token(adminID, user.RoleProblemAdmin)
+
+	f.createRole("learning_read_only", rbac.PermLearningPathAdminRead)
+	readID := f.user("iv-read", user.RoleUser)
+	testutil.AssignRole(t, f.db, readID, "learning_read_only")
+	readToken := f.token(readID, user.RoleUser)
+
+	// 作者创建自定义路线并下架；管理员创建官方路线并下架。
+	w, resp := f.do(http.MethodPost, "/api/learning-paths", authorToken,
+		map[string]any{"title": "下架自定义"})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	customID := int64(responseData(t, resp)["id"].(float64))
+	w, _ = f.do(http.MethodDelete, "/api/learning-paths/"+itoa(customID), authorToken, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	w, resp = f.do(http.MethodPost, "/api/learning-paths", adminToken,
+		map[string]any{"title": "下架官方", "isOfficial": true})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	officialID := int64(responseData(t, resp)["id"].(float64))
+	w, _ = f.do(http.MethodDelete, "/api/learning-paths/"+itoa(officialID), adminToken, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	// 无权限（作者）看不到 inactive。
+	w, resp = f.do(http.MethodGet, "/api/learning-paths?includeInactive=true", authorToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	total, _ := pageData(t, resp)
+	assert.EqualValues(t, 0, total)
+
+	// admin.read 可列/查 inactive。
+	w, resp = f.do(http.MethodGet, "/api/learning-paths?includeInactive=true", readToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	total, _ = pageData(t, resp)
+	assert.EqualValues(t, 2, total)
+	w, _ = f.do(http.MethodGet, "/api/learning-paths/"+itoa(officialID), readToken, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	// official.manage 可按 id 查 inactive 官方路线。
+	w, _ = f.do(http.MethodGet, "/api/learning-paths/"+itoa(officialID), adminToken, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+}
+
+func TestLearningPathTreeUsesAdminRead(t *testing.T) {
+	f := newFx(t)
+	authorID := f.user("tree-author", user.RoleUser)
+	authorToken := f.token(authorID, user.RoleUser)
+	otherID := f.user("tree-other", user.RoleUser)
+	otherToken := f.token(otherID, user.RoleUser)
+
+	f.createRole("learning_read_only", rbac.PermLearningPathAdminRead)
+	readID := f.user("tree-read", user.RoleUser)
+	testutil.AssignRole(t, f.db, readID, "learning_read_only")
+	readToken := f.token(readID, user.RoleUser)
+
+	pub := addTestProblem(f, "tree-admin-read-pub", true)
+	hidden := addTestProblem(f, "tree-admin-read-hidden", false)
+
+	w, resp := f.do(http.MethodPost, "/api/learning-paths", authorToken,
+		map[string]any{"title": "树路线", "isPublic": true})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	pathID := int64(responseData(t, resp)["id"].(float64))
+
+	// 节点引用公开题、已下线题与不存在的题目，验证完整 ID 仅对授权查看者暴露。
+	addTestNode(f, pathID, pub.ID, hidden.ID, 999999)
+
+	nodeProblemIDs := func(token string) []any {
+		f.t.Helper()
+		w, resp := f.do(http.MethodGet, "/api/learning-paths/"+itoa(pathID)+"/tree", token, nil)
+		require.Equal(f.t, http.StatusOK, w.Code, w.Body.String())
+		nodes := responseData(f.t, resp)["nodes"].([]any)
+		require.Len(f.t, nodes, 1)
+		return nodes[0].(map[string]any)["problemIds"].([]any)
+	}
+
+	// 普通非作者只看到公开题 ID。
+	assert.Equal(t, []any{float64(pub.ID)}, nodeProblemIDs(otherToken))
+	// 作者看到完整 ID。
+	assert.Equal(t, []any{float64(pub.ID), float64(hidden.ID), float64(999999)}, nodeProblemIDs(authorToken))
+	// admin.read（无 official.manage）也看到完整 ID。
+	assert.Equal(t, []any{float64(pub.ID), float64(hidden.ID), float64(999999)}, nodeProblemIDs(readToken))
+}
+
+func TestLearningPathWritesAudit(t *testing.T) {
+	f := newFx(t)
+	adminID := f.user("audit-admin", user.RoleProblemAdmin)
+	adminToken := f.token(adminID, user.RoleProblemAdmin)
+	authorID := f.user("audit-author", user.RoleUser)
+	authorToken := f.token(authorID, user.RoleUser)
+
+	auditCount := func() int64 {
+		f.t.Helper()
+		var c int64
+		require.NoError(f.t, f.db.Model(&rbac.AdminAuditLog{}).
+			Where("action = ? AND target_type = ?",
+				string(rbac.PermLearningPathOfficialManage), "learning_path").Count(&c).Error)
+		return c
+	}
+
+	// official.manage 创建官方路线 → 审计。
+	w, resp := f.do(http.MethodPost, "/api/learning-paths", adminToken,
+		map[string]any{"title": "审计官方", "isOfficial": true})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	officialID := int64(responseData(t, resp)["id"].(float64))
+	assert.Equal(t, int64(1), auditCount())
+
+	// 更新 → 审计。
+	w, _ = f.do(http.MethodPut, "/api/learning-paths/"+itoa(officialID), adminToken,
+		map[string]any{"title": "审计官方2"})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, int64(2), auditCount())
+
+	// 写节点 → 审计。
+	pub := addTestProblem(f, "audit-node-pub", true)
+	w, _ = f.do(http.MethodPost, "/api/learning-paths/"+itoa(officialID)+"/nodes", adminToken,
+		map[string]any{"title": "审计节点", "problemIds": []int64{pub.ID}})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	assert.Equal(t, int64(3), auditCount())
+
+	// 删除 → 审计。
+	w, _ = f.do(http.MethodDelete, "/api/learning-paths/"+itoa(officialID), adminToken, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, int64(4), auditCount())
+
+	// 普通作者写自己的自定义路线 → 不写管理审计。
+	before := auditCount()
+	w, resp = f.do(http.MethodPost, "/api/learning-paths", authorToken,
+		map[string]any{"title": "作者自定义"})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	customID := int64(responseData(t, resp)["id"].(float64))
+	assert.Equal(t, before, auditCount())
+
+	w, _ = f.do(http.MethodPut, "/api/learning-paths/"+itoa(customID), authorToken,
+		map[string]any{"title": "作者改名"})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	w, _ = f.do(http.MethodDelete, "/api/learning-paths/"+itoa(customID), authorToken, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, before, auditCount())
 }

@@ -14,8 +14,8 @@ const (
 	maxNodeProblems = 50
 )
 
-// CreateNode 在学习路线下创建节点。只有路线作者或管理员可以写入；官方
-// 路线与 inactive 路线只有管理员可以写入。
+// CreateNode 在学习路线下创建节点。只有路线作者或拥有 official.manage 能力
+// 的管理员可以写入；官方路线与 inactive 路线只有管理员可以写入。
 func (s *Service) CreateNode(ctx context.Context, v Viewer, pathID int64, in NodeInput) (*NodeItem, error) {
 	path, err := s.writablePath(ctx, v, pathID)
 	if err != nil {
@@ -133,12 +133,13 @@ func (s *Service) Tree(ctx context.Context, v Viewer, pathID int64) (*Tree, erro
 		return nil, err
 	}
 	// 公开树对非作者/非管理员只暴露公开题目的 ID，避免枚举已下线或
-	// 已删除题目；作者与管理员保留完整存储 ID 供编辑。
-	fullProblemIDs := v.CanManage || (v.UserID > 0 && path.Author.ID == v.UserID)
+	// 已删除题目；作者、admin.read 与 official.manage 保留完整存储 ID 供编辑。
+	fullProblemIDs := v.CanManageOfficial || v.CanViewAll || (v.UserID > 0 && path.Author.ID == v.UserID)
 	return &Tree{Path: *path, Nodes: buildNodeTree(nodes, summaries, fullProblemIDs)}, nil
 }
 
 // writablePath 加载可写路线并校验作者/管理员、官方与上下架权限。
+// CanViewAll 不参与写授权，只有作者或 official.manage 可以写入。
 func (s *Service) writablePath(ctx context.Context, v Viewer, pathID int64) (*LearningPath, error) {
 	if v.UserID <= 0 {
 		return nil, httpx.ErrUnauthorized
@@ -147,13 +148,13 @@ func (s *Service) writablePath(ctx context.Context, v Viewer, pathID int64) (*Le
 	if err != nil {
 		return nil, mapServiceError(err)
 	}
-	if !p.IsActive && !v.CanManage {
+	if !p.IsActive && !v.CanManageOfficial {
 		return nil, httpx.ErrNotFound
 	}
-	if !v.CanManage && p.CreatedBy != v.UserID {
+	if !v.CanManageOfficial && p.CreatedBy != v.UserID {
 		return nil, httpx.ErrNotFound
 	}
-	if p.IsOfficial && !v.CanManage {
+	if p.IsOfficial && !v.CanManageOfficial {
 		return nil, httpx.ErrForbidden
 	}
 	return p, nil

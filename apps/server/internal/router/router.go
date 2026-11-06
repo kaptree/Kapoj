@@ -110,7 +110,7 @@ func New(d Deps) *gin.Engine {
 		}
 	}
 	if d.Learning != nil {
-		learningapi.RegisterRoutes(api, d.Learning)
+		learningapi.RegisterRoutes(api, d.Learning, learningapi.Options{RBAC: d.RBAC})
 	}
 	contestRepo := contest.NewGormRepository(d.DB)
 	contestSvc := contest.NewService(contestRepo)

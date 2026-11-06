@@ -3,9 +3,15 @@ package learning
 import "time"
 
 // Viewer 描述当前请求者。零值表示游客。
+//
+// CanManageOfficial 对应 learning_path.official.manage：可创建/管理官方路线、
+// 管理任意路线的上下架与节点写入。
+// CanViewAll 对应 learning_path.admin.read：只读查看全部路线、下架路线与完整
+// 题目 ID，绝不参与任何写授权。
 type Viewer struct {
-	UserID    int64
-	CanManage bool
+	UserID            int64
+	CanManageOfficial bool
+	CanViewAll        bool
 }
 
 // UserSummary 是路线作者的公开摘要。

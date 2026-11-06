@@ -50,10 +50,13 @@ func newPathEnv(t *testing.T) *pathEnv {
 }
 
 func viewerFor(u *user.User) learning.Viewer {
-	return learning.Viewer{
-		UserID:    u.ID,
-		CanManage: u.Role == user.RoleProblemAdmin || u.Role == user.RoleSuperAdmin,
+	v := learning.Viewer{UserID: u.ID}
+	if u.Role == user.RoleProblemAdmin || u.Role == user.RoleSuperAdmin {
+		// content_admin 同时拥有 official.manage 与 admin.read。
+		v.CanManageOfficial = true
+		v.CanViewAll = true
 	}
+	return v
 }
 
 func boolPtr(v bool) *bool { return &v }

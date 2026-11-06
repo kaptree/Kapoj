@@ -15,7 +15,8 @@ type Service struct {
 func NewService(repo *Repository) *Service { return &Service{repo: repo} }
 
 // CreatePath 创建学习路线。普通用户创建自定义路线，默认私有、活跃，且
-// 不能设置官方标记/上下架状态；管理员可以创建官方路线并显式设置各状态。
+// 不能设置官方标记/上下架状态；拥有 official.manage 能力的管理员可以创建
+// 官方路线并显式设置各状态。
 func (s *Service) CreatePath(ctx context.Context, v Viewer, in PathInput) (*PathItem, error) {
 	if v.UserID <= 0 {
 		return nil, httpx.ErrUnauthorized
@@ -24,7 +25,7 @@ func (s *Service) CreatePath(ctx context.Context, v Viewer, in PathInput) (*Path
 	if err != nil {
 		return nil, err
 	}
-	if !v.CanManage && in.IsOfficial != nil && *in.IsOfficial {
+	if !v.CanManageOfficial && in.IsOfficial != nil && *in.IsOfficial {
 		return nil, httpx.ErrForbidden
 	}
 
@@ -40,7 +41,7 @@ func (s *Service) CreatePath(ctx context.Context, v Viewer, in PathInput) (*Path
 	if in.IsPublic != nil {
 		p.IsPublic = *in.IsPublic
 	}
-	if v.CanManage {
+	if v.CanManageOfficial {
 		if in.IsOfficial != nil {
 			p.IsOfficial = *in.IsOfficial
 		}
@@ -58,8 +59,9 @@ func (s *Service) CreatePath(ctx context.Context, v Viewer, in PathInput) (*Path
 	return s.item(ctx, v.UserID, p.ID)
 }
 
-// UpdatePath 更新路线。只有作者或管理员可以编辑；inactive 路线只有管理员
-// 可以访问/恢复。非管理员不能改变官方标记与上下架状态。
+// UpdatePath 更新路线。只有作者或拥有 official.manage 能力的管理员可以编辑；
+// inactive 路线只有管理员可以访问/恢复。非管理员不能改变官方标记与上下架状态。
+// CanViewAll 不参与写授权。
 func (s *Service) UpdatePath(ctx context.Context, v Viewer, id int64, in PathInput) (*PathItem, error) {
 	if v.UserID <= 0 {
 		return nil, httpx.ErrUnauthorized
@@ -72,16 +74,16 @@ func (s *Service) UpdatePath(ctx context.Context, v Viewer, id int64, in PathInp
 	if err != nil {
 		return nil, mapServiceError(err)
 	}
-	if !p.IsActive && !v.CanManage {
+	if !p.IsActive && !v.CanManageOfficial {
 		return nil, httpx.ErrNotFound
 	}
-	if !v.CanManage && p.CreatedBy != v.UserID {
+	if !v.CanManageOfficial && p.CreatedBy != v.UserID {
 		return nil, httpx.ErrNotFound
 	}
-	if p.IsOfficial && !v.CanManage {
+	if p.IsOfficial && !v.CanManageOfficial {
 		return nil, httpx.ErrForbidden
 	}
-	if !v.CanManage {
+	if !v.CanManageOfficial {
 		if in.IsOfficial != nil && *in.IsOfficial != p.IsOfficial {
 			return nil, httpx.ErrForbidden
 		}
@@ -97,10 +99,10 @@ func (s *Service) UpdatePath(ctx context.Context, v Viewer, id int64, in PathInp
 
 	// 公开或恢复上架前必须确认真实数据库中的节点题目仍然存在且公开。
 	needValidation := in.IsPublic != nil && *in.IsPublic
-	if v.CanManage && in.IsOfficial != nil && *in.IsOfficial {
+	if v.CanManageOfficial && in.IsOfficial != nil && *in.IsOfficial {
 		needValidation = true
 	}
-	if v.CanManage && in.IsActive != nil && *in.IsActive && !p.IsActive {
+	if v.CanManageOfficial && in.IsActive != nil && *in.IsActive && !p.IsActive {
 		needValidation = true
 	}
 
@@ -111,7 +113,7 @@ func (s *Service) UpdatePath(ctx context.Context, v Viewer, id int64, in PathInp
 	if in.IsPublic != nil {
 		p.IsPublic = *in.IsPublic
 	}
-	if v.CanManage {
+	if v.CanManageOfficial {
 		if in.IsOfficial != nil {
 			p.IsOfficial = *in.IsOfficial
 		}
@@ -134,8 +136,9 @@ func (s *Service) UpdatePath(ctx context.Context, v Viewer, id int64, in PathInp
 	return s.item(ctx, v.UserID, p.ID)
 }
 
-// DeletePath 软删除路线（is_active=false）。只有作者或管理员可以删除；
-// 删除后作者不能再查看/恢复，只有管理员可通过 includeInactive 查看并恢复。
+// DeletePath 软删除路线（is_active=false）。只有作者或拥有 official.manage 能力
+// 的管理员可以删除；删除后作者不能再查看/恢复，只有管理员可通过 includeInactive
+// 查看并恢复。CanViewAll 不参与写授权。
 func (s *Service) DeletePath(ctx context.Context, v Viewer, id int64) error {
 	if v.UserID <= 0 {
 		return httpx.ErrUnauthorized
@@ -144,13 +147,13 @@ func (s *Service) DeletePath(ctx context.Context, v Viewer, id int64) error {
 	if err != nil {
 		return mapServiceError(err)
 	}
-	if !p.IsActive && !v.CanManage {
+	if !p.IsActive && !v.CanManageOfficial {
 		return httpx.ErrNotFound
 	}
-	if !v.CanManage && p.CreatedBy != v.UserID {
+	if !v.CanManageOfficial && p.CreatedBy != v.UserID {
 		return httpx.ErrNotFound
 	}
-	if p.IsOfficial && !v.CanManage {
+	if p.IsOfficial && !v.CanManageOfficial {
 		return httpx.ErrForbidden
 	}
 	if err := s.repo.SetActive(ctx, id, false); err != nil {
@@ -159,12 +162,12 @@ func (s *Service) DeletePath(ctx context.Context, v Viewer, id int64) error {
 	return nil
 }
 
-// ListPaths 返回查看者可见的路线。includeInactive 仅对管理员生效；mine
-// 只返回查看者创建的路线。
+// ListPaths 返回查看者可见的路线。includeInactive 仅对拥有 admin.read 或
+// official.manage 能力者生效；mine 只返回查看者创建的路线。
 func (s *Service) ListPaths(ctx context.Context, v Viewer, includeInactive, mine bool) ([]PathItem, error) {
 	items, err := s.repo.List(ctx, ListFilter{
 		ViewerID:        v.UserID,
-		IncludeInactive: includeInactive && v.CanManage,
+		IncludeInactive: includeInactive && (v.CanViewAll || v.CanManageOfficial),
 		Mine:            mine,
 	})
 	if err != nil {
@@ -177,16 +180,18 @@ func (s *Service) ListPaths(ctx context.Context, v Viewer, includeInactive, mine
 }
 
 // FindPath 返回路线元信息。active 官方/公开路线所有人可见；active 私有
-// 路线仅作者/管理员；inactive 路线仅管理员。
+// 路线仅作者、admin.read 或 official.manage 可见；inactive 路线仅 admin.read
+// 或 official.manage 可见。
 func (s *Service) FindPath(ctx context.Context, v Viewer, id int64) (*PathItem, error) {
 	p, err := s.repo.FindByID(ctx, id)
 	if err != nil {
 		return nil, mapServiceError(err)
 	}
-	if !p.IsActive && !v.CanManage {
+	if !p.IsActive && !(v.CanViewAll || v.CanManageOfficial) {
 		return nil, httpx.ErrNotFound
 	}
-	if p.IsActive && !p.IsOfficial && !p.IsPublic && !v.CanManage && p.CreatedBy != v.UserID {
+	if p.IsActive && !p.IsOfficial && !p.IsPublic &&
+		p.CreatedBy != v.UserID && !v.CanViewAll && !v.CanManageOfficial {
 		return nil, httpx.ErrNotFound
 	}
 	return s.item(ctx, v.UserID, id)
