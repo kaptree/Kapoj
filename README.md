@@ -146,6 +146,7 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 
 - 拥有任一管理权限（`ADMIN_ACCESS_PERMISSIONS`，或 `super_admin`）的账号登录后，侧栏与用户菜单显示「管理后台」入口 `/admin`。
 - 管理后台包含：概览仪表盘 `/admin`（`admin.dashboard.view` 显示统计，`admin.audit.view` 显示最近审计）、用户管理 `/admin/users`（`user.read`）、角色权限 `/admin/roles`（`role.read`）、审计日志 `/admin/audit`（`admin.audit.view`）、游戏化管理 `/admin/gamification`（任一 `gamification.*.manage`）。菜单与页面动作按权限显隐；无权限直接访问返回 403（前端跳转 `/forbidden`，后端 40300）。
+- 内置 `auditor`（审计员）为只读角色：`admin.dashboard.view` + `admin.audit.view` + `user.read` + `role.read`，不含任何写权限。审计员登录后可看仪表盘/审计日志/用户/角色页面，但看不到编辑、封禁、调币、分配角色、新建/删除角色等变更按钮，后端对这些写操作同样返回 403。
 - 角色/权限变更后，受影响账号刷新页面或重新拉取 `/users/me` 即生效；后端始终实时校验，旧 token 不影响新权限。
 - **legacy role 不再授权**：`users.role`/JWT role 自 RBAC-C 起仅作展示/兼容，所有管理授权只认 `user_roles`/`role_permissions`。
 
