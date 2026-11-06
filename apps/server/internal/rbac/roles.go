@@ -175,7 +175,7 @@ func (s *Service) CreateRole(ctx context.Context, actor AuditMeta, in RoleInput)
 		if err := insertRolePermissions(tx, role.ID, codes); err != nil {
 			return err
 		}
-		if err := writeAudit(tx, actor, AuditActionRoleCreate, AuditTargetRole, role.ID,
+		if err := WriteAuditTx(tx, actor, AuditActionRoleCreate, AuditTargetRole, role.ID,
 			fmt.Sprintf("创建角色「%s」（%s）", role.Name, role.Code)); err != nil {
 			return err
 		}
@@ -220,7 +220,7 @@ func (s *Service) UpdateRole(ctx context.Context, actor AuditMeta, id int64, in 
 			Updates(map[string]any{"name": name, "description": description}).Error; err != nil {
 			return fmt.Errorf("rbac: update role %d: %w", id, err)
 		}
-		if err := writeAudit(tx, actor, AuditActionRoleUpdate, AuditTargetRole, role.ID,
+		if err := WriteAuditTx(tx, actor, AuditActionRoleUpdate, AuditTargetRole, role.ID,
 			fmt.Sprintf("更新角色「%s」（%s）", name, role.Code)); err != nil {
 			return err
 		}
@@ -259,7 +259,7 @@ func (s *Service) DeleteRole(ctx context.Context, actor AuditMeta, id int64) err
 		if err := tx.Delete(&role).Error; err != nil {
 			return fmt.Errorf("rbac: delete role %d: %w", id, err)
 		}
-		if err := writeAudit(tx, actor, AuditActionRoleDelete, AuditTargetRole, role.ID,
+		if err := WriteAuditTx(tx, actor, AuditActionRoleDelete, AuditTargetRole, role.ID,
 			fmt.Sprintf("删除角色「%s」（%s）", role.Name, role.Code)); err != nil {
 			return err
 		}
@@ -296,7 +296,7 @@ func (s *Service) ReplaceRolePermissions(ctx context.Context, actor AuditMeta, i
 		if err := insertRolePermissions(tx, role.ID, normalized); err != nil {
 			return err
 		}
-		if err := writeAudit(tx, actor, AuditActionRolePermissionsUpdate, AuditTargetRole, role.ID,
+		if err := WriteAuditTx(tx, actor, AuditActionRolePermissionsUpdate, AuditTargetRole, role.ID,
 			fmt.Sprintf("更新角色「%s」的权限（%d 项）", role.Name, len(normalized))); err != nil {
 			return err
 		}

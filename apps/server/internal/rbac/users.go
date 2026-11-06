@@ -147,7 +147,7 @@ func (s *Service) AdminUpdateUser(ctx context.Context, actor AuditMeta, id int64
 				return fmt.Errorf("rbac: update user %d profile: %w", id, err)
 			}
 		}
-		return writeAudit(tx, actor, AuditActionUserUpdate, AuditTargetUser, id,
+		return WriteAuditTx(tx, actor, AuditActionUserUpdate, AuditTargetUser, id,
 			fmt.Sprintf("更新用户「%s」的资料", u.Username))
 	})
 }
@@ -211,7 +211,7 @@ func (s *Service) ReplaceUserRoles(ctx context.Context, actor AuditMeta, userID 
 				return fmt.Errorf("rbac: insert user roles: %w", err)
 			}
 		}
-		return writeAudit(tx, actor, AuditActionUserRolesAssign, AuditTargetUser, userID,
+		return WriteAuditTx(tx, actor, AuditActionUserRolesAssign, AuditTargetUser, userID,
 			fmt.Sprintf("更新用户「%s」的角色（%d 项）", u.Username, len(ids)))
 	})
 }
@@ -276,7 +276,7 @@ func (s *Service) SetUserBanned(ctx context.Context, actor AuditMeta, userID int
 		if err := tx.Model(&user.User{}).Where("id = ?", userID).Update("status", newStatus).Error; err != nil {
 			return fmt.Errorf("rbac: update user %d status: %w", userID, err)
 		}
-		return writeAudit(tx, actor, action, AuditTargetUser, userID, summary)
+		return WriteAuditTx(tx, actor, action, AuditTargetUser, userID, summary)
 	})
 }
 

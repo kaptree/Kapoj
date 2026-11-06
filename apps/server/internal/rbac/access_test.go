@@ -171,3 +171,16 @@ func TestAccessReflectsPermissionChanges(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, access.Permissions, "system.settings.manage")
 }
+
+func TestAccessHasSuperAndPermission(t *testing.T) {
+	super := &rbac.Access{IsSuper: true, Permissions: map[string]struct{}{}}
+	assert.True(t, super.Has("any.permission"), "super 应绕过所有权限检查")
+	assert.True(t, super.Has("problem.create"), "super 对任意权限码都应返回 true")
+
+	normal := &rbac.Access{Permissions: map[string]struct{}{"problem.create": {}}}
+	assert.True(t, normal.Has("problem.create"), "拥有的权限应返回 true")
+	assert.False(t, normal.Has("contest.create"), "未拥有的权限应返回 false")
+
+	var nilAccess *rbac.Access
+	assert.False(t, nilAccess.Has("problem.create"), "nil Access 应返回 false")
+}

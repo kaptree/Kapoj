@@ -20,6 +20,7 @@ type PermissionResolver interface {
 
 // RequirePermission 要求当前用户拥有 codes 中至少一个权限；超级管理员直接通过。
 // 解析失败、用户封禁或权限不足均返回 403。通过后 Access 会写入 context。
+// 若 LoadAccess 已把 Access 放入 context，则直接复用，避免重复解析。
 func RequirePermission(resolver PermissionResolver, codes ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		claims, ok := CurrentClaims(c)
@@ -27,29 +28,34 @@ func RequirePermission(resolver PermissionResolver, codes ...string) gin.Handler
 			httpx.Fail(c, httpx.ErrUnauthorized)
 			return
 		}
-		if resolver == nil {
-			httpx.Fail(c, httpx.ErrForbidden)
-			return
-		}
-		access, err := resolver.Access(c.Request.Context(), claims.UserID)
-		if err != nil {
-			if !errors.Is(err, rbac.ErrInactive) && !errors.Is(err, rbac.ErrNotFound) {
-				slog.Warn("rbac: permission resolution failed",
+		access, ok := CurrentAccess(c)
+		if !ok {
+			if resolver == nil {
+				httpx.Fail(c, httpx.ErrForbidden)
+				return
+			}
+			var err error
+			access, err = resolver.Access(c.Request.Context(), claims.UserID)
+			if err != nil {
+				if !errors.Is(err, rbac.ErrInactive) && !errors.Is(err, rbac.ErrNotFound) {
+					slog.Warn("rbac: permission resolution failed",
+						"userId", claims.UserID,
+						"method", c.Request.Method,
+						"path", c.Request.URL.Path,
+						"err", err)
+				}
+				httpx.Fail(c, httpx.ErrForbidden)
+				return
+			}
+			if access == nil {
+				slog.Warn("rbac: permission resolver returned nil access",
 					"userId", claims.UserID,
 					"method", c.Request.Method,
-					"path", c.Request.URL.Path,
-					"err", err)
+					"path", c.Request.URL.Path)
+				httpx.Fail(c, httpx.ErrForbidden)
+				return
 			}
-			httpx.Fail(c, httpx.ErrForbidden)
-			return
-		}
-		if access == nil {
-			slog.Warn("rbac: permission resolver returned nil access",
-				"userId", claims.UserID,
-				"method", c.Request.Method,
-				"path", c.Request.URL.Path)
-			httpx.Fail(c, httpx.ErrForbidden)
-			return
+			c.Set(accessKey, access)
 		}
 		if !access.IsSuper {
 			allowed := false
@@ -64,7 +70,6 @@ func RequirePermission(resolver PermissionResolver, codes ...string) gin.Handler
 				return
 			}
 		}
-		c.Set(accessKey, access)
 		c.Next()
 	}
 }

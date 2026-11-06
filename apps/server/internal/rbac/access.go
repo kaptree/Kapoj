@@ -32,6 +32,19 @@ type Access struct {
 	Permissions map[string]struct{}
 }
 
+// Has 判断当前 Access 是否拥有给定权限码；超级管理员永远为 true；
+// nil receiver 返回 false。
+func (a *Access) Has(code string) bool {
+	if a == nil {
+		return false
+	}
+	if a.IsSuper {
+		return true
+	}
+	_, ok := a.Permissions[code]
+	return ok
+}
+
 // Service 提供 RBAC 查询；每次调用都直接读取数据库，不缓存。
 type Service struct {
 	db *gorm.DB

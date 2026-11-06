@@ -92,3 +92,22 @@ func TestAuditFailureRollsBackRoleMutation(t *testing.T) {
 	require.NoError(t, g.Model(&rbac.RolePermission{}).Count(&afterPermissions).Error)
 	assert.Equal(t, beforePermissions, afterPermissions, "事务应回滚角色权限行")
 }
+
+func TestRecordAuditUsesTransaction(t *testing.T) {
+	g := testutil.PG(t)
+	require.NoError(t, rbac.Seed(context.Background(), g))
+	svc := rbac.NewService(g)
+
+	actor := rbac.AuditMeta{ActorID: 7, IP: "198.51.100.1", UserAgent: "record-audit-test"}
+	require.NoError(t, svc.RecordAudit(context.Background(), actor,
+		"problem.update", "problem", 0, "更新题目"))
+
+	var row rbac.AdminAuditLog
+	require.NoError(t, g.Where("action = ?", "problem.update").First(&row).Error)
+	assert.Equal(t, int64(7), row.ActorID)
+	assert.Equal(t, "problem", row.TargetType)
+	assert.Nil(t, row.TargetID, "targetID=0 应写入 NULL")
+	assert.Equal(t, "更新题目", row.Summary)
+	assert.Equal(t, "198.51.100.1", row.IP)
+	assert.Equal(t, "record-audit-test", row.UserAgent)
+}
