@@ -24,6 +24,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/judgequeue"
 	"github.com/kaptree/kapoj/apps/server/internal/learning"
 	"github.com/kaptree/kapoj/apps/server/internal/rating"
+	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 	"github.com/kaptree/kapoj/apps/server/internal/router"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
 )
@@ -49,6 +50,9 @@ func run() error {
 		return err
 	}
 	if err := db.Migrate(g); err != nil {
+		return err
+	}
+	if err := rbac.Seed(context.Background(), g); err != nil {
 		return err
 	}
 	store, err := storage.NewLocal(cfg.StorageDir)

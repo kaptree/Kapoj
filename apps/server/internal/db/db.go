@@ -16,6 +16,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/learning"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/rating"
+	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 	"github.com/kaptree/kapoj/apps/server/internal/submission"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
@@ -53,5 +54,7 @@ func Migrate(g *gorm.DB) error {
 		&gamification.Title{}, &gamification.UserTitle{},
 		&learning.LearningPath{}, &learning.LearningPathNode{},
 		&learning.UserLearningProgress{},
+		&rbac.Role{}, &rbac.Permission{}, &rbac.RolePermission{},
+		&rbac.UserRole{}, &rbac.AdminAuditLog{}, &rbac.Meta{},
 	)
 }

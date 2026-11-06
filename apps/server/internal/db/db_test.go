@@ -2,6 +2,7 @@ package db
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"testing"
@@ -15,6 +16,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/learning"
 	"github.com/kaptree/kapoj/apps/server/internal/rating"
+	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 )
 
 func TestLoggerHidesQueryParameters(t *testing.T) {
@@ -117,6 +119,35 @@ func TestMigrateCreatesLearningSchema(t *testing.T) {
 	assert.True(t, g.Migrator().HasIndex(&learning.UserLearningProgress{}, "uniq_user_learning_progress"))
 	assert.True(t, g.Migrator().HasColumn(&learning.LearningPath{}, "description_md"))
 	assert.True(t, g.Migrator().HasColumn(&learning.LearningPathNode{}, "problem_ids_json"))
+}
+
+func TestMigrateCreatesRBACSchema(t *testing.T) {
+	dsn := os.Getenv("KAPOJ_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("KAPOJ_TEST_DATABASE_URL not set; skipping database test")
+	}
+	g, err := open(dsn, io.Discard)
+	require.NoError(t, err)
+	require.NoError(t, Migrate(g))
+	sqlDB, err := g.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	for _, table := range []string{
+		"roles", "permissions", "role_permissions", "user_roles",
+		"admin_audit_logs", "rbac_meta",
+	} {
+		assert.True(t, g.Migrator().HasTable(table), "缺少表 %s", table)
+	}
+	assert.True(t, g.Migrator().HasIndex(&rbac.Role{}, "uniq_roles_code"))
+	assert.True(t, g.Migrator().HasIndex(&rbac.Permission{}, "uniq_permissions_code"))
+	assert.True(t, g.Migrator().HasIndex(&rbac.RolePermission{}, "uniq_role_permissions"))
+	assert.True(t, g.Migrator().HasIndex(&rbac.UserRole{}, "uniq_user_roles"))
+
+	key := fmt.Sprintf("test_meta_%d", time.Now().UnixNano())
+	t.Cleanup(func() { require.NoError(t, g.Where("key = ?", key).Delete(&rbac.Meta{}).Error) })
+	require.NoError(t, g.Create(&rbac.Meta{Key: key, Value: "1"}).Error)
+	assert.Error(t, g.Create(&rbac.Meta{Key: key, Value: "2"}).Error, "rbac_meta.key 必须唯一")
 }
 
 func TestMigrateCreatesActivitySchema(t *testing.T) {
