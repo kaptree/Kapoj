@@ -249,6 +249,52 @@ func TestRouterWiresActivityHooksWithoutGameService(t *testing.T) {
 	assert.Equal(t, 2, logRow.Points)
 }
 
+func TestRouterMountsAdminRBACRoutes(t *testing.T) {
+	g := testutil.PG(t)
+	require.NoError(t, rbac.Seed(context.Background(), g))
+
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	store, err := storage.NewLocal(t.TempDir())
+	require.NoError(t, err)
+	h := New(Deps{
+		DB: g, Redis: rdb, Storage: store,
+		Config: &config.Config{
+			JWTSecret:       strings.Repeat("s", 32),
+			AccessTokenTTL:  15 * time.Minute,
+			RefreshTokenTTL: time.Hour,
+			SubmitCooldown:  time.Second,
+		},
+		Enqueuer: noopQueue{},
+		RBAC:     rbac.NewService(g),
+	})
+
+	w, resp := call(h, http.MethodPost, "/api/auth/register", "",
+		`{"username":"adminroutes","email":"adminroutes@example.com","password":"correct-horse"}`)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	data := resp["data"].(map[string]any)
+	token := data["accessToken"].(string)
+	userID := int64(data["user"].(map[string]any)["id"].(float64))
+
+	w, resp = call(h, http.MethodGet, "/api/admin/roles", token, "")
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.EqualValues(t, 40300, resp["code"])
+
+	var superRole rbac.Role
+	require.NoError(t, g.Where("code = ?", rbac.RoleCodeSuperAdmin).First(&superRole).Error)
+	require.NoError(t, g.Create(&rbac.UserRole{UserID: userID, RoleID: superRole.ID, AssignedAt: time.Now()}).Error)
+
+	// 旧 token 不需要重新签发，权限按数据库实时解析。
+	w, resp = call(h, http.MethodGet, "/api/admin/roles", token, "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Len(t, resp["data"], 7)
+
+	w, resp = call(h, http.MethodGet, "/api/admin/permissions", token, "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Len(t, resp["data"], 34)
+}
+
 func TestRouterWiresRBACMe(t *testing.T) {
 	g := testutil.PG(t)
 	require.NoError(t, rbac.Seed(context.Background(), g))

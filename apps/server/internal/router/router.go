@@ -11,6 +11,7 @@ import (
 
 	"github.com/kaptree/kapoj/apps/server/internal/activity"
 	"github.com/kaptree/kapoj/apps/server/internal/activityapi"
+	"github.com/kaptree/kapoj/apps/server/internal/adminapi"
 	"github.com/kaptree/kapoj/apps/server/internal/auth"
 	"github.com/kaptree/kapoj/apps/server/internal/config"
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
@@ -88,6 +89,9 @@ func New(d Deps) *gin.Engine {
 		userOpts.IdentityLookup = d.Game
 	}
 	userapi.RegisterRoutes(api, userSvc, userOpts)
+	if d.RBAC != nil {
+		adminapi.RegisterRoutes(api, d.RBAC)
+	}
 	if d.Game != nil {
 		gamificationapi.RegisterRoutes(api, uploads, d.Game)
 	}
