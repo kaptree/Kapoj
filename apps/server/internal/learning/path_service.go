@@ -187,7 +187,7 @@ func (s *Service) FindPath(ctx context.Context, v Viewer, id int64) (*PathItem, 
 	if err != nil {
 		return nil, mapServiceError(err)
 	}
-	if !p.IsActive && !(v.CanViewAll || v.CanManageOfficial) {
+	if !p.IsActive && !v.CanViewAll && !v.CanManageOfficial {
 		return nil, httpx.ErrNotFound
 	}
 	if p.IsActive && !p.IsOfficial && !p.IsPublic &&
