@@ -251,3 +251,78 @@ func TestAdminUserNotFoundViaAPI(t *testing.T) {
 		assert.EqualValues(t, 40400, resp["code"], endpoint.path)
 	}
 }
+
+func TestAdminReplaceUserRolesRequiresField(t *testing.T) {
+	f := newFixture(t)
+	_, token := f.user(t, "super_roles_field", rbac.RoleCodeSuperAdmin)
+	targetID, _ := f.user(t, "target_roles_field", rbac.RoleCodeContentAdmin)
+
+	// 缺失 roleIds -> 40001，角色不变。
+	w, resp := f.do(http.MethodPut, fmt.Sprintf("/api/admin/users/%d/roles", targetID), token, `{}`)
+	requireStatus(t, w, resp, http.StatusBadRequest)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	var count int64
+	require.NoError(t, f.db.Model(&rbac.UserRole{}).Where("user_id = ?", targetID).Count(&count).Error)
+	assert.EqualValues(t, 1, count, "缺失 roleIds 不得清除角色")
+
+	// 显式 [] -> 200，角色被清空。
+	w, resp = f.do(http.MethodPut, fmt.Sprintf("/api/admin/users/%d/roles", targetID), token, `{"roleIds":[]}`)
+	requireStatus(t, w, resp, http.StatusOK)
+	require.NoError(t, f.db.Model(&rbac.UserRole{}).Where("user_id = ?", targetID).Count(&count).Error)
+	assert.Zero(t, count)
+}
+
+func TestAdminUpdateUserEmptyRejected(t *testing.T) {
+	f := newFixture(t)
+	_, token := f.user(t, "super_update_empty", rbac.RoleCodeSuperAdmin)
+	targetID, _ := f.user(t, "target_update_empty")
+
+	// 空更新（无任何字段）-> 40001，不写审计。
+	w, resp := f.do(http.MethodPut, fmt.Sprintf("/api/admin/users/%d", targetID), token, `{}`)
+	requireStatus(t, w, resp, http.StatusBadRequest)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	var count int64
+	require.NoError(t, f.db.Model(&rbac.AdminAuditLog{}).
+		Where("action = ? AND target_id = ?", "user.update", targetID).Count(&count).Error)
+	assert.Zero(t, count, "空更新不得写审计")
+}
+
+func TestAdminBanUnbanNoopNoAudit(t *testing.T) {
+	f := newFixture(t)
+	_, token := f.user(t, "super_ban_noop", rbac.RoleCodeSuperAdmin)
+	targetID, _ := f.user(t, "target_ban_noop")
+
+	// 首次封禁 -> 200 + 1 条审计。
+	w, resp := f.do(http.MethodPost, fmt.Sprintf("/api/admin/users/%d/ban", targetID), token,
+		`{"reason":"首次"}`)
+	requireStatus(t, w, resp, http.StatusOK)
+
+	var count int64
+	require.NoError(t, f.db.Model(&rbac.AdminAuditLog{}).
+		Where("action = ? AND target_id = ?", "user.ban", targetID).Count(&count).Error)
+	assert.EqualValues(t, 1, count)
+
+	// 重复封禁（已封禁）-> 200，但不新增审计。
+	w, resp = f.do(http.MethodPost, fmt.Sprintf("/api/admin/users/%d/ban", targetID), token,
+		`{"reason":"重复"}`)
+	requireStatus(t, w, resp, http.StatusOK)
+	require.NoError(t, f.db.Model(&rbac.AdminAuditLog{}).
+		Where("action = ? AND target_id = ?", "user.ban", targetID).Count(&count).Error)
+	assert.EqualValues(t, 1, count, "重复封禁不得写审计")
+
+	// 解封 -> 200 + 1 条审计。
+	w, resp = f.do(http.MethodPost, fmt.Sprintf("/api/admin/users/%d/unban", targetID), token, "")
+	requireStatus(t, w, resp, http.StatusOK)
+	require.NoError(t, f.db.Model(&rbac.AdminAuditLog{}).
+		Where("action = ? AND target_id = ?", "user.unban", targetID).Count(&count).Error)
+	assert.EqualValues(t, 1, count)
+
+	// 重复解封（已活跃）-> 200，但不新增审计。
+	w, resp = f.do(http.MethodPost, fmt.Sprintf("/api/admin/users/%d/unban", targetID), token, "")
+	requireStatus(t, w, resp, http.StatusOK)
+	require.NoError(t, f.db.Model(&rbac.AdminAuditLog{}).
+		Where("action = ? AND target_id = ?", "user.unban", targetID).Count(&count).Error)
+	assert.EqualValues(t, 1, count, "重复解封不得写审计")
+}

@@ -410,3 +410,30 @@ func TestAdminRoleNotFound(t *testing.T) {
 		assert.EqualValues(t, 40400, resp["code"], endpoint.path)
 	}
 }
+
+func TestAdminReplaceRolePermissionsRequiresField(t *testing.T) {
+	f := newFixture(t)
+	_, token := f.user(t, "super_perms_field", rbac.RoleCodeSuperAdmin)
+
+	role, err := f.svc.CreateRole(context.Background(), rbac.AuditMeta{ActorID: 1}, rbac.RoleInput{
+		Code: "perms_field_role", Name: "权限字段角色", PermissionCodes: []string{"role.read"},
+	})
+	require.NoError(t, err)
+	path := fmt.Sprintf("/api/admin/roles/%d/permissions", role.ID)
+
+	// 缺失 permissionCodes -> 40001，权限不变。
+	w, resp := f.do(http.MethodPut, path, token, `{}`)
+	requireStatus(t, w, resp, http.StatusBadRequest)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	got, err := f.svc.GetRole(context.Background(), role.ID)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"role.read"}, got.Permissions)
+
+	// 显式 [] -> 200，权限被清空。
+	w, resp = f.do(http.MethodPut, path, token, `{"permissionCodes":[]}`)
+	requireStatus(t, w, resp, http.StatusOK)
+	got, err = f.svc.GetRole(context.Background(), role.ID)
+	require.NoError(t, err)
+	assert.Empty(t, got.Permissions)
+}

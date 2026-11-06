@@ -130,6 +130,10 @@ func (s *Service) AdminUpdateUser(ctx context.Context, actor AuditMeta, id int64
 		cols["avatar_url"] = avatar
 	}
 
+	if len(cols) == 0 {
+		return invalidUser("未提供任何需要更新的字段")
+	}
+
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var u user.User
 		if err := tx.Select("id", "username").Where("id = ?", id).First(&u).Error; err != nil {
@@ -266,10 +270,11 @@ func (s *Service) SetUserBanned(ctx context.Context, actor AuditMeta, userID int
 			return httpx.ErrForbidden
 		}
 
-		if u.Status != newStatus {
-			if err := tx.Model(&user.User{}).Where("id = ?", userID).Update("status", newStatus).Error; err != nil {
-				return fmt.Errorf("rbac: update user %d status: %w", userID, err)
-			}
+		if u.Status == newStatus {
+			return nil
+		}
+		if err := tx.Model(&user.User{}).Where("id = ?", userID).Update("status", newStatus).Error; err != nil {
+			return fmt.Errorf("rbac: update user %d status: %w", userID, err)
 		}
 		return writeAudit(tx, actor, action, AuditTargetUser, userID, summary)
 	})

@@ -127,12 +127,16 @@ func (h *handler) replaceRolePermissions(c *gin.Context) {
 		return
 	}
 	in, ok := httpx.BindJSON[struct {
-		PermissionCodes []string `json:"permissionCodes"`
+		PermissionCodes *[]string `json:"permissionCodes"`
 	}](c)
 	if !ok {
 		return
 	}
-	item, err := h.svc.ReplaceRolePermissions(c.Request.Context(), auditActor(c), id, in.PermissionCodes)
+	if in.PermissionCodes == nil {
+		httpx.Fail(c, httpx.ErrValidation("permissionCodes 必填"))
+		return
+	}
+	item, err := h.svc.ReplaceRolePermissions(c.Request.Context(), auditActor(c), id, *in.PermissionCodes)
 	if err != nil {
 		httpx.Fail(c, err)
 		return

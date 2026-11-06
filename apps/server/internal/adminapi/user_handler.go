@@ -71,12 +71,16 @@ func (h *handler) replaceUserRoles(c *gin.Context) {
 		return
 	}
 	in, ok := httpx.BindJSON[struct {
-		RoleIDs []int64 `json:"roleIds"`
+		RoleIDs *[]int64 `json:"roleIds"`
 	}](c)
 	if !ok {
 		return
 	}
-	if err := h.svc.ReplaceUserRoles(c.Request.Context(), auditActor(c), id, in.RoleIDs); err != nil {
+	if in.RoleIDs == nil {
+		httpx.Fail(c, httpx.ErrValidation("roleIds 必填"))
+		return
+	}
+	if err := h.svc.ReplaceUserRoles(c.Request.Context(), auditActor(c), id, *in.RoleIDs); err != nil {
 		httpx.Fail(c, err)
 		return
 	}

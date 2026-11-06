@@ -535,7 +535,7 @@ export interface paths {
         };
         /**
          * 管理仪表盘统计（admin.dashboard.view）
-         * @description 返回用户/题目/比赛/提交/角色聚合计数；仅 super 或拥有 admin.audit.view 时才附带 recentAudit（最近 10 条审计）。
+         * @description 返回用户/题目/比赛/提交/角色聚合计数；recentAudit 字段始终存在，仅 super 或拥有 admin.audit.view 时包含最近 10 条审计，否则为空数组。
          */
         get: {
             parameters: {
@@ -4231,7 +4231,7 @@ export interface components {
             todaySubmissions: number;
             /** Format: int64 */
             roles: number;
-            /** @description 仅 super 或拥有 admin.audit.view 时附带，最近 10 条，按时间倒序 */
+            /** @description 字段始终存在；仅 super 或拥有 admin.audit.view 时包含最近 10 条（按时间倒序），否则为空数组 */
             recentAudit: components["schemas"]["AdminAuditItem"][];
         };
         AdminPermissionListResponse: components["schemas"]["Envelope"] & {

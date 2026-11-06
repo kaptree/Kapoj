@@ -357,6 +357,70 @@ func TestConcurrentLastSuperRemoval(t *testing.T) {
 	assert.Equal(t, 1, remaining, "并发移除后必须仍有一个超级管理员")
 }
 
+func TestNonSuperAssignsNonSuperRoles(t *testing.T) {
+	g := testutil.PG(t)
+	ctx := context.Background()
+	require.NoError(t, rbac.Seed(ctx, g))
+	svc := rbac.NewService(g)
+
+	secActor := createSeedUser(t, g, "assign_nonsuper_actor", user.RoleUser)
+	assignAccessTestRole(t, g, secActor, rbac.RoleCodeSecurityAdmin)
+
+	target := createSeedUser(t, g, "assign_nonsuper_target", user.RoleUser)
+	contentRoleID := roleIDForCode(t, g, rbac.RoleCodeContentAdmin)
+	superRoleID := roleIDForCode(t, g, rbac.RoleCodeSuperAdmin)
+
+	secMeta := rbac.AuditMeta{ActorID: secActor}
+
+	// 非 super 且有 user.roles.assign 可分配非 super 角色。
+	require.NoError(t, svc.ReplaceUserRoles(ctx, secMeta, target, []int64{contentRoleID}))
+	assert.Equal(t, []string{rbac.RoleCodeContentAdmin}, userRoleCodes(t, g, target))
+
+	// 非 super 可移除非 super 角色（清空）。
+	require.NoError(t, svc.ReplaceUserRoles(ctx, secMeta, target, nil))
+	assert.Empty(t, userRoleCodes(t, g, target))
+
+	// 非 super 分配 super 仍 403。
+	requireAppErrorCode(t, svc.ReplaceUserRoles(ctx, secMeta, target, []int64{superRoleID}), 40300)
+	assert.Empty(t, userRoleCodes(t, g, target))
+}
+
+func TestAdminListUsersKeywordEscaping(t *testing.T) {
+	g := testutil.PG(t)
+	ctx := context.Background()
+	require.NoError(t, rbac.Seed(ctx, g))
+	svc := rbac.NewService(g)
+
+	// 用户名含下划线；昵称/邮箱无其他特殊字符。
+	_ = createSeedUser(t, g, "esc_under", user.RoleUser)
+	// 昵称含百分号。
+	percent := createSeedUser(t, g, "escpercent", user.RoleUser)
+	require.NoError(t, g.Model(&user.User{}).Where("id = ?", percent).Update("nickname", "50%off").Error)
+	// 昵称含反斜杠。
+	backslash := createSeedUser(t, g, "escbackslash", user.RoleUser)
+	require.NoError(t, g.Model(&user.User{}).Where("id = ?", backslash).Update("nickname", `C:\dir`).Error)
+	// 无任何特殊字符。
+	createSeedUser(t, g, "escplain", user.RoleUser)
+
+	// 字面 `_` 只命中含下划线的记录（username/email），不充当单字符通配符。
+	page, err := svc.AdminListUsers(ctx, 1, 20, rbac.AdminUserFilter{Keyword: "_"})
+	require.NoError(t, err)
+	require.Len(t, page.Items, 1)
+	assert.Equal(t, "esc_under", page.Items[0].Username)
+
+	// 字面 `%` 只命中含百分号的记录。
+	page, err = svc.AdminListUsers(ctx, 1, 20, rbac.AdminUserFilter{Keyword: "%"})
+	require.NoError(t, err)
+	require.Len(t, page.Items, 1)
+	assert.Equal(t, "escpercent", page.Items[0].Username)
+
+	// 字面 `\` 只命中含反斜杠的记录（nickname）。
+	page, err = svc.AdminListUsers(ctx, 1, 20, rbac.AdminUserFilter{Keyword: `\`})
+	require.NoError(t, err)
+	require.Len(t, page.Items, 1)
+	assert.Equal(t, "escbackslash", page.Items[0].Username)
+}
+
 func userStatus(t *testing.T, g *gorm.DB, userID int64) user.Status {
 	t.Helper()
 	var u user.User
