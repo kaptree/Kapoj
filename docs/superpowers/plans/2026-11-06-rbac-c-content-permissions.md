@@ -177,7 +177,7 @@ Expected: FAIL。
 - `problem.Service.Get` 用 `v.CanViewHidden`；`List` 的 `IncludeHidden` 用 `v.CanViewHidden`；`Statistics` 沿用 `Get`。
 - `problemapi.viewer(c)` 从 `CurrentAccess` 取：
   - `CanViewHidden = access.Has(PermProblemViewHidden)`
-  - `CanViewSolution = access.Has(PermProblemViewHidden) || access.Has(PermProblemUpdate) || access.Has(PermProblemDelete) || access.Has(PermProblemPublish) || access.Has(PermProblemTestcaseManage) || access.Has(PermProblemCheckerManage)`
+  - `CanViewSolution = access.Has(PermProblemUpdate) || access.Has(PermProblemDelete) || access.Has(PermProblemPublish) || access.Has(PermProblemTestcaseManage) || access.Has(PermProblemCheckerManage)`。`problem.view_hidden` 只放开题目内容，不放开题解。
 - `get` 的 contest fallback 仍临时设 `v.CanViewHidden = true`，但不要设置 `CanViewSolution`；`includeSolution := v.CanViewSolution`。
 - `update` 先用 `h.svc.Get(ctx, problem.Viewer{CanViewHidden: true}, id)` 读取当前 `IsPublic`；若 `in.IsPublic != existing.IsPublic && !middleware.HasPermission(c, string(rbac.PermProblemPublish))`，返回 `httpx.ErrForbidden`。
 - `problemapi` 所有测试 fixture 改为 `testutil.SeedRBAC` + `testutil.AssignLegacyRole`；`token("problem_admin")` 同时写 legacy role 和 `content_admin`；另加不分配 RBAC 角色的 legacy token helper，用于证明旧 role 不再授权。
