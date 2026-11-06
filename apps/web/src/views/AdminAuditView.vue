@@ -122,6 +122,8 @@ onMounted(() => {
             input-id="audit-actor"
             class="actor-input"
             :min="1"
+            :min-fraction-digits="0"
+            :max-fraction-digits="0"
             placeholder="操作者 ID"
             aria-label="按操作者 ID 筛选"
             fluid
@@ -168,11 +170,11 @@ onMounted(() => {
         </div>
       </form>
 
-      <AppErrorState v-if="error && items.length === 0" :description="error" @retry="load" />
+      <AppErrorState v-if="error" :description="error" @retry="load" />
 
-      <AppLoadingState v-if="loading && items.length === 0" label="正在加载审计日志" />
+      <AppLoadingState v-else-if="loading && items.length === 0" label="正在加载审计日志" />
       <DataTable
-        v-else-if="!error || items.length > 0"
+        v-else
         :value="items"
         :loading="loading"
         data-key="id"
@@ -224,7 +226,7 @@ onMounted(() => {
       </DataTable>
 
       <Paginator
-        v-if="total > PAGE_SIZE"
+        v-if="!error && total > PAGE_SIZE"
         :rows="PAGE_SIZE"
         :total-records="total"
         :first="(page - 1) * PAGE_SIZE"

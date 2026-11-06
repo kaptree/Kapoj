@@ -143,6 +143,37 @@ describe('AdminAuditView', () => {
     wrapper.unmount()
   })
 
+  it('surfaces refetch errors instead of showing stale data', async () => {
+    vi.mocked(listAdminAudit).mockResolvedValue({ total: 1, items: [auditItem()] })
+    const wrapper = await mountPage()
+    expect(wrapper.text()).toContain('封禁用户 alice')
+
+    vi.mocked(listAdminAudit).mockRejectedValue(new ApiError(500, -1, '服务器错误'))
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('服务器错误')
+    expect(wrapper.text()).not.toContain('封禁用户 alice')
+    const retry = wrapper.findAll('button').find((item) => item.text().includes('重试'))
+    expect(retry).toBeTruthy()
+
+    vi.mocked(listAdminAudit).mockResolvedValue({ total: 1, items: [auditItem()] })
+    await retry!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('封禁用户 alice')
+    wrapper.unmount()
+  })
+
+  it('restricts actorId to whole numbers', async () => {
+    vi.mocked(listAdminAudit).mockResolvedValue({ total: 0, items: [] })
+    const wrapper = await mountPage()
+
+    const input = wrapper.findComponent(InputNumber)
+    expect(input.props('minFractionDigits')).toBe(0)
+    expect(input.props('maxFractionDigits')).toBe(0)
+    wrapper.unmount()
+  })
+
   it('no write/edit controls', async () => {
     vi.mocked(listAdminAudit).mockResolvedValue({ total: 1, items: [auditItem()] })
     const wrapper = await mountPage()
