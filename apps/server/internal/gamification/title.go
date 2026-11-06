@@ -32,7 +32,7 @@ var titleColorPattern = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 // 自己已解锁但已下线的称号；管理员 includeInactive=true 时看到全部。
 // 每个称号都带当前用户视角的解锁、购买、装备状态与条件进度。
 func (s *Service) ListTitles(ctx context.Context, v Viewer, includeInactive bool) ([]TitleItem, error) {
-	if includeInactive && !v.IsAdmin {
+	if includeInactive && !v.CanManageTitles {
 		return nil, httpx.ErrForbidden
 	}
 	if v.UserID > 0 {
@@ -80,7 +80,7 @@ func (s *Service) ListTitles(ctx context.Context, v Viewer, includeInactive bool
 
 // CreateTitle 创建称号；isActive 缺省为上架。
 func (s *Service) CreateTitle(ctx context.Context, v Viewer, in TitleInput) (*Title, error) {
-	if !v.IsAdmin {
+	if !v.CanManageTitles {
 		return nil, httpx.ErrForbidden
 	}
 	in, err := normalizeTitleInput(in)
@@ -108,7 +108,7 @@ func (s *Service) CreateTitle(ctx context.Context, v Viewer, in TitleInput) (*Ti
 
 // UpdateTitle 更新称号；isActive 缺省时保留原值。
 func (s *Service) UpdateTitle(ctx context.Context, v Viewer, id int64, in TitleInput) (*Title, error) {
-	if !v.IsAdmin {
+	if !v.CanManageTitles {
 		return nil, httpx.ErrForbidden
 	}
 	if id <= 0 {
@@ -138,7 +138,7 @@ func (s *Service) UpdateTitle(ctx context.Context, v Viewer, id int64, in TitleI
 
 // DeleteTitle 软删除称号，保留已解锁、已购买记录与装备状态。
 func (s *Service) DeleteTitle(ctx context.Context, v Viewer, id int64) error {
-	if !v.IsAdmin {
+	if !v.CanManageTitles {
 		return httpx.ErrForbidden
 	}
 	if _, err := s.findTitle(ctx, id); err != nil {

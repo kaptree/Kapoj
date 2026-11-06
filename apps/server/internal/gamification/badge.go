@@ -29,7 +29,7 @@ var badgeInternalImagePattern = regexp.MustCompile(`^/api/badges/[1-9][0-9]*/ima
 // ListBadges 返回徽章商城。游客只看到上架徽章；登录用户额外看到自己已拥有的
 // 下线徽章；管理员 includeInactive=true 时看到全部。每项带上当前用户的拥有状态。
 func (s *Service) ListBadges(ctx context.Context, v Viewer, includeInactive bool) ([]BadgeItem, error) {
-	if includeInactive && !v.IsAdmin {
+	if includeInactive && !v.CanManageBadges {
 		return nil, httpx.ErrForbidden
 	}
 	badges, err := s.repo.ListBadges(ctx)
@@ -91,7 +91,7 @@ func (s *Service) ListUserBadges(ctx context.Context, userID int64) ([]BadgeItem
 
 // CreateBadge 创建徽章；isActive 缺省为上架，stock 缺省为 0。
 func (s *Service) CreateBadge(ctx context.Context, v Viewer, in BadgeInput) (*Badge, error) {
-	if !v.IsAdmin {
+	if !v.CanManageBadges {
 		return nil, httpx.ErrForbidden
 	}
 	in, err := normalizeBadgeInput(in, 0, true)
@@ -122,7 +122,7 @@ func (s *Service) CreateBadge(ctx context.Context, v Viewer, in BadgeInput) (*Ba
 // UpdateBadge 更新徽章；isActive 缺省时保留原值，stock 缺省时保留当前库存
 // （包括并发购买已扣减的库存），imageUrl 为空时保留现有图片。
 func (s *Service) UpdateBadge(ctx context.Context, v Viewer, id int64, in BadgeInput) (*Badge, error) {
-	if !v.IsAdmin {
+	if !v.CanManageBadges {
 		return nil, httpx.ErrForbidden
 	}
 	if id <= 0 {
@@ -164,7 +164,7 @@ func (s *Service) UpdateBadge(ctx context.Context, v Viewer, id int64, in BadgeI
 
 // DeleteBadge 软删除徽章，保留已购买记录与公开展示。
 func (s *Service) DeleteBadge(ctx context.Context, v Viewer, id int64) error {
-	if !v.IsAdmin {
+	if !v.CanManageBadges {
 		return httpx.ErrForbidden
 	}
 	if _, err := s.findBadge(ctx, id); err != nil {
@@ -176,7 +176,7 @@ func (s *Service) DeleteBadge(ctx context.Context, v Viewer, id int64) error {
 // UploadBadgeImage 校验管理员上传的图片并以固定 key badges/<id> 保存，
 // 同时把 image_url 指向公开图片接口。
 func (s *Service) UploadBadgeImage(ctx context.Context, v Viewer, id int64, r io.Reader) error {
-	if !v.IsAdmin {
+	if !v.CanManageBadges {
 		return httpx.ErrForbidden
 	}
 	badge, err := s.findBadge(ctx, id)

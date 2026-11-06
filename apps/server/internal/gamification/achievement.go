@@ -58,7 +58,7 @@ func (s *Service) EvaluateUser(ctx context.Context, userID int64) error {
 // ListAchievements 返回成就列表。游客只能看到上架成就；登录用户会先补算，
 // 并额外看到自己已解锁但已下线的成就；管理员传 includeInactive 时看到全部。
 func (s *Service) ListAchievements(ctx context.Context, v Viewer, includeInactive bool) ([]AchievementItem, error) {
-	if includeInactive && !v.IsAdmin {
+	if includeInactive && !v.CanManageAchievements {
 		return nil, httpx.ErrForbidden
 	}
 	if v.UserID > 0 {
@@ -106,7 +106,7 @@ func (s *Service) ListAchievements(ctx context.Context, v Viewer, includeInactiv
 
 // CreateAchievement 创建成就；code 必须符合格式，isActive 缺省为 true。
 func (s *Service) CreateAchievement(ctx context.Context, v Viewer, in AchievementInput) (*Achievement, error) {
-	if !v.IsAdmin {
+	if !v.CanManageAchievements {
 		return nil, httpx.ErrForbidden
 	}
 	in, err := normalizeAchievementInput(in, true)
@@ -147,7 +147,7 @@ func (s *Service) CreateAchievement(ctx context.Context, v Viewer, in Achievemen
 
 // UpdateAchievement 更新成就；code 创建后不可修改，输入为空时保持原值。
 func (s *Service) UpdateAchievement(ctx context.Context, v Viewer, id int64, in AchievementInput) (*Achievement, error) {
-	if !v.IsAdmin {
+	if !v.CanManageAchievements {
 		return nil, httpx.ErrForbidden
 	}
 	existing, err := s.repo.FindAchievement(ctx, id)
@@ -187,7 +187,7 @@ func (s *Service) UpdateAchievement(ctx context.Context, v Viewer, id int64, in 
 
 // DeleteAchievement 软删除成就，保留已解锁记录与金币流水。
 func (s *Service) DeleteAchievement(ctx context.Context, v Viewer, id int64) error {
-	if !v.IsAdmin {
+	if !v.CanManageAchievements {
 		return httpx.ErrForbidden
 	}
 	if _, err := s.repo.FindAchievement(ctx, id); err != nil {

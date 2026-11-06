@@ -19,6 +19,7 @@ const (
 	AuditActionUserRolesAssign = "user.roles.assign"
 	AuditActionUserBan         = "user.ban"
 	AuditActionUserUnban       = "user.unban"
+	AuditActionUserCoinsAdjust = "user.coins.adjust"
 
 	AuditTargetRole = "role"
 	AuditTargetUser = "user"

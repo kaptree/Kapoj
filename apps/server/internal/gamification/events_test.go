@@ -133,7 +133,7 @@ func TestHandleGameEventSubmissionAcceptedEvaluatesUser(t *testing.T) {
 	env := newEventsEnv(t, &fakeEventPublisher{})
 	ctx := context.Background()
 
-	_, err := env.svc.CreateAchievement(ctx, gamification.Viewer{UserID: env.user.ID, IsAdmin: true},
+	_, err := env.svc.CreateAchievement(ctx, gamification.Viewer{UserID: env.user.ID, CanManageAchievements: true},
 		gamification.AchievementInput{
 			Code: "event-first-ac", Name: "首次 AC",
 			ConditionType:   gamification.ConditionACCount,
@@ -187,7 +187,7 @@ func TestHandleGameEventLoginAndJoinEvaluateUser(t *testing.T) {
 	env := newEventsEnv(t, pub)
 	ctx := context.Background()
 
-	_, err := env.svc.CreateAchievement(ctx, gamification.Viewer{UserID: env.user.ID, IsAdmin: true},
+	_, err := env.svc.CreateAchievement(ctx, gamification.Viewer{UserID: env.user.ID, CanManageAchievements: true},
 		gamification.AchievementInput{
 			Code: "event-login-ac", Name: "登录后计算",
 			ConditionType:   gamification.ConditionACCount,

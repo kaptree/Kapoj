@@ -8,67 +8,106 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
-	"github.com/kaptree/kapoj/apps/server/internal/user"
+	"github.com/kaptree/kapoj/apps/server/internal/rbac"
+)
+
+// Options 配置游戏化接口的可选依赖。
+type Options struct {
+	RBAC *rbac.Service
+}
+
+const (
+	auditTargetAchievement = "achievement"
+	auditTargetTask        = "task"
+	auditTargetBadge       = "badge"
+	auditTargetTitle       = "title"
 )
 
 // RegisterRoutes 挂载游戏化公开/登录/管理员接口；路由组需已运行
 // middleware.Authenticate，以便公开接口识别可选登录用户。uploads 是带
 // 较大请求体上限的路由组，用于徽章图片上传。
-func RegisterRoutes(r gin.IRouter, uploads gin.IRouter, s *gamification.Service) {
-	h := &handler{svc: s}
-	admin := func(fn gin.HandlerFunc) []gin.HandlerFunc {
+func RegisterRoutes(r gin.IRouter, uploads gin.IRouter, s *gamification.Service, opts ...Options) {
+	var o Options
+	if len(opts) > 0 {
+		o = opts[0]
+	}
+	h := &handler{svc: s, rbac: o.RBAC}
+
+	// resolver 为 nil 时 RequirePermission 会拒绝所有写操作，LoadAccess 为
+	// 空操作；生产环境 router 始终传入 RBAC service。
+	var resolver middleware.PermissionResolver
+	if h.rbac != nil {
+		resolver = h.rbac
+	}
+	load := middleware.LoadAccess(resolver)
+	require := func(code string) gin.HandlerFunc {
+		return middleware.RequirePermission(resolver, code)
+	}
+	manage := func(code, targetType string, fn gin.HandlerFunc) []gin.HandlerFunc {
 		return []gin.HandlerFunc{
 			middleware.RequireAuth(),
-			middleware.RequireRole(user.RoleSuperAdmin),
+			require(code),
+			middleware.AuditAdminAction(h.rbac, code, targetType),
 			fn,
 		}
 	}
 
-	r.GET("/achievements", h.listAchievements)
+	r.GET("/achievements", load, h.listAchievements)
 	r.GET("/users/me/achievements", middleware.RequireAuth(), h.myAchievements)
-	r.POST("/achievements", admin(h.createAchievement)...)
-	r.PUT("/achievements/:id", admin(h.updateAchievement)...)
-	r.DELETE("/achievements/:id", admin(h.deleteAchievement)...)
+	r.POST("/achievements", manage(string(rbac.PermGamificationAchievementManage), auditTargetAchievement, h.createAchievement)...)
+	r.PUT("/achievements/:id", manage(string(rbac.PermGamificationAchievementManage), auditTargetAchievement, h.updateAchievement)...)
+	r.DELETE("/achievements/:id", manage(string(rbac.PermGamificationAchievementManage), auditTargetAchievement, h.deleteAchievement)...)
 	r.GET("/coins/transactions", middleware.RequireAuth(), h.coinTransactions)
-	r.POST("/admin/users/:id/coins", admin(h.adminAdjustCoins)...)
-	r.GET("/tasks", h.listTasks)
-	r.POST("/tasks", admin(h.createTask)...)
-	r.PUT("/tasks/:id", admin(h.updateTask)...)
-	r.DELETE("/tasks/:id", admin(h.deleteTask)...)
+	r.GET("/tasks", load, h.listTasks)
+	r.POST("/tasks", manage(string(rbac.PermGamificationTaskManage), auditTargetTask, h.createTask)...)
+	r.PUT("/tasks/:id", manage(string(rbac.PermGamificationTaskManage), auditTargetTask, h.updateTask)...)
+	r.DELETE("/tasks/:id", manage(string(rbac.PermGamificationTaskManage), auditTargetTask, h.deleteTask)...)
 	r.POST("/tasks/:id/claim", middleware.RequireAuth(), h.claimTask)
 
 	r.GET("/gamification/config", h.gamificationConfig)
-	r.GET("/badges", h.listBadges)
-	r.POST("/badges", admin(h.createBadge)...)
-	r.PUT("/badges/:id", admin(h.updateBadge)...)
-	r.DELETE("/badges/:id", admin(h.deleteBadge)...)
+	r.GET("/badges", load, h.listBadges)
+	r.POST("/badges", manage(string(rbac.PermGamificationBadgeManage), auditTargetBadge, h.createBadge)...)
+	r.PUT("/badges/:id", manage(string(rbac.PermGamificationBadgeManage), auditTargetBadge, h.updateBadge)...)
+	r.DELETE("/badges/:id", manage(string(rbac.PermGamificationBadgeManage), auditTargetBadge, h.deleteBadge)...)
 	r.GET("/badges/:id/image", h.badgeImage)
-	uploads.POST("/badges/:id/image", admin(h.uploadBadgeImage)...)
+	uploads.POST("/badges/:id/image", manage(string(rbac.PermGamificationBadgeManage), auditTargetBadge, h.uploadBadgeImage)...)
 	r.POST("/badges/:id/purchase", middleware.RequireAuth(), h.purchaseBadge)
 	r.POST("/badges/:id/equip", middleware.RequireAuth(), h.equipBadge)
 	r.POST("/badges/:id/unequip", middleware.RequireAuth(), h.unequipBadge)
 	r.GET("/users/:id/badges", h.userBadges)
 
-	r.GET("/titles", h.listTitles)
-	r.POST("/titles", admin(h.createTitle)...)
-	r.PUT("/titles/:id", admin(h.updateTitle)...)
-	r.DELETE("/titles/:id", admin(h.deleteTitle)...)
+	r.GET("/titles", load, h.listTitles)
+	r.POST("/titles", manage(string(rbac.PermGamificationTitleManage), auditTargetTitle, h.createTitle)...)
+	r.PUT("/titles/:id", manage(string(rbac.PermGamificationTitleManage), auditTargetTitle, h.updateTitle)...)
+	r.DELETE("/titles/:id", manage(string(rbac.PermGamificationTitleManage), auditTargetTitle, h.deleteTitle)...)
 	r.POST("/titles/:id/purchase", middleware.RequireAuth(), h.purchaseTitle)
 	r.POST("/titles/:id/equip", middleware.RequireAuth(), h.equipTitle)
 	r.POST("/titles/:id/unequip", middleware.RequireAuth(), h.unequipTitle)
 }
 
-type handler struct{ svc *gamification.Service }
+type handler struct {
+	svc  *gamification.Service
+	rbac *rbac.Service
+}
 
+// viewer 从权限中间件写入的 Access 派生游戏化 Viewer；无 Access（未加载权限
+// 的普通登录接口）时回退到 JWT claims 的 UserID，仅用于需要登录态的读取。
 func viewer(c *gin.Context) gamification.Viewer {
-	claims, ok := middleware.CurrentClaims(c)
-	if !ok {
-		return gamification.Viewer{}
+	access, ok := middleware.CurrentAccess(c)
+	if ok && access != nil {
+		return gamification.Viewer{
+			UserID:                access.UserID,
+			CanManageAchievements: access.Has(string(rbac.PermGamificationAchievementManage)),
+			CanManageTasks:        access.Has(string(rbac.PermGamificationTaskManage)),
+			CanManageBadges:       access.Has(string(rbac.PermGamificationBadgeManage)),
+			CanManageTitles:       access.Has(string(rbac.PermGamificationTitleManage)),
+			CanAdjustCoins:        access.Has(string(rbac.PermUserCoinsAdjust)),
+		}
 	}
-	return gamification.Viewer{
-		UserID:  claims.UserID,
-		IsAdmin: claims.Role == user.RoleSuperAdmin,
+	if claims, ok := middleware.CurrentClaims(c); ok {
+		return gamification.Viewer{UserID: claims.UserID}
 	}
+	return gamification.Viewer{}
 }
 
 func pathID(c *gin.Context) (int64, bool) {
@@ -218,26 +257,6 @@ func (h *handler) claimTask(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, item)
-}
-
-func (h *handler) adminAdjustCoins(c *gin.Context) {
-	id, ok := pathID(c)
-	if !ok {
-		return
-	}
-	in, ok := httpx.BindJSON[struct {
-		Amount int64  `json:"amount"`
-		Note   string `json:"note"`
-	}](c)
-	if !ok {
-		return
-	}
-	balance, err := h.svc.AdminAdjustCoins(c.Request.Context(), viewer(c), id, in.Amount, in.Note)
-	if err != nil {
-		httpx.Fail(c, err)
-		return
-	}
-	httpx.OK(c, gin.H{"balance": balance})
 }
 
 func (h *handler) gamificationConfig(c *gin.Context) {

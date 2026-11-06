@@ -163,6 +163,61 @@ func TestAdminAdjustCoinsRejectsNegativeBalance(t *testing.T) {
 	assert.EqualValues(t, 5, balance)
 }
 
+func TestAdminAdjustCoinsWithAuditRollsBackOnAuditError(t *testing.T) {
+	e := newCoinEnv(t)
+	require.NoError(t, e.repo.AdminAdjustCoins(context.Background(), coinUserID, 10, "初始"))
+
+	err := e.repo.AdminAdjustCoinsWithAudit(
+		context.Background(), coinUserID, 50, "活动",
+		func(tx *gorm.DB) error { return errors.New("audit boom") },
+	)
+	require.Error(t, err)
+
+	// 审计失败必须整体回滚：余额不变、无新增流水。
+	balance, err := e.repo.Balance(context.Background(), coinUserID)
+	require.NoError(t, err)
+	assert.EqualValues(t, 10, balance)
+	var count int64
+	require.NoError(t, e.db.Model(&gamification.CoinTransaction{}).
+		Where("type = ?", gamification.CoinAdminAdjust).Count(&count).Error)
+	assert.EqualValues(t, 1, count, "审计失败必须回滚新增的调整流水")
+}
+
+func TestAdminAdjustCoinsWithAuditWritesAuditOnSuccess(t *testing.T) {
+	e := newCoinEnv(t)
+	var auditCalled bool
+	err := e.repo.AdminAdjustCoinsWithAudit(
+		context.Background(), coinUserID, 20, "活动",
+		func(tx *gorm.DB) error {
+			auditCalled = true
+			return nil
+		},
+	)
+	require.NoError(t, err)
+	assert.True(t, auditCalled)
+	balance, err := e.repo.Balance(context.Background(), coinUserID)
+	require.NoError(t, err)
+	assert.EqualValues(t, 20, balance)
+}
+
+func TestServiceAdminAdjustCoinsRequiresCanAdjustCoins(t *testing.T) {
+	e := newCoinEnv(t)
+	svc := gamification.NewService(e.repo)
+
+	_, err := svc.AdminAdjustCoins(context.Background(), gamification.Viewer{UserID: coinUserID}, coinUserID, 10, "活动")
+	assertCode(t, err, 40300)
+
+	balance, err := e.repo.Balance(context.Background(), coinUserID)
+	require.NoError(t, err)
+	assert.EqualValues(t, 0, balance)
+
+	_, err = svc.AdminAdjustCoinsWithAudit(context.Background(), gamification.Viewer{CanAdjustCoins: true}, coinUserID, 10, "活动", nil)
+	require.NoError(t, err)
+	balance, err = e.repo.Balance(context.Background(), coinUserID)
+	require.NoError(t, err)
+	assert.EqualValues(t, 10, balance)
+}
+
 func TestListCoinTransactionsReturnsBalanceAndTotal(t *testing.T) {
 	e := newCoinEnv(t)
 	require.NoError(t, e.repo.AdminAdjustCoins(context.Background(), coinUserID, 10, "活动"))

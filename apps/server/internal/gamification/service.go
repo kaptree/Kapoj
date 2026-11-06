@@ -6,6 +6,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"gorm.io/gorm"
+
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
 )
@@ -83,7 +85,13 @@ func (s *Service) ListCoinTransactions(ctx context.Context, userID int64, page, 
 
 // AdminAdjustCoins 校验管理员参数并调整用户金币，返回调整后的余额。
 func (s *Service) AdminAdjustCoins(ctx context.Context, v Viewer, userID, amount int64, note string) (int64, error) {
-	if !v.IsAdmin {
+	return s.AdminAdjustCoinsWithAudit(ctx, v, userID, amount, note, nil)
+}
+
+// AdminAdjustCoinsWithAudit 与 AdminAdjustCoins 相同，但允许调用方在同一事务内
+// 写入审计；audit 为 nil 时不调用。audit 返回错误会使整个金币调整回滚。
+func (s *Service) AdminAdjustCoinsWithAudit(ctx context.Context, v Viewer, userID, amount int64, note string, audit func(tx *gorm.DB) error) (int64, error) {
+	if !v.CanAdjustCoins {
 		return 0, httpx.ErrForbidden
 	}
 	if amount == 0 {
@@ -97,7 +105,7 @@ func (s *Service) AdminAdjustCoins(ctx context.Context, v Viewer, userID, amount
 	if length > 200 {
 		return 0, httpx.ErrValidation("备注不能超过 200 个字符")
 	}
-	if err := s.repo.AdminAdjustCoins(ctx, userID, amount, note); err != nil {
+	if err := s.repo.AdminAdjustCoinsWithAudit(ctx, userID, amount, note, audit); err != nil {
 		return 0, err
 	}
 	return s.repo.Balance(ctx, userID)

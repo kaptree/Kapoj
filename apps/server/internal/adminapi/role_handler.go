@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
@@ -12,9 +13,13 @@ import (
 
 // RegisterRoutes 挂载管理后台角色/权限接口；路由组需已运行
 // middleware.Authenticate。所有管理接口都通过 RequirePermission 授权，
-// super_admin 由中间件直接放行。
-func RegisterRoutes(api gin.IRouter, s *rbac.Service) {
-	h := &handler{svc: s}
+// super_admin 由中间件直接放行。opts.Game 非空时额外挂载金币调整接口。
+func RegisterRoutes(api gin.IRouter, s *rbac.Service, opts ...Options) {
+	var o Options
+	if len(opts) > 0 {
+		o = opts[0]
+	}
+	h := &handler{svc: s, game: o.Game}
 
 	api.GET("/admin/stats", append(requirePermission(s, string(rbac.PermAdminDashboardView)), h.stats)...)
 	api.GET("/admin/audit", append(requirePermission(s, string(rbac.PermAdminAuditView)), h.listAudit)...)
@@ -32,10 +37,14 @@ func RegisterRoutes(api gin.IRouter, s *rbac.Service) {
 	api.PUT("/admin/users/:id/roles", append(requirePermission(s, string(rbac.PermUserRolesAssign)), h.replaceUserRoles)...)
 	api.POST("/admin/users/:id/ban", append(requirePermission(s, string(rbac.PermUserBan)), h.banUser)...)
 	api.POST("/admin/users/:id/unban", append(requirePermission(s, string(rbac.PermUserBan)), h.unbanUser)...)
+	if h.game != nil {
+		api.POST("/admin/users/:id/coins", append(requirePermission(s, string(rbac.PermUserCoinsAdjust)), h.adjustCoins)...)
+	}
 }
 
 type handler struct {
-	svc *rbac.Service
+	svc  *rbac.Service
+	game *gamification.Service
 }
 
 // roleUpdateRequest 是 PUT /admin/roles/:id 的请求体。Code 为可选字段：

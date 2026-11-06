@@ -25,6 +25,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
 	"github.com/kaptree/kapoj/apps/server/internal/submission"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
+	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
 
 type noopQueue struct{}
@@ -43,6 +44,7 @@ type fx struct {
 func newFx(t *testing.T) *fx {
 	t.Helper()
 	g := testutil.PG(t)
+	rbacSvc := testutil.SeedRBAC(t, g)
 	mr := miniredis.RunT(t)
 	store, err := storage.NewLocal(t.TempDir())
 	require.NoError(t, err)
@@ -55,6 +57,7 @@ func newFx(t *testing.T) *fx {
 		Enqueuer: noopQueue{},
 		Game: gamification.NewServiceWithOptions(gamification.NewRepository(g),
 			gamification.ServiceOptions{MaxEquippedBadges: 3, Storage: store}),
+		RBAC: rbacSvc,
 	})
 	return &fx{
 		t: t, h: h, db: g,
@@ -79,6 +82,22 @@ func (f *fx) do(method, path, token string, body any) (*httptest.ResponseRecorde
 	return w, resp
 }
 
+func (f *fx) register(name string) (int64, string) {
+	f.t.Helper()
+	w, _ := f.do(http.MethodPost, "/api/auth/register", "", map[string]string{
+		"username": name, "email": name + "@example.com", "password": "correct-horse",
+	})
+	require.Equal(f.t, http.StatusCreated, w.Code, w.Body.String())
+	w, resp := f.do(http.MethodPost, "/api/auth/login", "", map[string]string{
+		"account": name, "password": "correct-horse",
+	})
+	require.Equal(f.t, http.StatusOK, w.Code)
+	data := resp["data"].(map[string]any)
+	tok := data["accessToken"].(string)
+	userID := int64(data["user"].(map[string]any)["id"].(float64))
+	return userID, tok
+}
+
 func (f *fx) token(role string) string {
 	f.t.Helper()
 	if role == "guest" {
@@ -89,19 +108,44 @@ func (f *fx) token(role string) string {
 	}
 	f.nextN++
 	name := fmt.Sprintf("%s%d", strings.ReplaceAll(role, "_", ""), f.nextN)
-	w, _ := f.do(http.MethodPost, "/api/auth/register", "", map[string]string{
-		"username": name, "email": name + "@example.com", "password": "correct-horse",
-	})
-	require.Equal(f.t, http.StatusCreated, w.Code, w.Body.String())
-	require.NoError(f.t, f.db.Exec("UPDATE users SET role = ? WHERE username = ?", role, name).Error)
-	w, resp := f.do(http.MethodPost, "/api/auth/login", "", map[string]string{
-		"account": name, "password": "correct-horse",
-	})
-	require.Equal(f.t, http.StatusOK, w.Code)
-	data := resp["data"].(map[string]any)
-	tok := data["accessToken"].(string)
+	userID, tok := f.register(name)
+	require.NoError(f.t, f.db.Exec("UPDATE users SET role = ? WHERE id = ?", role, userID).Error)
+	testutil.AssignLegacyRole(f.t, f.db, userID, user.Role(role))
 	f.tokens[role] = tok
-	f.ids[role] = int64(data["user"].(map[string]any)["id"].(float64))
+	f.ids[role] = userID
+	return tok
+}
+
+// rbacToken 创建用户并按权限码关联给定 RBAC 角色（不设置 legacy users.role）。
+func (f *fx) rbacToken(roleCode string) string {
+	f.t.Helper()
+	key := "rbac:" + roleCode
+	if tok, ok := f.tokens[key]; ok {
+		return tok
+	}
+	f.nextN++
+	name := fmt.Sprintf("rb%s%d", strings.ReplaceAll(roleCode, "_", ""), f.nextN)
+	userID, tok := f.register(name)
+	testutil.AssignRole(f.t, f.db, userID, roleCode)
+	f.tokens[key] = tok
+	f.ids[key] = userID
+	return tok
+}
+
+// legacyOnlyToken 创建用户并设置 legacy users.role，但不分配任何 RBAC 角色；
+// 用于证明旧 role 不再参与管理授权。
+func (f *fx) legacyOnlyToken(role string) string {
+	f.t.Helper()
+	key := "legacy:" + role
+	if tok, ok := f.tokens[key]; ok {
+		return tok
+	}
+	f.nextN++
+	name := fmt.Sprintf("lg%s%d", strings.ReplaceAll(role, "_", ""), f.nextN)
+	userID, tok := f.register(name)
+	require.NoError(f.t, f.db.Exec("UPDATE users SET role = ? WHERE id = ?", role, userID).Error)
+	f.tokens[key] = tok
+	f.ids[key] = userID
 	return tok
 }
 

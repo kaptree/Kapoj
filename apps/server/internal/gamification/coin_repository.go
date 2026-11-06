@@ -78,6 +78,12 @@ func (r *Repository) SpendCoins(ctx context.Context, userID, amount int64, reaso
 
 // AdminAdjustCoins 允许管理员正负调整金币，调整后余额不得为负。
 func (r *Repository) AdminAdjustCoins(ctx context.Context, userID, amount int64, note string) error {
+	return r.AdminAdjustCoinsWithAudit(ctx, userID, amount, note, nil)
+}
+
+// AdminAdjustCoinsWithAudit 与 AdminAdjustCoins 相同，但在同一事务内调用 audit
+// 回调；audit 为 nil 时不调用。回调返回错误会使金币调整与流水整体回滚。
+func (r *Repository) AdminAdjustCoinsWithAudit(ctx context.Context, userID, amount int64, note string, audit func(tx *gorm.DB) error) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		coins, err := lockUserCoins(tx, userID)
 		if err != nil {
@@ -93,7 +99,13 @@ func (r *Repository) AdminAdjustCoins(ctx context.Context, userID, amount int64,
 		if err := tx.Create(txRecord).Error; err != nil {
 			return err
 		}
-		return addUserCoins(tx, userID, amount)
+		if err := addUserCoins(tx, userID, amount); err != nil {
+			return err
+		}
+		if audit != nil {
+			return audit(tx)
+		}
+		return nil
 	})
 }
 

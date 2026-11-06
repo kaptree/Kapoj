@@ -41,7 +41,14 @@ func newAchievementEnv(t *testing.T) *achievementEnv {
 }
 
 func adminViewer(userID int64) gamification.Viewer {
-	return gamification.Viewer{UserID: userID, IsAdmin: true}
+	return gamification.Viewer{
+		UserID:                userID,
+		CanManageAchievements: true,
+		CanManageTasks:        true,
+		CanManageBadges:       true,
+		CanManageTitles:       true,
+		CanAdjustCoins:        true,
+	}
 }
 
 func achievementInput(code, name string, t gamification.ConditionType, cfg gamification.ConditionConfig, reward int64) gamification.AchievementInput {

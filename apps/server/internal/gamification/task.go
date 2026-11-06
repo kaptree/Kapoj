@@ -64,7 +64,7 @@ func TaskItemFromModel(task Task) TaskItem {
 // ListTasks 返回任务大厅。游客只看到上架且未结束的任务；登录用户额外看到
 // 自己领取过的任务（包括已下线、已结束与已完成）。读取前会补算任务完成。
 func (s *Service) ListTasks(ctx context.Context, v Viewer, includeInactive bool) ([]TaskItem, error) {
-	if includeInactive && !v.IsAdmin {
+	if includeInactive && !v.CanManageTasks {
 		return nil, httpx.ErrForbidden
 	}
 	if v.UserID > 0 {
@@ -84,7 +84,7 @@ func (s *Service) ListTasks(ctx context.Context, v Viewer, includeInactive bool)
 		}
 	}
 	hasRecords := map[int64]struct{}{}
-	if v.IsAdmin {
+	if v.CanManageTasks {
 		hasRecords, err = s.repo.TaskIDsWithRecords(ctx)
 		if err != nil {
 			return nil, err
@@ -93,7 +93,7 @@ func (s *Service) ListTasks(ctx context.Context, v Viewer, includeInactive bool)
 	now := time.Now()
 	items := make([]TaskItem, 0, len(tasks))
 	for _, task := range tasks {
-		if v.IsAdmin {
+		if v.CanManageTasks {
 			_, task.HasRecords = hasRecords[task.ID]
 		}
 		record, claimed := records[task.ID]
@@ -117,7 +117,7 @@ func (s *Service) ListTasks(ctx context.Context, v Viewer, includeInactive bool)
 
 // CreateTask 创建任务；isActive 缺省为 true。
 func (s *Service) CreateTask(ctx context.Context, v Viewer, in TaskInput) (*Task, error) {
-	if !v.IsAdmin {
+	if !v.CanManageTasks {
 		return nil, httpx.ErrForbidden
 	}
 	in, err := s.normalizeTaskInput(ctx, in)
@@ -148,7 +148,7 @@ func (s *Service) CreateTask(ctx context.Context, v Viewer, in TaskInput) (*Task
 // 被修改，再只校验标题、描述、时间与上下架等可编辑字段。题目即使后来被
 // 下线，也不影响已领取任务的其余字段编辑。
 func (s *Service) UpdateTask(ctx context.Context, v Viewer, id int64, in TaskInput) (*Task, error) {
-	if !v.IsAdmin {
+	if !v.CanManageTasks {
 		return nil, httpx.ErrForbidden
 	}
 	in, err := normalizeTaskEditableInput(in)
@@ -191,7 +191,7 @@ func (s *Service) UpdateTask(ctx context.Context, v Viewer, id int64, in TaskInp
 
 // DeleteTask 软删除任务，已领取用户仍可在截止前完成并照常发奖。
 func (s *Service) DeleteTask(ctx context.Context, v Viewer, id int64) error {
-	if !v.IsAdmin {
+	if !v.CanManageTasks {
 		return httpx.ErrForbidden
 	}
 	if _, err := s.repo.FindTask(ctx, id); err != nil {

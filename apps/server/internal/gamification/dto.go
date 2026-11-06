@@ -7,10 +7,15 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/dbtypes"
 )
 
-// Viewer 是游戏化读取接口的调用者；游客 UserID 为 0，IsAdmin 仅 super_admin 为 true。
+// Viewer 是游戏化读取接口的调用者；游客 UserID 为 0。各管理能力字段由
+// 权限解析派生，授权判断必须使用具体字段而非组合字段。
 type Viewer struct {
-	UserID  int64
-	IsAdmin bool
+	UserID                int64
+	CanManageAchievements bool
+	CanManageTasks        bool
+	CanManageBadges       bool
+	CanManageTitles       bool
+	CanAdjustCoins        bool
 }
 
 // AchievementInput 是管理员创建或更新成就的输入。
