@@ -79,6 +79,7 @@ func run() error {
 		ScanInterval: cfg.RatingScanInterval,
 	})
 	learningSvc := learning.NewService(learning.NewRepository(g))
+	rbacSvc := rbac.NewService(g)
 
 	gameServer := asynq.NewServer(
 		asynq.RedisClientOpt{Addr: cfg.RedisAddr},
@@ -104,7 +105,7 @@ func run() error {
 		Addr: cfg.HTTPAddr,
 		Handler: router.New(router.Deps{
 			DB: g, Redis: rdb, Storage: store, Config: cfg, Enqueuer: queue, Game: gameSvc,
-			Rating: ratingSvc, Activity: activitySvc, Learning: learningSvc,
+			Rating: ratingSvc, Activity: activitySvc, Learning: learningSvc, RBAC: rbacSvc,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}

@@ -3468,6 +3468,7 @@ export interface components {
             accessToken: string;
             refreshToken: string;
         };
+        /** @description 登录/注册响应中的 user 权限字段可能为空；前端登录后应调用 GET /users/me 获取最新角色与权限。 */
         Me: {
             /** Format: int64 */
             id: number;
@@ -3481,8 +3482,20 @@ export interface components {
             coins: number;
             bio: string;
             status: components["schemas"]["Status"];
+            /** @description 用户拥有的管理角色；无角色时为空数组 */
+            roles?: components["schemas"]["RoleSummary"][];
+            /** @description 细粒度权限码，供前端菜单与按钮判断；超级管理员不返回通配权限。无权限时为空数组 */
+            permissions?: string[];
+            /** @description 是否为超级管理员；为 true 时后端绕过所有权限检查 */
+            isSuperAdmin?: boolean;
             /** Format: date-time */
             createdAt: string;
+        };
+        RoleSummary: {
+            /** Format: int64 */
+            id: number;
+            code: string;
+            name: string;
         };
         Profile: {
             /** Format: int64 */

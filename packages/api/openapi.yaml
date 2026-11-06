@@ -1631,6 +1631,7 @@ components:
         refreshToken: { type: string }
     Me:
       type: object
+      description: 登录/注册响应中的 user 权限字段可能为空；前端登录后应调用 GET /users/me 获取最新角色与权限。
       required: [id, username, nickname, email, avatarUrl, role, rating, coins, bio, status, createdAt]
       properties:
         id: { type: integer, format: int64 }
@@ -1643,7 +1644,25 @@ components:
         coins: { type: integer, format: int64 }
         bio: { type: string }
         status: { $ref: '#/components/schemas/Status' }
+        roles:
+          type: array
+          description: 用户拥有的管理角色；无角色时为空数组
+          items: { $ref: '#/components/schemas/RoleSummary' }
+        permissions:
+          type: array
+          description: 细粒度权限码，供前端菜单与按钮判断；超级管理员不返回通配权限。无权限时为空数组
+          items: { type: string }
+        isSuperAdmin:
+          type: boolean
+          description: 是否为超级管理员；为 true 时后端绕过所有权限检查
         createdAt: { type: string, format: date-time }
+    RoleSummary:
+      type: object
+      required: [id, code, name]
+      properties:
+        id: { type: integer, format: int64 }
+        code: { type: string }
+        name: { type: string }
     Profile:
       type: object
       required: [id, username, nickname, avatarUrl, bio, rating, coins, equippedBadges, equippedTitle, createdAt]

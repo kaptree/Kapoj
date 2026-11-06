@@ -22,6 +22,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/config"
 	"github.com/kaptree/kapoj/apps/server/internal/learning"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
+	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
@@ -246,4 +247,45 @@ func TestRouterWiresActivityHooksWithoutGameService(t *testing.T) {
 		Take(&logRow).Error)
 	assert.Equal(t, submissionID, logRow.RefID)
 	assert.Equal(t, 2, logRow.Points)
+}
+
+func TestRouterWiresRBACMe(t *testing.T) {
+	g := testutil.PG(t)
+	require.NoError(t, rbac.Seed(context.Background(), g))
+
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	store, err := storage.NewLocal(t.TempDir())
+	require.NoError(t, err)
+	h := New(Deps{
+		DB: g, Redis: rdb, Storage: store,
+		Config: &config.Config{
+			JWTSecret:       strings.Repeat("s", 32),
+			AccessTokenTTL:  15 * time.Minute,
+			RefreshTokenTTL: time.Hour,
+			SubmitCooldown:  time.Second,
+		},
+		Enqueuer: noopQueue{},
+		RBAC:     rbac.NewService(g),
+	})
+
+	w, resp := call(h, http.MethodPost, "/api/auth/register", "",
+		`{"username":"rbacme","email":"rbacme@example.com","password":"correct-horse"}`)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	data := resp["data"].(map[string]any)
+	token := data["accessToken"].(string)
+	userID := int64(data["user"].(map[string]any)["id"].(float64))
+
+	var role rbac.Role
+	require.NoError(t, g.Where("code = ?", rbac.RoleCodeContentAdmin).First(&role).Error)
+	require.NoError(t, g.Create(&rbac.UserRole{UserID: userID, RoleID: role.ID, AssignedAt: time.Now()}).Error)
+
+	w, resp = call(h, http.MethodGet, "/api/users/me", token, "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	me := resp["data"].(map[string]any)
+	assert.Equal(t, false, me["isSuperAdmin"])
+	assert.NotEmpty(t, me["roles"])
+	permissions := me["permissions"].([]any)
+	assert.Contains(t, permissions, "problem.view_hidden")
 }

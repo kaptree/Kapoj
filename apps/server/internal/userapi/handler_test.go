@@ -16,10 +16,13 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
 	"github.com/kaptree/kapoj/apps/server/internal/auth"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
+	"github.com/kaptree/kapoj/apps/server/internal/rbac"
+	"github.com/kaptree/kapoj/apps/server/internal/testutil"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
 
@@ -48,6 +51,7 @@ type fixture struct {
 	repo   user.Repository
 	auth   *auth.Service
 	issuer *auth.TokenIssuer
+	db     *gorm.DB
 }
 
 func setup(t *testing.T) *fixture {
@@ -62,10 +66,23 @@ func setupWithIdentity(t *testing.T, lookup IdentityLookup) *fixture {
 
 func setupWithOptions(t *testing.T, opts ...Options) *fixture {
 	t.Helper()
+	return setupWithRepository(t, user.NewMemoryRepository(), opts...)
+}
+
+func setupWithDatabaseRBAC(t *testing.T) *fixture {
+	t.Helper()
+	g := testutil.PG(t)
+	require.NoError(t, rbac.Seed(context.Background(), g))
+	f := setupWithRepository(t, user.NewGormRepository(g), Options{RBAC: rbac.NewService(g)})
+	f.db = g
+	return f
+}
+
+func setupWithRepository(t *testing.T, repo user.Repository, opts ...Options) *fixture {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	repo := user.NewMemoryRepository()
 	issuer := auth.NewTokenIssuer(strings.Repeat("s", 32), 15*time.Minute)
 	authSvc := auth.NewService(repo, issuer, auth.NewRefreshStore(rdb, time.Hour), auth.NewLoginLimiter(rdb))
 
@@ -235,4 +252,78 @@ func TestAdminUsersPaginates(t *testing.T) {
 	w, resp = f.do(http.MethodGet, "/api/admin/users?page_size=500", tok, "")
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.Len(t, resp["data"].(map[string]any)["items"], 5)
+}
+
+func grantMeTestRole(t *testing.T, g *gorm.DB, userID int64, roleCode string) {
+	t.Helper()
+	var role rbac.Role
+	require.NoError(t, g.Where("code = ?", roleCode).First(&role).Error)
+	require.NoError(t, g.Create(&rbac.UserRole{UserID: userID, RoleID: role.ID, AssignedAt: time.Now()}).Error)
+}
+
+func meResponseStringSlice(t *testing.T, value any) []string {
+	t.Helper()
+	raw, ok := value.([]any)
+	require.True(t, ok, "应为 JSON 数组，实际为 %T", value)
+	out := make([]string, len(raw))
+	for i, item := range raw {
+		out[i] = item.(string)
+	}
+	return out
+}
+
+func TestMeIncludesPermissions(t *testing.T) {
+	f := setupWithDatabaseRBAC(t)
+
+	u, tok := f.register(t, "alice")
+	grantMeTestRole(t, f.db, u.ID, rbac.RoleCodeContentAdmin)
+
+	w, resp := f.do(http.MethodGet, "/api/users/me", tok, "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data := resp["data"].(map[string]any)
+
+	roles := data["roles"].([]any)
+	require.Len(t, roles, 1)
+	role := roles[0].(map[string]any)
+	assert.Equal(t, rbac.RoleCodeContentAdmin, role["code"])
+	assert.Equal(t, "内容管理员", role["name"])
+	assert.NotZero(t, role["id"])
+
+	permissions := meResponseStringSlice(t, data["permissions"])
+	assert.Contains(t, permissions, "problem.view_hidden")
+	assert.Contains(t, permissions, "problem.publish")
+	assert.NotContains(t, permissions, "user.read")
+	assert.Equal(t, false, data["isSuperAdmin"])
+
+	// 同一账号叠加超级管理员角色后立即生效。
+	grantMeTestRole(t, f.db, u.ID, rbac.RoleCodeSuperAdmin)
+	w, resp = f.do(http.MethodGet, "/api/users/me", tok, "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data = resp["data"].(map[string]any)
+	assert.Equal(t, true, data["isSuperAdmin"])
+	assert.Len(t, data["roles"], 2)
+}
+
+func TestMeWithoutRolesHasEmptyPermissionArrays(t *testing.T) {
+	f := setupWithDatabaseRBAC(t)
+	_, tok := f.register(t, "alice")
+
+	w, resp := f.do(http.MethodGet, "/api/users/me", tok, "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data := resp["data"].(map[string]any)
+	assert.Equal(t, []any{}, data["roles"])
+	assert.Equal(t, []any{}, data["permissions"])
+	assert.Equal(t, false, data["isSuperAdmin"])
+}
+
+func TestMeWithoutRBACReturnsEmptyPermissions(t *testing.T) {
+	f := setup(t)
+	_, tok := f.register(t, "alice")
+
+	w, resp := f.do(http.MethodGet, "/api/users/me", tok, "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data := resp["data"].(map[string]any)
+	assert.Equal(t, []any{}, data["roles"])
+	assert.Equal(t, []any{}, data["permissions"])
+	assert.Equal(t, false, data["isSuperAdmin"])
 }

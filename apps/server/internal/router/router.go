@@ -26,6 +26,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/problemapi"
 	"github.com/kaptree/kapoj/apps/server/internal/rating"
 	"github.com/kaptree/kapoj/apps/server/internal/ratingapi"
+	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
 	"github.com/kaptree/kapoj/apps/server/internal/submission"
 	"github.com/kaptree/kapoj/apps/server/internal/submissionapi"
@@ -50,6 +51,7 @@ type Deps struct {
 	Rating   *rating.Service
 	Activity *activity.Service
 	Learning *learning.Service
+	RBAC     *rbac.Service
 }
 
 func New(d Deps) *gin.Engine {
@@ -81,11 +83,11 @@ func New(d Deps) *gin.Engine {
 	problemJSON := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxProblemJSONBytes))
 	uploads := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxUploadBytes))
 	userSvc := user.NewService(users)
+	userOpts := userapi.Options{RBAC: d.RBAC}
 	if d.Game != nil {
-		userapi.RegisterRoutes(api, userSvc, userapi.Options{IdentityLookup: d.Game})
-	} else {
-		userapi.RegisterRoutes(api, userSvc)
+		userOpts.IdentityLookup = d.Game
 	}
+	userapi.RegisterRoutes(api, userSvc, userOpts)
 	if d.Game != nil {
 		gamificationapi.RegisterRoutes(api, uploads, d.Game)
 	}

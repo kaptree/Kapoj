@@ -2,6 +2,8 @@ package userapi
 
 import (
 	"context"
+	"errors"
+	"sort"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -9,6 +11,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
+	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
 
@@ -20,6 +23,7 @@ type IdentityLookup interface {
 // Options 配置用户接口的可选依赖。
 type Options struct {
 	IdentityLookup IdentityLookup
+	RBAC           *rbac.Service
 }
 
 // RegisterRoutes mounts user endpoints. The router must already run
@@ -28,6 +32,7 @@ func RegisterRoutes(r gin.IRouter, s *user.Service, opts ...Options) {
 	h := &handler{svc: s}
 	if len(opts) > 0 {
 		h.identities = opts[0].IdentityLookup
+		h.rbac = opts[0].RBAC
 	}
 	r.GET("/users/me", middleware.RequireAuth(), h.getMe)
 	r.PUT("/users/me", middleware.RequireAuth(), h.updateMe)
@@ -38,6 +43,7 @@ func RegisterRoutes(r gin.IRouter, s *user.Service, opts ...Options) {
 type handler struct {
 	svc        *user.Service
 	identities IdentityLookup
+	rbac       *rbac.Service
 }
 
 func (h *handler) getMe(c *gin.Context) {
@@ -47,7 +53,31 @@ func (h *handler) getMe(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
-	httpx.OK(c, user.ToMe(u))
+	me := user.ToMe(u)
+	if h.rbac != nil {
+		access, err := h.rbac.Access(c.Request.Context(), u.ID)
+		switch {
+		case err == nil:
+			me.Roles = make([]user.RoleSummary, 0, len(access.Roles))
+			for _, role := range access.Roles {
+				me.Roles = append(me.Roles, user.RoleSummary{
+					ID: role.ID, Code: role.Code, Name: role.Name,
+				})
+			}
+			me.Permissions = make([]string, 0, len(access.Permissions))
+			for code := range access.Permissions {
+				me.Permissions = append(me.Permissions, code)
+			}
+			sort.Strings(me.Permissions)
+			me.IsSuperAdmin = access.IsSuper
+		case errors.Is(err, rbac.ErrInactive), errors.Is(err, rbac.ErrNotFound):
+			// 封禁账号仍可读取自身基础资料，但不返回任何权限。
+		default:
+			httpx.Fail(c, err)
+			return
+		}
+	}
+	httpx.OK(c, me)
 }
 
 func (h *handler) updateMe(c *gin.Context) {
