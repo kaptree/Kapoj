@@ -137,16 +137,16 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 
 **权限模型**
 
-- 权限来源为 `users → user_roles → roles → role_permissions → permissions` 的实时并集；`users.role` 与 JWT `role` 是 legacy/展示字段，不再作为权限来源。
+- RBAC 权限来源为 `users → user_roles → roles → role_permissions → permissions` 的实时并集；`users.role` 与 JWT `role` 是 legacy 兼容字段，未迁移的管理接口仍按它授权，RBAC-C 完成后才只用于展示。
 - 权限码格式为 `domain.action`，共 34 个，按管理后台、用户与角色、题库、测评记录、比赛、游戏化、学习路线分组；完整列表见 [`DEVELOPMENT.md`](DEVELOPMENT.md) 4.7。常用码：`admin.dashboard.view`、`user.read`、`role.read`、`problem.create`、`problem.view_hidden`、`contest.create`、`gamification.achievement.manage`、`learning_path.official.manage`。
-- 内置角色 7 个：`super_admin`（绕过所有权限检查）、`content_admin`、`contest_admin`、`gamification_admin`、`user_admin`、`security_admin`、`auditor`。系统角色不可删除；除 `super_admin` 外权限可调整（调整 API 属 RBAC-B）。
+- 内置角色 7 个：`super_admin`（绕过所有权限检查）、`content_admin`、`contest_admin`、`gamification_admin`、`user_admin`、`security_admin`、`auditor`。RBAC-B 将强制系统角色不可删除、系统角色 code/name 不可改、`super_admin` 不可改权限；除 `super_admin` 外，内置角色权限可由 `role.permissions.update` 调整（调整 API 属 RBAC-B）。
 - `GET /api/users/me` 返回 `roles`、`permissions`、`isSuperAdmin`；超级管理员的 `permissions` 可能为空，前端应以 `isSuperAdmin=true` 表示拥有全部权限。登录/注册响应中的这三个字段默认为空数组/false，登录后请再调用 `/users/me`。
 
 **Seed 与超管账号**
 
 - 服务启动时在数据库迁移后执行 `rbac.Seed`。只有首次部署（`rbac_meta` 中没有 `seed_version`）才写入内置角色权限并把旧 `users.role` 映射为新角色：`super_admin → super_admin`、`problem_admin → content_admin`、`contest_admin → contest_admin`、`user → 不分配`。
 - 首次 Seed 后，修改 `users.role` 不会再自动获得 RBAC 角色；需要直接维护 `user_roles`（RBAC-B 将提供管理 API）。重启不会重复插入角色/权限/关联，也不会恢复已删除的角色权限。
-- 现有管理接口（题目、比赛、游戏化、`/api/admin/users` 等）仍使用 legacy `RequireRole` 与 JWT 中的 `users.role`；RBAC-C 完成迁移前，管理员账号仍需保留对应 `users.role` 并重新登录。RBAC 权限中间件已实现，但尚未挂到这些路由上。
+- 现有管理接口（题目、比赛、游戏化、`/api/admin/users` 等）尚未迁移，仍按 JWT 中的 legacy role 授权（`RequireRole` 或直接读取 `claims.Role`）；RBAC-C 完成迁移前，管理员账号仍需保留对应 `users.role` 并重新登录。RBAC 权限中间件已实现，但尚未挂到这些路由上。
 - 管理后台 UI、角色管理 API、用户角色分配 API、审计查询与仪表盘统计均**尚未上线**，分别属于 RBAC-B/D；不要按设计文档中的 `/api/admin/roles` 等接口调用，当前会返回 404。
 
 ## 测试与检查

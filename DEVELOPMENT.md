@@ -59,7 +59,7 @@ kapOJ 是一个融合 **竞技评测 + 游戏化成长体系 + AI 辅助** 的�
 | 比赛管理员 | 创建/管理比赛、发布公告                                        |
 | 超级管理员 | 全部权限，含成就/任务/徽章/称号/证书管理、用户管理             |
 
-> **RBAC-A 实现说明（2026-11-06）**：上述固定角色正在升级为「多角色 + 全局权限」模型。`users.role` 与 JWT 中的 `role` 已冻结为 legacy/展示字段，**权限只认 `user_roles` 关联的角色与 `role_permissions`**；内置角色、权限目录与映射见 4.7。角色管理 API、现有管理接口迁移与管理后台 UI 分别属于 RBAC-B/C/D，尚未实现。
+> **RBAC-A 实现说明（2026-11-06）**：上述固定角色正在升级为「多角色 + 全局权限」模型。`users.role` 与 JWT 中的 `role` 是 legacy 兼容字段：**未迁移的接口仍按它授权；RBAC 权限判断只认 `user_roles` 关联的角色与 `role_permissions`**，RBAC-C 完成全部管理接口迁移后，该字段才只用于展示/兼容。内置角色、权限目录与映射见 4.7。角色管理 API、现有管理接口迁移与管理后台 UI 分别属于 RBAC-B/C/D，尚未实现。
 
 ---
 
@@ -226,7 +226,8 @@ rbac_meta (
 -- key 为主键；Seed 写入 key=seed_version、value=1
 
 -- 实现差异（RBAC-A）：
--- users.role 继续保留，但只用于 legacy/展示与未迁移接口兼容，不参与权限判断；
+-- users.role 继续保留，是 legacy 兼容字段：未迁移接口仍按它授权；RBAC 权限判断只认
+-- user_roles/role_permissions，RBAC-C 完成迁移后才只用于展示；
 -- 权限来源为 users → user_roles → roles → role_permissions → permissions 的并集；
 -- 唯一索引为 uniq_roles_code、uniq_permissions_code、uniq_role_permissions、uniq_user_roles；
 -- 首次 Seed 的判定标记为 rbac_meta.seed_version，详细语义见 4.7。
@@ -522,7 +523,7 @@ user_ai_configs (
 - 权限解析使用 `rbac.Service.Access`：每次请求实时查询数据库，要求用户存在且 `status=active`；多角色权限取并集；任一角色为 `super_admin` 时 `isSuperAdmin=true`，中间件直接放行。无角色时 `permissions` 为空数组。
 - 封禁用户的 `/users/me` 保持普通接口既有行为：仍返回基础资料，但 `roles`/`permissions` 为空、`isSuperAdmin=false`；权限中间件对封禁用户返回 403。
 - `middleware.RequirePermission(resolver, codes...)` 与 `RequireAnyPermission` 已实现：未登录 401，解析失败/封禁/权限不足 403，super 绕过；通过后把 `*rbac.Access` 写入 context，可用 `CurrentAccess` 读取。
-- **当前范围（RBAC-A）**：现有管理接口仍使用 `RequireRole`（读取 JWT legacy role），尚未迁移到权限码；角色管理 API、用户角色分配 API、审计写入与管理后台 UI 分别属于 RBAC-B/C/D。因此现阶段要让既有管理接口可用，仍需 `users.role` 为对应管理员并重新登录；要让 `/users/me` 与后续权限中间件识别角色，需要 `user_roles` 关联（首次 Seed 会按旧角色自动映射，见 4.7）。
+- **当前范围（RBAC-A）**：现有管理接口尚未迁移到权限码，仍按 JWT 中的 legacy role 授权（`RequireRole` 或直接读取 `claims.Role`）；角色管理 API、用户角色分配 API、审计写入与管理后台 UI 分别属于 RBAC-B/C/D。因此现阶段要让既有管理接口可用，仍需 `users.role` 为对应管理员并重新登录；要让 `/users/me` 与后续权限中间件识别角色，需要 `user_roles` 关联（首次 Seed 会按旧角色自动映射，见 4.7）。
 
 **Codex 提示词（用户与认证）**
 
@@ -886,6 +887,8 @@ user_ai_configs (
 | `security_admin` | 安全管理员 | `admin.dashboard.view`、`admin.audit.view`、`user.read`、全部 `role.*`、`user.roles.assign` |
 | `auditor` | 审计员 | `admin.dashboard.view`、`admin.audit.view`、`user.read`、`role.read` |
 
+> 系统角色保护（不可删除、code/name 不可改、`super_admin` 不可改权限）由 RBAC-B 实现；RBAC-A 只负责创建内置角色。
+
 **旧角色映射（仅首次 Seed）**
 
 | `users.role` | RBAC 角色 |
@@ -898,15 +901,15 @@ user_ai_configs (
 **实现状态（RBAC-A 已完成，2026-11-06）**
 
 - 已建表：`roles`、`permissions`、`role_permissions`、`user_roles`、`admin_audit_logs`、`rbac_meta`；唯一索引见 3.1。`admin_audit_logs` 本阶段只建表，尚未写入审计（RBAC-B）。
-- 权限目录与内置角色定义在 `apps/server/internal/rbac/catalog.go`，中文名称/描述/分组由测试锁定。
+- 权限目录与内置角色定义在 `apps/server/internal/rbac/catalog.go`；测试锁定权限数量/唯一性与内置角色权限集合，名称/描述/分组仅校验非空，不锁定具体中文文案。
 - 启动时在 `db.Migrate` 之后执行 `rbac.Seed`：
   - 仅当 `rbac_meta.seed_version` 不存在时执行完整 seed：插入权限目录、内置角色、内置角色权限（`super_admin` 除外）、按 `users.role` 映射旧账号，最后写入 `seed_version=1`。
-  - 后续启动只按 code 补齐缺失的权限与内置角色，**不会重新添加管理员已删除的 `role_permissions`，也不会重新映射旧角色**；新增权限/角色需显式迁移或新 seed 版本。
+  - 后续启动只按 code 自动补齐缺失的权限目录与内置角色（已有行不变），**不会重新添加管理员已删除的 `role_permissions`，也不会重新映射旧角色**；若要给内置角色新增初始权限授权，需显式迁移或新 seed 版本。
   - 映射使用 `ON CONFLICT (user_id, role_id) DO NOTHING`，重复启动不会产生重复关联。
 - `rbac.Service.Access(ctx, userID)` 实时读取数据库：用户不存在/非 active 返回 `ErrNotFound`/`ErrInactive`；角色按 code 排序；多角色权限取并集；`super_admin` 设置 `IsSuper=true`。没有缓存。
 - `RequirePermission` / `RequireAnyPermission` 语义：未登录 401；解析失败、封禁或无权限 403；super 绕过；通过后 `*rbac.Access` 写入 context，可用 `CurrentAccess` 读取。
 - `/users/me` 已返回 `roles`/`permissions`/`isSuperAdmin`；OpenAPI 与前端类型同步更新。登录/注册响应中三个字段默认为空数组/false。
-- **本阶段未做**：角色管理/用户角色分配/审计/统计 API（RBAC-B）；现有题目、比赛、游戏化、学习路线管理接口从 `RequireRole` 迁移到权限码，以及内容管理审计（RBAC-C）；管理后台前端、`auth.can`、菜单/路由/按钮权限化与真实浏览器 E2E（RBAC-D）。因此当前没有角色管理页面或统一 `/admin` 管理壳，现有管理接口仍以 legacy `users.role` 授权。
+- **本阶段未做**：角色管理/用户角色分配/审计/统计 API（RBAC-B）；现有题目、比赛、游戏化、学习路线管理接口从 legacy role 判断（`RequireRole` 或直接读取 `claims.Role`）迁移到权限码，以及内容管理审计（RBAC-C）；管理后台前端、`auth.can`、菜单/路由/按钮权限化与真实浏览器 E2E（RBAC-D）。因此当前没有角色管理页面或统一 `/admin` 管理壳，现有管理接口仍以 legacy `users.role`/JWT role 授权。
 
 **交付拆分**
 
