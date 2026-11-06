@@ -156,6 +156,14 @@ function permissionsChanged(): boolean {
   return next.some((code) => !set.has(code))
 }
 
+function metadataChanged(): boolean {
+  const role = editingRole.value
+  if (!role) return false
+  const name = form.value.name.trim()
+  const description = form.value.description.trim() || undefined
+  return name !== role.name || description !== (role.description || undefined)
+}
+
 async function saveCreate() {
   if (!validateCreate()) return
   saving.value = true
@@ -180,23 +188,54 @@ async function saveCreate() {
 async function saveEdit() {
   if (editingId.value === null) return
   if (!validateEdit()) return
+
+  const id = editingId.value
+  const updateMeta = canUpdate.value && metadataChanged()
+  const updatePerms = canPermissionsUpdate.value && !editingIsSuper.value && permissionsChanged()
+
+  // Nothing actually changed (or we lack the capability to change anything):
+  // do not fire a false "updated" toast.
+  if (!updateMeta && !updatePerms) {
+    toast.add({ severity: 'info', summary: '无变更', life: 3000 })
+    return
+  }
+
   saving.value = true
   try {
-    if (canUpdate.value) {
+    if (updateMeta) {
       const input: AdminRoleUpdateInput = {
         name: form.value.name.trim(),
         description: form.value.description.trim() || undefined,
       }
-      await updateAdminRole(editingId.value, input)
+      await updateAdminRole(id, input)
     }
-    if (canPermissionsUpdate.value && !editingIsSuper.value && permissionsChanged()) {
-      await replaceAdminRolePermissions(editingId.value, permissionCodes.value)
+
+    if (updatePerms) {
+      try {
+        await replaceAdminRolePermissions(id, permissionCodes.value)
+      } catch (e) {
+        if (updateMeta) {
+          // Metadata already saved; make the partial failure explicit and refresh
+          // so the list reflects the new metadata. Keep the dialog open.
+          toast.add({
+            severity: 'error',
+            summary: '角色信息已保存，权限保存失败',
+            detail: e instanceof ApiError ? e.message : '权限保存失败',
+            life: 5000,
+          })
+          await load()
+        } else {
+          fail(e, '权限保存失败')
+        }
+        return
+      }
     }
+
     toast.add({ severity: 'success', summary: '角色已更新', life: 3000 })
     editorVisible.value = false
     await load()
   } catch (e) {
-    fail(e, '保存角色失败')
+    fail(e, '保存角色信息失败')
   } finally {
     saving.value = false
   }

@@ -112,7 +112,9 @@ async function load() {
       mode: applied.value.mode || '',
       status: applied.value.status || '',
       mine: applied.value.mine,
-      includeHidden: applied.value.includeHidden,
+      // Defense-in-depth: never request hidden contests without the permission,
+      // even if the query string asks for it.
+      includeHidden: canViewHidden.value && applied.value.includeHidden,
       page: applied.value.page,
       pageSize: PAGE_SIZE,
     })

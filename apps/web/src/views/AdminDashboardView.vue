@@ -188,6 +188,21 @@ onMounted(() => {
           />
         </AppSurface>
       </template>
+
+      <AppSurface v-if="shortcuts.length > 0" padding="lg" class="admin-dashboard__entry">
+        <h2 class="admin-dashboard__section-title">内容快捷入口</h2>
+        <div class="admin-dashboard__shortcuts">
+          <RouterLink
+            v-for="item in shortcuts"
+            :key="item.key"
+            :to="item.path"
+            class="admin-dashboard__shortcut"
+          >
+            <i :class="item.icon" aria-hidden="true" />
+            <span>{{ item.label }}</span>
+          </RouterLink>
+        </div>
+      </AppSurface>
     </template>
 
     <AppSurface v-else padding="lg" class="admin-dashboard__welcome">
@@ -207,7 +222,7 @@ onMounted(() => {
         </RouterLink>
       </div>
       <AppEmptyState
-        v-else
+        v-else-if="managementShortcuts.length === 0"
         icon="pi pi-lock"
         title="暂无可用入口"
         description="你还没有可用的管理功能入口。"

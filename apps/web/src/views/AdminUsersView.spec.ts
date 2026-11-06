@@ -224,7 +224,7 @@ describe('AdminUsersView', () => {
     )
 
     setField(dialog().querySelector('.nickname-input')!, 'New Nick')
-    setField(dialog().querySelector('.bio-input')!, 'new bio')
+    setField(dialog().querySelector('.bio-input')!, '  new bio  ')
     setField(dialog().querySelector('.avatar-input')!, 'https://example.com/b.png')
     dialogButton('保存')!.click()
     await flushPromises()
@@ -387,6 +387,64 @@ describe('AdminUsersView', () => {
         detail: '不能封禁最后一个活跃的超级管理员',
       }),
     )
+    wrapper.unmount()
+  })
+
+  it('distinguishes a zero amount from a non-integer amount', async () => {
+    auth.can.mockImplementation((code) => code === PERM.user.coins.adjust)
+    vi.mocked(listAdminUsers).mockResolvedValue({ total: 1, items: [userItem()] })
+    const wrapper = await mountPage()
+
+    await buttons(wrapper, '金币')[0]!.trigger('click')
+    await flushPromises()
+
+    // Zero amount.
+    dialogButton('保存')!.click()
+    await flushPromises()
+    expect(dialog().textContent).toContain('调整金额不能为 0')
+
+    // Non-integer amount.
+    wrapper.findComponent(InputNumber).vm.$emit('update:modelValue', 1.5)
+    await nextTick()
+    dialogButton('保存')!.click()
+    await flushPromises()
+    expect(dialog().textContent).toContain('调整金额必须为整数')
+    expect(adjustAdminUserCoins).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('keeps the loading state for the latest edit when an older edit resolves late', async () => {
+    auth.can.mockImplementation((code) => code === PERM.user.update)
+    vi.mocked(listAdminUsers).mockResolvedValue({
+      total: 2,
+      items: [userItem({ id: 1, nickname: 'A' }), userItem({ id: 2, nickname: 'B' })],
+    })
+
+    let resolveA!: (value: AdminUserDetail) => void
+    let resolveB!: (value: AdminUserDetail) => void
+    vi.mocked(getAdminUser)
+      .mockImplementationOnce(() => new Promise<AdminUserDetail>((resolve) => (resolveA = resolve)))
+      .mockImplementationOnce(() => new Promise<AdminUserDetail>((resolve) => (resolveB = resolve)))
+    vi.mocked(getProfile).mockResolvedValue(profile())
+
+    const wrapper = await mountPage()
+
+    const editButtons = buttons(wrapper, '编辑')
+    await editButtons[0]!.trigger('click') // open edit for user A (id 1)
+    await flushPromises()
+    await editButtons[1]!.trigger('click') // open edit for user B (id 2) before A resolves
+    await flushPromises()
+
+    // A resolves late — it must not clear the loading state now owned by B.
+    resolveA(userDetail({ id: 1, nickname: 'A Admin' }))
+    await flushPromises()
+    expect(dialog().textContent).toContain('正在加载用户详情')
+
+    // B resolves and clears loading, showing B's details.
+    resolveB(userDetail({ id: 2, nickname: 'B Admin' }))
+    await flushPromises()
+    expect(dialog().textContent).not.toContain('正在加载用户详情')
+    expect((dialog().querySelector('.nickname-input') as HTMLInputElement).value).toBe('B Admin')
     wrapper.unmount()
   })
 })

@@ -192,6 +192,15 @@ describe('ContestListView', () => {
     wrapper.unmount()
   })
 
+  it('gates includeHidden by permission even when the query requests it', async () => {
+    auth.can.mockImplementation((code: string) => code === 'contest.create')
+    const { wrapper } = await mountPage('/contests?includeHidden=true')
+
+    expect(wrapper.find('#filter-hidden').exists()).toBe(false)
+    expect(listContests).toHaveBeenCalledWith(expect.objectContaining({ includeHidden: false }))
+    wrapper.unmount()
+  })
+
   it('clones a contest through a dialog and navigates to the editor', async () => {
     const { wrapper, router } = await mountPage()
 

@@ -177,4 +177,38 @@ describe('AdminDashboardView', () => {
     expect(wrapper.find('a[href="/admin/users"]').exists()).toBe(true)
     expect(wrapper.find('a[href="/admin/roles"]').exists()).toBe(true)
   })
+
+  it('renders content shortcuts for dashboard viewers too', async () => {
+    auth.can.mockImplementation((code) => code === PERM.admin.dashboard.view)
+    auth.canAny.mockReturnValue(true)
+    vi.mocked(getAdminStats).mockResolvedValue(stats())
+    const wrapper = await mountPage()
+
+    expect(getAdminStats).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('游戏化管理')
+    expect(wrapper.text()).toContain('题库管理')
+    expect(wrapper.text()).toContain('比赛管理')
+    expect(wrapper.find('a[href="/admin/gamification"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/problems"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/contests"]').exists()).toBe(true)
+  })
+
+  it('does not show 暂无可用入口 while management shortcuts exist', async () => {
+    auth.can.mockImplementation((code) => code === PERM.user.read)
+    auth.canAny.mockReturnValue(false)
+    const wrapper = await mountPage()
+
+    expect(wrapper.text()).toContain('用户管理')
+    expect(wrapper.text()).not.toContain('暂无可用入口')
+  })
+
+  it('shows 暂无可用入口 when neither management nor content shortcuts exist', async () => {
+    auth.can.mockImplementation((code) => code === PERM.system.settings.manage)
+    auth.canAny.mockReturnValue(false)
+    const wrapper = await mountPage()
+
+    expect(wrapper.text()).toContain('暂无可用入口')
+    expect(wrapper.text()).not.toContain('用户管理')
+    expect(wrapper.text()).not.toContain('游戏化管理')
+  })
 })

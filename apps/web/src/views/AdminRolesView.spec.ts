@@ -343,4 +343,83 @@ describe('AdminRolesView', () => {
     )
     wrapper.unmount()
   })
+
+  it('shows a distinct error when metadata saves but permissions fail', async () => {
+    auth.can.mockImplementation(
+      (code) => code === PERM.role.update || code === PERM.role.permissions.update,
+    )
+    vi.mocked(listAdminRoles).mockResolvedValue([
+      roleItem({
+        id: 7,
+        code: 'content_editor',
+        name: '内容编辑员',
+        description: '旧描述',
+        permissions: ['problem.create'],
+        userCount: 2,
+      }),
+    ])
+    vi.mocked(listAdminPermissions).mockResolvedValue(directory())
+    vi.mocked(updateAdminRole).mockResolvedValue(roleItem())
+    vi.mocked(replaceAdminRolePermissions).mockRejectedValue(
+      new ApiError(500, 50000, '权限写入失败'),
+    )
+    const wrapper = await mountPage()
+
+    await buttons(wrapper, '编辑')[0]!.trigger('click')
+    await flushPromises()
+
+    setField(dialog().querySelector('.name-input')!, '内容维护员')
+    setField(dialog().querySelector('.desc-input')!, '新描述')
+    await toggle(document.getElementById('perm-problem.create')!)
+    await flushPromises()
+
+    dialogButton('保存').click()
+    await flushPromises()
+
+    expect(updateAdminRole).toHaveBeenCalledWith(7, {
+      name: '内容维护员',
+      description: '新描述',
+    })
+    expect(replaceAdminRolePermissions).toHaveBeenCalledWith(7, [])
+    expect(toast.add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'error',
+        summary: '角色信息已保存，权限保存失败',
+        detail: '权限写入失败',
+      }),
+    )
+    // The list was refreshed so the metadata stays current.
+    expect(listAdminRoles).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
+  it('does not fire a success toast when nothing changed', async () => {
+    auth.can.mockImplementation(
+      (code) => code === PERM.role.update || code === PERM.role.permissions.update,
+    )
+    vi.mocked(listAdminRoles).mockResolvedValue([
+      roleItem({
+        id: 7,
+        code: 'content_editor',
+        name: '内容编辑员',
+        description: '旧描述',
+        permissions: ['problem.create'],
+        userCount: 2,
+      }),
+    ])
+    vi.mocked(listAdminPermissions).mockResolvedValue(directory())
+    const wrapper = await mountPage()
+
+    await buttons(wrapper, '编辑')[0]!.trigger('click')
+    await flushPromises()
+
+    dialogButton('保存').click()
+    await flushPromises()
+
+    expect(updateAdminRole).not.toHaveBeenCalled()
+    expect(replaceAdminRolePermissions).not.toHaveBeenCalled()
+    expect(toast.add).toHaveBeenCalledWith(expect.objectContaining({ summary: '无变更' }))
+    expect(toast.add).not.toHaveBeenCalledWith(expect.objectContaining({ summary: '角色已更新' }))
+    wrapper.unmount()
+  })
 })

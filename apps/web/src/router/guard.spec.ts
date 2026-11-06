@@ -1,5 +1,7 @@
+import { createMemoryHistory, createRouter } from 'vue-router'
 import { describe, expect, it } from 'vitest'
 
+import { ADMIN_ACCESS_PERMISSIONS, GAMIFICATION_MANAGE_PERMISSIONS, PERM } from '@/permissions'
 import { authGuard, canAnyPermission, canPermission, safeRedirect } from './guard'
 
 const route = (fullPath: string, meta: Record<string, unknown> = {}) => ({ fullPath, meta })
@@ -90,5 +92,45 @@ describe('safeRedirect', () => {
     ]) {
       expect(safeRedirect(bad)).toBe('/')
     }
+  })
+})
+
+describe('merged parent/child route meta', () => {
+  // Mirrors the real /admin tree: the parent gates access via anyPermission and
+  // children layer their own permission/anyPermission on top.
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      {
+        path: '/admin',
+        component: { template: '<div />' },
+        meta: { requiresAuth: true, anyPermission: ADMIN_ACCESS_PERMISSIONS },
+        children: [
+          {
+            path: 'users',
+            name: 'admin-users',
+            component: { template: '<div />' },
+            meta: { permission: PERM.user.read },
+          },
+          {
+            path: 'gamification',
+            name: 'gamification-admin',
+            component: { template: '<div />' },
+            meta: { anyPermission: GAMIFICATION_MANAGE_PERMISSIONS },
+          },
+        ],
+      },
+    ],
+  })
+
+  it('lets a user.read-only admin reach /admin/users but not /admin/gamification', () => {
+    const state = as([PERM.user.read])
+    expect(authGuard(router.resolve('/admin/users'), state)).toBe(true)
+    expect(authGuard(router.resolve('/admin/gamification'), state)).toEqual({ name: 'forbidden' })
+  })
+
+  it('lets a super admin reach both', () => {
+    expect(authGuard(router.resolve('/admin/users'), superUser)).toBe(true)
+    expect(authGuard(router.resolve('/admin/gamification'), superUser)).toBe(true)
   })
 })

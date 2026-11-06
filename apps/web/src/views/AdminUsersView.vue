@@ -178,10 +178,12 @@ async function openEdit(item: AdminUserItem) {
       avatarUrl: profile.avatarUrl,
     }
   } catch (e) {
+    if (editingId.value !== item.id) return
     fail(e, '加载用户详情失败')
     editDialogVisible.value = false
   } finally {
-    editLoading.value = false
+    // Only the newest openEdit may settle the dialog/loading state.
+    if (editingId.value === item.id) editLoading.value = false
   }
 }
 
@@ -204,7 +206,7 @@ async function saveEdit() {
   try {
     const input: AdminUserUpdateInput = {
       nickname: editForm.value.nickname.trim(),
-      bio: editForm.value.bio,
+      bio: editForm.value.bio.trim(),
       avatarUrl: editForm.value.avatarUrl.trim(),
     }
     await updateAdminUser(editingId.value, input)
@@ -264,7 +266,9 @@ function openCoins(item: AdminUserItem) {
 function validateCoins(): boolean {
   const amount = coinForm.value.amount
   const note = coinForm.value.note.trim()
-  const amountError = !Number.isInteger(amount) || amount === 0 ? '调整金额不能为 0' : ''
+  let amountError = ''
+  if (!Number.isInteger(amount)) amountError = '调整金额必须为整数'
+  else if (amount === 0) amountError = '调整金额不能为 0'
   const noteError = note.length < 1 || note.length > 200 ? '备注需为 1–200 个字符' : ''
   coinErrors.value = { amount: amountError, note: noteError }
   return !amountError && !noteError
