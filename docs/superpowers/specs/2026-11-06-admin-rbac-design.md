@@ -374,7 +374,7 @@ func (s *Service) Access(ctx, userID) (*Access, error)
   2. 插入权限目录、内置角色、内置角色权限。
   3. 按 `users.role` 给现有用户分配角色（`ON CONFLICT DO NOTHING`）。
   4. 写入当前 seed_version。
-- Seed 只在首次执行；管理员后续对内置角色权限的删除/调整不会被重启重新加回。新版本新增权限时通过显式迁移/新 seed_version 处理，不静默重加旧权限。
+- Seed 只在首次执行；管理员后续对内置角色权限的删除/调整不会被重启重新加回。新版本新增权限码时只自动补齐目录/角色；给角色新增授权必须走显式迁移，不静默重加旧权限。
 - `users.role` 保留；新账号默认 user，不自动获得管理角色。
 - 迁移脚本/回滚：项目使用 GORM AutoMigrate；新增表只增不删；回滚通过数据迁移/手工处理。
 

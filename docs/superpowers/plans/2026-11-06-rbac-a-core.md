@@ -4,7 +4,7 @@
 
 **Goal:** 交付细粒度 RBAC 后端基础：权限目录、角色/权限/用户角色表、首次 Seed、Access 解析、`RequirePermission` 中间件，以及 `/users/me` 的 roles/permissions。
 
-**Architecture:** 新增 `rbac` 包；`users.role`/JWT role 只保留为 legacy 展示，不再参与管理授权；管理请求通过 `rbac.Service.Access(userID)` 实时查询角色与权限，`middleware.RequirePermission` 做最终校验。RBAC-B/C/D 再做角色管理 API、接口迁移与管理后台。
+**Architecture:** 新增 `rbac` 包；`users.role`/JWT role 只保留为 legacy 展示兼容，RBAC-C 前未迁移的管理接口仍按 legacy role 授权；RBAC-A 新管理授权通过 `rbac.Service.Access(userID)` 实时查询角色与权限，`middleware.RequirePermission` 做最终校验。RBAC-B/C/D 再做角色管理 API、接口迁移与管理后台。
 
 **Tech Stack:** Go 1.26、Gin、GORM、PostgreSQL 17、testify。
 
@@ -14,7 +14,7 @@
 
 - 一个账号可拥有多个角色，权限取并集；权限全局生效，不做资源范围。
 - `super_admin` 角色绕过所有权限检查；不可删除/不可改权限；最后一个 active super_admin 保护在 RBAC-B 实现。
-- `users.role`/JWT role 只做 legacy 展示兼容；管理授权只认 `user_roles`。
+- `users.role`/JWT role 只做 legacy 展示兼容；新 `RequirePermission` 授权只认 `user_roles`；RBAC-C 前未迁移的管理接口仍按 legacy role 授权。
 - 权限码稳定，格式 `domain.action`；不允许 UI 自定义新权限码。
 - Seed 只在首次执行（`rbac_meta.seed_version`），不覆盖管理员后续权限调整。
 - 权限实时查库；不写 JWT，不做 Redis 缓存。

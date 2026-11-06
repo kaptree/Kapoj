@@ -904,7 +904,7 @@ user_ai_configs (
 - 权限目录与内置角色定义在 `apps/server/internal/rbac/catalog.go`；测试锁定权限数量/唯一性与内置角色权限集合，名称/描述/分组仅校验非空，不锁定具体中文文案。
 - 启动时在 `db.Migrate` 之后执行 `rbac.Seed`：
   - 仅当 `rbac_meta.seed_version` 不存在时执行完整 seed：插入权限目录、内置角色、内置角色权限（`super_admin` 除外）、按 `users.role` 映射旧账号，最后写入 `seed_version=1`。
-  - 后续启动只按 code 自动补齐缺失的权限目录与内置角色（已有行不变），**不会重新添加管理员已删除的 `role_permissions`，也不会重新映射旧角色**；若要给内置角色新增初始权限授权，需显式迁移或新 seed 版本。
+  - 后续启动只按 code 自动补齐缺失的权限目录与内置角色（已有行不变），**不会重新添加管理员已删除的 `role_permissions`，也不会重新映射旧角色**；`seed_version` 小于当前版本时同样只补齐目录/角色并更新版本，不会新增或恢复任何角色权限授权。给内置角色新增初始权限必须走显式数据迁移，不能依赖 seed。
   - 映射使用 `ON CONFLICT (user_id, role_id) DO NOTHING`，重复启动不会产生重复关联。
 - `rbac.Service.Access(ctx, userID)` 实时读取数据库：用户不存在/非 active 返回 `ErrNotFound`/`ErrInactive`；角色按 code 排序；多角色权限取并集；`super_admin` 设置 `IsSuper=true`。没有缓存。
 - `RequirePermission` / `RequireAnyPermission` 语义：未登录 401；解析失败、封禁或无权限 403；super 绕过；通过后 `*rbac.Access` 写入 context，可用 `CurrentAccess` 读取。

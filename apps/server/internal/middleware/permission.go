@@ -2,6 +2,8 @@ package middleware
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 
 	"github.com/gin-gonic/gin"
 
@@ -30,7 +32,22 @@ func RequirePermission(resolver PermissionResolver, codes ...string) gin.Handler
 			return
 		}
 		access, err := resolver.Access(c.Request.Context(), claims.UserID)
-		if err != nil || access == nil {
+		if err != nil {
+			if !errors.Is(err, rbac.ErrInactive) && !errors.Is(err, rbac.ErrNotFound) {
+				slog.Warn("rbac: permission resolution failed",
+					"userId", claims.UserID,
+					"method", c.Request.Method,
+					"path", c.Request.URL.Path,
+					"err", err)
+			}
+			httpx.Fail(c, httpx.ErrForbidden)
+			return
+		}
+		if access == nil {
+			slog.Warn("rbac: permission resolver returned nil access",
+				"userId", claims.UserID,
+				"method", c.Request.Method,
+				"path", c.Request.URL.Path)
 			httpx.Fail(c, httpx.ErrForbidden)
 			return
 		}

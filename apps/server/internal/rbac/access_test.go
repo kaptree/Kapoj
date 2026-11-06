@@ -102,6 +102,42 @@ func TestAccessNoRoles(t *testing.T) {
 	assert.Empty(t, access.Permissions)
 }
 
+func TestAccessIgnoresOrphanRolePermissions(t *testing.T) {
+	g := testutil.PG(t)
+	require.NoError(t, rbac.Seed(context.Background(), g))
+	svc := rbac.NewService(g)
+	ctx := context.Background()
+
+	userID := createSeedUser(t, g, "orphan_role_permissions", user.RoleUser)
+	role := rbac.Role{Code: "orphan_role", Name: "孤立角色"}
+	require.NoError(t, g.Create(&role).Error)
+	var permission rbac.Permission
+	require.NoError(t, g.Where("code = ?", "problem.create").First(&permission).Error)
+	require.NoError(t, g.Create(&rbac.RolePermission{RoleID: role.ID, PermissionID: permission.ID}).Error)
+	require.NoError(t, g.Create(&rbac.UserRole{
+		UserID:     userID,
+		RoleID:     role.ID,
+		AssignedAt: time.Now(),
+	}).Error)
+
+	access, err := svc.Access(ctx, userID)
+	require.NoError(t, err)
+	require.Len(t, access.Roles, 1)
+	assert.Contains(t, access.Permissions, "problem.create")
+
+	// 模拟 roles 行被直接删除但关联行残留（无外键）；孤立 role_permissions
+	// 不得继续授予权限。RBAC-B 会以事务删除关联行。
+	require.NoError(t, g.Where("id = ?", role.ID).Delete(&rbac.Role{}).Error)
+	var orphanCount int64
+	require.NoError(t, g.Model(&rbac.RolePermission{}).Where("role_id = ?", role.ID).Count(&orphanCount).Error)
+	require.Equal(t, int64(1), orphanCount, "测试前提：孤立 role_permissions 行应保留")
+
+	access, err = svc.Access(ctx, userID)
+	require.NoError(t, err)
+	assert.Empty(t, access.Roles)
+	assert.Empty(t, access.Permissions)
+}
+
 func TestAccessReflectsPermissionChanges(t *testing.T) {
 	g := testutil.PG(t)
 	require.NoError(t, rbac.Seed(context.Background(), g))

@@ -1632,7 +1632,7 @@ components:
     Me:
       type: object
       description: 登录/注册响应中的 user 权限字段可能为空；前端登录后应调用 GET /users/me 获取最新角色与权限。
-      required: [id, username, nickname, email, avatarUrl, role, rating, coins, bio, status, createdAt]
+      required: [id, username, nickname, email, avatarUrl, role, rating, coins, bio, status, roles, permissions, isSuperAdmin, createdAt]
       properties:
         id: { type: integer, format: int64 }
         username: { type: string }

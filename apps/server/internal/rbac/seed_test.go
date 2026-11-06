@@ -101,6 +101,58 @@ func TestCatalogDefinitions(t *testing.T) {
 	}
 }
 
+func TestPermissionCatalogExactCodes(t *testing.T) {
+	expected := []string{
+		"admin.dashboard.view",
+		"admin.audit.view",
+		"system.settings.manage",
+		"user.read",
+		"user.update",
+		"user.ban",
+		"user.coins.adjust",
+		"user.roles.assign",
+		"role.read",
+		"role.create",
+		"role.update",
+		"role.delete",
+		"role.permissions.update",
+		"problem.view_hidden",
+		"problem.create",
+		"problem.update",
+		"problem.delete",
+		"problem.publish",
+		"problem.testcase.manage",
+		"problem.checker.manage",
+		"submission.view_live_contest",
+		"contest.view_hidden",
+		"contest.create",
+		"contest.update",
+		"contest.delete",
+		"contest.participant.read",
+		"contest.announcement.manage",
+		"gamification.achievement.manage",
+		"gamification.task.manage",
+		"gamification.badge.manage",
+		"gamification.title.manage",
+		"gamification.config.manage",
+		"learning_path.official.manage",
+		"learning_path.admin.read",
+	}
+	require.Len(t, expected, 34)
+
+	codes := make([]string, len(rbac.PermissionCodes))
+	for i, code := range rbac.PermissionCodes {
+		codes[i] = string(code)
+	}
+	assert.ElementsMatch(t, expected, codes, "PermissionCodes 必须与权限目录完全一致")
+
+	catalogCodes := make([]string, 0, len(expected))
+	for _, def := range rbac.AllPermissions() {
+		catalogCodes = append(catalogCodes, string(def.Code))
+	}
+	assert.ElementsMatch(t, expected, catalogCodes, "AllPermissions 必须与权限目录完全一致")
+}
+
 func TestSeedCreatesCatalogAndRoles(t *testing.T) {
 	g := testutil.PG(t)
 	require.NoError(t, rbac.Seed(context.Background(), g))
@@ -262,4 +314,36 @@ func TestSeedEnsuresCatalogOnRestart(t *testing.T) {
 	assert.True(t, restored.IsSystem, "后续 seed 应补齐内置角色")
 	assert.Empty(t, rolePermissionCodes(t, g, "auditor"), "后续 seed 不得恢复已删除的角色权限")
 	assert.Equal(t, before-4, countRows(t, g, &rbac.RolePermission{}))
+}
+
+func TestSeedUpgradeOnlyEnsuresCatalog(t *testing.T) {
+	g := testutil.PG(t)
+	require.NoError(t, rbac.Seed(context.Background(), g))
+
+	// 模拟更高 seed 版本时目录有新增权限，但管理员已删除某个角色授权。
+	require.NoError(t, g.Where("code = ?", "system.settings.manage").Delete(&rbac.Permission{}).Error)
+	var contentRole rbac.Role
+	require.NoError(t, g.Where("code = ?", "content_admin").First(&contentRole).Error)
+	var publish rbac.Permission
+	require.NoError(t, g.Where("code = ?", "problem.publish").First(&publish).Error)
+	require.NoError(t, g.Where("role_id = ? AND permission_id = ?", contentRole.ID, publish.ID).
+		Delete(&rbac.RolePermission{}).Error)
+	before := countRows(t, g, &rbac.RolePermission{})
+
+	// 把已记录的版本降为 0，触发版本升级路径。
+	require.NoError(t, g.Model(&rbac.Meta{}).Where("key = ?", "seed_version").
+		Update("value", "0").Error)
+	require.NoError(t, rbac.Seed(context.Background(), g))
+
+	var permissionCount int64
+	require.NoError(t, g.Model(&rbac.Permission{}).
+		Where("code = ?", "system.settings.manage").Count(&permissionCount).Error)
+	assert.Equal(t, int64(1), permissionCount, "版本升级应补齐缺失的权限目录")
+	assert.NotContains(t, rolePermissionCodes(t, g, "content_admin"), "problem.publish",
+		"版本升级不得恢复管理员删除的角色授权")
+	assert.Equal(t, before, countRows(t, g, &rbac.RolePermission{}))
+
+	var seedVersion string
+	require.NoError(t, g.Model(&rbac.Meta{}).Where("key = ?", "seed_version").Pluck("value", &seedVersion).Error)
+	assert.Equal(t, rbac.SeedVersion, seedVersion, "版本升级后应记录当前版本")
 }

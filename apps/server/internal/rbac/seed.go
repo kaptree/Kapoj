@@ -3,6 +3,8 @@ package rbac
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -11,18 +13,19 @@ import (
 )
 
 const (
-	// SeedVersion 是当前首次 Seed 的数据版本。
+	// SeedVersion 是当前权限目录与内置角色的数据版本。提升版本只会补齐缺失的
+	// 权限目录与内置角色，不会新增或恢复任何角色权限授权。
 	SeedVersion = "1"
 
 	metaSeedVersionKey = "seed_version"
 )
 
 // Seed 幂等地初始化权限目录与内置角色，并在首次运行时写入内置角色权限、
-// 迁移旧 users.role 并记录 seed_version。后续启动只补齐缺失的权限与角色，
-// 不会重新添加管理员已删除的角色权限。
+// 迁移旧 users.role 并记录 seed_version。后续启动或版本升级只补齐缺失的
+// 权限与角色，不会重新添加管理员已删除的角色权限。
 func Seed(ctx context.Context, g *gorm.DB) error {
 	return g.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		firstRun, err := isFirstSeed(tx)
+		storedVersion, hasVersion, err := readSeedVersion(tx)
 		if err != nil {
 			return err
 		}
@@ -33,27 +36,53 @@ func Seed(ctx context.Context, g *gorm.DB) error {
 		if err := ensureRoles(tx); err != nil {
 			return err
 		}
-		if !firstRun {
+
+		if !hasVersion {
+			if err := seedRolePermissions(tx); err != nil {
+				return err
+			}
+			if err := mapLegacyRoles(tx); err != nil {
+				return err
+			}
+			return writeSeedVersion(tx)
+		}
+
+		stored, err := parseSeedVersion(storedVersion)
+		if err != nil {
+			return fmt.Errorf("parse rbac seed version %q: %w", storedVersion, err)
+		}
+		current, err := parseSeedVersion(SeedVersion)
+		if err != nil {
+			return fmt.Errorf("parse current rbac seed version %q: %w", SeedVersion, err)
+		}
+		if stored >= current {
 			return nil
 		}
 
-		if err := seedRolePermissions(tx); err != nil {
-			return err
-		}
-		if err := mapLegacyRoles(tx); err != nil {
-			return err
-		}
+		// 新版本只确保上面的权限目录与内置角色；角色授权变更必须走显式数据迁移，
+		// 避免重启时恢复管理员已删除的 role_permissions。
 		return writeSeedVersion(tx)
 	})
 }
 
-func isFirstSeed(tx *gorm.DB) (bool, error) {
+func readSeedVersion(tx *gorm.DB) (string, bool, error) {
 	var meta Meta
 	result := tx.Where("key = ?", metaSeedVersionKey).Limit(1).Find(&meta)
 	if result.Error != nil {
-		return false, fmt.Errorf("read rbac seed version: %w", result.Error)
+		return "", false, fmt.Errorf("read rbac seed version: %w", result.Error)
 	}
-	return result.RowsAffected == 0, nil
+	if result.RowsAffected == 0 {
+		return "", false, nil
+	}
+	return meta.Value, true, nil
+}
+
+func parseSeedVersion(value string) (int, error) {
+	version, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil {
+		return 0, err
+	}
+	return version, nil
 }
 
 func ensurePermissions(tx *gorm.DB) error {
@@ -164,7 +193,10 @@ func mapLegacyRoles(tx *gorm.DB) error {
 
 func writeSeedVersion(tx *gorm.DB) error {
 	meta := Meta{Key: metaSeedVersionKey, Value: SeedVersion}
-	if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&meta).Error; err != nil {
+	if err := tx.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "key"}},
+		DoUpdates: clause.AssignmentColumns([]string{"value"}),
+	}).Create(&meta).Error; err != nil {
 		return fmt.Errorf("write rbac seed version: %w", err)
 	}
 	return nil

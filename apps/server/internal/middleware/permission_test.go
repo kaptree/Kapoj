@@ -1,8 +1,10 @@
 package middleware
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"testing"
 	"time"
@@ -65,6 +67,14 @@ func TestPermissionMiddleware(t *testing.T) {
 		assert.Equal(t, http.StatusUnauthorized, w.Code)
 		assert.EqualValues(t, 40100, body["code"])
 		assert.Zero(t, resolver.calls, "未登录时不应查询权限")
+	})
+
+	t.Run("guest is unauthorized on any without RequireAuth", func(t *testing.T) {
+		resolver.calls = 0
+		w, body := do(r, "/any", "")
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
+		assert.EqualValues(t, 40100, body["code"])
+		assert.Zero(t, resolver.calls, "未登录时权限中间件自身应拒绝且不查询权限")
 	})
 
 	t.Run("resolver error is forbidden", func(t *testing.T) {
@@ -149,4 +159,40 @@ func TestPermissionMiddlewareMapsGenericResolverErrorToForbidden(t *testing.T) {
 	r := newPermissionEngine(issuer, resolver)
 	w, _ := do(r, "/required", "Bearer "+token(t, issuer, 7, user.RoleUser))
 	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+func TestPermissionMiddlewareLogsUnexpectedResolverError(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	issuer := auth.NewTokenIssuer(secret, 15*time.Minute)
+	resolver := &task2PermissionResolver{err: errors.New("database down")}
+	r := newPermissionEngine(issuer, resolver)
+
+	w, body := do(r, "/required", "Bearer "+token(t, issuer, 7, user.RoleUser))
+	require.Equal(t, http.StatusForbidden, w.Code)
+	assert.EqualValues(t, 40300, body["code"])
+
+	output := logs.String()
+	assert.Contains(t, output, "level=WARN")
+	assert.Contains(t, output, "database down")
+	assert.Contains(t, output, "userId=7")
+	assert.NotContains(t, output, "problem.create", "日志不应包含权限码")
+}
+
+func TestPermissionMiddlewareDoesNotLogExpectedResolverError(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	issuer := auth.NewTokenIssuer(secret, 15*time.Minute)
+	resolver := &task2PermissionResolver{err: rbac.ErrInactive}
+	r := newPermissionEngine(issuer, resolver)
+
+	w, _ := do(r, "/required", "Bearer "+token(t, issuer, 7, user.RoleUser))
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Empty(t, logs.String(), "封禁/不存在属于预期拒绝，不应记录为异常")
 }

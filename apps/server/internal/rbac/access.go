@@ -84,7 +84,8 @@ func (s *Service) Access(ctx context.Context, userID int64) (*Access, error) {
 	if err := db.Table("permissions").
 		Select("DISTINCT permissions.code").
 		Joins("JOIN role_permissions ON role_permissions.permission_id = permissions.id").
-		Joins("JOIN user_roles ON user_roles.role_id = role_permissions.role_id").
+		Joins("JOIN roles ON roles.id = role_permissions.role_id").
+		Joins("JOIN user_roles ON user_roles.role_id = roles.id").
 		Where("user_roles.user_id = ?", userID).
 		Order("permissions.code").
 		Scan(&codes).Error; err != nil {
