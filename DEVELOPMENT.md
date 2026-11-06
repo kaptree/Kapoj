@@ -174,7 +174,7 @@ kapoj/
 ```sql
 users (
   id, username, nickname, email, password_hash, avatar_url,
-  role,            -- legacy：user / problem_admin / contest_admin / super_admin；保留展示/兼容，权限不再由该字段决定
+  role,            -- legacy 兼容字段：user / problem_admin / contest_admin / super_admin；未迁移接口仍用其授权，RBAC-C 完成后才只用于展示
   rating,          -- 当前比赛 Rating（由 rating_history 结算得出，此处为缓存）
   coins,           -- 金币余额，不允许为负（CHECK coins >= 0）
   bio, status,     -- active / banned
@@ -483,7 +483,7 @@ user_ai_configs (
 - 注册、登录（用户名/邮箱 + 密码）、JWT 鉴权、刷新令牌。refresh token 保存在 Redis 中，登出或修改密码后立即吊销。
 - 登录失败次数限制（如 5 分钟内最多 10 次），防止暴力破解。
 - 个人中心：查看/编辑资料、头像上传、我的成就/徽章/称号/金币、装扮管理。
-- 角色与权限（RBAC）：多角色 + 全局权限；`users.role` 保留为 legacy/展示字段，权限由 `roles`/`permissions` 实时解析。内置角色、权限码与迁移语义见 4.7。
+- 角色与权限（RBAC）：多角色 + 全局权限；`users.role` 保留为 legacy/展示字段，权限由 `roles`/`permissions` 实时解析；当前未迁移接口仍用 legacy role 授权，RBAC-C 完成后只用于展示。内置角色、权限码与迁移语义见 4.7。
 
 **关键接口**
 
@@ -861,7 +861,7 @@ user_ai_configs (
 - 把固定 `users.role` 枚举升级为可配置的「多角色 + 全局权限」体系：权限码按资源分组，账号可拥有多个角色，权限取并集。
 - 权限变更实时生效：后端每次管理请求都按用户 ID 查询用户状态、角色与权限，不把权限写入 JWT，也不使用权限缓存。
 - 统一 `/admin` 管理后台：仪表盘、用户管理、角色权限、审计日志；现有题目/比赛/游戏化页面先迁移权限判断并沿用入口。
-- 兼容迁移现有 `super_admin` / `problem_admin` / `contest_admin` 账号；`users.role` 与 JWT role 保留为 legacy/展示字段，不再作为授权来源。
+- 兼容迁移现有 `super_admin` / `problem_admin` / `contest_admin` 账号；`users.role` 与 JWT role 保留为 legacy/展示字段，当前未迁移接口仍用 legacy role 授权，RBAC-C 完成后只用于展示。
 
 **权限目录（34 个权限码，稳定不可改名）**
 
@@ -932,7 +932,7 @@ user_ai_configs (
 2. 权限目录按资源分组，权限码格式 domain.action；内置 super_admin/content_admin/contest_admin/gamification_admin/user_admin/security_admin/auditor 七个角色。
 3. 启动时幂等 Seed：首次写入权限、角色、角色权限并按 users.role 映射旧账号；写 rbac_meta.seed_version；后续启动不恢复管理员删除的角色权限。
 4. rbac.Service.Access 实时解析用户 active 状态、多角色权限并集与 super 标记；RequirePermission/RequireAnyPermission 未登录 401、无权限/封禁 403、super 绕过。
-5. GET /users/me 返回 roles、permissions、isSuperAdmin；users.role 仅作 legacy 展示。
+5. GET /users/me 返回 roles、permissions、isSuperAdmin；users.role 仅作 legacy 兼容展示（RBAC-C 完成前未迁移接口仍用其授权）。
 6. 验收：多角色并集、封禁拒绝、权限变更后旧 token 立即生效、Seed 幂等且不恢复已删除权限。
 ```
 

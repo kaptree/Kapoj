@@ -156,7 +156,7 @@
   - `problem_admin` → `content_admin`
   - `contest_admin` → `contest_admin`
   - `user` → 不分配管理角色
-- `users.role` 列保留为 legacy/展示字段，不再作为权限来源；新账号默认 `user`。第一阶段完成后，任何管理授权不得再调用 `RequireRole`；旧字段/JWT role 只用于兼容展示，不参与授权。
+- `users.role` 列保留为 legacy/展示字段；新账号默认 `user`。当前未迁移接口仍用 legacy role 授权；RBAC-C 完成后才只用于展示。第一阶段完成后，任何管理授权不得再调用 `RequireRole`；旧字段/JWT role 只用于兼容展示，不参与授权。
 
 ## 7. 数据模型
 
