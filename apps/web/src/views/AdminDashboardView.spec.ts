@@ -26,6 +26,7 @@ const routes = [
   { path: '/admin/gamification', component: { template: '<div />' } },
   { path: '/admin/users', component: { template: '<div />' } },
   { path: '/admin/roles', component: { template: '<div />' } },
+  { path: '/admin/audit', component: { template: '<div />' } },
   { path: '/problems', component: { template: '<div />' } },
   { path: '/contests', component: { template: '<div />' } },
 ]
@@ -151,6 +152,16 @@ describe('AdminDashboardView', () => {
     expect(wrapper.find('a[href="/admin/roles"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('角色权限')
     expect(wrapper.text()).not.toContain('用户管理')
+  })
+
+  it('shows the audit quick link only with admin.audit.view', async () => {
+    auth.can.mockImplementation((code) => code === PERM.admin.audit.view)
+    auth.canAny.mockReturnValue(false)
+    const wrapper = await mountPage()
+
+    expect(getAdminStats).not.toHaveBeenCalled()
+    expect(wrapper.find('a[href="/admin/audit"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('审计日志')
   })
 
   it('shows the management entry row to dashboard viewers', async () => {

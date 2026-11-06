@@ -1,5 +1,6 @@
 import { http } from './client'
 import type {
+  AdminAuditItem,
   AdminCoinAdjustInput,
   AdminCoinAdjustResult,
   AdminPermissionItem,
@@ -84,3 +85,27 @@ export const replaceAdminRolePermissions = (id: number | string, permissionCodes
   http.put<AdminRoleItem>(`/admin/roles/${id}/permissions`, {
     permissionCodes,
   } satisfies AdminRolePermissionsInput)
+
+export interface ListAdminAuditQuery {
+  actorId?: number
+  action?: string
+  targetType?: string
+  from?: string
+  to?: string
+  page?: number
+  pageSize?: number
+}
+
+/** Audit log page (admin.audit.view). */
+export const listAdminAudit = (q: ListAdminAuditQuery) =>
+  http.get<Page<AdminAuditItem>>('/admin/audit', {
+    params: {
+      actorId: q.actorId ?? undefined,
+      action: q.action || undefined,
+      targetType: q.targetType || undefined,
+      from: q.from || undefined,
+      to: q.to || undefined,
+      page: q.page,
+      page_size: q.pageSize,
+    },
+  })

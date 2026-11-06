@@ -185,6 +185,12 @@ export const router = createRouter({
           meta: { requiresAuth: true, permission: PERM.role.read, title: '角色权限' },
         },
         {
+          path: 'audit',
+          name: 'admin-audit',
+          component: () => import('@/views/AdminAuditView.vue'),
+          meta: { requiresAuth: true, permission: PERM.admin.audit.view, title: '审计日志' },
+        },
+        {
           path: 'gamification',
           name: 'gamification-admin',
           component: () => import('@/views/GamificationAdminView.vue'),

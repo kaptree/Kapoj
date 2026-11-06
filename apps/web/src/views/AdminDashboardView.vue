@@ -103,6 +103,13 @@ const managementShortcuts = computed(() =>
       icon: 'pi pi-key',
       show: canRoles.value,
     },
+    {
+      key: 'audit',
+      path: '/admin/audit',
+      label: '审计日志',
+      icon: 'pi pi-history',
+      show: canViewAudit.value,
+    },
   ].filter((item) => item.show),
 )
 
