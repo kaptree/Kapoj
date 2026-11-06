@@ -22,10 +22,12 @@ const (
 )
 
 // Viewer describes who is looking. The zero value is a guest or ordinary
-// user; CanManage is true for problem admins and above.
+// user. CanViewHidden grants read access to unpublished problems;
+// CanViewSolution grants read access to the solution fields (solutionMd,
+// solutionCode, checkerUploaded, createdBy).
 type Viewer struct {
-	CanManage     bool
-	CanViewHidden bool
+	CanViewHidden   bool
+	CanViewSolution bool
 }
 
 type ListQuery struct {
@@ -103,13 +105,13 @@ func (s *Service) Update(ctx context.Context, id int64, in Input) (*Problem, err
 }
 
 // Get returns a problem the viewer may see. A hidden problem looks exactly
-// like a missing one to everyone who cannot manage problems.
+// like a missing one to everyone who cannot view hidden problems.
 func (s *Service) Get(ctx context.Context, v Viewer, id int64) (*Problem, error) {
 	p, err := s.repo.FindByID(ctx, id)
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	if !p.IsPublic && !v.CanManage && !v.CanViewHidden {
+	if !p.IsPublic && !v.CanViewHidden {
 		return nil, httpx.ErrNotFound
 	}
 	return p, nil
@@ -119,7 +121,7 @@ func (s *Service) List(ctx context.Context, v Viewer, q ListQuery, page, size in
 	page = min(max(page, 1), maxListPage)
 	items, total, err := s.repo.List(ctx, Filter{
 		Keyword: q.Keyword, Tag: q.Tag, Difficulty: q.Difficulty,
-		IncludeHidden: q.IncludeHidden && v.CanManage,
+		IncludeHidden: q.IncludeHidden && v.CanViewHidden,
 	}, (page-1)*size, size)
 	if err != nil {
 		return httpx.Page[ListItem]{}, err

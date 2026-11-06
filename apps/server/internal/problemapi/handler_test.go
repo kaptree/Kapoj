@@ -24,9 +24,11 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/config"
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
+	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 	"github.com/kaptree/kapoj/apps/server/internal/router"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
+	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
 
 type noopQueue struct{}
@@ -37,6 +39,7 @@ type fx struct {
 	t      *testing.T
 	h      http.Handler
 	db     *gorm.DB
+	rbac   *rbac.Service
 	root   string
 	tokens map[string]string
 	nextN  int
@@ -45,6 +48,7 @@ type fx struct {
 func newFx(t *testing.T) *fx {
 	t.Helper()
 	g := testutil.PG(t)
+	rbacSvc := testutil.SeedRBAC(t, g)
 	mr := miniredis.RunT(t)
 	root := filepath.Join(t.TempDir(), "store")
 	store, err := storage.NewLocal(root)
@@ -60,8 +64,9 @@ func newFx(t *testing.T) *fx {
 			SubmitCooldown:  time.Second,
 		},
 		Enqueuer: noopQueue{},
+		RBAC:     rbacSvc,
 	})
-	return &fx{t: t, h: h, db: g, root: root, tokens: map[string]string{}}
+	return &fx{t: t, h: h, db: g, rbac: rbacSvc, root: root, tokens: map[string]string{}}
 }
 
 func decode(w *httptest.ResponseRecorder) map[string]any {
@@ -117,8 +122,28 @@ func (f *fx) multipart(path, token string, fields map[string]string, files ...fi
 	return w, decode(w)
 }
 
-// token returns an access token for a user with the given role, creating the
-// user on first use. "guest" returns "".
+// registerUser creates a user with the given legacy role, logs in and returns
+// an access token plus the user id. The legacy role is set before login so the
+// JWT carries it; authorization no longer consults the JWT role.
+func (f *fx) registerUser(role string) (string, int64) {
+	f.t.Helper()
+	f.nextN++
+	name := fmt.Sprintf("%s%d", strings.ReplaceAll(role, "_", ""), f.nextN)
+	w, resp := f.do(http.MethodPost, "/api/auth/register", "", map[string]string{
+		"username": name, "email": name + "@example.com", "password": "correct-horse",
+	})
+	require.Equal(f.t, http.StatusCreated, w.Code, w.Body.String())
+	userID := int64(resp["data"].(map[string]any)["user"].(map[string]any)["id"].(float64))
+	require.NoError(f.t, f.db.Exec("UPDATE users SET role = ? WHERE id = ?", role, userID).Error)
+	w, resp = f.do(http.MethodPost, "/api/auth/login", "", map[string]string{"account": name, "password": "correct-horse"})
+	require.Equal(f.t, http.StatusOK, w.Code)
+	tok := resp["data"].(map[string]any)["accessToken"].(string)
+	return tok, userID
+}
+
+// token returns an access token for a user carrying the given legacy role plus
+// its mapped RBAC role (super_admin→super_admin, problem_admin→content_admin,
+// contest_admin→contest_admin, user→无管理角色). "guest" returns "".
 func (f *fx) token(role string) string {
 	f.t.Helper()
 	if role == "guest" {
@@ -127,17 +152,40 @@ func (f *fx) token(role string) string {
 	if tok, ok := f.tokens[role]; ok {
 		return tok
 	}
-	f.nextN++
-	name := fmt.Sprintf("%s%d", strings.ReplaceAll(role, "_", ""), f.nextN)
-	w, _ := f.do(http.MethodPost, "/api/auth/register", "", map[string]string{
-		"username": name, "email": name + "@example.com", "password": "correct-horse",
-	})
-	require.Equal(f.t, http.StatusCreated, w.Code, w.Body.String())
-	require.NoError(f.t, f.db.Exec("UPDATE users SET role = ? WHERE username = ?", role, name).Error)
-	w, resp := f.do(http.MethodPost, "/api/auth/login", "", map[string]string{"account": name, "password": "correct-horse"})
-	require.Equal(f.t, http.StatusOK, w.Code)
-	tok := resp["data"].(map[string]any)["accessToken"].(string)
+	tok, userID := f.registerUser(role)
+	testutil.AssignLegacyRole(f.t, f.db, userID, user.Role(role))
 	f.tokens[role] = tok
+	return tok
+}
+
+// legacyToken returns an access token for a user carrying the given legacy role
+// but no RBAC role assignment, proving the legacy role alone no longer
+// authorizes management operations.
+func (f *fx) legacyToken(role string) string {
+	f.t.Helper()
+	tok, _ := f.registerUser(role)
+	return tok
+}
+
+// createRole creates a custom role holding the given permission codes.
+func (f *fx) createRole(code string, perms ...rbac.PermissionCode) {
+	f.t.Helper()
+	codes := make([]string, len(perms))
+	for i, p := range perms {
+		codes[i] = string(p)
+	}
+	_, err := f.rbac.CreateRole(context.Background(), rbac.AuditMeta{ActorID: 1}, rbac.RoleInput{
+		Code: code, Name: code, PermissionCodes: codes,
+	})
+	require.NoError(f.t, err)
+}
+
+// userWithRole returns an access token for an ordinary user assigned the given
+// custom role.
+func (f *fx) userWithRole(code string) string {
+	f.t.Helper()
+	tok, userID := f.registerUser("user")
+	testutil.AssignRole(f.t, f.db, userID, code)
 	return tok
 }
 
@@ -461,6 +509,7 @@ func TestHiddenContestProblemVisibleToParticipant(t *testing.T) {
 		Title: "Hidden contest problem", Slug: "hidden-contest", StatementMD: "statement",
 		Type: problem.TypeTraditional, Difficulty: 1, TimeLimitMS: 1000, MemoryLimitMB: 256,
 		IsPublic: false, CreatedBy: 1,
+		SolutionMD: "SECRET_MD", SolutionCode: "SECRET_CODE",
 	}
 	require.NoError(t, repo.Create(context.Background(), p))
 	require.NoError(t, repo.AddTestcase(context.Background(), &problem.Testcase{
@@ -488,8 +537,11 @@ func TestHiddenContestProblemVisibleToParticipant(t *testing.T) {
 	w, _ = f.do(http.MethodGet, fmt.Sprintf("/api/problems/%d", p.ID), token, nil)
 	assert.Equal(t, http.StatusNotFound, w.Code)
 	require.NoError(t, contestRepo.AddParticipant(context.Background(), c.ID, userID))
-	w, _ = f.do(http.MethodGet, fmt.Sprintf("/api/problems/%d", p.ID), token, nil)
+	w, resp := f.do(http.MethodGet, fmt.Sprintf("/api/problems/%d", p.ID), token, nil)
 	assert.Equal(t, http.StatusOK, w.Code)
+	// contest participant fallback 只放开题目内容，不放开题解。
+	assert.NotContains(t, resp["data"].(map[string]any), "solutionMd")
+	assert.NotContains(t, resp["data"].(map[string]any), "solutionCode")
 	w, _ = f.do(http.MethodGet, fmt.Sprintf("/api/problems/%d", p.ID), "", nil)
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
@@ -697,4 +749,171 @@ func TestStatisticsEndpoint(t *testing.T) {
 	assert.EqualValues(t, 4, data["submitCount"])
 	assert.EqualValues(t, 1, data["acceptCount"])
 	assert.InDelta(t, 0.25, data["acceptRate"], 1e-9)
+}
+
+func TestProblemListAndDetailRespectViewHiddenPermission(t *testing.T) {
+	f := newFx(t)
+	f.publish("visible", nil)
+	hidden := f.create(body("hidden"))
+
+	f.createRole("view_hidden_only", rbac.PermProblemViewHidden)
+	viewHidden := f.userWithRole("view_hidden_only")
+
+	// 无 view_hidden：隐藏题 404，includeHidden 不返回隐藏题。
+	w, _ := f.do(http.MethodGet, path("/api/problems/%d", hidden), f.token("user"), nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	_, resp := f.do(http.MethodGet, "/api/problems?includeHidden=true", f.token("user"), nil)
+	assert.Equal(t, []string{"visible"}, slugsOf(resp))
+
+	// 有 view_hidden：可看隐藏题与 includeHidden。
+	w, _ = f.do(http.MethodGet, path("/api/problems/%d", hidden), viewHidden, nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+	_, resp = f.do(http.MethodGet, "/api/problems?includeHidden=true", viewHidden, nil)
+	assert.Equal(t, []string{"visible", "hidden"}, slugsOf(resp))
+}
+
+func TestProblemSolutionRequiresManagementCapability(t *testing.T) {
+	f := newFx(t)
+	b := body("sol")
+	b["solutionMd"] = "SECRET_MD"
+	b["solutionCode"] = "SECRET_CODE"
+	id := f.create(b)
+
+	f.createRole("view_hidden_only", rbac.PermProblemViewHidden)
+	viewHidden := f.userWithRole("view_hidden_only")
+
+	// view_hidden-only 能看到隐藏题，但看不到题解字段。
+	_, resp := f.do(http.MethodGet, path("/api/problems/%d", id), viewHidden, nil)
+	data := resp["data"].(map[string]any)
+	assert.NotContains(t, data, "solutionMd")
+	assert.NotContains(t, data, "solutionCode")
+
+	// content_admin 能看到题解字段。
+	_, resp = f.do(http.MethodGet, path("/api/problems/%d", id), f.token("problem_admin"), nil)
+	data = resp["data"].(map[string]any)
+	assert.Equal(t, "SECRET_MD", data["solutionMd"])
+	assert.Equal(t, "SECRET_CODE", data["solutionCode"])
+}
+
+func TestProblemRoutesRequirePermissions(t *testing.T) {
+	f := newFx(t)
+	f.createRole("view_hidden_only", rbac.PermProblemViewHidden)
+	viewHidden := f.userWithRole("view_hidden_only")
+	legacy := f.legacyToken("problem_admin")
+
+	// legacy problem_admin token 但无 RBAC 角色 → create/update/testcase/checker 403。
+	w, _ := f.do(http.MethodPost, "/api/problems", legacy, body("x1"))
+	assert.Equal(t, http.StatusForbidden, w.Code)
+
+	// content_admin → create 201。
+	w, resp := f.do(http.MethodPost, "/api/problems", f.token("problem_admin"), body("x2"))
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	id := idOf(resp)
+
+	// view_hidden-only：create/update/testcase 403，但 GET 隐藏题 200。
+	w, _ = f.do(http.MethodPost, "/api/problems", viewHidden, body("x3"))
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	w, _ = f.do(http.MethodGet, path("/api/problems/%d", id), viewHidden, nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+	w, _ = f.do(http.MethodPut, path("/api/problems/%d", id), viewHidden, body("x2"))
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	w, _ = f.multipart(path("/api/problems/%d/testcases", id), viewHidden, nil,
+		filePart{"input", "1.in", strings.NewReader("1")}, filePart{"output", "1.out", strings.NewReader("2")})
+	assert.Equal(t, http.StatusForbidden, w.Code)
+
+	// legacy problem_admin（无 RBAC）update/delete/testcase/checker 403。
+	w, _ = f.do(http.MethodPut, path("/api/problems/%d", id), legacy, body("x2"))
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	w, _ = f.do(http.MethodDelete, path("/api/problems/%d", id), legacy, nil)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	w, _ = f.do(http.MethodGet, path("/api/problems/%d/testcases", id), legacy, nil)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	w, _ = f.multipart(path("/api/problems/%d/checker", id), legacy, nil,
+		filePart{"file", "chk.cpp", strings.NewReader("int main(){}")})
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+func TestProblemPublishRequiresExtraPermission(t *testing.T) {
+	f := newFx(t)
+	f.createRole("update_only", rbac.PermProblemUpdate)
+	f.createRole("update_publish", rbac.PermProblemUpdate, rbac.PermProblemPublish)
+	updateOnly := f.userWithRole("update_only")
+	updatePublish := f.userWithRole("update_publish")
+
+	id := f.create(body("pub"))
+	f.addCase(id)
+
+	// update-only：改 title 成功。
+	title := body("pub")
+	title["title"] = "Renamed"
+	w, _ := f.do(http.MethodPut, path("/api/problems/%d", id), updateOnly, title)
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	// update-only：改 isPublic=true 403。
+	publish := body("pub")
+	publish["isPublic"] = true
+	w, _ = f.do(http.MethodPut, path("/api/problems/%d", id), updateOnly, publish)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+
+	// update+publish：隐藏题改公开成功。
+	w, _ = f.do(http.MethodPut, path("/api/problems/%d", id), updatePublish, publish)
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	// update-only：公开题改回隐藏 403。
+	offline := body("pub")
+	offline["isPublic"] = false
+	w, _ = f.do(http.MethodPut, path("/api/problems/%d", id), updateOnly, offline)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+
+	// update+publish：公开题改回隐藏成功。
+	w, _ = f.do(http.MethodPut, path("/api/problems/%d", id), updatePublish, offline)
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+}
+
+func TestProblemWritesAudit(t *testing.T) {
+	f := newFx(t)
+	admin := f.token("problem_admin")
+
+	auditCount := func(action string) int64 {
+		var n int64
+		require.NoError(f.t, f.db.Table("admin_audit_logs").Where("action = ?", action).Count(&n).Error)
+		return n
+	}
+
+	// create → problem.create 审计。
+	w, resp := f.do(http.MethodPost, "/api/problems", admin, body("aud"))
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	id := idOf(resp)
+	assert.Equal(t, int64(1), auditCount("problem.create"))
+
+	// 失败请求（重复 slug）不写审计。
+	f.do(http.MethodPost, "/api/problems", admin, body("aud"))
+	assert.Equal(t, int64(1), auditCount("problem.create"))
+
+	// update → problem.update 审计。
+	w, _ = f.do(http.MethodPut, path("/api/problems/%d", id), admin, body("aud"))
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, int64(1), auditCount("problem.update"))
+
+	// testcase → problem.testcase.manage 审计。
+	w, _ = f.multipart(path("/api/problems/%d/testcases", id), admin, nil,
+		filePart{"input", "1.in", strings.NewReader("1 2")}, filePart{"output", "1.out", strings.NewReader("3")})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	assert.Equal(t, int64(1), auditCount("problem.testcase.manage"))
+
+	// checker → problem.checker.manage 审计（特判题）。
+	special := body("spj-aud")
+	special["type"] = "special"
+	w, resp = f.do(http.MethodPost, "/api/problems", admin, special)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	sid := idOf(resp)
+	w, _ = f.multipart(path("/api/problems/%d/checker", sid), admin, nil,
+		filePart{"file", "chk.cpp", strings.NewReader("int main(){}")})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, int64(1), auditCount("problem.checker.manage"))
+
+	// delete → problem.delete 审计。
+	w, _ = f.do(http.MethodDelete, path("/api/problems/%d", id), admin, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, int64(1), auditCount("problem.delete"))
 }

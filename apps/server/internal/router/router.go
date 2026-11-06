@@ -126,7 +126,8 @@ func New(d Deps) *gin.Engine {
 	problemRepo := problem.NewGormRepository(d.DB)
 	submissionRepo := submission.NewGormRepository(d.DB)
 	problemapi.RegisterRoutes(api, problemJSON, uploads,
-		problem.NewService(problemRepo, d.Storage), submissionRepo, contestRepo)
+		problem.NewService(problemRepo, d.Storage), submissionRepo, contestRepo,
+		problemapi.Options{RBAC: d.RBAC})
 	submissionSvc := submission.NewService(
 		submissionRepo,
 		problemRepo,

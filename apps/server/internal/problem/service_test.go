@@ -102,7 +102,7 @@ func zeroBytes(n int64) io.Reader { return io.LimitReader(zeros{}, n) }
 
 var (
 	guest   = problem.Viewer{}
-	manager = problem.Viewer{CanManage: true}
+	manager = problem.Viewer{CanViewHidden: true}
 )
 
 func TestCreateForcesHidden(t *testing.T) {

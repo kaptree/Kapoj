@@ -13,7 +13,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
-	"github.com/kaptree/kapoj/apps/server/internal/user"
+	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 )
 
 const (
@@ -35,45 +35,84 @@ type ContestAccess interface {
 	CanViewProblem(ctx context.Context, userID, problemID int64, now time.Time) (bool, error)
 }
 
+// Options 配置题目接口的可选依赖。
+type Options struct {
+	RBAC *rbac.Service
+}
+
+// auditTargetProblem 是内容管理审计的 target type。
+const auditTargetProblem = "problem"
+
 func RegisterRoutes(
 	api, problemJSON, uploads gin.IRouter,
 	s *problem.Service,
 	accepted AcceptedChecker,
 	contests ContestAccess,
+	opts ...Options,
 ) {
-	h := &handler{svc: s, accepted: accepted, contests: contests}
-	manage := []gin.HandlerFunc{middleware.RequireAuth(), middleware.RequireRole(user.RoleProblemAdmin)}
-	with := func(fn gin.HandlerFunc) []gin.HandlerFunc { return append(append([]gin.HandlerFunc{}, manage...), fn) }
+	var o Options
+	if len(opts) > 0 {
+		o = opts[0]
+	}
+	h := &handler{svc: s, accepted: accepted, contests: contests, rbac: o.RBAC}
 
-	api.GET("/problems", h.list)
-	api.GET("/problems/:id", h.get)
-	api.GET("/problems/:id/statistics", h.statistics)
+	// resolver 为 nil 时 RequirePermission 会拒绝所有写操作，LoadAccess 为
+	// 空操作；生产环境 router 始终传入 RBAC service。
+	var resolver middleware.PermissionResolver
+	if h.rbac != nil {
+		resolver = h.rbac
+	}
+	load := middleware.LoadAccess(resolver)
+	require := func(code string) gin.HandlerFunc {
+		return middleware.RequirePermission(resolver, code)
+	}
+	audit := func(code string) gin.HandlerFunc {
+		return middleware.AuditAdminAction(h.rbac, code, auditTargetProblem)
+	}
 
-	problemJSON.POST("/problems", with(h.create)...)
-	problemJSON.PUT("/problems/:id", with(h.update)...)
-	api.DELETE("/problems/:id", with(h.delete)...)
+	api.GET("/problems", load, h.list)
+	api.GET("/problems/:id", load, h.get)
+	api.GET("/problems/:id/statistics", load, h.statistics)
 
-	api.GET("/problems/:id/testcases", with(h.listTestcases)...)
-	api.PUT("/problems/:id/testcases/:tid", with(h.updateTestcase)...)
-	api.POST("/problems/:id/testcases/reorder", with(h.reorderTestcases)...)
-	api.DELETE("/problems/:id/testcases/:tid", with(h.deleteTestcase)...)
+	problemJSON.POST("/problems", require(string(rbac.PermProblemCreate)), audit(string(rbac.PermProblemCreate)), h.create)
+	problemJSON.PUT("/problems/:id", require(string(rbac.PermProblemUpdate)), audit(string(rbac.PermProblemUpdate)), h.update)
+	api.DELETE("/problems/:id", require(string(rbac.PermProblemDelete)), audit(string(rbac.PermProblemDelete)), h.delete)
 
-	uploads.POST("/problems/:id/testcases", with(h.addTestcase)...)
-	uploads.POST("/problems/:id/checker", with(h.uploadChecker)...)
+	api.GET("/problems/:id/testcases", require(string(rbac.PermProblemTestcaseManage)), h.listTestcases)
+	api.PUT("/problems/:id/testcases/:tid", require(string(rbac.PermProblemTestcaseManage)), audit(string(rbac.PermProblemTestcaseManage)), h.updateTestcase)
+	api.POST("/problems/:id/testcases/reorder", require(string(rbac.PermProblemTestcaseManage)), audit(string(rbac.PermProblemTestcaseManage)), h.reorderTestcases)
+	api.DELETE("/problems/:id/testcases/:tid", require(string(rbac.PermProblemTestcaseManage)), audit(string(rbac.PermProblemTestcaseManage)), h.deleteTestcase)
+
+	uploads.POST("/problems/:id/testcases", require(string(rbac.PermProblemTestcaseManage)), audit(string(rbac.PermProblemTestcaseManage)), h.addTestcase)
+	uploads.POST("/problems/:id/checker", require(string(rbac.PermProblemCheckerManage)), audit(string(rbac.PermProblemCheckerManage)), h.uploadChecker)
 }
 
 type handler struct {
 	svc      *problem.Service
 	accepted AcceptedChecker
 	contests ContestAccess
+	rbac     *rbac.Service
 }
 
 func viewer(c *gin.Context) problem.Viewer {
-	claims, ok := middleware.CurrentClaims(c)
-	if !ok {
+	access, ok := middleware.CurrentAccess(c)
+	if !ok || access == nil {
 		return problem.Viewer{}
 	}
-	return problem.Viewer{CanManage: claims.Role == user.RoleProblemAdmin || claims.Role == user.RoleSuperAdmin}
+	return problem.Viewer{
+		CanViewHidden:   access.Has(string(rbac.PermProblemViewHidden)),
+		CanViewSolution: canViewSolution(access),
+	}
+}
+
+// canViewSolution 表示当前用户是否能看到题解字段。只有题面/元数据编辑、删除、
+// 发布、测试数据或 checker 管理权限可看题解；仅 view_hidden 的只读角色不能看。
+func canViewSolution(access *rbac.Access) bool {
+	return access.Has(string(rbac.PermProblemUpdate)) ||
+		access.Has(string(rbac.PermProblemDelete)) ||
+		access.Has(string(rbac.PermProblemPublish)) ||
+		access.Has(string(rbac.PermProblemTestcaseManage)) ||
+		access.Has(string(rbac.PermProblemCheckerManage))
 }
 
 // pathID reads a positive integer path parameter; anything else is reported
@@ -137,7 +176,7 @@ func (h *handler) get(c *gin.Context) {
 			return
 		}
 	}
-	includeSolution := v.CanManage
+	includeSolution := v.CanViewSolution
 	if !includeSolution && h.accepted != nil {
 		if claims, ok := middleware.CurrentClaims(c); ok {
 			includeSolution, err = h.accepted.HasAccepted(c.Request.Context(), claims.UserID, p.ID)
@@ -184,6 +223,15 @@ func (h *handler) update(c *gin.Context) {
 	}
 	in, ok := httpx.BindJSON[problem.Input](c)
 	if !ok {
+		return
+	}
+	existing, err := h.svc.Get(c.Request.Context(), problem.Viewer{CanViewHidden: true}, id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	if in.IsPublic != existing.IsPublic && !middleware.HasPermission(c, string(rbac.PermProblemPublish)) {
+		httpx.Fail(c, httpx.ErrForbidden)
 		return
 	}
 	p, err := h.svc.Update(c.Request.Context(), id, in)
