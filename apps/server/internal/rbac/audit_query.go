@@ -67,17 +67,7 @@ func (s *Service) ListAudit(ctx context.Context, filter AuditFilter, page, size 
 
 	items := make([]AuditItem, len(rows))
 	for i, row := range rows {
-		items[i] = AuditItem{
-			ID:         row.ID,
-			ActorID:    row.ActorID,
-			Action:     row.Action,
-			TargetType: row.TargetType,
-			TargetID:   row.TargetID,
-			Summary:    row.Summary,
-			IP:         row.IP,
-			UserAgent:  row.UserAgent,
-			CreatedAt:  row.CreatedAt,
-		}
+		items[i] = AuditItem(row)
 	}
 	return httpx.Page[AuditItem]{Total: total, Items: items}, nil
 }
