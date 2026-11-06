@@ -14,7 +14,13 @@ const (
 	AuditActionRoleDelete            = "role.delete"
 	AuditActionRolePermissionsUpdate = "role.permissions.update"
 
+	AuditActionUserUpdate      = "user.update"
+	AuditActionUserRolesAssign = "user.roles.assign"
+	AuditActionUserBan         = "user.ban"
+	AuditActionUserUnban       = "user.unban"
+
 	AuditTargetRole = "role"
+	AuditTargetUser = "user"
 )
 
 // writeAudit 在给定事务内写入管理员操作审计；失败会使调用方事务回滚。

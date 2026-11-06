@@ -37,7 +37,6 @@ func RegisterRoutes(r gin.IRouter, s *user.Service, opts ...Options) {
 	r.GET("/users/me", middleware.RequireAuth(), h.getMe)
 	r.PUT("/users/me", middleware.RequireAuth(), h.updateMe)
 	r.GET("/users/:id/profile", h.profile)
-	r.GET("/admin/users", middleware.RequireAuth(), middleware.RequireRole(user.RoleSuperAdmin), h.listUsers)
 }
 
 type handler struct {
@@ -118,14 +117,4 @@ func (h *handler) profile(c *gin.Context) {
 		}
 	}
 	httpx.OK(c, profile)
-}
-
-func (h *handler) listUsers(c *gin.Context) {
-	page, size := httpx.ParsePage(c.Request.URL.RawQuery)
-	result, err := h.svc.List(c.Request.Context(), page, size)
-	if err != nil {
-		httpx.Fail(c, err)
-		return
-	}
-	httpx.OK(c, result)
 }

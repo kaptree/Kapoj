@@ -87,9 +87,6 @@ func TestRouterEndToEndWithDatabase(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "alice", resp["data"].(map[string]any)["username"])
 
-	w, _ = call(h, http.MethodGet, "/api/admin/users", token, "")
-	assert.Equal(t, http.StatusForbidden, w.Code)
-
 	w, resp = call(h, http.MethodPost, "/api/auth/register", "",
 		`{"username":"ALICE","email":"x@example.com","password":"correct-horse"}`)
 	assert.Equal(t, http.StatusConflict, w.Code)
@@ -281,6 +278,10 @@ func TestRouterMountsAdminRBACRoutes(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, w.Code)
 	assert.EqualValues(t, 40300, resp["code"])
 
+	w, resp = call(h, http.MethodGet, "/api/admin/users", token, "")
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.EqualValues(t, 40300, resp["code"])
+
 	var superRole rbac.Role
 	require.NoError(t, g.Where("code = ?", rbac.RoleCodeSuperAdmin).First(&superRole).Error)
 	require.NoError(t, g.Create(&rbac.UserRole{UserID: userID, RoleID: superRole.ID, AssignedAt: time.Now()}).Error)
@@ -289,6 +290,10 @@ func TestRouterMountsAdminRBACRoutes(t *testing.T) {
 	w, resp = call(h, http.MethodGet, "/api/admin/roles", token, "")
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	assert.Len(t, resp["data"], 7)
+
+	w, resp = call(h, http.MethodGet, "/api/admin/users", token, "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.EqualValues(t, 1, resp["data"].(map[string]any)["total"])
 
 	w, resp = call(h, http.MethodGet, "/api/admin/permissions", token, "")
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())

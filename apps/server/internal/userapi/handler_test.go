@@ -221,39 +221,6 @@ func TestProfileNotFound(t *testing.T) {
 	}
 }
 
-func TestAdminUsersForbiddenForUser(t *testing.T) {
-	f := setup(t)
-	_, tok := f.register(t, "alice")
-	w, resp := f.do(http.MethodGet, "/api/admin/users", tok, "")
-	assert.Equal(t, http.StatusForbidden, w.Code)
-	assert.EqualValues(t, 40300, resp["code"])
-}
-
-func TestAdminUsersPaginates(t *testing.T) {
-	f := setup(t)
-	admin, _ := f.register(t, "root")
-	admin.Role = user.RoleSuperAdmin
-	require.NoError(t, f.repo.Update(context.Background(), admin))
-	tok, err := f.issuer.IssueAccess(admin)
-	require.NoError(t, err)
-	for i := 0; i < 4; i++ {
-		f.register(t, fmt.Sprintf("user%d", i))
-	}
-
-	w, resp := f.do(http.MethodGet, "/api/admin/users?page=2&page_size=2", tok, "")
-	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
-	data := resp["data"].(map[string]any)
-	assert.EqualValues(t, 5, data["total"])
-	items := data["items"].([]any)
-	require.Len(t, items, 2)
-	assert.Equal(t, "user1", items[0].(map[string]any)["username"])
-	assert.Contains(t, items[0], "email", "admins see private fields")
-
-	w, resp = f.do(http.MethodGet, "/api/admin/users?page_size=500", tok, "")
-	require.Equal(t, http.StatusOK, w.Code)
-	assert.Len(t, resp["data"].(map[string]any)["items"], 5)
-}
-
 func grantMeTestRole(t *testing.T, g *gorm.DB, userID int64, roleCode string) {
 	t.Helper()
 	var role rbac.Role

@@ -22,6 +22,13 @@ func RegisterRoutes(api gin.IRouter, s *rbac.Service) {
 	api.PUT("/admin/roles/:id", append(requirePermission(s, string(rbac.PermRoleUpdate)), h.updateRole)...)
 	api.DELETE("/admin/roles/:id", append(requirePermission(s, string(rbac.PermRoleDelete)), h.deleteRole)...)
 	api.PUT("/admin/roles/:id/permissions", append(requirePermission(s, string(rbac.PermRolePermissionsUpdate)), h.replaceRolePermissions)...)
+
+	api.GET("/admin/users", append(requirePermission(s, string(rbac.PermUserRead)), h.listUsers)...)
+	api.GET("/admin/users/:id", append(requirePermission(s, string(rbac.PermUserRead)), h.getUser)...)
+	api.PUT("/admin/users/:id", append(requirePermission(s, string(rbac.PermUserUpdate)), h.updateUser)...)
+	api.PUT("/admin/users/:id/roles", append(requirePermission(s, string(rbac.PermUserRolesAssign)), h.replaceUserRoles)...)
+	api.POST("/admin/users/:id/ban", append(requirePermission(s, string(rbac.PermUserBan)), h.banUser)...)
+	api.POST("/admin/users/:id/unban", append(requirePermission(s, string(rbac.PermUserBan)), h.unbanUser)...)
 }
 
 type handler struct {
