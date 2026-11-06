@@ -56,8 +56,18 @@ func newEnv(t *testing.T) *env {
 	return &env{svc: contest.NewService(repo), repo: repo, db: g, problems: problems}
 }
 
-func manager() contest.Viewer { return contest.Viewer{UserID: managerID, CanManage: true} }
-func user() contest.Viewer    { return contest.Viewer{UserID: userID} }
+func manager() contest.Viewer {
+	return contest.Viewer{
+		UserID:                 managerID,
+		CanViewHidden:          true,
+		CanCreate:              true,
+		CanUpdate:              true,
+		CanDelete:              true,
+		CanReadParticipants:    true,
+		CanManageAnnouncements: true,
+	}
+}
+func user() contest.Viewer { return contest.Viewer{UserID: userID} }
 
 func baseInput(env *env) contest.Input {
 	now := time.Now()
@@ -637,4 +647,76 @@ func TestTooManyParticipantsOrdering(t *testing.T) {
 	require.Len(t, participants, 2)
 	assert.Equal(t, "user", participants[0].Username)
 	assert.Equal(t, "other", participants[1].Username)
+}
+
+func TestContestVisibilityUsesViewHidden(t *testing.T) {
+	e := newEnv(t)
+	privateInput := baseInput(e)
+	privateInput.Title = "Private"
+	privateInput.IsPublic = false
+	private, err := e.svc.Create(context.Background(), manager(), privateInput)
+	require.NoError(t, err)
+
+	futureInput := baseInput(e)
+	futureInput.Title = "Future"
+	futureInput.StartTime = time.Now().Add(time.Hour)
+	futureInput.EndTime = time.Now().Add(2 * time.Hour)
+	future, err := e.svc.Create(context.Background(), manager(), futureInput)
+	require.NoError(t, err)
+
+	viewHidden := contest.Viewer{UserID: managerID, CanViewHidden: true}
+
+	// 无 view_hidden：非公开比赛 404，includeHidden 不返回。
+	_, err = e.svc.Detail(context.Background(), user(), private.ID)
+	assertCode(t, err, 40400)
+	page, err := e.svc.List(context.Background(), user(), contest.ListQuery{IncludeHidden: true}, 1, 20)
+	require.NoError(t, err)
+	for _, item := range page.Items {
+		assert.NotEqual(t, private.ID, item.ID, "includeHidden must not expose hidden contests")
+	}
+
+	// 有 view_hidden：可看非公开、开赛前题目、榜单。
+	detail, err := e.svc.Detail(context.Background(), viewHidden, private.ID)
+	require.NoError(t, err)
+	assert.False(t, detail.IsPublic)
+
+	futureDetail, err := e.svc.Detail(context.Background(), viewHidden, future.ID)
+	require.NoError(t, err)
+	assert.Len(t, futureDetail.Problems, 2, "view_hidden sees pre-start problems")
+
+	ranklist, err := e.svc.Ranklist(context.Background(), viewHidden, future.ID)
+	require.NoError(t, err)
+	assert.Len(t, ranklist.Problems, 2, "view_hidden sees upcoming ranklist problems")
+
+	// 已报名用户仍可看自己报名的非公开比赛。
+	require.NoError(t, e.svc.Register(context.Background(), userID, private.ID, "", ""))
+	_, err = e.svc.Detail(context.Background(), user(), private.ID)
+	require.NoError(t, err)
+}
+
+func TestContestCanManageDerivation(t *testing.T) {
+	e := newEnv(t)
+	c, err := e.svc.Create(context.Background(), manager(), baseInput(e))
+	require.NoError(t, err)
+
+	cases := []struct {
+		name string
+		v    contest.Viewer
+		want bool
+	}{
+		{"create", contest.Viewer{UserID: managerID, CanCreate: true}, true},
+		{"update", contest.Viewer{UserID: managerID, CanUpdate: true}, true},
+		{"delete", contest.Viewer{UserID: managerID, CanDelete: true}, true},
+		{"participant.read", contest.Viewer{UserID: managerID, CanReadParticipants: true}, true},
+		{"announcement.manage", contest.Viewer{UserID: managerID, CanManageAnnouncements: true}, true},
+		{"view_hidden only", contest.Viewer{UserID: managerID, CanViewHidden: true}, false},
+		{"participant", contest.Viewer{UserID: userID}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			detail, err := e.svc.Detail(context.Background(), tc.v, c.ID)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, detail.CanManage)
+		})
+	}
 }

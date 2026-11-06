@@ -66,7 +66,7 @@ func newTestEnvWithRedis(t *testing.T, rdb *redis.Client) *testEnv {
 
 func (e *testEnv) contest(title string, rated bool, start, end time.Time) *contest.Contest {
 	e.t.Helper()
-	c, err := e.contestSvc.Create(context.Background(), contest.Viewer{UserID: managerID, CanManage: true}, contest.Input{
+	c, err := e.contestSvc.Create(context.Background(), contest.Viewer{UserID: managerID, CanCreate: true}, contest.Input{
 		Title: title, StartTime: start.UTC(), EndTime: end.UTC(),
 		Mode: contest.ModeICPC, IsRated: rated, IsPublic: true, RegisterType: contest.RegisterOpen,
 		Problems: []contest.ProblemInput{{ProblemID: e.problemID, DisplayID: "A", Score: 100}},

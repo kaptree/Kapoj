@@ -13,7 +13,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
-	"github.com/kaptree/kapoj/apps/server/internal/user"
+	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 )
 
 // GameHook 在比赛报名成功后触发；失败只记录日志，不影响报名响应。
@@ -38,33 +38,52 @@ type Options struct {
 	GameHook       GameHook
 	IdentityLookup IdentityLookup
 	ActivityHook   ActivityHook
+	RBAC           *rbac.Service
 }
 
+// auditTargetContest 是内容管理审计的 target type。
+const auditTargetContest = "contest"
+
 func RegisterRoutes(r gin.IRouter, s *contest.Service, opts ...Options) {
-	h := &handler{svc: s}
+	var o Options
 	if len(opts) > 0 {
-		h.gameHook = opts[0].GameHook
-		h.identities = opts[0].IdentityLookup
-		h.activityHook = opts[0].ActivityHook
+		o = opts[0]
 	}
-	manage := []gin.HandlerFunc{middleware.RequireAuth(), middleware.RequireRole(user.RoleContestAdmin)}
-	with := func(fn gin.HandlerFunc) []gin.HandlerFunc {
-		return append(append([]gin.HandlerFunc{}, manage...), fn)
+	h := &handler{
+		svc:          s,
+		gameHook:     o.GameHook,
+		identities:   o.IdentityLookup,
+		activityHook: o.ActivityHook,
+		rbac:         o.RBAC,
 	}
 
-	r.GET("/contests", h.list)
-	r.GET("/contests/:id", h.detail)
-	r.POST("/contests", with(h.create)...)
-	r.PUT("/contests/:id", with(h.update)...)
-	r.DELETE("/contests/:id", with(h.delete)...)
-	r.POST("/contests/:id/clone", with(h.clone)...)
+	// resolver 为 nil 时 RequirePermission 会拒绝所有写操作，LoadAccess 为
+	// 空操作；生产环境 router 始终传入 RBAC service。
+	var resolver middleware.PermissionResolver
+	if h.rbac != nil {
+		resolver = h.rbac
+	}
+	load := middleware.LoadAccess(resolver)
+	require := func(code string) gin.HandlerFunc {
+		return middleware.RequirePermission(resolver, code)
+	}
+	audit := func(code string) gin.HandlerFunc {
+		return middleware.AuditAdminAction(h.rbac, code, auditTargetContest)
+	}
+
+	r.GET("/contests", load, h.list)
+	r.GET("/contests/:id", load, h.detail)
+	r.POST("/contests", require(string(rbac.PermContestCreate)), audit(string(rbac.PermContestCreate)), h.create)
+	r.PUT("/contests/:id", require(string(rbac.PermContestUpdate)), audit(string(rbac.PermContestUpdate)), h.update)
+	r.DELETE("/contests/:id", require(string(rbac.PermContestDelete)), audit(string(rbac.PermContestDelete)), h.delete)
+	r.POST("/contests/:id/clone", require(string(rbac.PermContestCreate)), audit(string(rbac.PermContestCreate)), h.clone)
 	r.POST("/contests/:id/register", middleware.RequireAuth(), h.register)
-	r.GET("/contests/:id/participants", with(h.participants)...)
-	r.GET("/contests/:id/ranklist", h.ranklist)
-	r.GET("/contests/:id/announcements", h.announcements)
-	r.POST("/contests/:id/announcements", with(h.createAnnouncement)...)
-	r.PUT("/contests/:id/announcements/:aid", with(h.updateAnnouncement)...)
-	r.DELETE("/contests/:id/announcements/:aid", with(h.deleteAnnouncement)...)
+	r.GET("/contests/:id/participants", require(string(rbac.PermContestParticipantRead)), h.participants)
+	r.GET("/contests/:id/ranklist", load, h.ranklist)
+	r.GET("/contests/:id/announcements", load, h.announcements)
+	r.POST("/contests/:id/announcements", require(string(rbac.PermContestAnnouncementManage)), audit(string(rbac.PermContestAnnouncementManage)), h.createAnnouncement)
+	r.PUT("/contests/:id/announcements/:aid", require(string(rbac.PermContestAnnouncementManage)), audit(string(rbac.PermContestAnnouncementManage)), h.updateAnnouncement)
+	r.DELETE("/contests/:id/announcements/:aid", require(string(rbac.PermContestAnnouncementManage)), audit(string(rbac.PermContestAnnouncementManage)), h.deleteAnnouncement)
 }
 
 type handler struct {
@@ -72,16 +91,22 @@ type handler struct {
 	gameHook     GameHook
 	identities   IdentityLookup
 	activityHook ActivityHook
+	rbac         *rbac.Service
 }
 
 func viewer(c *gin.Context) contest.Viewer {
-	claims, ok := middleware.CurrentClaims(c)
-	if !ok {
+	access, ok := middleware.CurrentAccess(c)
+	if !ok || access == nil {
 		return contest.Viewer{}
 	}
 	return contest.Viewer{
-		UserID:    claims.UserID,
-		CanManage: claims.Role == user.RoleContestAdmin || claims.Role == user.RoleSuperAdmin,
+		UserID:                 access.UserID,
+		CanViewHidden:          access.Has(string(rbac.PermContestViewHidden)),
+		CanCreate:              access.Has(string(rbac.PermContestCreate)),
+		CanUpdate:              access.Has(string(rbac.PermContestUpdate)),
+		CanDelete:              access.Has(string(rbac.PermContestDelete)),
+		CanReadParticipants:    access.Has(string(rbac.PermContestParticipantRead)),
+		CanManageAnnouncements: access.Has(string(rbac.PermContestAnnouncementManage)),
 	}
 }
 

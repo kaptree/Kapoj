@@ -99,7 +99,7 @@ func (s *Service) SettleContest(ctx context.Context, contestID int64) (bool, err
 			return nil
 		}
 
-		ranklist, err := s.contests.Ranklist(ctx, contest.Viewer{CanManage: true}, contestID)
+		ranklist, err := s.contests.Ranklist(ctx, contest.Viewer{CanViewHidden: true}, contestID)
 		if err != nil {
 			return fmt.Errorf("load ranklist: %w", err)
 		}

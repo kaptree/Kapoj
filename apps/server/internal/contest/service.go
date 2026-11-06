@@ -14,8 +14,20 @@ import (
 )
 
 type Viewer struct {
-	UserID    int64
-	CanManage bool
+	UserID                 int64
+	CanViewHidden          bool
+	CanCreate              bool
+	CanUpdate              bool
+	CanDelete              bool
+	CanReadParticipants    bool
+	CanManageAnnouncements bool
+}
+
+// CanManageAny 报告当前 Viewer 是否拥有任一管理能力。该值仅用于响应/DTO 派生
+// （如 Detail.CanManage），授权判断必须使用上述具体字段。
+func (v Viewer) CanManageAny() bool {
+	return v.CanCreate || v.CanUpdate || v.CanDelete ||
+		v.CanReadParticipants || v.CanManageAnnouncements
 }
 
 type ListQuery struct {
@@ -53,7 +65,7 @@ type Service struct{ repo Repository }
 func NewService(repo Repository) *Service { return &Service{repo: repo} }
 
 func (s *Service) Create(ctx context.Context, v Viewer, in Input) (*Contest, error) {
-	if !v.CanManage {
+	if !v.CanCreate {
 		return nil, httpx.ErrForbidden
 	}
 	in, err := in.Normalize()
@@ -85,7 +97,7 @@ func (s *Service) Create(ctx context.Context, v Viewer, in Input) (*Contest, err
 }
 
 func (s *Service) Update(ctx context.Context, v Viewer, id int64, in Input) (*Contest, error) {
-	if !v.CanManage {
+	if !v.CanUpdate {
 		return nil, httpx.ErrForbidden
 	}
 	existing, err := s.repo.FindByID(ctx, id)
@@ -152,7 +164,7 @@ func (s *Service) Detail(ctx context.Context, v Viewer, id int64) (*Detail, erro
 		return nil, err
 	}
 	problemCount := int64(len(rows))
-	if !v.CanManage && now.Before(c.StartTime) {
+	if !v.CanViewHidden && now.Before(c.StartTime) {
 		rows = nil
 	}
 	problems := make([]ProblemItem, len(rows))
@@ -172,7 +184,7 @@ func (s *Service) Detail(ctx context.Context, v Viewer, id int64) (*Detail, erro
 	}
 	return &Detail{
 		ListItem: toListItem(*c, problemCount, participants, registered, now),
-		Problems: problems, Registered: registered, CanManage: v.CanManage, ServerTime: now,
+		Problems: problems, Registered: registered, CanManage: v.CanManageAny(), ServerTime: now,
 	}, nil
 }
 
@@ -186,7 +198,7 @@ func (s *Service) List(ctx context.Context, v Viewer, q ListQuery, page, size in
 	now := time.Now()
 	filter := ListFilter{
 		Keyword: q.Keyword, Mode: q.Mode, Status: q.Status,
-		IncludeHidden: q.IncludeHidden && v.CanManage, Now: now, ViewerID: v.UserID,
+		IncludeHidden: q.IncludeHidden && v.CanViewHidden, Now: now, ViewerID: v.UserID,
 	}
 	if q.Mine {
 		if v.UserID == 0 {
@@ -206,14 +218,14 @@ func (s *Service) List(ctx context.Context, v Viewer, q ListQuery, page, size in
 }
 
 func (s *Service) Delete(ctx context.Context, v Viewer, id int64) error {
-	if !v.CanManage {
+	if !v.CanDelete {
 		return httpx.ErrForbidden
 	}
 	return mapRepoErr(s.repo.Delete(ctx, id))
 }
 
 func (s *Service) Clone(ctx context.Context, v Viewer, id int64, in Input) (*Contest, error) {
-	if !v.CanManage {
+	if !v.CanCreate {
 		return nil, httpx.ErrForbidden
 	}
 	original, err := s.repo.FindByID(ctx, id)
@@ -292,7 +304,7 @@ func (s *Service) Register(ctx context.Context, userID, id int64, password, invi
 }
 
 func (s *Service) Participants(ctx context.Context, v Viewer, id int64) ([]ParticipantItem, error) {
-	if !v.CanManage {
+	if !v.CanReadParticipants {
 		return nil, httpx.ErrForbidden
 	}
 	if _, err := s.repo.FindByID(ctx, id); err != nil {
@@ -325,7 +337,7 @@ func (s *Service) Announcements(ctx context.Context, v Viewer, id int64) ([]Anno
 }
 
 func (s *Service) CreateAnnouncement(ctx context.Context, v Viewer, id int64, title, content string) (*AnnouncementItem, error) {
-	if !v.CanManage {
+	if !v.CanManageAnnouncements {
 		return nil, httpx.ErrForbidden
 	}
 	if _, err := s.repo.FindByID(ctx, id); err != nil {
@@ -344,7 +356,7 @@ func (s *Service) CreateAnnouncement(ctx context.Context, v Viewer, id int64, ti
 }
 
 func (s *Service) UpdateAnnouncement(ctx context.Context, v Viewer, id, aid int64, title, content string) error {
-	if !v.CanManage {
+	if !v.CanManageAnnouncements {
 		return httpx.ErrForbidden
 	}
 	title, err := normalizeAnnouncement(title, content)
@@ -355,7 +367,7 @@ func (s *Service) UpdateAnnouncement(ctx context.Context, v Viewer, id, aid int6
 }
 
 func (s *Service) DeleteAnnouncement(ctx context.Context, v Viewer, id, aid int64) error {
-	if !v.CanManage {
+	if !v.CanManageAnnouncements {
 		return httpx.ErrForbidden
 	}
 	return mapAnnouncementErr(s.repo.DeleteAnnouncement(ctx, id, aid))
@@ -366,7 +378,7 @@ func (s *Service) findAccessible(ctx context.Context, v Viewer, id int64) (*Cont
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	if c.IsPublic || v.CanManage {
+	if c.IsPublic || v.CanViewHidden {
 		return c, nil
 	}
 	if v.UserID != 0 {

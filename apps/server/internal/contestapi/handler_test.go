@@ -28,6 +28,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
+	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 	"github.com/kaptree/kapoj/apps/server/internal/router"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
@@ -52,6 +53,7 @@ type fx struct {
 	t          *testing.T
 	h          http.Handler
 	db         *gorm.DB
+	rbac       *rbac.Service
 	tokens     map[string]string
 	ids        map[string]int64
 	gameEvents *fakeGamePublisher
@@ -66,6 +68,7 @@ func newFx(t *testing.T) *fx {
 func newFxWithPublisher(t *testing.T, publisher *fakeGamePublisher) *fx {
 	t.Helper()
 	g := testutil.PG(t)
+	rbacSvc := testutil.SeedRBAC(t, g)
 	mr := miniredis.RunT(t)
 	store, err := storage.NewLocal(t.TempDir())
 	require.NoError(t, err)
@@ -77,9 +80,10 @@ func newFxWithPublisher(t *testing.T, publisher *fakeGamePublisher) *fx {
 		},
 		Enqueuer: noopQueue{},
 		Game:     gamification.NewService(gamification.NewRepository(g), publisher),
+		RBAC:     rbacSvc,
 	})
 	return &fx{
-		t: t, h: h, db: g, tokens: map[string]string{}, ids: map[string]int64{},
+		t: t, h: h, db: g, rbac: rbacSvc, tokens: map[string]string{}, ids: map[string]int64{},
 		gameEvents: publisher,
 	}
 }
@@ -101,14 +105,10 @@ func (f *fx) do(method, path, token string, body any) (*httptest.ResponseRecorde
 	return w, resp
 }
 
-func (f *fx) token(role string) string {
+// registerUser 创建携带指定 legacy role 的用户并登录，返回 token 与 user id。
+// legacy role 在登录前写入，使 JWT 携带旧 role；授权不再依赖 JWT role。
+func (f *fx) registerUser(role string) (string, int64) {
 	f.t.Helper()
-	if role == "guest" {
-		return ""
-	}
-	if tok, ok := f.tokens[role]; ok {
-		return tok
-	}
 	f.nextN++
 	name := fmt.Sprintf("%s%d", strings.ReplaceAll(role, "_", ""), f.nextN)
 	w, _ := f.do(http.MethodPost, "/api/auth/register", "", map[string]string{
@@ -121,9 +121,53 @@ func (f *fx) token(role string) string {
 	})
 	require.Equal(f.t, http.StatusOK, w.Code)
 	data := resp["data"].(map[string]any)
-	tok := data["accessToken"].(string)
+	return data["accessToken"].(string), int64(data["user"].(map[string]any)["id"].(float64))
+}
+
+// token 返回携带给定 legacy role 及其映射 RBAC 角色的用户 token
+// （super_admin→super_admin、problem_admin→content_admin、
+// contest_admin→contest_admin、user→无管理角色）。
+func (f *fx) token(role string) string {
+	f.t.Helper()
+	if role == "guest" {
+		return ""
+	}
+	if tok, ok := f.tokens[role]; ok {
+		return tok
+	}
+	tok, userID := f.registerUser(role)
+	testutil.AssignLegacyRole(f.t, f.db, userID, user.Role(role))
 	f.tokens[role] = tok
-	f.ids[role] = int64(data["user"].(map[string]any)["id"].(float64))
+	f.ids[role] = userID
+	return tok
+}
+
+// legacyToken 返回携带给定 legacy role 但无 RBAC 角色分配的用户 token，
+// 用于证明旧 role 不再授权管理操作。
+func (f *fx) legacyToken(role string) string {
+	f.t.Helper()
+	tok, _ := f.registerUser(role)
+	return tok
+}
+
+// createRole 创建持有给定权限码的自定义角色。
+func (f *fx) createRole(code string, perms ...rbac.PermissionCode) {
+	f.t.Helper()
+	codes := make([]string, len(perms))
+	for i, p := range perms {
+		codes[i] = string(p)
+	}
+	_, err := f.rbac.CreateRole(context.Background(), rbac.AuditMeta{ActorID: 1}, rbac.RoleInput{
+		Code: code, Name: code, PermissionCodes: codes,
+	})
+	require.NoError(f.t, err)
+}
+
+// userWithRole 返回被分配给定自定义角色的普通用户 token。
+func (f *fx) userWithRole(code string) string {
+	f.t.Helper()
+	tok, userID := f.registerUser("user")
+	testutil.AssignRole(f.t, f.db, userID, code)
 	return tok
 }
 
@@ -584,6 +628,8 @@ func newContestActivityHandler(t *testing.T, hook contestapi.ActivityHook) (
 		        (?, 'hookuser', 'hookuser', 'hookuser@example.com', 'x', 'user', now(), now())`,
 		adminID, userID,
 	).Error)
+	rbacSvc := testutil.SeedRBAC(t, g)
+	testutil.AssignLegacyRole(t, g, adminID, user.RoleContestAdmin)
 
 	issuer := auth.NewTokenIssuer(strings.Repeat("s", 32), 15*time.Minute)
 	var err error
@@ -607,7 +653,7 @@ func newContestActivityHandler(t *testing.T, hook contestapi.ActivityHook) (
 	engine := gin.New()
 	api := engine.Group("/api", middleware.Authenticate(issuer))
 	contestapi.RegisterRoutes(api, contest.NewService(contest.NewGormRepository(g)),
-		contestapi.Options{ActivityHook: hook})
+		contestapi.Options{ActivityHook: hook, RBAC: rbacSvc})
 	return engine, adminToken, userToken, adminID, userID, p1, p2
 }
 
@@ -680,4 +726,145 @@ func TestContestActivityHookFailureDoesNotFailRegisterOrCreate(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	require.Len(t, hook.createdContestIDs, 2, "失败后仍尝试记录共享项")
 	require.Len(t, hook.joinContestIDs, 1, "失败后仍尝试记录参赛活跃度")
+}
+
+func TestContestRoutesRequirePermissions(t *testing.T) {
+	f := newFx(t)
+	p1, p2 := f.problem("sum"), f.problem("product")
+	b := body(p1.ID, p2.ID)
+
+	legacy := f.legacyToken("contest_admin")
+
+	// legacy contest_admin token 但无 RBAC 角色 → create 403。
+	w, _ := f.do(http.MethodPost, "/api/contests", legacy, b)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+
+	// contest_admin 角色 → create 201。
+	w, resp := f.do(http.MethodPost, "/api/contests", f.token("contest_admin"), b)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	id := idOf(resp)
+
+	// legacy token：update/delete/participants/announcement 403。
+	w, _ = f.do(http.MethodPut, fmt.Sprintf("/api/contests/%d", id), legacy, b)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	w, _ = f.do(http.MethodDelete, fmt.Sprintf("/api/contests/%d", id), legacy, nil)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	w, _ = f.do(http.MethodGet, fmt.Sprintf("/api/contests/%d/participants", id), legacy, nil)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	w, _ = f.do(http.MethodPost, fmt.Sprintf("/api/contests/%d/announcements", id), legacy,
+		map[string]any{"title": "t", "contentMd": "c"})
+	assert.Equal(t, http.StatusForbidden, w.Code)
+
+	// view_hidden-only → 可读隐藏比赛，但不能 create/update/delete。
+	f.createRole("view_hidden_only", rbac.PermContestViewHidden)
+	viewHidden := f.userWithRole("view_hidden_only")
+
+	hidden := body(p1.ID, p2.ID)
+	hidden["title"] = "Hidden"
+	hidden["isPublic"] = false
+	_, resp = f.do(http.MethodPost, "/api/contests", f.token("contest_admin"), hidden)
+	hiddenID := idOf(resp)
+
+	w, _ = f.do(http.MethodGet, fmt.Sprintf("/api/contests/%d", hiddenID), viewHidden, nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+	w, _ = f.do(http.MethodPost, "/api/contests", viewHidden, body(p1.ID, p2.ID))
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	w, _ = f.do(http.MethodPut, fmt.Sprintf("/api/contests/%d", hiddenID), viewHidden, hidden)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	w, _ = f.do(http.MethodDelete, fmt.Sprintf("/api/contests/%d", hiddenID), viewHidden, nil)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+func TestContestGranularPermissions(t *testing.T) {
+	f := newFx(t)
+	p1, p2 := f.problem("sum"), f.problem("product")
+	b := body(p1.ID, p2.ID)
+
+	f.createRole("update_only", rbac.PermContestUpdate)
+	f.createRole("participant_read", rbac.PermContestParticipantRead)
+	f.createRole("announcement_manage", rbac.PermContestAnnouncementManage)
+	f.createRole("create_only", rbac.PermContestCreate)
+
+	updateOnly := f.userWithRole("update_only")
+	participantRead := f.userWithRole("participant_read")
+	announcementManage := f.userWithRole("announcement_manage")
+	createOnly := f.userWithRole("create_only")
+
+	// 用 contest_admin 建一个比赛作为操作对象。
+	_, resp := f.do(http.MethodPost, "/api/contests", f.token("contest_admin"), b)
+	id := idOf(resp)
+
+	// 只有 contest.update：可更新，不能 create/delete/participants/announcement。
+	w, _ := f.do(http.MethodPut, fmt.Sprintf("/api/contests/%d", id), updateOnly, b)
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	w, _ = f.do(http.MethodPost, "/api/contests", updateOnly, b)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	w, _ = f.do(http.MethodDelete, fmt.Sprintf("/api/contests/%d", id), updateOnly, nil)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	w, _ = f.do(http.MethodGet, fmt.Sprintf("/api/contests/%d/participants", id), updateOnly, nil)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	w, _ = f.do(http.MethodPost, fmt.Sprintf("/api/contests/%d/announcements", id), updateOnly,
+		map[string]any{"title": "t", "contentMd": "c"})
+	assert.Equal(t, http.StatusForbidden, w.Code)
+
+	// 只有 contest.participant.read：可看报名，不能更新。
+	w, _ = f.do(http.MethodGet, fmt.Sprintf("/api/contests/%d/participants", id), participantRead, nil)
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	w, _ = f.do(http.MethodPut, fmt.Sprintf("/api/contests/%d", id), participantRead, b)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+
+	// 只有 contest.announcement.manage：可管理公告，不能更新比赛。
+	w, respAnn := f.do(http.MethodPost, fmt.Sprintf("/api/contests/%d/announcements", id), announcementManage,
+		map[string]any{"title": "Notice", "contentMd": "body"})
+	assert.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	aid := idOf(respAnn)
+	w, _ = f.do(http.MethodPut, fmt.Sprintf("/api/contests/%d", id), announcementManage, b)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	w, _ = f.do(http.MethodDelete, fmt.Sprintf("/api/contests/%d/announcements/%d", id, aid), announcementManage, nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	// 只有 contest.create：可创建/克隆，不能更新。
+	w, respCreated := f.do(http.MethodPost, "/api/contests", createOnly, b)
+	assert.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	createdID := idOf(respCreated)
+	w, _ = f.do(http.MethodPost, fmt.Sprintf("/api/contests/%d/clone", id), createOnly, map[string]any{})
+	assert.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	w, _ = f.do(http.MethodPut, fmt.Sprintf("/api/contests/%d", createdID), createOnly, b)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+func TestContestWritesAudit(t *testing.T) {
+	f := newFx(t)
+	p1, p2 := f.problem("sum"), f.problem("product")
+	admin := f.token("contest_admin")
+	b := body(p1.ID, p2.ID)
+
+	auditCount := func(action string) int64 {
+		var n int64
+		require.NoError(f.t, f.db.Table("admin_audit_logs").Where("action = ?", action).Count(&n).Error)
+		return n
+	}
+
+	// create → contest.create 审计。
+	w, resp := f.do(http.MethodPost, "/api/contests", admin, b)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	id := idOf(resp)
+	assert.Equal(t, int64(1), auditCount("contest.create"))
+
+	// update → contest.update 审计。
+	b["title"] = "Audit renamed"
+	w, _ = f.do(http.MethodPut, fmt.Sprintf("/api/contests/%d", id), admin, b)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, int64(1), auditCount("contest.update"))
+
+	// announcement → contest.announcement.manage 审计。
+	w, _ = f.do(http.MethodPost, fmt.Sprintf("/api/contests/%d/announcements", id), admin,
+		map[string]any{"title": "Notice", "contentMd": "body"})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	assert.Equal(t, int64(1), auditCount("contest.announcement.manage"))
+
+	// delete → contest.delete 审计。
+	w, _ = f.do(http.MethodDelete, fmt.Sprintf("/api/contests/%d", id), admin, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, int64(1), auditCount("contest.delete"))
 }

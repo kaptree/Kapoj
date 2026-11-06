@@ -114,7 +114,7 @@ func New(d Deps) *gin.Engine {
 	}
 	contestRepo := contest.NewGormRepository(d.DB)
 	contestSvc := contest.NewService(contestRepo)
-	contestOpts := contestapi.Options{}
+	contestOpts := contestapi.Options{RBAC: d.RBAC}
 	if d.Game != nil {
 		contestOpts.GameHook = d.Game
 		contestOpts.IdentityLookup = d.Game

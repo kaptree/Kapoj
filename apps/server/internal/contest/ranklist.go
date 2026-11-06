@@ -65,7 +65,7 @@ func (s *Service) Ranklist(ctx context.Context, v Viewer, id int64) (*Ranklist, 
 	}
 	now := time.Now()
 	status := StatusAt(c.StartTime, c.EndTime, now)
-	if status == StatusUpcoming && !v.CanManage {
+	if status == StatusUpcoming && !v.CanViewHidden {
 		return &Ranklist{
 			ContestID: id, Mode: c.Mode, Status: status, GeneratedAt: now,
 			Problems: []RankProblem{}, Rows: []RankRow{}, SelfOnly: false,
@@ -133,7 +133,7 @@ func (s *Service) Ranklist(ctx context.Context, v Viewer, id int64) (*Ranklist, 
 	sortRankRows(rows, c.Mode)
 	assignRanks(rows, c.Mode)
 
-	selfOnly := c.Mode == ModeOI && status == StatusRunning && !v.CanManage
+	selfOnly := c.Mode == ModeOI && status == StatusRunning && !v.CanViewHidden
 	if selfOnly {
 		filtered := rows[:0]
 		for _, row := range rows {
