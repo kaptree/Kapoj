@@ -5,6 +5,7 @@ import { useRoute } from 'vue-router'
 import {
   CONTEST_MANAGE_PERMISSIONS,
   GAMIFICATION_MANAGE_PERMISSIONS,
+  PERM,
   PROBLEM_MANAGE_PERMISSIONS,
 } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
@@ -40,6 +41,13 @@ const gamificationItem: AdminNavItem = {
   icon: 'pi pi-shield',
 }
 
+const usersItem: AdminNavItem = {
+  key: 'users',
+  path: '/admin/users',
+  label: '用户管理',
+  icon: 'pi pi-users',
+}
+
 const groups = computed<AdminNavGroup[]>(() => {
   const contentItems: AdminNavItem[] = []
   if (auth.canAny(PROBLEM_MANAGE_PERMISSIONS)) {
@@ -55,6 +63,9 @@ const groups = computed<AdminNavGroup[]>(() => {
   }
 
   const items: AdminNavGroup[] = [{ key: 'overview', label: '概览', items: [overviewItem] }]
+  if (auth.can(PERM.user.read)) {
+    items.push({ key: 'users', label: '用户与权限', items: [usersItem] })
+  }
   if (auth.canAny(GAMIFICATION_MANAGE_PERMISSIONS)) {
     items.push({ key: 'gamification', label: '游戏化', items: [gamificationItem] })
   }

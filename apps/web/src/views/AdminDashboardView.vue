@@ -31,6 +31,7 @@ const canViewAudit = computed(() => auth.can(PERM.admin.audit.view))
 const canGamification = computed(() => auth.canAny(GAMIFICATION_MANAGE_PERMISSIONS))
 const canProblems = computed(() => auth.canAny(PROBLEM_MANAGE_PERMISSIONS))
 const canContests = computed(() => auth.canAny(CONTEST_MANAGE_PERMISSIONS))
+const canUsers = computed(() => auth.can(PERM.user.read))
 
 const stats = ref<AdminStats | null>(null)
 const loading = ref(false)
@@ -60,6 +61,13 @@ const cards = computed<StatCard[]>(() => {
 
 const shortcuts = computed(() =>
   [
+    {
+      key: 'users',
+      path: '/admin/users',
+      label: '用户管理',
+      icon: 'pi pi-users',
+      show: canUsers.value,
+    },
     {
       key: 'gamification',
       path: '/admin/gamification',

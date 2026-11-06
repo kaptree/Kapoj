@@ -2,8 +2,6 @@ import { http } from './client'
 import type {
   AchievementInput,
   AchievementItem,
-  AdminCoinAdjustInput,
-  AdminCoinAdjustResult,
   BadgeInput,
   BadgeItem,
   CoinTransactionPage,
@@ -92,6 +90,3 @@ export const listCoinTransactions = (q: { page: number; pageSize: number }) =>
   http.get<CoinTransactionPage>('/coins/transactions', {
     params: { page: q.page, page_size: q.pageSize },
   })
-
-export const adminAdjustCoins = (userId: number | string, input: AdminCoinAdjustInput) =>
-  http.post<AdminCoinAdjustResult>(`/admin/users/${userId}/coins`, input)

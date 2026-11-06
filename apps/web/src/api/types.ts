@@ -71,10 +71,17 @@ export type ActivityLeaderboardRow = Schemas['ActivityLeaderboardRow']
 export type SharingLeaderboardRow = Schemas['SharingLeaderboardRow']
 export type ActivitySummary = Schemas['ActivitySummary']
 export type ActivitySignInResult = Schemas['ActivitySignInResult']
+export type Status = Schemas['Status']
 export type AdminCoinAdjustInput = Schemas['AdminCoinAdjustInput']
 export type AdminCoinAdjustResult = Schemas['AdminCoinAdjustResponse']['data']
 export type AdminStats = Schemas['AdminStats']
 export type AdminAuditItem = Schemas['AdminAuditItem']
+export type AdminUserItem = Schemas['AdminUserItem']
+export type AdminUserDetail = Schemas['AdminUserDetail']
+export type AdminUserUpdateInput = Schemas['AdminUserUpdateInput']
+export type AdminUserRolesInput = Schemas['AdminUserRolesInput']
+export type AdminUserBanInput = Schemas['AdminUserBanInput']
+export type AdminRoleItem = Schemas['AdminRoleItem']
 
 export interface Page<T> {
   total: number

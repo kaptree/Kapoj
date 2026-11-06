@@ -24,6 +24,7 @@ vi.mock('@/api/admin', () => ({
 const routes = [
   { path: '/admin', component: { template: '<div />' } },
   { path: '/admin/gamification', component: { template: '<div />' } },
+  { path: '/admin/users', component: { template: '<div />' } },
   { path: '/problems', component: { template: '<div />' } },
   { path: '/contests', component: { template: '<div />' } },
 ]
@@ -127,5 +128,16 @@ describe('AdminDashboardView', () => {
     expect(wrapper.text()).toContain('用户')
     expect(wrapper.text()).not.toContain('最近审计')
     expect(wrapper.text()).not.toContain('封禁用户 alice')
+  })
+
+  it('shows the users quick link only with user.read', async () => {
+    auth.can.mockImplementation((code) => code === PERM.user.read)
+    auth.canAny.mockReturnValue(false)
+    const wrapper = await mountPage()
+
+    expect(getAdminStats).not.toHaveBeenCalled()
+    expect(wrapper.find('a[href="/admin/users"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('用户管理')
+    expect(wrapper.text()).not.toContain('游戏化管理')
   })
 })

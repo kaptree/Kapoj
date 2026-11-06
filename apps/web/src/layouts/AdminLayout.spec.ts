@@ -9,6 +9,7 @@ import AdminLayout from './AdminLayout.vue'
 const auth = vi.hoisted(() => ({
   isLoggedIn: true,
   user: { id: 1, username: 'admin', nickname: '管理员', avatarUrl: '', coins: 0 },
+  can: vi.fn(() => false),
   canAny: vi.fn(() => false),
 }))
 
@@ -43,6 +44,8 @@ async function mountLayout() {
 }
 
 beforeEach(() => {
+  auth.can.mockReset()
+  auth.can.mockReturnValue(false)
   auth.canAny.mockReset()
   auth.canAny.mockReturnValue(false)
 })

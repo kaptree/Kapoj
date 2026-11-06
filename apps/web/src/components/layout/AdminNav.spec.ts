@@ -5,11 +5,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   CONTEST_MANAGE_PERMISSIONS,
   GAMIFICATION_MANAGE_PERMISSIONS,
+  PERM,
   PROBLEM_MANAGE_PERMISSIONS,
 } from '@/permissions'
 import AdminNav from './AdminNav.vue'
 
 const auth = vi.hoisted(() => ({
+  can: vi.fn<(code: string) => boolean>(() => false),
   canAny: vi.fn<(codes: readonly string[]) => boolean>(() => false),
 }))
 
@@ -21,6 +23,7 @@ const routes = [
   { path: '/', component: { template: '<div />' } },
   { path: '/admin', component: { template: '<div />' } },
   { path: '/admin/gamification', component: { template: '<div />' } },
+  { path: '/admin/users', component: { template: '<div />' } },
   { path: '/problems', component: { template: '<div />' } },
   { path: '/contests', component: { template: '<div />' } },
 ]
@@ -33,6 +36,8 @@ async function mountNav(path = '/admin') {
 }
 
 beforeEach(() => {
+  auth.can.mockReset()
+  auth.can.mockReturnValue(false)
   auth.canAny.mockReset()
   auth.canAny.mockReturnValue(false)
 })
@@ -56,6 +61,17 @@ describe('AdminNav', () => {
     expect(auth.canAny).toHaveBeenCalledWith(GAMIFICATION_MANAGE_PERMISSIONS)
     expect(wrapper.find('a[href="/admin/gamification"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('游戏化管理')
+  })
+
+  it('shows the users entry only with user.read', async () => {
+    let wrapper = await mountNav()
+    expect(wrapper.text()).not.toContain('用户管理')
+
+    auth.can.mockImplementation((code) => code === PERM.user.read)
+    wrapper = await mountNav()
+    expect(auth.can).toHaveBeenCalledWith(PERM.user.read)
+    expect(wrapper.find('a[href="/admin/users"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('用户管理')
   })
 
   it('shows the content links by problem/contest permission', async () => {
