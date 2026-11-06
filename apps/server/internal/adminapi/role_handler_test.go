@@ -296,6 +296,53 @@ func TestAdminCreateUpdateDeleteRole(t *testing.T) {
 	}, actions)
 }
 
+func TestAdminUpdateRoleCodeAndNameContract(t *testing.T) {
+	f := newFixture(t)
+	_, token := f.user(t, "super_update_contract", rbac.RoleCodeSuperAdmin)
+
+	role, err := f.svc.CreateRole(context.Background(), rbac.AuditMeta{ActorID: 1}, rbac.RoleInput{
+		Code: "contract_role", Name: "契约角色", Description: "初始描述",
+		PermissionCodes: []string{"role.read"},
+	})
+	require.NoError(t, err)
+	path := fmt.Sprintf("/api/admin/roles/%d", role.ID)
+
+	// 不传 code：允许。
+	w, resp := f.do(http.MethodPut, path, token,
+		`{"name":"不传 code","description":"不传 code 描述"}`)
+	requireStatus(t, w, resp, http.StatusOK)
+	assert.Equal(t, "不传 code", dataMap(t, resp)["name"])
+	assert.Equal(t, "contract_role", dataMap(t, resp)["code"])
+
+	// 传相同 code：允许。
+	w, resp = f.do(http.MethodPut, path, token,
+		fmt.Sprintf(`{"code":%q,"name":"相同 code","description":"相同 code 描述"}`, role.Code))
+	requireStatus(t, w, resp, http.StatusOK)
+	assert.Equal(t, "相同 code", dataMap(t, resp)["name"])
+
+	// 传不同 code：40001，且不写入任何更新。
+	w, resp = f.do(http.MethodPut, path, token,
+		`{"code":"hacked_role","name":"篡改 code","description":"不应生效"}`)
+	requireStatus(t, w, resp, http.StatusBadRequest)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	got, err := f.svc.GetRole(context.Background(), role.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "contract_role", got.Code)
+	assert.Equal(t, "相同 code", got.Name, "被拒绝的更新不得改名")
+	assert.Equal(t, "相同 code 描述", got.Description, "被拒绝的更新不得改描述")
+
+	// name 为必填：缺失时 40001。
+	w, resp = f.do(http.MethodPut, path, token, `{"description":"缺少名称"}`)
+	requireStatus(t, w, resp, http.StatusBadRequest)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	got, err = f.svc.GetRole(context.Background(), role.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "相同 code", got.Name)
+	assert.Equal(t, "相同 code 描述", got.Description)
+}
+
 func TestAdminSystemRoleProtection(t *testing.T) {
 	f := newFixture(t)
 	_, token := f.user(t, "super_protect", rbac.RoleCodeSuperAdmin)
@@ -319,9 +366,19 @@ func TestAdminSystemRoleProtection(t *testing.T) {
 	assert.Equal(t, "系统角色说明已更新", dataMap(t, resp)["description"])
 
 	w, resp = f.do(http.MethodPut, fmt.Sprintf("/api/admin/roles/%d", content.ID), token,
-		fmt.Sprintf(`{"code":"hacked_role","name":%q,"description":"再次更新"}`, content.Name))
+		fmt.Sprintf(`{"code":%q,"name":%q,"description":"同 code 更新"}`, content.Code, content.Name))
 	requireStatus(t, w, resp, http.StatusOK)
-	assert.Equal(t, rbac.RoleCodeContentAdmin, dataMap(t, resp)["code"], "code 不属于更新字段")
+	assert.Equal(t, "同 code 更新", dataMap(t, resp)["description"])
+
+	w, resp = f.do(http.MethodPut, fmt.Sprintf("/api/admin/roles/%d", content.ID), token,
+		fmt.Sprintf(`{"code":"hacked_role","name":%q,"description":"不应生效"}`, content.Name))
+	requireStatus(t, w, resp, http.StatusBadRequest)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	got, err := f.svc.GetRole(context.Background(), content.ID)
+	require.NoError(t, err)
+	assert.Equal(t, rbac.RoleCodeContentAdmin, got.Code, "角色 code 不可修改")
+	assert.Equal(t, "同 code 更新", got.Description, "被拒绝的更新不得生效")
 
 	w, resp = f.do(http.MethodPut, fmt.Sprintf("/api/admin/roles/%d/permissions", super.ID), token,
 		`{"permissionCodes":["role.read"]}`)

@@ -28,6 +28,15 @@ type handler struct {
 	svc *rbac.Service
 }
 
+// roleUpdateRequest 是 PUT /admin/roles/:id 的请求体。Code 为可选字段：
+// 传 null 或不传表示不修改；传值时必须与当前 code 一致，否则返回 40001。
+// code 永远不会被写入数据库。
+type roleUpdateRequest struct {
+	Code        *string `json:"code"`
+	Name        string  `json:"name"`
+	Description string  `json:"description"`
+}
+
 func requirePermission(s *rbac.Service, code string) []gin.HandlerFunc {
 	return []gin.HandlerFunc{
 		middleware.RequireAuth(),
@@ -66,11 +75,23 @@ func (h *handler) updateRole(c *gin.Context) {
 	if !ok {
 		return
 	}
-	in, ok := httpx.BindJSON[rbac.RoleUpdateInput](c)
+	in, ok := httpx.BindJSON[roleUpdateRequest](c)
 	if !ok {
 		return
 	}
-	item, err := h.svc.UpdateRole(c.Request.Context(), auditActor(c), id, in)
+	current, err := h.svc.GetRole(c.Request.Context(), id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	if in.Code != nil && *in.Code != current.Code {
+		httpx.Fail(c, httpx.ErrValidation("角色 code 不可修改"))
+		return
+	}
+	item, err := h.svc.UpdateRole(c.Request.Context(), auditActor(c), id, rbac.RoleUpdateInput{
+		Name:        in.Name,
+		Description: in.Description,
+	})
 	if err != nil {
 		httpx.Fail(c, err)
 		return

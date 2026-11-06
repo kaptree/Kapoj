@@ -63,8 +63,8 @@ type RoleInput struct {
 	PermissionCodes []string `json:"permissionCodes"`
 }
 
-// RoleUpdateInput 是编辑角色名称/描述的输入。名称为空表示保持原名；
-// 角色 code 不属于可更新字段，创建后不可修改。
+// RoleUpdateInput 是编辑角色名称/描述的输入。名称必填；角色 code 不属于
+// 可更新字段，创建后不可修改。
 type RoleUpdateInput struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
@@ -188,14 +188,12 @@ func (s *Service) CreateRole(ctx context.Context, actor AuditMeta, in RoleInput)
 	return s.GetRole(ctx, roleID)
 }
 
-// UpdateRole 更新角色名称/描述。系统角色名称不可改，描述可改；自定义角色
-// 名称/描述均可改。名称为空表示保持原值。
+// UpdateRole 更新角色名称/描述。名称必填；系统角色名称不可改，描述可改；
+// 自定义角色名称/描述均可改。角色 code 不属于更新输入，创建后不可修改。
 func (s *Service) UpdateRole(ctx context.Context, actor AuditMeta, id int64, in RoleUpdateInput) (*RoleItem, error) {
-	rawName := strings.TrimSpace(in.Name)
-	if rawName != "" {
-		if _, err := normalizeRoleName(rawName); err != nil {
-			return nil, err
-		}
+	name, err := normalizeRoleName(in.Name)
+	if err != nil {
+		return nil, err
 	}
 	description, err := normalizeRoleDescription(in.Description)
 	if err != nil {
@@ -214,12 +212,8 @@ func (s *Service) UpdateRole(ctx context.Context, actor AuditMeta, id int64, in 
 			return fmt.Errorf("rbac: load role %d: %w", id, err)
 		}
 
-		name := role.Name
-		if rawName != "" {
-			if role.IsSystem && rawName != role.Name {
-				return invalidRole("系统角色名称不可修改")
-			}
-			name = rawName
+		if role.IsSystem && name != role.Name {
+			return invalidRole("系统角色名称不可修改")
 		}
 
 		if err := tx.Model(&Role{}).Where("id = ?", role.ID).

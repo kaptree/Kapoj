@@ -230,6 +230,10 @@ func TestSystemRoleProtection(t *testing.T) {
 		Code: "custom_rename", Name: "自定义角色", PermissionCodes: []string{"user.read"},
 	})
 	require.NoError(t, err)
+
+	_, err = svc.UpdateRole(ctx, actor, custom.ID, rbac.RoleUpdateInput{Description: "仅描述"})
+	requireAppErrorCode(t, err, 40001)
+
 	renamed, err := svc.UpdateRole(ctx, actor, custom.ID, rbac.RoleUpdateInput{
 		Name: "自定义角色新名", Description: "新描述",
 	})
