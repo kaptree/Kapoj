@@ -233,12 +233,12 @@ func (s *Service) Access(ctx, userID) (*Access, error)
 
 ### 8.3 旧 role 兼容
 
-- JWT 继续带 role（旧前端/旧逻辑可用），但权限判断不再使用 `claims.Role`。
+- JWT 继续带 role（旧前端/旧逻辑可用）。RBAC-C 完成前，未迁移管理接口仍使用 `claims.Role`/legacy role 授权；RBAC-C 后权限判断只认 roles/permissions。
 - `MeDTO` 增加：
   - `roles: [{id, code, name}]`
   - `permissions: string[]`（前端菜单/按钮用；不含 super 的通配）
   - `isSuperAdmin: boolean`
-- `role` 字段保留为 legacy 主角色（展示/兼容）。
+- `role` 字段保留为 legacy 主角色；RBAC-C 前未迁移接口仍用于授权，RBAC-C 后仅展示/兼容。
 - 前端 `hasRole` 逐步替换为 `auth.can(permission)`；路由 meta 增加 `permission`/`anyPermission`。
 
 ## 9. 管理接口
@@ -440,7 +440,7 @@ func (s *Service) Access(ctx, userID) (*Access, error)
 ## 16. 风险与取舍
 
 - **权限即时查询数据库**：管理请求每次 2–3 个 join；管理流量低，可接受；后续可加 permissions_version 缓存。
-- **保留 users.role**：仅展示/兼容，不参与授权；legacy role 与 roles 表可能不一致，文档明确“权限只认 roles 表”。第一阶段结束后管理授权不再使用 RequireRole。
+- **保留 users.role**：RBAC-C 前未迁移接口仍用于授权；RBAC-C 后仅展示/兼容，不参与授权。legacy role 与 roles 表可能不一致，文档明确“权限只认 roles 表”。第一阶段结束后管理授权不再使用 RequireRole。
 - **系统角色权限可改**：除 super_admin 外允许调整，保留灵活性；审计记录。
 - **内容管理页沿用现有页面**：第一阶段不做统一内容页，管理壳用链接；后续可迁移。
 - **审计 best-effort**：内容变更审计失败不阻断业务；敏感 RBAC/用户操作事务内审计。
@@ -460,7 +460,7 @@ func (s *Service) Access(ctx, userID) (*Access, error)
 
 ## 18. Builder check 决议
 
-1. **旧 role/JWT**：`users.role` 与 JWT role 冻结为 legacy/展示；第一阶段移除所有管理授权中的 `RequireRole`，权限只认 `user_roles`。
+1. **旧 role/JWT**：`users.role` 与 JWT role 冻结为 legacy/展示；RBAC-C 完成后移除所有管理授权中的 `RequireRole`；RBAC-A 只提供新权限基础设施，权限只认 `user_roles`。
 2. **测评记录权限**：新增 `submission.view_live_contest`；隐藏题提交使用 `problem.view_hidden`；免报名测试提交使用 `contest.update`。
 3. **特权读取**：隐藏题 `problem.view_hidden`；非公开/开赛前比赛与榜单 `contest.view_hidden`；`includeInactive` 由各域 manage 权限控制；`canManage` 字段由任一相关管理权限派生，具体按钮由前端 `auth.can` 控制。
 4. **内置角色**：按 6 节明确集合；`user_admin` 补 `role.read`，`security_admin` 补 `user.read`，`content_admin` 补 `learning_path.admin.read`，所有管理角色补 `admin.dashboard.view`。
