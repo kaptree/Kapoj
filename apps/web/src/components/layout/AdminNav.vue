@@ -48,6 +48,13 @@ const usersItem: AdminNavItem = {
   icon: 'pi pi-users',
 }
 
+const rolesItem: AdminNavItem = {
+  key: 'roles',
+  path: '/admin/roles',
+  label: '角色权限',
+  icon: 'pi pi-key',
+}
+
 const groups = computed<AdminNavGroup[]>(() => {
   const contentItems: AdminNavItem[] = []
   if (auth.canAny(PROBLEM_MANAGE_PERMISSIONS)) {
@@ -63,8 +70,11 @@ const groups = computed<AdminNavGroup[]>(() => {
   }
 
   const items: AdminNavGroup[] = [{ key: 'overview', label: '概览', items: [overviewItem] }]
-  if (auth.can(PERM.user.read)) {
-    items.push({ key: 'users', label: '用户与权限', items: [usersItem] })
+  const userPermissionItems: AdminNavItem[] = []
+  if (auth.can(PERM.user.read)) userPermissionItems.push(usersItem)
+  if (auth.can(PERM.role.read)) userPermissionItems.push(rolesItem)
+  if (userPermissionItems.length > 0) {
+    items.push({ key: 'users', label: '用户与权限', items: userPermissionItems })
   }
   if (auth.canAny(GAMIFICATION_MANAGE_PERMISSIONS)) {
     items.push({ key: 'gamification', label: '游戏化', items: [gamificationItem] })

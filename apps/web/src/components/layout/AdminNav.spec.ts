@@ -24,6 +24,7 @@ const routes = [
   { path: '/admin', component: { template: '<div />' } },
   { path: '/admin/gamification', component: { template: '<div />' } },
   { path: '/admin/users', component: { template: '<div />' } },
+  { path: '/admin/roles', component: { template: '<div />' } },
   { path: '/problems', component: { template: '<div />' } },
   { path: '/contests', component: { template: '<div />' } },
 ]
@@ -72,6 +73,17 @@ describe('AdminNav', () => {
     expect(auth.can).toHaveBeenCalledWith(PERM.user.read)
     expect(wrapper.find('a[href="/admin/users"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('用户管理')
+  })
+
+  it('shows the roles entry only with role.read', async () => {
+    let wrapper = await mountNav()
+    expect(wrapper.text()).not.toContain('角色权限')
+
+    auth.can.mockImplementation((code) => code === PERM.role.read)
+    wrapper = await mountNav()
+    expect(auth.can).toHaveBeenCalledWith(PERM.role.read)
+    expect(wrapper.find('a[href="/admin/roles"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('角色权限')
   })
 
   it('shows the content links by problem/contest permission', async () => {

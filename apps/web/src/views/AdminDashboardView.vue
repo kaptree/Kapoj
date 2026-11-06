@@ -32,6 +32,7 @@ const canGamification = computed(() => auth.canAny(GAMIFICATION_MANAGE_PERMISSIO
 const canProblems = computed(() => auth.canAny(PROBLEM_MANAGE_PERMISSIONS))
 const canContests = computed(() => auth.canAny(CONTEST_MANAGE_PERMISSIONS))
 const canUsers = computed(() => auth.can(PERM.user.read))
+const canRoles = computed(() => auth.can(PERM.role.read))
 
 const stats = ref<AdminStats | null>(null)
 const loading = ref(false)
@@ -62,13 +63,6 @@ const cards = computed<StatCard[]>(() => {
 const shortcuts = computed(() =>
   [
     {
-      key: 'users',
-      path: '/admin/users',
-      label: '用户管理',
-      icon: 'pi pi-users',
-      show: canUsers.value,
-    },
-    {
       key: 'gamification',
       path: '/admin/gamification',
       label: '游戏化管理',
@@ -88,6 +82,26 @@ const shortcuts = computed(() =>
       label: '比赛管理',
       icon: 'pi pi-trophy',
       show: canContests.value,
+    },
+  ].filter((item) => item.show),
+)
+
+/** Always-visible admin entry points (user/role pages), independent of dashboard access. */
+const managementShortcuts = computed(() =>
+  [
+    {
+      key: 'users',
+      path: '/admin/users',
+      label: '用户管理',
+      icon: 'pi pi-users',
+      show: canUsers.value,
+    },
+    {
+      key: 'roles',
+      path: '/admin/roles',
+      label: '角色权限',
+      icon: 'pi pi-key',
+      show: canRoles.value,
     },
   ].filter((item) => item.show),
 )
@@ -116,6 +130,21 @@ onMounted(() => {
       title="管理后台"
       description="平台运营概览与管理入口。"
     />
+
+    <AppSurface v-if="managementShortcuts.length > 0" padding="lg" class="admin-dashboard__entry">
+      <h2 class="admin-dashboard__section-title">管理快捷入口</h2>
+      <div class="admin-dashboard__shortcuts">
+        <RouterLink
+          v-for="item in managementShortcuts"
+          :key="item.key"
+          :to="item.path"
+          class="admin-dashboard__shortcut"
+        >
+          <i :class="item.icon" aria-hidden="true" />
+          <span>{{ item.label }}</span>
+        </RouterLink>
+      </div>
+    </AppSurface>
 
     <template v-if="canViewDashboard">
       <AppLoadingState v-if="loading" label="正在加载仪表盘" />
@@ -268,6 +297,12 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: var(--kapoj-space-4);
+}
+
+.admin-dashboard__entry {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kapoj-space-3);
 }
 
 .admin-dashboard__welcome-text {

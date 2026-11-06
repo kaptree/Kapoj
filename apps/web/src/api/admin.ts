@@ -2,7 +2,11 @@ import { http } from './client'
 import type {
   AdminCoinAdjustInput,
   AdminCoinAdjustResult,
+  AdminPermissionItem,
+  AdminRoleInput,
   AdminRoleItem,
+  AdminRolePermissionsInput,
+  AdminRoleUpdateInput,
   AdminStats,
   AdminUserBanInput,
   AdminUserDetail,
@@ -60,3 +64,23 @@ export const adjustAdminUserCoins = (id: number | string, input: AdminCoinAdjust
 
 /** Role list used for user role assignment and filtering (role.read). */
 export const listAdminRoles = () => http.get<AdminRoleItem[]>('/admin/roles')
+
+/** Permission directory, grouped and sorted by the server (role.read). */
+export const listAdminPermissions = () => http.get<AdminPermissionItem[]>('/admin/permissions')
+
+/** Create a custom role together with its permission set (role.create). */
+export const createAdminRole = (input: AdminRoleInput) =>
+  http.post<AdminRoleItem>('/admin/roles', input)
+
+/** Update a role's name/description; code is immutable (role.update). */
+export const updateAdminRole = (id: number | string, input: AdminRoleUpdateInput) =>
+  http.put<AdminRoleItem>(`/admin/roles/${id}`, input)
+
+/** Delete a custom role (role.delete). */
+export const deleteAdminRole = (id: number | string) => http.delete<null>(`/admin/roles/${id}`)
+
+/** Replace a role's full permission set (role.permissions.update). */
+export const replaceAdminRolePermissions = (id: number | string, permissionCodes: string[]) =>
+  http.put<AdminRoleItem>(`/admin/roles/${id}/permissions`, {
+    permissionCodes,
+  } satisfies AdminRolePermissionsInput)

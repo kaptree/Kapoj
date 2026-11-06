@@ -81,7 +81,11 @@ export type AdminUserDetail = Schemas['AdminUserDetail']
 export type AdminUserUpdateInput = Schemas['AdminUserUpdateInput']
 export type AdminUserRolesInput = Schemas['AdminUserRolesInput']
 export type AdminUserBanInput = Schemas['AdminUserBanInput']
+export type AdminPermissionItem = Schemas['AdminPermissionItem']
 export type AdminRoleItem = Schemas['AdminRoleItem']
+export type AdminRoleInput = Schemas['AdminRoleInput']
+export type AdminRoleUpdateInput = Schemas['AdminRoleUpdateInput']
+export type AdminRolePermissionsInput = Schemas['AdminRolePermissionsInput']
 
 export interface Page<T> {
   total: number

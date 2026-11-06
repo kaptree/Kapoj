@@ -25,6 +25,7 @@ const routes = [
   { path: '/admin', component: { template: '<div />' } },
   { path: '/admin/gamification', component: { template: '<div />' } },
   { path: '/admin/users', component: { template: '<div />' } },
+  { path: '/admin/roles', component: { template: '<div />' } },
   { path: '/problems', component: { template: '<div />' } },
   { path: '/contests', component: { template: '<div />' } },
 ]
@@ -139,5 +140,30 @@ describe('AdminDashboardView', () => {
     expect(wrapper.find('a[href="/admin/users"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('用户管理')
     expect(wrapper.text()).not.toContain('游戏化管理')
+  })
+
+  it('shows the roles quick link only with role.read', async () => {
+    auth.can.mockImplementation((code) => code === PERM.role.read)
+    auth.canAny.mockReturnValue(false)
+    const wrapper = await mountPage()
+
+    expect(getAdminStats).not.toHaveBeenCalled()
+    expect(wrapper.find('a[href="/admin/roles"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('角色权限')
+    expect(wrapper.text()).not.toContain('用户管理')
+  })
+
+  it('shows the management entry row to dashboard viewers', async () => {
+    auth.can.mockImplementation((code) =>
+      [PERM.admin.dashboard.view, PERM.user.read, PERM.role.read].some((p) => p === code),
+    )
+    auth.canAny.mockReturnValue(false)
+    vi.mocked(getAdminStats).mockResolvedValue(stats())
+    const wrapper = await mountPage()
+
+    expect(getAdminStats).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('管理快捷入口')
+    expect(wrapper.find('a[href="/admin/users"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/admin/roles"]').exists()).toBe(true)
   })
 })
