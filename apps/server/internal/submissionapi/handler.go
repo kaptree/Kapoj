@@ -13,9 +13,9 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
+	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 	"github.com/kaptree/kapoj/apps/server/internal/submission"
 	"github.com/kaptree/kapoj/apps/server/internal/submissionevents"
-	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
 
 // IdentityLookup 批量读取用户公开身份；由 gamification.Service 实现。
@@ -32,20 +32,33 @@ type ActivityHook interface {
 type Options struct {
 	IdentityLookup IdentityLookup
 	ActivityHook   ActivityHook
+	RBAC           *rbac.Service
 }
 
 // RegisterRoutes mounts the submission endpoints. r must already run the
 // authentication middleware.
 func RegisterRoutes(r gin.IRouter, s *submission.Service, streamer submissionevents.Streamer, opts ...Options) {
-	h := &handler{svc: s, streamer: streamer}
+	var o Options
 	if len(opts) > 0 {
-		h.identities = opts[0].IdentityLookup
-		h.activityHook = opts[0].ActivityHook
+		o = opts[0]
 	}
-	r.GET("/submissions", h.list)
+	h := &handler{
+		svc: s, streamer: streamer,
+		identities: o.IdentityLookup, activityHook: o.ActivityHook, rbac: o.RBAC,
+	}
+
+	// resolver 为 nil 时 LoadAccess 为空操作；生产环境 router 始终传入 RBAC
+	// service，权限能力按数据库实时解析。
+	var resolver middleware.PermissionResolver
+	if h.rbac != nil {
+		resolver = h.rbac
+	}
+	load := middleware.LoadAccess(resolver)
+
+	r.GET("/submissions", load, h.list)
 	r.GET("/submissions/stream", h.stream)
-	r.GET("/submissions/:id", h.detail)
-	r.POST("/submissions", middleware.RequireAuth(), h.create)
+	r.GET("/submissions/:id", load, h.detail)
+	r.POST("/submissions", middleware.RequireAuth(), load, h.create)
 }
 
 type handler struct {
@@ -53,6 +66,7 @@ type handler struct {
 	streamer     submissionevents.Streamer
 	identities   IdentityLookup
 	activityHook ActivityHook
+	rbac         *rbac.Service
 }
 
 // decorateItems 在 service 返回后批量填充当前页的公开身份，避免逐行查询。
@@ -93,14 +107,13 @@ func viewer(c *gin.Context) submission.Viewer {
 	if !ok {
 		return submission.Viewer{}
 	}
-	return submission.Viewer{
-		UserID: claims.UserID,
-		CanManage: claims.Role == user.RoleProblemAdmin ||
-			claims.Role == user.RoleContestAdmin ||
-			claims.Role == user.RoleSuperAdmin,
-		CanManageProblems: claims.Role == user.RoleProblemAdmin ||
-			claims.Role == user.RoleSuperAdmin,
+	v := submission.Viewer{UserID: claims.UserID}
+	if access, ok := middleware.CurrentAccess(c); ok && access != nil {
+		v.CanViewHiddenProblems = access.Has(string(rbac.PermProblemViewHidden))
+		v.CanViewLiveContest = access.Has(string(rbac.PermSubmissionViewLiveContest))
+		v.CanManageContest = access.Has(string(rbac.PermContestUpdate))
 	}
+	return v
 }
 
 func optionalInt64(c *gin.Context, name string) (int64, bool, error) {

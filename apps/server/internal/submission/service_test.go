@@ -130,7 +130,7 @@ func TestCreateRejectsHiddenProblem(t *testing.T) {
 	assertCode(t, err, 40400)
 
 	createUser(t, e.db, 1)
-	created, err := e.svc.Create(context.Background(), submission.Viewer{CanManage: true}, 1, codeInput(p.ID, "int main(){}"))
+	created, err := e.svc.Create(context.Background(), submission.Viewer{CanViewHiddenProblems: true}, 1, codeInput(p.ID, "int main(){}"))
 	require.NoError(t, err)
 	assert.Equal(t, submission.StatusPending, created.Status)
 	assert.Len(t, e.queue.ids, 1)
@@ -251,8 +251,35 @@ func TestContestSubmissionRules(t *testing.T) {
 	createUser(t, e.db, 9)
 	manager := in
 	manager.ProblemID = p.ID
-	_, err = e.svc.Create(context.Background(), submission.Viewer{UserID: 9, CanManage: true}, 9, manager)
+	_, err = e.svc.Create(context.Background(), submission.Viewer{UserID: 9, CanManageContest: true}, 9, manager)
 	require.NoError(t, err, "managers may test contest submissions without registering")
+}
+
+func TestSubmissionContestSubmitRequiresRegistrationUnlessCanUpdate(t *testing.T) {
+	e := newEnv(t)
+	now := time.Now()
+	p := e.createProblem(t, publicProblem("contest-reg"), 1)
+	c := e.createContest(t, now.Add(-time.Hour), now.Add(time.Hour), p)
+
+	in := codeInput(p.ID, "int main(){}")
+	in.ContestID = c.ID
+
+	// 普通用户未报名 -> 40001。
+	createUser(t, e.db, 7)
+	_, err := e.svc.Create(context.Background(), submission.Viewer{UserID: 7}, 7, in)
+	assertCode(t, err, 40001)
+
+	// contest.update 用户未报名 -> 可提交。
+	createUser(t, e.db, 8)
+	sub, err := e.svc.Create(context.Background(), submission.Viewer{UserID: 8, CanManageContest: true}, 8, in)
+	require.NoError(t, err)
+	require.NotNil(t, sub.ContestID)
+	assert.Equal(t, c.ID, *sub.ContestID)
+
+	// problem.view_hidden 不绕过报名。
+	createUser(t, e.db, 9)
+	_, err = e.svc.Create(context.Background(), submission.Viewer{UserID: 9, CanViewHiddenProblems: true}, 9, in)
+	assertCode(t, err, 40001)
 }
 
 func TestContestHiddenProblemVisibleToParticipant(t *testing.T) {

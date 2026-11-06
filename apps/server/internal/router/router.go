@@ -137,7 +137,7 @@ func New(d Deps) *gin.Engine {
 		submissionevents.NewRedisPublisher(d.Redis),
 	)
 	streamer := submissionevents.NewRedisStreamer(d.Redis)
-	submissionOpts := submissionapi.Options{}
+	submissionOpts := submissionapi.Options{RBAC: d.RBAC}
 	if d.Game != nil {
 		submissionOpts.IdentityLookup = d.Game
 	}

@@ -12,14 +12,22 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 )
 
-// Viewer describes who is looking. The zero UserID is a guest; managers may
-// submit hidden problems and see protected contest code.
+// Viewer describes who is looking. The zero UserID is a guest; an ordinary
+// user gets no extra capability. Each boolean maps to an RBAC permission set by
+// the API layer and is independent of the others: CanViewHiddenProblems
+// (problem.view_hidden), CanViewLiveContest (submission.view_live_contest) and
+// CanManageContest (contest.update).
 type Viewer struct {
 	UserID int64
-	// CanManage covers problem/contest/super admins for contest code access.
-	CanManage bool
-	// CanManageProblems is limited to problem/super admins for hidden problems.
-	CanManageProblems bool
+	// CanViewHiddenProblems grants access to hidden-problem submissions and to
+	// submitting hidden problems outside a contest.
+	CanViewHiddenProblems bool
+	// CanViewLiveContest bypasses contest protection to view others' code,
+	// score and testcases while a contest is running.
+	CanViewLiveContest bool
+	// CanManageContest bypasses the registration requirement for contest test
+	// submissions. It does not grant hidden-problem access.
+	CanManageContest bool
 }
 
 type ProblemLookup interface {
@@ -104,7 +112,7 @@ func (s *Service) Detail(ctx context.Context, v Viewer, id int64) (*Detail, erro
 		}
 		return nil, err
 	}
-	if !row.ProblemIsPublic && !v.CanManageProblems && v.UserID != row.UserID {
+	if !row.ProblemIsPublic && !v.CanViewHiddenProblems && v.UserID != row.UserID {
 		return nil, httpx.ErrNotFound
 	}
 	detail := &Detail{
@@ -124,7 +132,7 @@ func (s *Service) Detail(ctx context.Context, v Viewer, id int64) (*Detail, erro
 }
 
 func contestProtected(row ListRow, v Viewer, now time.Time) bool {
-	if row.ContestID == nil || v.CanManage || v.UserID == row.UserID {
+	if row.ContestID == nil || v.CanViewLiveContest || v.UserID == row.UserID {
 		return false
 	}
 	if row.ContestStartTime == nil || row.ContestEndTime == nil {
@@ -165,7 +173,7 @@ func (s *Service) Create(ctx context.Context, v Viewer, userID int64, in Input) 
 		if !now.Before(c.EndTime) {
 			return nil, httpx.ErrValidation("比赛已结束")
 		}
-		if !v.CanManage {
+		if !v.CanManageContest {
 			registered, err := s.contests.IsParticipant(ctx, c.ID, userID)
 			if err != nil {
 				return nil, err
@@ -183,7 +191,7 @@ func (s *Service) Create(ctx context.Context, v Viewer, userID int64, in Input) 
 		id := c.ID
 		contestID = &id
 	}
-	if !p.IsPublic && !v.CanManage && contestID == nil {
+	if !p.IsPublic && !v.CanViewHiddenProblems && contestID == nil {
 		return nil, httpx.ErrNotFound
 	}
 	if p.Type == problem.TypeInteractive {

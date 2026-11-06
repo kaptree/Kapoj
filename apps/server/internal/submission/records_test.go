@@ -169,7 +169,7 @@ func TestDetailVisibility(t *testing.T) {
 	assert.Empty(t, other.ErrorMessage)
 	assert.Empty(t, other.JudgeResult)
 
-	admin, err := e.svc.Detail(context.Background(), submission.Viewer{UserID: e.bob, CanManage: true}, contestSub)
+	admin, err := e.svc.Detail(context.Background(), submission.Viewer{UserID: e.bob, CanViewLiveContest: true}, contestSub)
 	require.NoError(t, err)
 	assert.False(t, admin.CodeHidden)
 	assert.Equal(t, "secret", admin.Code)
@@ -224,14 +224,14 @@ func TestHiddenProblemSubmissionsAreScoped(t *testing.T) {
 	other, err := e.svc.List(context.Background(), submission.Viewer{UserID: e.bob}, submission.ListQuery{}, 1, 10)
 	require.NoError(t, err)
 	assert.Zero(t, other.Total)
-	contestAdmin, err := e.svc.List(context.Background(), submission.Viewer{CanManage: true}, submission.ListQuery{}, 1, 10)
+	contestAdmin, err := e.svc.List(context.Background(), submission.Viewer{CanViewLiveContest: true}, submission.ListQuery{}, 1, 10)
 	require.NoError(t, err)
 	assert.Zero(t, contestAdmin.Total, "contest admins cannot see hidden problem submissions")
 
 	owner, err := e.svc.List(context.Background(), submission.Viewer{UserID: e.alice}, submission.ListQuery{}, 1, 10)
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, owner.Total)
-	admin, err := e.svc.List(context.Background(), submission.Viewer{CanManageProblems: true}, submission.ListQuery{}, 1, 10)
+	admin, err := e.svc.List(context.Background(), submission.Viewer{CanViewHiddenProblems: true}, submission.ListQuery{}, 1, 10)
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, admin.Total)
 
@@ -242,9 +242,89 @@ func TestHiddenProblemSubmissionsAreScoped(t *testing.T) {
 	own, err := e.svc.Detail(context.Background(), submission.Viewer{UserID: e.alice}, subID)
 	require.NoError(t, err)
 	assert.Equal(t, "reference", own.Code)
-	managed, err := e.svc.Detail(context.Background(), submission.Viewer{CanManageProblems: true}, subID)
+	managed, err := e.svc.Detail(context.Background(), submission.Viewer{CanViewHiddenProblems: true}, subID)
 	require.NoError(t, err)
 	assert.Equal(t, "reference", managed.Code)
+}
+
+func TestSubmissionHiddenProblemUsesViewHidden(t *testing.T) {
+	e := newRecordsEnv(t)
+	hidden := seedProblem(t, e.db, "hidden-view")
+	require.NoError(t, e.db.Exec(`UPDATE problems SET is_public = false WHERE id = ?`, hidden.ID).Error)
+	subID := insertRecord(t, e.db, e.alice, hidden.ID, "cpp", "reference", "accepted", nil, time.Now())
+
+	// 无 view_hidden：他人隐藏题提交列表/详情 404。
+	page, err := e.svc.List(context.Background(), submission.Viewer{UserID: e.bob}, submission.ListQuery{}, 1, 10)
+	require.NoError(t, err)
+	assert.Zero(t, page.Total)
+	_, err = e.svc.Detail(context.Background(), submission.Viewer{UserID: e.bob}, subID)
+	assertCode(t, err, 40400)
+
+	// 有 view_hidden：可见他人隐藏题提交。
+	page, err = e.svc.List(context.Background(), submission.Viewer{CanViewHiddenProblems: true}, submission.ListQuery{}, 1, 10)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, page.Total)
+	detail, err := e.svc.Detail(context.Background(), submission.Viewer{CanViewHiddenProblems: true}, subID)
+	require.NoError(t, err)
+	assert.Equal(t, "reference", detail.Code)
+
+	// 其它权限不授予隐藏题能力。
+	for _, v := range []submission.Viewer{
+		{CanViewLiveContest: true},
+		{CanManageContest: true},
+	} {
+		page, err := e.svc.List(context.Background(), v, submission.ListQuery{}, 1, 10)
+		require.NoError(t, err)
+		assert.Zero(t, page.Total)
+		_, err = e.svc.Detail(context.Background(), v, subID)
+		assertCode(t, err, 40400)
+	}
+}
+
+func TestSubmissionLiveContestUsesPermission(t *testing.T) {
+	e := newRecordsEnv(t)
+	now := time.Now()
+	contest := insertContest(t, e.db, now.Add(-time.Hour), now.Add(time.Hour))
+	contestSub := insertRecord(t, e.db, e.alice, e.problem1.ID, "cpp", "secret", "accepted", &contest, now)
+	require.NoError(t, e.db.Exec(
+		`UPDATE submissions SET judge_result_json = '[{"testcaseId":1,"status":"accepted","timeMs":1,"memoryKb":2}]'::jsonb,
+		 error_message = 'SECRET_COMPILER_OUTPUT', time_used_ms = 10, memory_used_kb = 20, score = 100 WHERE id = ?`,
+		contestSub,
+	).Error)
+
+	// 无 view_live_contest：赛时他人代码/成绩/测试点被隐藏。
+	other, err := e.svc.Detail(context.Background(), submission.Viewer{UserID: e.bob}, contestSub)
+	require.NoError(t, err)
+	assert.True(t, other.CodeHidden)
+	assert.Empty(t, other.Code)
+	assert.Empty(t, other.ErrorMessage)
+	assert.Empty(t, other.JudgeResult)
+	assert.Zero(t, other.TimeUsedMS)
+	assert.Zero(t, other.MemoryUsedKB)
+	assert.Zero(t, other.Score)
+
+	// 有 view_live_contest：可见。
+	admin, err := e.svc.Detail(context.Background(), submission.Viewer{UserID: e.bob, CanViewLiveContest: true}, contestSub)
+	require.NoError(t, err)
+	assert.False(t, admin.CodeHidden)
+	assert.Equal(t, "secret", admin.Code)
+
+	// 本人仍可见自己的提交。
+	own, err := e.svc.Detail(context.Background(), submission.Viewer{UserID: e.alice}, contestSub)
+	require.NoError(t, err)
+	assert.False(t, own.CodeHidden)
+	assert.Equal(t, "secret", own.Code)
+
+	// 其它权限不绕过赛时保护。
+	for _, v := range []submission.Viewer{
+		{UserID: e.bob, CanViewHiddenProblems: true},
+		{UserID: e.bob, CanManageContest: true},
+	} {
+		d, err := e.svc.Detail(context.Background(), v, contestSub)
+		require.NoError(t, err)
+		assert.True(t, d.CodeHidden)
+		assert.Empty(t, d.Code)
+	}
 }
 
 func TestHasAccepted(t *testing.T) {

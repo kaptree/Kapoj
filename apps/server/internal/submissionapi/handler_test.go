@@ -26,6 +26,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
+	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 	"github.com/kaptree/kapoj/apps/server/internal/router"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
 	"github.com/kaptree/kapoj/apps/server/internal/submission"
@@ -53,11 +54,14 @@ type fx struct {
 	h     http.Handler
 	db    *gorm.DB
 	queue *fakeQueue
+	rbac  *rbac.Service
+	nextN int
 }
 
 func newFx(t *testing.T) *fx {
 	t.Helper()
 	g := testutil.PG(t)
+	rbacSvc := testutil.SeedRBAC(t, g)
 	mr := miniredis.RunT(t)
 	store, err := storage.NewLocal(t.TempDir())
 	require.NoError(t, err)
@@ -74,8 +78,9 @@ func newFx(t *testing.T) *fx {
 		},
 		Enqueuer: queue,
 		Game:     gamification.NewService(gamification.NewRepository(g)),
+		RBAC:     rbacSvc,
 	})
-	return &fx{t: t, h: h, db: g, queue: queue}
+	return &fx{t: t, h: h, db: g, queue: queue, rbac: rbacSvc}
 }
 
 func (f *fx) equipIdentity(t *testing.T, userID int64, badgeNames []string, titleName string) {
@@ -193,6 +198,55 @@ func (f *fx) submit(token string, problemID int64) (*httptest.ResponseRecorder, 
 	return f.do(http.MethodPost, "/api/submissions", token, map[string]any{
 		"problemId": problemID, "language": "cpp", "code": "int main(){}",
 	})
+}
+
+// registerUser creates a user carrying the given legacy role and returns an
+// access token plus the user id. The legacy role is set before login so the JWT
+// carries it; authorization no longer consults the JWT role.
+func (f *fx) registerUser(role string) (string, int64) {
+	f.t.Helper()
+	f.nextN++
+	name := fmt.Sprintf("%s%d", strings.ReplaceAll(role, "_", ""), f.nextN)
+	w, resp := f.do(http.MethodPost, "/api/auth/register", "", map[string]string{
+		"username": name, "email": name + "@example.com", "password": "correct-horse",
+	})
+	require.Equal(f.t, http.StatusCreated, w.Code, w.Body.String())
+	userID := int64(resp["data"].(map[string]any)["user"].(map[string]any)["id"].(float64))
+	require.NoError(f.t, f.db.Exec("UPDATE users SET role = ? WHERE id = ?", role, userID).Error)
+	w, resp = f.do(http.MethodPost, "/api/auth/login", "", map[string]string{"account": name, "password": "correct-horse"})
+	require.Equal(f.t, http.StatusOK, w.Code)
+	return resp["data"].(map[string]any)["accessToken"].(string), userID
+}
+
+// legacyToken returns an access token for a user carrying the given legacy role
+// but no RBAC role assignment, proving the legacy role alone no longer grants
+// hidden/live capability.
+func (f *fx) legacyToken(role string) string {
+	f.t.Helper()
+	tok, _ := f.registerUser(role)
+	return tok
+}
+
+// createRole creates a custom role holding the given permission codes.
+func (f *fx) createRole(code string, perms ...rbac.PermissionCode) {
+	f.t.Helper()
+	codes := make([]string, len(perms))
+	for i, p := range perms {
+		codes[i] = string(p)
+	}
+	_, err := f.rbac.CreateRole(context.Background(), rbac.AuditMeta{ActorID: 1}, rbac.RoleInput{
+		Code: code, Name: code, PermissionCodes: codes,
+	})
+	require.NoError(f.t, err)
+}
+
+// userWithRole returns an access token for an ordinary user assigned the given
+// custom role.
+func (f *fx) userWithRole(code string) string {
+	f.t.Helper()
+	tok, userID := f.registerUser("user")
+	testutil.AssignRole(f.t, f.db, userID, code)
+	return tok
 }
 
 func TestCreateSubmissionEndpoint(t *testing.T) {
@@ -515,4 +569,94 @@ func TestSubmissionActivityHookFailureDoesNotFailRequest(t *testing.T) {
 	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
 	assert.EqualValues(t, 0, resp["code"])
 	require.Len(t, hook.submissionIDs, 1, "失败后仍尝试记录一次活跃度")
+}
+
+func TestSubmissionRoutesStillPublic(t *testing.T) {
+	f := newFx(t)
+	f.seedUser(t, 6001, "publicowner", "公开用户")
+	p := f.problem(t, "public", true, problem.TypeTraditional, 1)
+	f.record(t, 6001, p.ID, "cpp", "accepted", "code", nil)
+
+	// 游客 GET /submissions 200。
+	w, _ := f.do(http.MethodGet, "/api/submissions", "", nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	// 未登录 POST 401。
+	w, _ = f.submit("", p.ID)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestSubmissionLegacyAdminWithoutRBACGetsNoCapability(t *testing.T) {
+	f := newFx(t)
+	now := time.Now()
+
+	f.seedUser(t, 6101, "hiddenowner", "隐藏题作者")
+	hidden := f.problem(t, "hidden-problem", false, problem.TypeTraditional, 1)
+	hiddenSub := f.record(t, 6101, hidden.ID, "cpp", "accepted", "hidden-code", nil)
+
+	pub := f.problem(t, "contest-p", true, problem.TypeTraditional, 1)
+	contest := f.contest(t, now.Add(-time.Hour), now.Add(time.Hour))
+	contestSub := f.record(t, 6101, pub.ID, "cpp", "accepted", "secret-code", &contest)
+
+	// legacy problem_admin token 但无 RBAC 角色：不获得隐藏题能力。
+	problemAdmin := f.legacyToken("problem_admin")
+	_, resp := f.do(http.MethodGet, "/api/submissions?problemId="+fmt.Sprint(hidden.ID), problemAdmin, nil)
+	assert.EqualValues(t, 0, resp["data"].(map[string]any)["total"])
+	w, _ := f.do(http.MethodGet, fmt.Sprintf("/api/submissions/%d", hiddenSub), problemAdmin, nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	// legacy contest_admin token 但无 RBAC 角色：不获得赛时能力。
+	contestAdmin := f.legacyToken("contest_admin")
+	w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/submissions/%d", contestSub), contestAdmin, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, true, resp["data"].(map[string]any)["codeHidden"])
+}
+
+func TestSubmissionPermissionsMapIndependently(t *testing.T) {
+	f := newFx(t)
+	now := time.Now()
+
+	f.seedUser(t, 6201, "owner6201", "作者")
+	hidden := f.problem(t, "hidden-indep", false, problem.TypeTraditional, 1)
+	hiddenSub := f.record(t, 6201, hidden.ID, "cpp", "accepted", "hidden-code", nil)
+
+	pub := f.problem(t, "contest-indep", true, problem.TypeTraditional, 1)
+	contest := f.contest(t, now.Add(-time.Hour), now.Add(time.Hour))
+	require.NoError(t, f.db.Exec(
+		`INSERT INTO contest_problems (contest_id, problem_id, display_id, sort_order, score) VALUES (?, ?, 'A', 1, 100)`,
+		contest, pub.ID,
+	).Error)
+	contestSub := f.record(t, 6201, pub.ID, "cpp", "accepted", "secret-code", &contest)
+
+	// 只有 problem.view_hidden：可看隐藏题，但看不到赛时代码。
+	f.createRole("view_hidden_only", rbac.PermProblemViewHidden)
+	viewHidden := f.userWithRole("view_hidden_only")
+	_, resp := f.do(http.MethodGet, "/api/submissions?problemId="+fmt.Sprint(hidden.ID), viewHidden, nil)
+	assert.EqualValues(t, 1, resp["data"].(map[string]any)["total"])
+	w, resp := f.do(http.MethodGet, fmt.Sprintf("/api/submissions/%d", contestSub), viewHidden, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, true, resp["data"].(map[string]any)["codeHidden"])
+
+	// 只有 submission.view_live_contest：可看赛时代码，但看不到隐藏题。
+	f.createRole("live_contest_only", rbac.PermSubmissionViewLiveContest)
+	live := f.userWithRole("live_contest_only")
+	_, resp = f.do(http.MethodGet, "/api/submissions?problemId="+fmt.Sprint(hidden.ID), live, nil)
+	assert.EqualValues(t, 0, resp["data"].(map[string]any)["total"])
+	w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/submissions/%d", contestSub), live, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, false, resp["data"].(map[string]any)["codeHidden"])
+	assert.Equal(t, "secret-code", resp["data"].(map[string]any)["code"])
+
+	// 只有 contest.update：可免报名比赛提交，但看不到隐藏题。
+	f.createRole("contest_update_only", rbac.PermContestUpdate)
+	contestUpdater := f.userWithRole("contest_update_only")
+	w, _ = f.do(http.MethodPost, "/api/submissions", contestUpdater, map[string]any{
+		"problemId": pub.ID, "contestId": contest, "language": "cpp", "code": "int main(){}",
+	})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	_, resp = f.do(http.MethodGet, "/api/submissions?problemId="+fmt.Sprint(hidden.ID), contestUpdater, nil)
+	assert.EqualValues(t, 0, resp["data"].(map[string]any)["total"])
+	// 隐藏题提交详情不可见。
+	w, _ = f.do(http.MethodGet, fmt.Sprintf("/api/submissions/%d", hiddenSub), contestUpdater, nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }

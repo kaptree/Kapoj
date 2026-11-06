@@ -50,7 +50,8 @@ func (q ListQuery) Normalize() (ListQuery, error) {
 }
 
 // ListFilter is the repository-level filter set. ViewerID scopes hidden
-// problem submissions; CanSeeHidden is true only for problem admins.
+// problem submissions; CanSeeHidden is true only for viewers with
+// problem.view_hidden.
 type ListFilter struct {
 	ProblemID    int64
 	ContestID    *int64
@@ -66,6 +67,6 @@ func (q ListQuery) toFilter(v Viewer) ListFilter {
 	return ListFilter{
 		ProblemID: q.ProblemID, ContestID: q.ContestID, UserID: q.UserID,
 		Language: q.Language, Status: q.Status, Nickname: q.Nickname,
-		ViewerID: v.UserID, CanSeeHidden: v.CanManageProblems,
+		ViewerID: v.UserID, CanSeeHidden: v.CanViewHiddenProblems,
 	}
 }
