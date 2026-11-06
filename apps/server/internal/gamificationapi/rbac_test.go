@@ -124,8 +124,23 @@ func TestGamificationContentAudit(t *testing.T) {
 	require.NoError(t, f.db.Where("action = ?", string(rbac.PermGamificationAchievementManage)).
 		Find(&logs).Error)
 	require.Len(t, logs, 1)
-	assert.Equal(t, "achievement", logs[0].TargetType)
+	assert.Equal(t, "gamification_achievement", logs[0].TargetType)
 	assert.NotEmpty(t, logs[0].Summary)
+}
+
+func TestGamificationContentAuditNotWrittenOnFailure(t *testing.T) {
+	f := newFx(t)
+	tok := f.rbacToken(rbac.RoleCodeGamificationAdmin)
+
+	// 非法输入（空名称）→ 400，不写审计。
+	w, _ := f.do(http.MethodPost, "/api/achievements", tok,
+		achievementBody("bad-ac", "", "ac_count", map[string]any{"threshold": 1}, 10))
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+
+	var count int64
+	require.NoError(t, f.db.Model(&rbac.AdminAuditLog{}).
+		Where("action = ?", string(rbac.PermGamificationAchievementManage)).Count(&count).Error)
+	assert.Zero(t, count)
 }
 
 func TestCoinAdjustAuditRow(t *testing.T) {
@@ -145,6 +160,6 @@ func TestCoinAdjustAuditRow(t *testing.T) {
 	assert.Equal(t, rbac.AuditTargetUser, logs[0].TargetType)
 	require.NotNil(t, logs[0].TargetID)
 	assert.EqualValues(t, targetID, *logs[0].TargetID)
-	assert.Equal(t, "调整金币 100", logs[0].Summary)
+	assert.Equal(t, "调整用户金币 +100", logs[0].Summary)
 	assert.NotContains(t, logs[0].Summary, "活动奖励")
 }

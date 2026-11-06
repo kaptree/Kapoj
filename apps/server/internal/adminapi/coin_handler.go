@@ -41,7 +41,7 @@ func (h *handler) adjustCoins(c *gin.Context) {
 				tx, actor,
 				rbac.AuditActionUserCoinsAdjust,
 				rbac.AuditTargetUser, id,
-				fmt.Sprintf("调整金币 %d", in.Amount),
+				fmt.Sprintf("调整用户金币 %+d", in.Amount),
 			)
 		},
 	)

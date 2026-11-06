@@ -17,10 +17,10 @@ type Options struct {
 }
 
 const (
-	auditTargetAchievement = "achievement"
-	auditTargetTask        = "task"
-	auditTargetBadge       = "badge"
-	auditTargetTitle       = "title"
+	auditTargetAchievement = "gamification_achievement"
+	auditTargetTask        = "gamification_task"
+	auditTargetBadge       = "gamification_badge"
+	auditTargetTitle       = "gamification_title"
 )
 
 // RegisterRoutes 挂载游戏化公开/登录/管理员接口；路由组需已运行
