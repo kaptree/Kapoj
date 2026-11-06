@@ -2,23 +2,23 @@
 
 > 本文档是美化工程的唯一进度来源。每次会话开始先读这里，结束时更新状态、验证结果和设计决策。
 >
-> - 最后更新：2026-11-05
-> - 当前阶段：P2 页面（UI-19 待开始）；M4-C 新功能 UI-30 已完成
-> - 工作分支：`feat/m1-problems-judge`
+> - 最后更新：2026-11-07
+> - 当前阶段：P2 页面（UI-19 待开始）；M4-C 新功能 UI-30 与 RBAC-D 管理后台 UI-36 已完成
+> - 工作分支：`feat/m1-problems-judge`（RBAC-D 管理后台在 `feat/rbac-d-admin-ui` 完成）
 > - 本次基线：`0f2d62d feat(web): rating history card`
 
 ## 状态汇总
 
 | 状态 | 数量 |
 | --- | ---: |
-| done | 20 |
+| done | 21 |
 | in-progress | 0 |
 | blocked | 0 |
 | todo | 7 |
 
-其中现有 UI 迁移任务 `UI-00～UI-18` 已完成，M4-C 新功能 `UI-30`（排行榜、签到与 Rating 历史卡片）已直接使用 PrimeVue 4 完成；剩余 `UI-19` 题库编辑与 `UI-20` 异常页；`UI-31～UI-35` 为尚未实现的新功能，不计入现有页面迁移完成度。
+其中现有 UI 迁移任务 `UI-00～UI-18` 已完成，M4-C 新功能 `UI-30`（排行榜、签到与 Rating 历史卡片）与 RBAC-D 管理后台 `UI-36`（管理壳/仪表盘/用户/角色/审计页面）已直接使用 PrimeVue 4 完成；剩余 `UI-19` 题库编辑与 `UI-20` 异常页；`UI-31～UI-35` 为尚未实现的新功能，不计入现有页面迁移完成度。
 
-M4-C 排行榜、签到与 Rating 历史（UI-30）已直接使用 PrimeVue 4 完成；现有页面迁移剩余 UI-19 → UI-20。若后续某页面进入功能开发，先标记 `blocked` 并跳过。
+M4-C 排行榜、签到与 Rating 历史（UI-30）与 RBAC-D 管理后台（UI-36）已直接使用 PrimeVue 4 完成；现有页面迁移剩余 UI-19 → UI-20。若后续某页面进入功能开发，先标记 `blocked` 并跳过。
 
 ## 进度表
 
@@ -46,6 +46,7 @@ M4-C 排行榜、签到与 Rating 历史（UI-30）已直接使用 PrimeVue 4 �
 | UI-19 | 题库管理 | `ProblemEditView` + `TestcaseManager` + `SampleEditor` + spec | P2 | todo | UI-00 | Markdown、测试点上传/排序、样例编辑 | 建议下一项 |
 | UI-20 | 异常页 | `ForbiddenView`、`NotFoundView` | P2 | todo | UI-00 | 空态/结果页视觉统一 | 最简单，适合收尾 |
 | UI-30 | 新功能 | M4-C 排行榜前端（含签到与 Rating 历史卡片） | P3 | done | UI-00、UI-10 | 直接使用 PrimeVue；Rating 榜/历史 | 2026-11-05 完成。`LeaderboardView` 三 Tab/签到、`RatingLevelName`、`RatingHistoryCard`；复用 Tabs/DataTable/Paginator/Toast |
+| UI-36 | 新功能 | RBAC-D 管理后台壳：`AdminLayout`/`AdminNav` + 仪表盘/用户/角色/审计页面 | P3 | done | UI-00、UI-18 | 直接使用 PrimeVue；权限驱动菜单/按钮 | 2026-11-07 完成。`AdminLayout`/`AdminNav`（桌面侧栏 + 移动 Drawer）、`AdminDashboardView`/`AdminUsersView`/`AdminRolesView`/`AdminAuditView`；复用 AppPageHeader/AppSurface/DataTable/Dialog/MultiSelect/Toast；`auth.can/canAny` 驱动菜单与动作 |
 | UI-31 | 新功能 | 学习路线 | P3 | todo | UI-00 | 直接使用 PrimeVue；树形/解锁进度 | 尚未实现 |
 | UI-32 | 新功能 | 社交互动 | P3 | todo | UI-00 | 直接使用 PrimeVue；评论/点赞/关注 | 尚未实现 |
 | UI-33 | 新功能 | 证书认证 | P3 | todo | UI-00 | 直接使用 PrimeVue；提交/审核/核验 | 尚未实现 |
@@ -151,6 +152,7 @@ M4-C 排行榜、签到与 Rating 历史（UI-30）已直接使用 PrimeVue 4 �
 83. **徽章面板**：本地文件选择保留 2 MiB 与 PNG/JPEG/WebP/GIF 校验、Object URL 预览、保存后上传与失败重试；编辑时库存默认省略，勾选“调整库存”才提交 `stock`；外链图片沿用 http(s) 校验与缓存破坏。
 84. **任务面板**：`MultiSelect` 远程搜索题目、最多 20 道；开始/结束使用两个 `DatePicker`；`hasRecords` 时冻结题目与奖励，Markdown 描述按主题渲染。
 85. **称号面板**：`ColorPicker` 提供颜色，非法值回退主题文字色；解锁类型支持 Rating / AC 题数 / 成就 code，成就下拉支持加载失败重试。
+86. **RBAC-D 管理后台授权**：管理入口与按钮从「`super_admin`/`hasRole`」迁移为 `auth.can`/`canAny`；游戏化管理不再仅 `super_admin` 可见，而是任一 `gamification.*.manage` 权限即可进入，tab 按权限生成。决策 13/41/80 中「游戏化管理仅 `super_admin`」「`canManage` 通过 `hasRole`」的表述已被 RBAC-D 取代（管理壳见 UI-36）。
 
 ## 验证记录
 

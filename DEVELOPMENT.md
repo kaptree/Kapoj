@@ -3,7 +3,7 @@
 > 本文档基于 `plan.md` 细化，是 kapOJ（Kap Online Judge）平台的详细开发规格说明书。
 > 目标：**打造出最有趣味的 Online Judge 平台**。
 > 文档包含完整的架构设计、数据库设计、模块需求，并为每个模块提供了可直接交给 Codex 的**开发提示词（Prompt）**。
-> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)，前端 UI 迁移见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。当前进度：**M4-2A 与 RBAC-C 已完成**（M0–M3 已完成；M4 进行中。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页、签到、Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线模型、权限、路线/节点 CRUD 与树结构；RBAC-A 交付权限目录、内置角色、首次 Seed/旧角色映射、实时 Access 解析、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计。学习路线进度/事件/守卫与前端、社交互动、Rating 衰减/赛季重置与管理后台 UI（RBAC-D）尚未实现）。前端 UI 已完成 UI-00～UI-18 的 PrimeVue 4 迁移与 UI-30（M4-C 排行榜/历史）直接实现，剩余 UI-19 题库编辑与 UI-20 异常页；该迁移已提交。
+> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)，前端 UI 迁移见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。当前进度：**M4-2A 与 RBAC-D 已完成**（M0–M3 已完成；M4 进行中。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页、签到、Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线模型、权限、路线/节点 CRUD 与树结构；RBAC-A 交付权限目录、内置角色、首次 Seed/旧角色映射、实时 Access 解析、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/`canAny`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化，以及文档与验收。学习路线进度/事件/守卫与前端、社交互动、Rating 衰减/赛季重置尚未实现）。前端 UI 已完成 UI-00～UI-18 的 PrimeVue 4 迁移、UI-30（M4-C 排行榜/历史）与 RBAC-D 管理后台页面直接实现，剩余 UI-19 题库编辑与 UI-20 异常页；该迁移已提交。
 
 ---
 
@@ -59,7 +59,7 @@ kapOJ 是一个融合 **竞技评测 + 游戏化成长体系 + AI 辅助** 的�
 | 比赛管理员 | 创建/管理比赛、发布公告                                        |
 | 超级管理员 | 全部权限，含成就/任务/徽章/称号/证书管理、用户管理             |
 
-> **RBAC 实现说明（2026-11-06）**：上述固定角色已升级为「多角色 + 全局权限」模型。`users.role` 与 JWT 中的 `role` 是 legacy 兼容字段，**自 RBAC-C 起不再参与任何管理授权，仅用于展示/兼容**；管理授权只认 `user_roles` 关联的角色与 `role_permissions`。内置角色、权限目录与映射见 4.7。角色/用户角色/审计/统计管理 API（RBAC-B）与内容管理接口迁移（RBAC-C）已完成；管理后台 UI（RBAC-D）尚未实现。
+> **RBAC 实现说明（2026-11-06）**：上述固定角色已升级为「多角色 + 全局权限」模型。`users.role` 与 JWT 中的 `role` 是 legacy 兼容字段，**自 RBAC-C 起不再参与任何管理授权，仅用于展示/兼容**；管理授权只认 `user_roles` 关联的角色与 `role_permissions`。内置角色、权限目录与映射见 4.7。角色/用户角色/审计/统计管理 API（RBAC-B）、内容管理接口迁移（RBAC-C）与管理后台 UI（RBAC-D）均已完成。
 
 ---
 
@@ -904,7 +904,7 @@ user_ai_configs (
 | `contest_admin` | `contest_admin` |
 | `user` | 不分配管理角色 |
 
-**实现状态（RBAC-A、RBAC-B 与 RBAC-C 已完成，2026-11-06）**
+**实现状态（RBAC-A、RBAC-B、RBAC-C 与 RBAC-D 已完成，2026-11-06/07）**
 
 - 已建表：`roles`、`permissions`、`role_permissions`、`user_roles`、`admin_audit_logs`、`rbac_meta`；唯一索引见 3.1。`admin_audit_logs` 的审计写入由 RBAC-B（敏感操作，事务内）与 RBAC-C（内容管理，best-effort）完成。
 - 权限目录与内置角色定义在 `apps/server/internal/rbac/catalog.go`；测试锁定权限数量/唯一性与内置角色权限集合，名称/描述/分组仅校验非空，不锁定具体中文文案。
@@ -948,7 +948,13 @@ user_ai_configs (
 - 学习路线：`learning_path.official.manage`（写/管理官方与任意路线、上下架/恢复/节点，保留内容管理员既有行为）、`learning_path.admin.read`（只读查看全部/下架/完整题目 ID，不参与写授权）；普通作者自定义路线规则保留。`learning.Viewer` 拆 `CanManageOfficial`/`CanViewAll`。
 - 内容管理审计：题目/比赛/游戏化/学习路线写操作经 `AuditAdminAction` best-effort 写审计（仅 2xx 且 actor 拥有对应权限码时），action 为权限码，target type 为 `problem`/`contest`/`gamification_achievement`/`gamification_task`/`gamification_badge`/`gamification_title`/`learning_path`，仅记录 method/path/status/target，失败只记日志不阻断业务。
 - **legacy role 不再授权**：RBAC-C 完成后，任何管理授权不再调用 `RequireRole` 或读取 `claims.Role`；`users.role`/JWT role 仅保留展示/兼容。
-- **本阶段未做（RBAC-D）**：管理后台前端 `AdminLayout`、仪表盘/用户管理/角色权限/审计页面、`auth.can`、菜单/路由/按钮权限化与真实浏览器 E2E。因此当前没有统一 `/admin` 管理壳，游戏化管理仍沿用现有 `/admin/gamification` 页面。
+**RBAC-D 管理后台前端（2026-11-07）**
+
+- 新增统一 `/admin` 管理壳 `AdminLayout.vue` 与 `AdminNav.vue`：独立于 `DefaultLayout`，桌面侧栏 + 移动 Drawer，菜单按权限过滤；`/admin` 父路由 `requiresAuth` + `anyPermission: ADMIN_ACCESS_PERMISSIONS`，子路由 `''`（概览）、`users`（`user.read`）、`roles`（`role.read`）、`audit`（`admin.audit.view`）、`gamification`（任一 `gamification.*.manage`）。
+- 新增仪表盘 `AdminDashboardView`（`admin.dashboard.view` 才请求 `/admin/stats`，`admin.audit.view` 才显示最近审计）、用户管理 `AdminUsersView`（编辑/角色/封禁/金币，动作按权限显隐）、角色权限矩阵 `AdminRolesView`（系统角色保护、`super_admin` 权限不可改）、审计日志 `AdminAuditView`（actor/action/targetType/日期筛选与分页）。
+- 权限基础：`apps/web/src/permissions.ts` 定义全部前端权限码常量与 `ADMIN_ACCESS_PERMISSIONS`；`auth.can/canAny/isSuperAdmin`；路由 meta 改为 `permission`/`anyPermission`（移除 `roles`）；守卫未登录跳登录、无权限跳 `/forbidden`。
+- 现有入口迁移：`AppNav`/`UserMenu` 的“管理后台”入口改为 `/admin`，显示条件 `auth.canAny(ADMIN_ACCESS_PERMISSIONS)`；题库/比赛/游戏化页面按钮与 tab 全部改用 `auth.can/canAny`；游戏化管理 `GamificationAdminView` 按四个 `gamification.*.manage` 权限生成 tab。
+- 权限即时性：登录/注册/资料保存后刷新 `/users/me` 并保留 `roles/permissions/isSuperAdmin`；角色/权限变更后刷新页面或重新拉取 `/users/me` 即生效，后端仍实时校验。
 
 **交付拆分**
 
@@ -957,7 +963,7 @@ user_ai_configs (
 | RBAC-A | 权限模型、目录、首次 Seed/旧角色映射、Access 解析、权限中间件、Me 权限字段（后端） | ✅ |
 | RBAC-B | 角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计、仪表盘统计（后端） | ✅ |
 | RBAC-C | 现有管理接口权限码迁移、Viewer 能力拆分、内容管理审计、回归测试 | ✅ |
-| RBAC-D | AdminLayout、仪表盘/用户/角色/审计页面、`auth.can`、菜单/路由/按钮权限化、文档与浏览器 E2E | ⬜ |
+| RBAC-D | AdminLayout、仪表盘/用户/角色/审计页面、`auth.can`、菜单/路由/按钮权限化、文档与验收 | ✅ |
 
 **Codex 提示词（RBAC 后端核心）**
 

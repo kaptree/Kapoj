@@ -2,7 +2,7 @@
 
 打造最有趣味的 Online Judge 平台。规格见 [`DEVELOPMENT.md`](DEVELOPMENT.md)，进度见 [`docs/任务清单.md`](docs/任务清单.md) 与 [`docs/开发日志.md`](docs/开发日志.md)。
 
-当前进度：**M4-2A 与 RBAC-C 已完成**（M0–M3 已完成；M4 进行中。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页（Rating/活跃度/共享三 Tab、等级颜色、签到）、用户主页 Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线后端模型、官方/自定义权限、路线/节点 CRUD 与树结构，路线 API 已可用；RBAC-A 交付权限模型、权限目录、首次 Seed/旧角色映射、实时 Access、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；学习路线进度/事件/守卫与前端、社交、Rating 衰减/赛季重置与管理后台 UI（RBAC-D）尚未实现）。前端并行进行 PrimeVue 4 迁移，**UI-00～UI-18 与 UI-30（M4-C 排行榜/历史）已完成并提交**，剩余题库编辑（UI-19）、异常页（UI-20）与学习路线前端（UI-31，M4-2C），详见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。
+当前进度：**M4-2A 与 RBAC-D 已完成**（M0–M3 已完成；M4 进行中。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页（Rating/活跃度/共享三 Tab、等级颜色、签到）、用户主页 Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线后端模型、官方/自定义权限、路线/节点 CRUD 与树结构，路线 API 已可用；RBAC-A 交付权限模型、权限目录、首次 Seed/旧角色映射、实时 Access、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化；学习路线进度/事件/守卫与前端、社交、Rating 衰减/赛季重置尚未实现）。前端并行进行 PrimeVue 4 迁移，**UI-00～UI-18、UI-30（M4-C 排行榜/历史）与 RBAC-D 管理后台页面已完成并提交**，剩余题库编辑（UI-19）、异常页（UI-20）与学习路线前端（UI-31，M4-2C），详见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。
 
 ## 目录结构
 
@@ -133,7 +133,7 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 - 节点接口 `POST/PUT/DELETE /api/learning-paths/{id}/nodes...`：父节点必须同路线、不能成环、最大深度 8；题目 1–50 道且必须存在/公开；`requiredCount` 为 1–题目数；仅叶子节点可删除。
 - 当前树状态为 M4-2A 临时结构状态：根节点 `active`、其余 `locked`、`solvedCount=0`。服务端进度计算、AC 事件与题目下线守卫在 M4-2B 实现；列表/树/编辑/管理前端在 M4-2C 实现，当前尚无学习路线页面与真实进度。
 
-## 平台管理后台与 RBAC（RBAC-C）
+## 平台管理后台与 RBAC（RBAC-D）
 
 **权限模型**
 
@@ -142,7 +142,14 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 - 内置角色 7 个：`super_admin`（绕过所有权限检查）、`content_admin`（全部 `problem.*` + `learning_path.official.manage`/`learning_path.admin.read`）、`contest_admin`（全部 `contest.*` + `submission.view_live_contest`）、`gamification_admin`（全部 `gamification.*`）、`user_admin`、`security_admin`、`auditor`。系统角色不可删除、code/name 不可改；`super_admin` 权限不可修改；除 `super_admin` 外，内置角色权限可由 `role.permissions.update` 调整。
 - `GET /api/users/me` 返回 `roles`、`permissions`、`isSuperAdmin`；超级管理员的 `permissions` 可能为空，前端应以 `isSuperAdmin=true` 表示拥有全部权限。登录/注册响应中的这三个字段默认为空数组/false，登录后请再调用 `/users/me`。
 
-**管理 API（已可用，管理 UI 尚未上线）**
+**管理后台（已上线）**
+
+- 拥有任一管理权限（`ADMIN_ACCESS_PERMISSIONS`，或 `super_admin`）的账号登录后，侧栏与用户菜单显示「管理后台」入口 `/admin`。
+- 管理后台包含：概览仪表盘 `/admin`（`admin.dashboard.view` 显示统计，`admin.audit.view` 显示最近审计）、用户管理 `/admin/users`（`user.read`）、角色权限 `/admin/roles`（`role.read`）、审计日志 `/admin/audit`（`admin.audit.view`）、游戏化管理 `/admin/gamification`（任一 `gamification.*.manage`）。菜单与页面动作按权限显隐；无权限直接访问返回 403（前端跳转 `/forbidden`，后端 40300）。
+- 角色/权限变更后，受影响账号刷新页面或重新拉取 `/users/me` 即生效；后端始终实时校验，旧 token 不影响新权限。
+- **legacy role 不再授权**：`users.role`/JWT role 自 RBAC-C 起仅作展示/兼容，所有管理授权只认 `user_roles`/`role_permissions`。
+
+**管理 API**
 
 - 角色与权限：`GET /api/admin/permissions`、`GET/POST /api/admin/roles`、`PUT/DELETE /api/admin/roles/{id}`、`PUT /api/admin/roles/{id}/permissions`。
 - 用户管理：`GET /api/admin/users`（keyword/status/roleId 筛选与分页）、`GET/PUT /api/admin/users/{id}`、`PUT /api/admin/users/{id}/roles`、`POST /api/admin/users/{id}/ban|unban`、`POST /api/admin/users/{id}/coins`（`user.coins.adjust`，事务内审计）。
@@ -158,7 +165,7 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 - 游戏化：成就/任务/徽章/称号各用 `gamification.*.manage`（含 `includeInactive`）；`gamification.config` 公开只读。
 - 学习路线：`learning_path.official.manage`（写/管理官方与任意路线）、`learning_path.admin.read`（只读查看全部/下架/完整题目 ID）；作者自定义路线规则保留。
 - 内容写操作（题目/比赛/游戏化/学习路线）写 best-effort 审计，action 为权限码。
-- 这些接口是后端 API，**管理后台 UI 尚未上线**（RBAC-D）；现有游戏化管理仍沿用 `/admin/gamification` 页面。
+- 这些接口均有对应管理后台页面（RBAC-D）；现有题库/比赛/游戏化管理入口已迁移到 `/admin` 管理壳，游戏化管理页 `/admin/gamification` 按四个 `gamification.*.manage` 权限生成 tab。
 
 **Seed 与超管账号**
 
