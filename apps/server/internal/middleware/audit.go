@@ -14,6 +14,10 @@ import (
 // warning，不阻断业务响应。targetID 从路径参数 id 解析，非法为 0。
 func AuditAdminAction(s *rbac.Service, action, targetType string) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if s == nil {
+			c.Next()
+			return
+		}
 		c.Next()
 
 		status := c.Writer.Status()

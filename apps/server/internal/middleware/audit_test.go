@@ -116,3 +116,24 @@ func TestAuditAdminActionWritesOnSuccess(t *testing.T) {
 		assert.Contains(t, logs.String(), "level=WARN")
 	})
 }
+
+func TestAuditAdminActionNilServiceIsNoop(t *testing.T) {
+	issuer := auth.NewTokenIssuer(secret, 15*time.Minute)
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(Authenticate(issuer))
+	r.POST("/problems/:id",
+		func(c *gin.Context) {
+			// 直接注入一个拥有该权限的 Access，确保请求会走到审计写入分支。
+			c.Set(accessKey, &rbac.Access{UserID: 42, Permissions: map[string]struct{}{"problem.update": {}}})
+			c.Next()
+		},
+		AuditAdminAction(nil, "problem.update", "problem"),
+		func(c *gin.Context) {
+			c.Status(http.StatusOK)
+		})
+
+	w := postReq(r, "/problems/123", "Bearer "+token(t, issuer, 42, user.RoleUser))
+	require.Equal(t, http.StatusOK, w.Code, "nil service 应安全降级为 no-op，不 panic")
+}
