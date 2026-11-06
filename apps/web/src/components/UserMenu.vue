@@ -7,6 +7,7 @@ import Menu from 'primevue/menu'
 import type { MenuItem } from 'primevue/menuitem'
 
 import { useAuthStore } from '@/stores/auth'
+import { ADMIN_ACCESS_PERMISSIONS } from '@/permissions'
 import { formatCoins } from '@/utils/gamification'
 
 interface MenuHandle {
@@ -22,7 +23,7 @@ const menuItems = computed<MenuItem[]>(() => {
   const user = auth.user
   if (!user) return []
 
-  return [
+  const items: MenuItem[] = [
     {
       label: '我的主页',
       icon: 'pi pi-user',
@@ -44,6 +45,19 @@ const menuItems = computed<MenuItem[]>(() => {
         void router.push({ name: 'profile-edit' })
       },
     },
+  ]
+
+  if (auth.canAny(ADMIN_ACCESS_PERMISSIONS)) {
+    items.push({
+      label: '管理后台',
+      icon: 'pi pi-shield',
+      command: () => {
+        void router.push({ name: 'admin-dashboard' })
+      },
+    })
+  }
+
+  items.push(
     { separator: true },
     {
       label: '退出登录',
@@ -52,7 +66,9 @@ const menuItems = computed<MenuItem[]>(() => {
         void logout()
       },
     },
-  ]
+  )
+
+  return items
 })
 
 function toggleMenu(event: Event) {

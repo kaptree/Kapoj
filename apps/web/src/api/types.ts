@@ -73,6 +73,8 @@ export type ActivitySummary = Schemas['ActivitySummary']
 export type ActivitySignInResult = Schemas['ActivitySignInResult']
 export type AdminCoinAdjustInput = Schemas['AdminCoinAdjustInput']
 export type AdminCoinAdjustResult = Schemas['AdminCoinAdjustResponse']['data']
+export type AdminStats = Schemas['AdminStats']
+export type AdminAuditItem = Schemas['AdminAuditItem']
 
 export interface Page<T> {
   total: number

@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 
-import { GAMIFICATION_MANAGE_PERMISSIONS } from '@/permissions'
+import { ADMIN_ACCESS_PERMISSIONS } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 
 interface NavItem {
@@ -40,13 +40,13 @@ const growthItems: NavItem[] = [
 ]
 
 const adminItem: NavItem = {
-  key: 'gamification-admin',
-  path: '/admin/gamification',
-  label: '游戏化管理',
+  key: 'admin',
+  path: '/admin',
+  label: '管理后台',
   icon: 'pi pi-shield',
 }
 
-const showAdminEntry = computed(() => auth.canAny(GAMIFICATION_MANAGE_PERMISSIONS))
+const showAdminEntry = computed(() => auth.canAny(ADMIN_ACCESS_PERMISSIONS))
 
 const groups = computed<NavGroup[]>(() => [
   { key: 'core', label: '核心', items: primaryItems },

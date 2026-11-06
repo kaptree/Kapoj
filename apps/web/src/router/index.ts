@@ -1,7 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
+import AdminLayout from '@/layouts/AdminLayout.vue'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
-import { GAMIFICATION_MANAGE_PERMISSIONS, PERM } from '@/permissions'
+import { ADMIN_ACCESS_PERMISSIONS, GAMIFICATION_MANAGE_PERMISSIONS, PERM } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { authGuard } from './guard'
 
@@ -144,16 +145,6 @@ export const router = createRouter({
           meta: { requiresAuth: true, title: '装扮管理' },
         },
         {
-          path: 'admin/gamification',
-          name: 'gamification-admin',
-          component: () => import('@/views/GamificationAdminView.vue'),
-          meta: {
-            requiresAuth: true,
-            anyPermission: GAMIFICATION_MANAGE_PERMISSIONS,
-            title: '游戏化管理',
-          },
-        },
-        {
           path: 'forbidden',
           name: 'forbidden',
           component: () => import('@/views/ForbiddenView.vue'),
@@ -163,6 +154,33 @@ export const router = createRouter({
           path: ':pathMatch(.*)*',
           name: 'not-found',
           component: () => import('@/views/NotFoundView.vue'),
+        },
+      ],
+    },
+    {
+      path: '/admin',
+      component: AdminLayout,
+      meta: {
+        requiresAuth: true,
+        anyPermission: ADMIN_ACCESS_PERMISSIONS,
+        title: '管理后台',
+      },
+      children: [
+        {
+          path: '',
+          name: 'admin-dashboard',
+          component: () => import('@/views/AdminDashboardView.vue'),
+          meta: { title: '概览' },
+        },
+        {
+          path: 'gamification',
+          name: 'gamification-admin',
+          component: () => import('@/views/GamificationAdminView.vue'),
+          meta: {
+            requiresAuth: true,
+            anyPermission: GAMIFICATION_MANAGE_PERMISSIONS,
+            title: '游戏化管理',
+          },
         },
       ],
     },

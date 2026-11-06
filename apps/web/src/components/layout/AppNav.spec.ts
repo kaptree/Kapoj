@@ -2,7 +2,7 @@ import { mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { GAMIFICATION_MANAGE_PERMISSIONS } from '@/permissions'
+import { ADMIN_ACCESS_PERMISSIONS } from '@/permissions'
 import AppNav from './AppNav.vue'
 
 const auth = vi.hoisted(() => ({
@@ -18,7 +18,7 @@ const routes = [
   { path: '/problems', component: { template: '<div />' } },
   { path: '/problems/:id', component: { template: '<div />' } },
   { path: '/leaderboard', component: { template: '<div />' } },
-  { path: '/admin/gamification', component: { template: '<div />' } },
+  { path: '/admin', component: { template: '<div />' } },
 ]
 
 async function mountNav(path = '/') {
@@ -43,14 +43,14 @@ describe('AppNav', () => {
     expect(wrapper.find('nav').attributes('aria-label')).toBe('主导航')
   })
 
-  it('shows the administration entry to users with any gamification manage permission', async () => {
+  it('shows 管理后台 for any admin permission, not for normal users', async () => {
     let wrapper = await mountNav()
-    expect(wrapper.text()).not.toContain('游戏化管理')
+    expect(wrapper.text()).not.toContain('管理后台')
 
     auth.canAny.mockReturnValue(true)
     wrapper = await mountNav()
-    expect(wrapper.text()).toContain('游戏化管理')
-    expect(auth.canAny).toHaveBeenCalledWith(GAMIFICATION_MANAGE_PERMISSIONS)
+    expect(wrapper.text()).toContain('管理后台')
+    expect(auth.canAny).toHaveBeenCalledWith(ADMIN_ACCESS_PERMISSIONS)
   })
 
   it('links the leaderboard now that it is available', async () => {

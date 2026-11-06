@@ -1,8 +1,11 @@
 import { mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
+import Menu from 'primevue/menu'
+import type { MenuItem } from 'primevue/menuitem'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { ADMIN_ACCESS_PERMISSIONS } from '@/permissions'
 import UserMenu from './UserMenu.vue'
 
 interface TestUser {
@@ -19,6 +22,7 @@ const auth = vi.hoisted(() => ({
   user: null as TestUser | null,
   fetchMe: vi.fn(),
   logout: vi.fn(),
+  canAny: vi.fn(() => false),
 }))
 
 vi.mock('@/stores/auth', () => ({
@@ -32,6 +36,7 @@ const routes = [
   { path: '/users/:id', name: 'user-profile', component: { template: '<div />' } },
   { path: '/appearance', name: 'appearance', component: { template: '<div />' } },
   { path: '/settings/profile', name: 'profile-edit', component: { template: '<div />' } },
+  { path: '/admin', name: 'admin-dashboard', component: { template: '<div />' } },
 ]
 
 async function mountMenu() {
@@ -46,6 +51,8 @@ beforeEach(() => {
   auth.user = null
   auth.fetchMe.mockReset()
   auth.logout.mockReset()
+  auth.canAny.mockReset()
+  auth.canAny.mockReturnValue(false)
 })
 
 describe('UserMenu', () => {
@@ -75,5 +82,39 @@ describe('UserMenu', () => {
     expect(trigger.text()).toContain('Alice')
     expect(trigger.attributes('aria-haspopup')).toBe('menu')
     expect(trigger.attributes('aria-expanded')).toBe('false')
+  })
+
+  it('shows 管理后台 menu item for admins', async () => {
+    auth.isLoggedIn = true
+    auth.user = {
+      id: 7,
+      nickname: 'Alice',
+      username: 'alice',
+      avatarUrl: '',
+      coins: 1234,
+      role: 'user',
+    }
+    auth.canAny.mockReturnValue(true)
+    const wrapper = await mountMenu()
+
+    expect(auth.canAny).toHaveBeenCalledWith(ADMIN_ACCESS_PERMISSIONS)
+    const model = wrapper.findComponent(Menu).props('model') as MenuItem[]
+    expect(model.map((item) => item.label)).toContain('管理后台')
+  })
+
+  it('does not show the admin entry for normal users', async () => {
+    auth.isLoggedIn = true
+    auth.user = {
+      id: 7,
+      nickname: 'Alice',
+      username: 'alice',
+      avatarUrl: '',
+      coins: 1234,
+      role: 'user',
+    }
+    const wrapper = await mountMenu()
+
+    const model = wrapper.findComponent(Menu).props('model') as MenuItem[]
+    expect(model.map((item) => item.label)).not.toContain('管理后台')
   })
 })
