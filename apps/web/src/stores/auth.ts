@@ -3,7 +3,14 @@ import { defineStore } from 'pinia'
 
 import * as authApi from '@/api/auth'
 import * as usersApi from '@/api/users'
-import type { LoginRequest, Me, RegisterRequest, Session, TokenPair } from '@/api/types'
+import type {
+  LoginRequest,
+  Me,
+  RegisterRequest,
+  Session,
+  TokenPair,
+  UpdateMeRequest,
+} from '@/api/types'
 
 export const AUTH_STORAGE_KEY = 'kapoj.auth'
 
@@ -30,6 +37,20 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref<Me | null>(initial.user)
 
   const isLoggedIn = computed(() => accessToken.value !== null)
+  const isSuperAdmin = computed(() => user.value?.isSuperAdmin === true)
+
+  /** True when the user is super admin or holds the given permission code. */
+  function can(code: string): boolean {
+    if (isSuperAdmin.value) return true
+    return (user.value?.permissions ?? []).includes(code)
+  }
+
+  /** True when the user is super admin or holds any of the given codes. */
+  function canAny(codes: readonly string[]): boolean {
+    if (isSuperAdmin.value) return true
+    const permissions = user.value?.permissions ?? []
+    return codes.some((code) => permissions.includes(code))
+  }
 
   // Keep tabs in sync: another tab may rotate tokens or log out.
   if (typeof window !== 'undefined') {
@@ -76,10 +97,14 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function login(input: LoginRequest) {
     setSession(await authApi.login(input))
+    // The session user may carry empty RBAC fields; refresh them, but never
+    // let a failed refresh block the login itself.
+    await fetchMe().catch(() => undefined)
   }
 
   async function register(input: RegisterRequest) {
     setSession(await authApi.register(input))
+    await fetchMe().catch(() => undefined)
   }
 
   async function logout() {
@@ -92,11 +117,26 @@ export const useAuthStore = defineStore('auth', () => {
     setUser(await usersApi.getMe())
   }
 
+  /** Saves the profile while preserving the current RBAC fields. */
+  async function updateProfile(input: UpdateMeRequest): Promise<void> {
+    const updated = await usersApi.updateMe(input)
+    const current = user.value
+    setUser({
+      ...updated,
+      roles: current?.roles ?? updated.roles,
+      permissions: current?.permissions ?? updated.permissions,
+      isSuperAdmin: current?.isSuperAdmin ?? updated.isSuperAdmin,
+    })
+  }
+
   return {
     accessToken,
     refreshToken,
     user,
     isLoggedIn,
+    isSuperAdmin,
+    can,
+    canAny,
     setTokens,
     setSession,
     setUser,
@@ -105,5 +145,6 @@ export const useAuthStore = defineStore('auth', () => {
     register,
     logout,
     fetchMe,
+    updateProfile,
   }
 })

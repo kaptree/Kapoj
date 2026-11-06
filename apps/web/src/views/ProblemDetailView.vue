@@ -21,7 +21,7 @@ import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
-import { hasRole } from '@/router/guard'
+import { PERM } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useTheme } from '@/theme/theme'
 
@@ -30,7 +30,7 @@ const auth = useAuthStore()
 const toast = useToast()
 const { isDark } = useTheme()
 
-const canManage = computed(() => hasRole(auth.user?.role ?? null, ['problem_admin']))
+const canEdit = computed(() => auth.can(PERM.problem.update))
 const contestId = computed(() => {
   const n = Number(route.query?.contestId)
   return Number.isInteger(n) && n > 0 ? n : 0
@@ -135,7 +135,7 @@ const acceptPercent = computed(() =>
             icon="pi pi-send"
           />
           <Button
-            v-if="canManage"
+            v-if="canEdit"
             as="router-link"
             :to="{ name: 'problem-edit', params: { id: problem?.id ?? 0 } }"
             label="编辑"

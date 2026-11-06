@@ -22,7 +22,10 @@ import ContestDetailView from './ContestDetailView.vue'
 
 const toast = vi.hoisted(() => ({ add: vi.fn() }))
 const confirm = vi.hoisted(() => ({ require: vi.fn() }))
-const auth = vi.hoisted(() => ({ isLoggedIn: true }))
+const auth = vi.hoisted(() => ({
+  isLoggedIn: true,
+  can: vi.fn<(code: string) => boolean>(() => false),
+}))
 
 vi.mock('primevue/usetoast', () => ({ useToast: () => toast }))
 vi.mock('primevue/useconfirm', () => ({ useConfirm: () => confirm }))
@@ -186,6 +189,8 @@ beforeEach(() => {
   FakeEventSource.instances = []
   vi.stubGlobal('EventSource', FakeEventSource)
   auth.isLoggedIn = true
+  auth.can.mockReset()
+  auth.can.mockReturnValue(false)
   toast.add.mockReset()
   confirm.require.mockReset()
   vi.mocked(getContest).mockReset()
@@ -303,8 +308,54 @@ describe('ContestDetailView', () => {
     wrapper.unmount()
   })
 
+  it('participant.read/edit/clone/delete/announcement buttons use separate permissions', async () => {
+    auth.can.mockImplementation((code: string) => code === 'contest.update')
+    let { wrapper } = await mountPage()
+    expect(button(wrapper.element, '编辑')).toBeTruthy()
+    expect(button(wrapper.element, '报名用户')).toBeUndefined()
+    expect(button(wrapper.element, '克隆')).toBeUndefined()
+    expect(button(wrapper.element, '删除')).toBeUndefined()
+    wrapper.unmount()
+
+    auth.can.mockImplementation((code: string) => code === 'contest.participant.read')
+    ;({ wrapper } = await mountPage())
+    expect(button(wrapper.element, '报名用户')).toBeTruthy()
+    expect(button(wrapper.element, '编辑')).toBeUndefined()
+    wrapper.unmount()
+
+    auth.can.mockImplementation((code: string) => code === 'contest.delete')
+    ;({ wrapper } = await mountPage())
+    expect(button(wrapper.element, '删除')).toBeTruthy()
+    expect(button(wrapper.element, '编辑')).toBeUndefined()
+    wrapper.unmount()
+
+    auth.can.mockImplementation((code: string) => code === 'contest.announcement.manage')
+    ;({ wrapper } = await mountPage())
+    expect(button(wrapper.element, '编辑')).toBeUndefined()
+    await openTab(wrapper, '公告')
+    expect(button(wrapper.element, '发布公告')).toBeTruthy()
+    wrapper.unmount()
+  })
+
+  it('contest.update permits unregistered test submit UI; view_hidden does not', async () => {
+    vi.mocked(getContest).mockResolvedValue(detail({ registered: false, status: 'running' }))
+
+    auth.can.mockImplementation((code: string) => code === 'contest.view_hidden')
+    let { wrapper } = await mountPage()
+    expect(button(wrapper.element, '提交')).toBeUndefined()
+    expect(button(wrapper.element, '报名')).toBeTruthy()
+    wrapper.unmount()
+
+    auth.can.mockImplementation((code: string) => code === 'contest.update')
+    ;({ wrapper } = await mountPage())
+    expect(button(wrapper.element, '提交')).toBeTruthy()
+    expect(button(wrapper.element, '报名')).toBeUndefined()
+    wrapper.unmount()
+  })
+
   it('supports participants, editing and cloning for managers', async () => {
-    vi.mocked(getContest).mockResolvedValue(detail({ canManage: true, registered: false }))
+    auth.can.mockReturnValue(true)
+    vi.mocked(getContest).mockResolvedValue(detail({ registered: false }))
     const { wrapper, router } = await mountPage()
 
     await button(wrapper.element, '报名用户')!.click()
@@ -337,7 +388,8 @@ describe('ContestDetailView', () => {
   })
 
   it('confirms deletion with Chinese labels and returns to the list', async () => {
-    vi.mocked(getContest).mockResolvedValue(detail({ canManage: true }))
+    auth.can.mockImplementation((code: string) => code === 'contest.delete')
+    vi.mocked(getContest).mockResolvedValue(detail())
     const { wrapper, router } = await mountPage()
 
     await button(wrapper.element, '删除')!.click()
@@ -365,7 +417,8 @@ describe('ContestDetailView', () => {
   })
 
   it('creates, edits and deletes announcements', async () => {
-    vi.mocked(getContest).mockResolvedValue(detail({ canManage: true }))
+    auth.can.mockImplementation((code: string) => code === 'contest.announcement.manage')
+    vi.mocked(getContest).mockResolvedValue(detail())
     const { wrapper } = await mountPage()
     await openTab(wrapper, '公告')
 

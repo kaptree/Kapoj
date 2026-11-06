@@ -8,7 +8,6 @@ import Textarea from 'primevue/textarea'
 import { useToast } from 'primevue/usetoast'
 
 import { ApiError } from '@/api/http'
-import { updateMe } from '@/api/users'
 import AppFormField from '@/components/ui/AppFormField.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
@@ -80,7 +79,7 @@ async function save() {
   saving.value = true
   saveError.value = ''
   try {
-    auth.setUser(await updateMe(fields.value))
+    await auth.updateProfile(fields.value)
     toast.add({
       severity: 'success',
       summary: '资料已保存',

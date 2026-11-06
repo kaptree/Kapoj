@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import type { Role } from '@/api/types'
-import { authGuard, hasRole, safeRedirect } from './guard'
+import { authGuard, canAnyPermission, canPermission, safeRedirect } from './guard'
 
 const route = (fullPath: string, meta: Record<string, unknown> = {}) => ({ fullPath, meta })
-const guest = { isLoggedIn: false, role: null }
-const as = (role: Role) => ({ isLoggedIn: true, role })
+const guest = { isLoggedIn: false, permissions: [], isSuperAdmin: false }
+const as = (permissions: string[]) => ({ isLoggedIn: true, permissions, isSuperAdmin: false })
+const superUser = { isLoggedIn: true, permissions: [], isSuperAdmin: true }
 
 describe('authGuard', () => {
   it('sends guests on protected routes to login with a redirect', () => {
@@ -16,42 +16,60 @@ describe('authGuard', () => {
   })
 
   it('sends logged-in users away from guest-only routes', () => {
-    expect(authGuard(route('/login', { guestOnly: true }), as('user'))).toEqual({ name: 'home' })
+    expect(authGuard(route('/login', { guestOnly: true }), as([]))).toEqual({ name: 'home' })
   })
 
   it('allows everything else', () => {
-    expect(authGuard(route('/settings/profile', { requiresAuth: true }), as('user'))).toBe(true)
+    expect(authGuard(route('/settings/profile', { requiresAuth: true }), as([]))).toBe(true)
     expect(authGuard(route('/login', { guestOnly: true }), guest)).toBe(true)
     expect(authGuard(route('/'), guest)).toBe(true)
   })
 
-  it('redirects users lacking the role to forbidden', () => {
-    const r = route('/problems/new', { requiresAuth: true, roles: ['problem_admin'] })
-    expect(authGuard(r, as('user'))).toEqual({ name: 'forbidden' })
-    expect(authGuard(r, as('contest_admin'))).toEqual({ name: 'forbidden' })
-    expect(authGuard(r, as('problem_admin'))).toBe(true)
+  it('permission route requires login then checks permission', () => {
+    const r = route('/problems/new', { permission: 'problem.create' })
+    expect(authGuard(r, guest)).toEqual({ name: 'login', query: { redirect: '/problems/new' } })
+    expect(authGuard(r, as(['problem.create']))).toBe(true)
+    expect(authGuard(r, as(['contest.create']))).toEqual({ name: 'forbidden' })
   })
 
-  it('lets super_admin through any role route', () => {
-    expect(authGuard(route('/x', { roles: ['problem_admin'] }), as('super_admin'))).toBe(true)
-  })
-
-  it('login redirect wins over the role check', () => {
-    expect(authGuard(route('/problems/new', { roles: ['problem_admin'] }), guest)).toEqual({
-      name: 'login',
-      query: { redirect: '/problems/new' },
+  it('anyPermission allows one match; super passes', () => {
+    const r = route('/admin/gamification', {
+      anyPermission: ['gamification.achievement.manage', 'gamification.task.manage'],
     })
+    expect(authGuard(r, as(['gamification.task.manage']))).toBe(true)
+    expect(authGuard(r, as(['problem.create']))).toEqual({ name: 'forbidden' })
+    expect(authGuard(r, superUser)).toBe(true)
+  })
+
+  it('no permission redirects to forbidden', () => {
+    const r = route('/admin/gamification', { anyPermission: ['gamification.achievement.manage'] })
+    expect(authGuard(r, as([]))).toEqual({ name: 'forbidden' })
+  })
+
+  it('removes role-based authorization', () => {
+    // A legacy `roles` meta no longer restricts access.
+    expect(authGuard(route('/x', { roles: ['problem_admin'] }), as([]))).toBe(true)
   })
 })
 
-describe('hasRole', () => {
-  it('matches the server rule: super_admin always passes, others must be listed', () => {
-    expect(hasRole('super_admin', ['problem_admin'])).toBe(true)
-    expect(hasRole('problem_admin', ['problem_admin'])).toBe(true)
-    expect(hasRole('contest_admin', ['problem_admin'])).toBe(false)
-    expect(hasRole('user', ['problem_admin'])).toBe(false)
-    expect(hasRole(null, ['problem_admin'])).toBe(false)
-    expect(hasRole('user', [])).toBe(false)
+describe('canPermission', () => {
+  it('matches the permission set; super always passes', () => {
+    expect(canPermission(as(['problem.create']), 'problem.create')).toBe(true)
+    expect(canPermission(as(['problem.create']), 'problem.update')).toBe(false)
+    expect(canPermission(as([]), 'problem.create')).toBe(false)
+    expect(canPermission(superUser, 'anything')).toBe(true)
+    expect(canPermission(guest, 'problem.create')).toBe(false)
+  })
+})
+
+describe('canAnyPermission', () => {
+  it('passes when any code matches; super always passes', () => {
+    expect(canAnyPermission(as(['problem.create']), ['problem.create', 'contest.create'])).toBe(
+      true,
+    )
+    expect(canAnyPermission(as(['problem.create']), ['contest.create'])).toBe(false)
+    expect(canAnyPermission(as([]), [])).toBe(false)
+    expect(canAnyPermission(superUser, ['contest.create'])).toBe(true)
   })
 })
 

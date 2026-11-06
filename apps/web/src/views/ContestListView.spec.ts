@@ -14,7 +14,7 @@ const toast = vi.hoisted(() => ({ add: vi.fn() }))
 const confirm = vi.hoisted(() => ({ require: vi.fn() }))
 const auth = vi.hoisted(() => ({
   isLoggedIn: true,
-  user: { role: 'contest_admin' } as { role: string } | null,
+  can: vi.fn<(code: string) => boolean>(() => false),
 }))
 
 vi.mock('primevue/usetoast', () => ({
@@ -74,7 +74,8 @@ function button(wrapper: Awaited<ReturnType<typeof mountPage>>['wrapper'], label
 
 beforeEach(() => {
   auth.isLoggedIn = true
-  auth.user = { role: 'contest_admin' }
+  auth.can.mockReset()
+  auth.can.mockReturnValue(true)
   toast.add.mockReset()
   confirm.require.mockReset()
   vi.mocked(listContests).mockReset()
@@ -134,7 +135,7 @@ describe('ContestListView', () => {
 
   it('hides my/mine and hidden controls from guests', async () => {
     auth.isLoggedIn = false
-    auth.user = null
+    auth.can.mockReturnValue(false)
     const { wrapper } = await mountPage()
 
     expect(wrapper.find('#filter-mine').exists()).toBe(false)
@@ -151,6 +152,43 @@ describe('ContestListView', () => {
     await flushPromises()
 
     expect(router.currentRoute.value.fullPath).toBe('/contests/1')
+    wrapper.unmount()
+  })
+
+  it('splits create/edit/delete/clone visibility by permission', async () => {
+    auth.can.mockImplementation((code: string) => code === 'contest.update')
+    const { wrapper } = await mountPage()
+
+    expect(button(wrapper, '新建比赛')).toBeUndefined()
+    expect(button(wrapper, '编辑')).toBeTruthy()
+    expect(button(wrapper, '克隆')).toBeUndefined()
+    expect(button(wrapper, '删除')).toBeUndefined()
+    wrapper.unmount()
+
+    auth.can.mockImplementation((code: string) => code === 'contest.create')
+    const createOnly = await mountPage()
+    expect(button(createOnly.wrapper, '新建比赛')).toBeTruthy()
+    expect(button(createOnly.wrapper, '克隆')).toBeTruthy()
+    expect(button(createOnly.wrapper, '编辑')).toBeUndefined()
+    expect(button(createOnly.wrapper, '删除')).toBeUndefined()
+    createOnly.wrapper.unmount()
+
+    auth.can.mockImplementation((code: string) => code === 'contest.delete')
+    const deleteOnly = await mountPage()
+    expect(button(deleteOnly.wrapper, '删除')).toBeTruthy()
+    expect(button(deleteOnly.wrapper, '编辑')).toBeUndefined()
+    expect(button(deleteOnly.wrapper, '克隆')).toBeUndefined()
+    deleteOnly.wrapper.unmount()
+  })
+
+  it('contest.view_hidden only controls the hidden filter', async () => {
+    auth.can.mockImplementation((code: string) => code === 'contest.view_hidden')
+    const { wrapper } = await mountPage()
+
+    expect(wrapper.find('#filter-hidden').exists()).toBe(true)
+    expect(button(wrapper, '新建比赛')).toBeUndefined()
+    expect(button(wrapper, '编辑')).toBeUndefined()
+    expect(button(wrapper, '删除')).toBeUndefined()
     wrapper.unmount()
   })
 

@@ -16,7 +16,7 @@ const problemsApi = vi.hoisted(() => ({
 }))
 
 const auth = vi.hoisted(() => ({
-  user: { role: 'user' } as { role: string } | null,
+  can: vi.fn<(code: string) => boolean>(() => false),
 }))
 
 vi.mock('@/api/problems', () => ({
@@ -62,7 +62,8 @@ async function mountPage(path = '/problems') {
 }
 
 beforeEach(() => {
-  auth.user = { role: 'user' }
+  auth.can.mockReset()
+  auth.can.mockReturnValue(false)
   problemsApi.listProblems.mockReset()
 })
 
@@ -134,12 +135,16 @@ describe('ProblemListView', () => {
     })
   })
 
-  it('shows administrator controls and requests hidden problems when enabled', async () => {
-    auth.user = { role: 'problem_admin' }
+  it('problem.create shows create; problem.view_hidden shows hidden toggle', async () => {
+    auth.can.mockImplementation(
+      (code: string) => code === 'problem.create' || code === 'problem.view_hidden',
+    )
     problemsApi.listProblems.mockResolvedValue({ total: 0, items: [] })
     const { wrapper } = await mountPage()
 
     expect(wrapper.find('a[href="/problems/new"]').exists()).toBe(true)
+    expect(wrapper.find('#show-hidden').exists()).toBe(true)
+
     wrapper.findComponent(ToggleSwitch).vm.$emit('update:modelValue', true)
     await flushPromises()
 
@@ -151,6 +156,14 @@ describe('ProblemListView', () => {
       includeHidden: true,
       pageSize: 20,
     })
+  })
+
+  it('a user without problem permissions sees no create button or hidden toggle', async () => {
+    problemsApi.listProblems.mockResolvedValue({ total: 0, items: [] })
+    const { wrapper } = await mountPage()
+
+    expect(wrapper.find('a[href="/problems/new"]').exists()).toBe(false)
+    expect(wrapper.find('#show-hidden').exists()).toBe(false)
   })
 
   it('shows the empty state when no problems match', async () => {

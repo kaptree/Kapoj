@@ -44,6 +44,7 @@ import AppFormField from '@/components/ui/AppFormField.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
+import { PERM } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useTheme } from '@/theme/theme'
 import {
@@ -96,14 +97,19 @@ let source: EventSource | null = null
 let reloadTimer: number | undefined
 let syncTimer: number | undefined
 
-const canManage = computed(() => contest.value?.canManage ?? false)
+const canReadParticipants = computed(() => auth.can(PERM.contest.participant.read))
+const canEdit = computed(() => auth.can(PERM.contest.update))
+const canClone = computed(() => auth.can(PERM.contest.create))
+const canDelete = computed(() => auth.can(PERM.contest.delete))
+const canManageAnnouncements = computed(() => auth.can(PERM.contest.announcement.manage))
+const canTestSubmit = computed(() => auth.can(PERM.contest.update))
 const isLoggedIn = computed(() => auth.isLoggedIn)
 const loginTo = computed(() => ({
   name: 'login',
   query: { redirect: route.fullPath },
 }))
 const canSubmit = computed(
-  () => contest.value?.status === 'running' && (contest.value.registered || canManage.value),
+  () => contest.value?.status === 'running' && (contest.value.registered || canTestSubmit.value),
 )
 const canRegister = computed(() => {
   const current = contest.value
@@ -111,7 +117,7 @@ const canRegister = computed(() => {
     Boolean(current) &&
     isLoggedIn.value &&
     !current!.registered &&
-    !canManage.value &&
+    !canTestSubmit.value &&
     current!.status !== 'ended'
   )
 })
@@ -426,7 +432,7 @@ async function doRemoveAnnouncement(item: AnnouncementItem) {
             <Button label="登录后报名" icon="pi pi-sign-in" />
           </RouterLink>
           <Button
-            v-if="canManage"
+            v-if="canReadParticipants"
             label="报名用户"
             icon="pi pi-users"
             severity="secondary"
@@ -434,7 +440,7 @@ async function doRemoveAnnouncement(item: AnnouncementItem) {
             @click="openParticipants"
           />
           <Button
-            v-if="canManage"
+            v-if="canEdit"
             label="编辑"
             icon="pi pi-pencil"
             severity="secondary"
@@ -442,7 +448,7 @@ async function doRemoveAnnouncement(item: AnnouncementItem) {
             @click="openEdit"
           />
           <Button
-            v-if="canManage"
+            v-if="canClone"
             label="克隆"
             icon="pi pi-copy"
             severity="secondary"
@@ -450,7 +456,7 @@ async function doRemoveAnnouncement(item: AnnouncementItem) {
             @click="openClone"
           />
           <Button
-            v-if="canManage"
+            v-if="canDelete"
             label="删除"
             icon="pi pi-trash"
             severity="danger"
@@ -557,7 +563,7 @@ async function doRemoveAnnouncement(item: AnnouncementItem) {
               <div class="announcement-head">
                 <span class="announcement-heading">比赛公告</span>
                 <Button
-                  v-if="canManage"
+                  v-if="canManageAnnouncements"
                   label="发布公告"
                   icon="pi pi-megaphone"
                   size="small"
@@ -574,7 +580,7 @@ async function doRemoveAnnouncement(item: AnnouncementItem) {
                 <div class="announcement-title">
                   <strong>{{ item.title }}</strong>
                   <span class="announcement-time">{{ formatDateTime(item.createdAt) }}</span>
-                  <span v-if="canManage" class="announcement-ops">
+                  <span v-if="canManageAnnouncements" class="announcement-ops">
                     <Button label="编辑" text size="small" @click="openAnnouncement(item)" />
                     <Button
                       label="删除"

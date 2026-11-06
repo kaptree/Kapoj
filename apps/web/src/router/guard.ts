@@ -1,32 +1,49 @@
 import type { RouteLocationRaw } from 'vue-router'
 
-import type { Role } from '@/api/types'
-
 interface GuardTarget {
   fullPath: string
-  meta: { requiresAuth?: unknown; guestOnly?: unknown; roles?: unknown }
+  meta: {
+    requiresAuth?: unknown
+    guestOnly?: unknown
+    permission?: unknown
+    anyPermission?: unknown
+  }
 }
 
 export interface AuthState {
   isLoggedIn: boolean
-  role: Role | null
+  permissions: string[]
+  isSuperAdmin: boolean
 }
 
-/** Same rule as the server: super_admin always passes, others must be listed. */
-export function hasRole(role: Role | null, allowed: Role[]): boolean {
-  if (role === null) return false
-  return role === 'super_admin' || allowed.includes(role)
+/** Super admin passes, otherwise the code must be present in the permission set. */
+export function canPermission(state: AuthState, code: string): boolean {
+  if (state.isSuperAdmin) return true
+  return state.permissions.includes(code)
+}
+
+/** Super admin passes, otherwise any listed code may be present. */
+export function canAnyPermission(state: AuthState, codes: readonly string[]): boolean {
+  if (state.isSuperAdmin) return true
+  return codes.some((code) => state.permissions.includes(code))
 }
 
 export function authGuard(to: GuardTarget, state: AuthState): true | RouteLocationRaw {
-  const roles = Array.isArray(to.meta.roles) ? (to.meta.roles as Role[]) : []
-  if ((to.meta.requiresAuth || roles.length > 0) && !state.isLoggedIn) {
+  const permission = typeof to.meta.permission === 'string' ? to.meta.permission : ''
+  const anyPermission = Array.isArray(to.meta.anyPermission)
+    ? (to.meta.anyPermission as string[])
+    : []
+  const restricted = permission !== '' || anyPermission.length > 0
+  if ((to.meta.requiresAuth || restricted) && !state.isLoggedIn) {
     return { name: 'login', query: { redirect: to.fullPath } }
   }
   if (to.meta.guestOnly && state.isLoggedIn) {
     return { name: 'home' }
   }
-  if (roles.length > 0 && !hasRole(state.role, roles)) {
+  if (permission !== '' && !canPermission(state, permission)) {
+    return { name: 'forbidden' }
+  }
+  if (anyPermission.length > 0 && !canAnyPermission(state, anyPermission)) {
     return { name: 'forbidden' }
   }
   return true

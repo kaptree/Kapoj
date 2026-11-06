@@ -2,10 +2,11 @@ import { mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { GAMIFICATION_MANAGE_PERMISSIONS } from '@/permissions'
 import AppNav from './AppNav.vue'
 
 const auth = vi.hoisted(() => ({
-  user: null as { role: string } | null,
+  canAny: vi.fn(() => false),
 }))
 
 vi.mock('@/stores/auth', () => ({
@@ -28,7 +29,8 @@ async function mountNav(path = '/') {
 }
 
 beforeEach(() => {
-  auth.user = { role: 'user' }
+  auth.canAny.mockReset()
+  auth.canAny.mockReturnValue(false)
 })
 
 describe('AppNav', () => {
@@ -41,13 +43,14 @@ describe('AppNav', () => {
     expect(wrapper.find('nav').attributes('aria-label')).toBe('主导航')
   })
 
-  it('shows the administration entry only to super admins', async () => {
+  it('shows the administration entry to users with any gamification manage permission', async () => {
     let wrapper = await mountNav()
     expect(wrapper.text()).not.toContain('游戏化管理')
 
-    auth.user = { role: 'super_admin' }
+    auth.canAny.mockReturnValue(true)
     wrapper = await mountNav()
     expect(wrapper.text()).toContain('游戏化管理')
+    expect(auth.canAny).toHaveBeenCalledWith(GAMIFICATION_MANAGE_PERMISSIONS)
   })
 
   it('links the leaderboard now that it is available', async () => {

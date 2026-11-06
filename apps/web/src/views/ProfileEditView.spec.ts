@@ -26,11 +26,7 @@ const baseUser: Me = {
 const auth = vi.hoisted(() => ({
   user: null as Me | null,
   fetchMe: vi.fn(),
-  setUser: vi.fn(),
-}))
-
-const usersApi = vi.hoisted(() => ({
-  updateMe: vi.fn(),
+  updateProfile: vi.fn(),
 }))
 
 const toast = vi.hoisted(() => ({
@@ -39,10 +35,6 @@ const toast = vi.hoisted(() => ({
 
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => auth,
-}))
-
-vi.mock('@/api/users', () => ({
-  updateMe: usersApi.updateMe,
 }))
 
 vi.mock('primevue/usetoast', () => ({
@@ -59,8 +51,7 @@ async function mountProfile() {
 beforeEach(() => {
   auth.user = { ...baseUser }
   auth.fetchMe.mockReset()
-  auth.setUser.mockReset()
-  usersApi.updateMe.mockReset()
+  auth.updateProfile.mockReset()
   toast.add.mockReset()
 })
 
@@ -84,12 +75,11 @@ describe('ProfileEditView', () => {
 
     expect(wrapper.text()).toContain('请输入昵称')
     expect(wrapper.text()).toContain('头像地址需为 http 或 https 链接')
-    expect(usersApi.updateMe).not.toHaveBeenCalled()
+    expect(auth.updateProfile).not.toHaveBeenCalled()
   })
 
-  it('saves the profile and updates the auth user', async () => {
-    const updated = { ...baseUser, nickname: 'Alice2', bio: 'New bio' }
-    usersApi.updateMe.mockResolvedValue(updated)
+  it('saves the profile through auth.updateProfile', async () => {
+    auth.updateProfile.mockResolvedValue(undefined)
     const wrapper = await mountProfile()
 
     await wrapper.findAll('input')[0]!.setValue('Alice2')
@@ -97,24 +87,22 @@ describe('ProfileEditView', () => {
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
-    expect(usersApi.updateMe).toHaveBeenCalledWith({
+    expect(auth.updateProfile).toHaveBeenCalledWith({
       nickname: 'Alice2',
       bio: 'New bio',
       avatarUrl: '',
     })
-    expect(auth.setUser).toHaveBeenCalledWith(updated)
     expect(toast.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }))
   })
 
   it('keeps the form usable and reports save failures', async () => {
-    usersApi.updateMe.mockRejectedValue(new ApiError(500, 50000, '保存失败，请稍后再试'))
+    auth.updateProfile.mockRejectedValue(new ApiError(500, 50000, '保存失败，请稍后再试'))
     const wrapper = await mountProfile()
 
     await wrapper.findAll('input')[0]!.setValue('Alice2')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
-    expect(auth.setUser).not.toHaveBeenCalled()
     expect(toast.add).toHaveBeenCalledWith(
       expect.objectContaining({ severity: 'error', detail: '保存失败，请稍后再试' }),
     )

@@ -22,7 +22,7 @@ import AppFormField from '@/components/ui/AppFormField.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
-import { hasRole } from '@/router/guard'
+import { PERM } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import {
   contestModeLabel,
@@ -40,7 +40,11 @@ const auth = useAuthStore()
 const toast = useToast()
 const confirm = useConfirm()
 
-const canManage = computed(() => hasRole(auth.user?.role ?? null, ['contest_admin']))
+const canViewHidden = computed(() => auth.can(PERM.contest.viewHidden))
+const canCreate = computed(() => auth.can(PERM.contest.create))
+const canEdit = computed(() => auth.can(PERM.contest.update))
+const canDelete = computed(() => auth.can(PERM.contest.delete))
+const canAnyAction = computed(() => canCreate.value || canEdit.value || canDelete.value)
 const isLoggedIn = computed(() => auth.isLoggedIn)
 
 interface Filters {
@@ -272,7 +276,7 @@ watch(
       <template #actions>
         <span v-if="isLoggedIn" class="notice-chip">我报名的比赛可在此筛选</span>
         <span v-if="!loading || total > 0" class="result-count">共 {{ total }} 场比赛</span>
-        <Button v-if="canManage" label="新建比赛" icon="pi pi-plus" @click="createContest" />
+        <Button v-if="canCreate" label="新建比赛" icon="pi pi-plus" @click="createContest" />
       </template>
     </AppPageHeader>
 
@@ -311,7 +315,7 @@ watch(
             <Checkbox v-model="filters.mine" input-id="filter-mine" binary />
             <label for="filter-mine">只看我报名的</label>
           </div>
-          <div v-if="canManage" class="filter-check">
+          <div v-if="canViewHidden" class="filter-check">
             <Checkbox v-model="filters.includeHidden" input-id="filter-hidden" binary />
             <label for="filter-hidden">包含非公开</label>
           </div>
@@ -367,11 +371,19 @@ watch(
             <span class="num">{{ data.problemCount }} 题 / {{ data.participantCount }} 人</span>
           </template>
         </Column>
-        <Column v-if="canManage" header="操作" style="width: 170px">
+        <Column v-if="canAnyAction" header="操作" style="width: 170px">
           <template #body="{ data }">
             <div class="row-actions">
-              <Button label="编辑" text size="small" class="row-action" @click.stop="edit(data)" />
               <Button
+                v-if="canEdit"
+                label="编辑"
+                text
+                size="small"
+                class="row-action"
+                @click.stop="edit(data)"
+              />
+              <Button
+                v-if="canCreate"
                 label="克隆"
                 text
                 size="small"
@@ -379,6 +391,7 @@ watch(
                 @click.stop="openClone(data)"
               />
               <Button
+                v-if="canDelete"
                 label="删除"
                 text
                 size="small"

@@ -7,7 +7,14 @@ import type { Me } from '@/api/types'
 import { useAuthStore } from '@/stores/auth'
 import GamificationAdminView from './GamificationAdminView.vue'
 
-function me(role: Me['role']): Me {
+const ALL_GAMIFICATION = [
+  'gamification.achievement.manage',
+  'gamification.task.manage',
+  'gamification.badge.manage',
+  'gamification.title.manage',
+]
+
+function me(permissions: string[], isSuperAdmin = false): Me {
   return {
     id: 1,
     username: 'admin',
@@ -15,10 +22,10 @@ function me(role: Me['role']): Me {
     email: 'admin@example.com',
     avatarUrl: '',
     bio: '',
-    role,
+    role: 'user',
     roles: [],
-    permissions: [],
-    isSuperAdmin: false,
+    permissions,
+    isSuperAdmin,
     rating: 1800,
     coins: 0,
     status: 'active',
@@ -26,12 +33,12 @@ function me(role: Me['role']): Me {
   }
 }
 
-async function mountPage(role: Me['role']) {
+async function mountPage(permissions: string[], isSuperAdmin = false) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const auth = useAuthStore()
   auth.setTokens({ accessToken: 'access', refreshToken: 'refresh' })
-  auth.setUser(me(role))
+  auth.setUser(me(permissions, isSuperAdmin))
   const wrapper = mount(GamificationAdminView, {
     global: {
       plugins: [PrimeVue, pinia],
@@ -52,17 +59,23 @@ beforeEach(() => {
 })
 
 describe('GamificationAdminView', () => {
-  it('blocks non super admins', async () => {
-    const { wrapper } = await mountPage('contest_admin')
+  it('no gamification permission shows no-permission state', async () => {
+    const { wrapper } = await mountPage([])
 
     expect(wrapper.text()).toContain('没有权限')
-    expect(wrapper.text()).toContain('仅超级管理员可以访问游戏化管理')
     expect(wrapper.findAll('[role="tab"]')).toHaveLength(0)
     wrapper.unmount()
   })
 
+  it('shows only permitted domain tabs', async () => {
+    const { wrapper } = await mountPage(['gamification.task.manage', 'gamification.title.manage'])
+
+    expect(wrapper.findAll('[role="tab"]').map((tab) => tab.text())).toEqual(['任务', '称号'])
+    wrapper.unmount()
+  })
+
   it('shows the four admin tabs with lazy panels', async () => {
-    const { wrapper } = await mountPage('super_admin')
+    const { wrapper } = await mountPage(ALL_GAMIFICATION)
 
     expect(wrapper.text()).toContain('游戏化管理')
     expect(wrapper.findAll('[role="tab"]').map((tab) => tab.text())).toEqual([
@@ -85,6 +98,17 @@ describe('GamificationAdminView', () => {
     await wrapper.findAll('[role="tab"]')[3]!.trigger('click')
     await flushPromises()
     expect(wrapper.find('.stub-titles').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('super admin sees every tab', async () => {
+    const { wrapper } = await mountPage([], true)
+    expect(wrapper.findAll('[role="tab"]').map((tab) => tab.text())).toEqual([
+      '成就',
+      '任务',
+      '徽章',
+      '称号',
+    ])
     wrapper.unmount()
   })
 })

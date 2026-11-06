@@ -1,14 +1,15 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
-import type { Role } from '@/api/types'
+import { GAMIFICATION_MANAGE_PERMISSIONS, PERM } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { authGuard } from './guard'
 
 declare module 'vue-router' {
   interface RouteMeta {
     requiresAuth?: boolean
-    roles?: Role[]
+    permission?: string
+    anyPermission?: string[]
     guestOnly?: boolean
     title?: string
   }
@@ -56,7 +57,7 @@ export const router = createRouter({
           path: 'problems/new',
           name: 'problem-create',
           component: () => import('@/views/ProblemEditView.vue'),
-          meta: { requiresAuth: true, roles: ['problem_admin'], title: '新建题目' },
+          meta: { requiresAuth: true, permission: PERM.problem.create, title: '新建题目' },
         },
         {
           path: 'problems/:id(\\d+)',
@@ -86,7 +87,7 @@ export const router = createRouter({
           path: 'contests/new',
           name: 'contest-create',
           component: () => import('@/views/ContestEditView.vue'),
-          meta: { requiresAuth: true, roles: ['contest_admin'], title: '新建比赛' },
+          meta: { requiresAuth: true, permission: PERM.contest.create, title: '新建比赛' },
         },
         {
           path: 'contests/:id(\\d+)',
@@ -98,13 +99,13 @@ export const router = createRouter({
           path: 'contests/:id(\\d+)/edit',
           name: 'contest-edit',
           component: () => import('@/views/ContestEditView.vue'),
-          meta: { requiresAuth: true, roles: ['contest_admin'], title: '编辑比赛' },
+          meta: { requiresAuth: true, permission: PERM.contest.update, title: '编辑比赛' },
         },
         {
           path: 'problems/:id(\\d+)/edit',
           name: 'problem-edit',
           component: () => import('@/views/ProblemEditView.vue'),
-          meta: { requiresAuth: true, roles: ['problem_admin'], title: '编辑题目' },
+          meta: { requiresAuth: true, permission: PERM.problem.update, title: '编辑题目' },
         },
         {
           path: 'leaderboard',
@@ -146,7 +147,11 @@ export const router = createRouter({
           path: 'admin/gamification',
           name: 'gamification-admin',
           component: () => import('@/views/GamificationAdminView.vue'),
-          meta: { requiresAuth: true, roles: ['super_admin'], title: '游戏化管理' },
+          meta: {
+            requiresAuth: true,
+            anyPermission: GAMIFICATION_MANAGE_PERMISSIONS,
+            title: '游戏化管理',
+          },
         },
         {
           path: 'forbidden',
@@ -166,7 +171,11 @@ export const router = createRouter({
 
 router.beforeEach((to) => {
   const auth = useAuthStore()
-  return authGuard(to, { isLoggedIn: auth.isLoggedIn, role: auth.user?.role ?? null })
+  return authGuard(to, {
+    isLoggedIn: auth.isLoggedIn,
+    permissions: auth.user?.permissions ?? [],
+    isSuperAdmin: auth.isSuperAdmin,
+  })
 })
 
 router.afterEach((to) => {

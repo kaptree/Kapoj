@@ -18,7 +18,7 @@ import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
-import { hasRole } from '@/router/guard'
+import { PERM } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { DIFFICULTIES } from '@/utils/difficulty'
 import { parseProblemQuery, toRouteQuery } from '@/utils/problemQuery'
@@ -29,7 +29,8 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 
-const canManage = computed(() => hasRole(auth.user?.role ?? null, ['problem_admin']))
+const canCreate = computed(() => auth.can(PERM.problem.create))
+const canViewHidden = computed(() => auth.can(PERM.problem.viewHidden))
 const query = computed(() => parseProblemQuery(route.query))
 
 const filters = ref({ keyword: '', tag: '', difficulty: null as number | null })
@@ -51,7 +52,7 @@ async function load() {
   try {
     const page = await listProblems({
       ...query.value,
-      includeHidden: canManage.value && showHidden.value,
+      includeHidden: canViewHidden.value && showHidden.value,
       pageSize: PAGE_SIZE,
     })
     if (seq !== latest) return
@@ -114,7 +115,7 @@ function rate(p: ProblemListItem) {
       <template #actions>
         <span v-if="!loading || total > 0" class="result-count">{{ total }} 道题</span>
         <Button
-          v-if="canManage"
+          v-if="canCreate"
           as="router-link"
           :to="{ name: 'problem-create' }"
           label="新建题目"
@@ -148,7 +149,7 @@ function rate(p: ProblemListItem) {
           <Button type="submit" label="搜索" icon="pi pi-search" />
           <Button type="button" label="重置" severity="secondary" text @click="reset" />
         </div>
-        <div v-if="canManage" class="filter-admin">
+        <div v-if="canViewHidden" class="filter-admin">
           <ToggleSwitch v-model="showHidden" input-id="show-hidden" />
           <label for="show-hidden">显示未公开</label>
         </div>

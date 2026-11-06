@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 
-import { hasRole } from '@/router/guard'
+import { GAMIFICATION_MANAGE_PERMISSIONS } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 
 interface NavItem {
@@ -46,7 +46,7 @@ const adminItem: NavItem = {
   icon: 'pi pi-shield',
 }
 
-const showAdminEntry = computed(() => hasRole(auth.user?.role ?? null, ['super_admin']))
+const showAdminEntry = computed(() => auth.canAny(GAMIFICATION_MANAGE_PERMISSIONS))
 
 const groups = computed<NavGroup[]>(() => [
   { key: 'core', label: '核心', items: primaryItems },

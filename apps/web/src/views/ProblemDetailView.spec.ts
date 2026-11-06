@@ -2,7 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
 import ToastService from 'primevue/toastservice'
 import { createPinia } from 'pinia'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { reactive } from 'vue'
 
 import { ApiError } from '@/api/http'
@@ -11,6 +11,10 @@ import type { ProblemDetail, ProblemStats } from '@/api/types'
 import ProblemDetailView from './ProblemDetailView.vue'
 
 const route = reactive({ params: { id: '1' } })
+
+const auth = vi.hoisted(() => ({
+  can: vi.fn<(code: string) => boolean>(() => false),
+}))
 
 vi.mock('vue-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-router')>()
@@ -22,6 +26,9 @@ vi.mock('@/components/MarkdownView.vue', () => ({
 vi.mock('@/api/problems', () => ({
   getProblem: vi.fn(),
   getStatistics: vi.fn(),
+}))
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => auth,
 }))
 
 function deferred<T>() {
@@ -78,6 +85,11 @@ async function openStatsTab(wrapper: ReturnType<typeof mountView>) {
   await tab!.trigger('click')
   await flushPromises()
 }
+
+beforeEach(() => {
+  auth.can.mockReset()
+  auth.can.mockReturnValue(false)
+})
 
 describe('ProblemDetailView', () => {
   it('renders the statement, meta and samples', async () => {
@@ -161,6 +173,22 @@ describe('ProblemDetailView', () => {
     expect(wrapper.text()).toContain('题目不存在')
     expect(wrapper.text()).toContain('重试')
     expect(wrapper.text()).toContain('返回题库')
+    wrapper.unmount()
+  })
+
+  it('shows the edit button only with problem.update permission', async () => {
+    vi.mocked(getProblem).mockResolvedValue(detail(1))
+    vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
+
+    let wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('编辑')
+    wrapper.unmount()
+
+    auth.can.mockReturnValue(true)
+    wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.text()).toContain('编辑')
     wrapper.unmount()
   })
 })
