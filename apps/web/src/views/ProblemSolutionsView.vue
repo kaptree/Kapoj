@@ -77,11 +77,16 @@ function authorName(author: SolutionAuthor): string {
 }
 
 let latest = 0
+let loadedProblemId: number | null = null
 
 async function load() {
   const seq = ++latest
   loading.value = true
   error.value = ''
+  if (problemId.value !== loadedProblemId) {
+    posts.value = []
+    total.value = 0
+  }
   if (problemId.value === null) {
     loading.value = false
     error.value = '题目不存在'
@@ -90,6 +95,7 @@ async function load() {
   try {
     const data = await listSolutionPosts(problemId.value, { page: page.value, pageSize: PAGE_SIZE })
     if (seq !== latest) return
+    loadedProblemId = problemId.value
     posts.value = data.items
     total.value = data.total
   } catch (e) {
@@ -178,6 +184,8 @@ async function submitPublish() {
       />
 
       <template v-else>
+        <Message v-if="error" severity="error" :closable="false">{{ error }}</Message>
+
         <div class="post-list">
           <RouterLink
             v-for="post in posts"

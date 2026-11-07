@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import Button from 'primevue/button'
+import Message from 'primevue/message'
 import Paginator from 'primevue/paginator'
 import Tag from 'primevue/tag'
 
@@ -33,11 +34,16 @@ const error = ref('')
 const first = computed(() => (page.value - 1) * PAGE_SIZE)
 
 let latest = 0
+let loadedProblemId = ''
 
 async function load() {
   const seq = ++latest
   loading.value = true
   error.value = ''
+  if (problemId.value !== loadedProblemId) {
+    items.value = []
+    total.value = 0
+  }
   try {
     const data = await listContests({
       problemId: problemId.value,
@@ -45,6 +51,7 @@ async function load() {
       pageSize: PAGE_SIZE,
     })
     if (seq !== latest) return
+    loadedProblemId = problemId.value
     items.value = data.items
     total.value = data.total
   } catch (e) {
@@ -108,6 +115,8 @@ function statusSeverity(status: ContestStatus): 'success' | 'warn' | 'info' {
       />
 
       <template v-else>
+        <Message v-if="error" severity="error" :closable="false">{{ error }}</Message>
+
         <div class="contest-grid">
           <RouterLink
             v-for="contest in items"

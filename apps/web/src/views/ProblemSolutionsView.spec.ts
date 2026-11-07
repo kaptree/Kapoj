@@ -4,7 +4,7 @@ import Paginator from 'primevue/paginator'
 import ToastService from 'primevue/toastservice'
 import { createPinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { reactive } from 'vue'
+import { nextTick, reactive } from 'vue'
 
 import { createSolutionPost, listSolutionPosts } from '@/api/discussions'
 import { ApiError } from '@/api/http'
@@ -72,6 +72,7 @@ function button(wrapper: ReturnType<typeof mountView>, label: string) {
 }
 
 beforeEach(() => {
+  route.params.id = '1'
   auth.isLoggedIn = true
   toast.add.mockReset()
   vi.mocked(listSolutionPosts).mockReset()
@@ -155,6 +156,64 @@ describe('ProblemSolutionsView', () => {
     expect(failed.text()).toContain('加载思路失败')
     expect(button(failed, '重试')).toBeTruthy()
     failed.unmount()
+  })
+
+  it('clears the previous problem posts while switching problems', async () => {
+    vi.mocked(listSolutionPosts).mockResolvedValueOnce({
+      total: 1,
+      items: [post({ title: '旧题的思路' })],
+    })
+    const wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.text()).toContain('旧题的思路')
+
+    let resolveSecond!: (value: { total: number; items: SolutionPostItem[] }) => void
+    vi.mocked(listSolutionPosts).mockImplementationOnce(
+      () => new Promise((resolve) => (resolveSecond = resolve)),
+    )
+    route.params.id = '2'
+    await nextTick()
+
+    expect(wrapper.text()).not.toContain('旧题的思路')
+    expect(wrapper.text()).toContain('正在加载解题思路')
+
+    resolveSecond({ total: 1, items: [post({ id: 2, problemId: 2, title: '新题的思路' })] })
+    await flushPromises()
+    expect(wrapper.text()).toContain('新题的思路')
+    wrapper.unmount()
+  })
+
+  it('shows an error when switching to a problem whose load fails', async () => {
+    vi.mocked(listSolutionPosts).mockResolvedValueOnce({
+      total: 1,
+      items: [post({ title: '旧题的思路' })],
+    })
+    const wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.text()).toContain('旧题的思路')
+
+    vi.mocked(listSolutionPosts).mockRejectedValueOnce(new ApiError(500, 50000, '加载思路失败'))
+    route.params.id = '2'
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('旧题的思路')
+    expect(wrapper.text()).toContain('加载思路失败')
+    wrapper.unmount()
+  })
+
+  it('shows an error when a page change fails with existing posts', async () => {
+    vi.mocked(listSolutionPosts).mockResolvedValueOnce({ total: 45, items: [post()] })
+    const wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.text()).toContain('如何 AC 这道题')
+
+    vi.mocked(listSolutionPosts).mockRejectedValueOnce(new ApiError(500, 50000, '加载思路失败'))
+    wrapper.findComponent(Paginator).vm.$emit('page', { page: 1 })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('加载思路失败')
+    expect(wrapper.text()).toContain('如何 AC 这道题')
+    wrapper.unmount()
   })
 
   it('shows login action to guests while still listing posts', async () => {

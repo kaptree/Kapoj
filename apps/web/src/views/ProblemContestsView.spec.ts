@@ -4,7 +4,7 @@ import Paginator from 'primevue/paginator'
 import ToastService from 'primevue/toastservice'
 import { createPinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { reactive } from 'vue'
+import { nextTick, reactive } from 'vue'
 
 import { ApiError } from '@/api/http'
 import { listContests } from '@/api/contests'
@@ -53,6 +53,7 @@ function mountView() {
 }
 
 beforeEach(() => {
+  route.params.id = '3'
   vi.mocked(listContests).mockReset()
 })
 
@@ -97,5 +98,63 @@ describe('ProblemContestsView', () => {
     expect(failed.text()).toContain('加载比赛失败')
     expect(failed.text()).toContain('重试')
     failed.unmount()
+  })
+
+  it('clears the previous problem contests while switching problems', async () => {
+    vi.mocked(listContests).mockResolvedValueOnce({
+      total: 1,
+      items: [contest({ title: '旧题的比赛' })],
+    })
+    const wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.text()).toContain('旧题的比赛')
+
+    let resolveSecond!: (value: { total: number; items: ContestListItem[] }) => void
+    vi.mocked(listContests).mockImplementationOnce(
+      () => new Promise((resolve) => (resolveSecond = resolve)),
+    )
+    route.params.id = '4'
+    await nextTick()
+
+    expect(wrapper.text()).not.toContain('旧题的比赛')
+    expect(wrapper.text()).toContain('正在加载关联比赛')
+
+    resolveSecond({ total: 1, items: [contest({ id: 2, title: '新题的比赛' })] })
+    await flushPromises()
+    expect(wrapper.text()).toContain('新题的比赛')
+    wrapper.unmount()
+  })
+
+  it('shows an error when switching to a problem whose load fails', async () => {
+    vi.mocked(listContests).mockResolvedValueOnce({
+      total: 1,
+      items: [contest({ title: '旧题的比赛' })],
+    })
+    const wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.text()).toContain('旧题的比赛')
+
+    vi.mocked(listContests).mockRejectedValueOnce(new ApiError(500, 50000, '加载比赛失败'))
+    route.params.id = '4'
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('旧题的比赛')
+    expect(wrapper.text()).toContain('加载比赛失败')
+    wrapper.unmount()
+  })
+
+  it('shows an error when a page change fails with existing contests', async () => {
+    vi.mocked(listContests).mockResolvedValueOnce({ total: 45, items: [contest()] })
+    const wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.text()).toContain('Weekly Contest')
+
+    vi.mocked(listContests).mockRejectedValueOnce(new ApiError(500, 50000, '加载比赛失败'))
+    wrapper.findComponent(Paginator).vm.$emit('page', { page: 1 })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('加载比赛失败')
+    expect(wrapper.text()).toContain('Weekly Contest')
+    wrapper.unmount()
   })
 })
