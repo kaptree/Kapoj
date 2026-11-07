@@ -43,4 +43,7 @@ func (s *Service) scan(ctx context.Context) {
 			slog.Warn("rating: settle contest failed", "contest_id", id, "err", err)
 		}
 	}
+	if err := s.RunAdjustments(ctx, s.now()); err != nil {
+		slog.Warn("rating: run adjustments failed", "err", err)
+	}
 }
