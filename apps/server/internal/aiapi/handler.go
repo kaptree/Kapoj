@@ -24,11 +24,20 @@ func RegisterRoutes(r gin.IRouter, s *ai.Service, opts ...Options) {
 	}
 	h := &handler{svc: s, rbac: o.RBAC}
 
+	// resolver 为 nil 时 LoadAccess 为空操作；生产环境 router 始终传入 RBAC
+	// service。LoadAccess 只解析 Access 供 hint 派生隐藏题权限，不拒绝请求。
+	var resolver middleware.PermissionResolver
+	if h.rbac != nil {
+		resolver = h.rbac
+	}
+	load := middleware.LoadAccess(resolver)
+
 	r.GET("/ai/configs", middleware.RequireAuth(), h.getConfig)
 	r.POST("/ai/configs", middleware.RequireAuth(), h.saveConfig)
 	r.POST("/ai/complete", middleware.RequireAuth(), h.complete)
 	r.POST("/ai/format", middleware.RequireAuth(), h.format)
 	r.POST("/ai/optimize", middleware.RequireAuth(), h.optimize)
+	r.POST("/ai/hint", middleware.RequireAuth(), load, h.hint)
 }
 
 type handler struct {
