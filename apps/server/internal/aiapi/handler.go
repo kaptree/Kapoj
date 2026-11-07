@@ -26,6 +26,9 @@ func RegisterRoutes(r gin.IRouter, s *ai.Service, opts ...Options) {
 
 	r.GET("/ai/configs", middleware.RequireAuth(), h.getConfig)
 	r.POST("/ai/configs", middleware.RequireAuth(), h.saveConfig)
+	r.POST("/ai/complete", middleware.RequireAuth(), h.complete)
+	r.POST("/ai/format", middleware.RequireAuth(), h.format)
+	r.POST("/ai/optimize", middleware.RequireAuth(), h.optimize)
 }
 
 type handler struct {

@@ -93,7 +93,9 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		aiSvc = ai.NewService(g, enc, nil, nil)
+		aiSvc = ai.NewService(g, enc,
+			ai.NewRedisLimiter(rdb, cfg.AICooldown),
+			ai.NewOpenAIClient(cfg.AIRequestTimeout))
 	}
 
 	gameServer := asynq.NewServer(

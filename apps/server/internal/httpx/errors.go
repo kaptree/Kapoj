@@ -28,7 +28,9 @@ var (
 	ErrPayloadTooLarge    = newErr(http.StatusRequestEntityTooLarge, 41300, "请求体过大")
 	ErrTooManyAttempts    = newErr(http.StatusTooManyRequests, 42901, "登录失败次数过多，请 5 分钟后再试")
 	ErrTooManySubmissions = newErr(http.StatusTooManyRequests, 42902, "提交过于频繁，请稍后再试")
+	ErrTooManyAIRequests  = newErr(http.StatusTooManyRequests, 42903, "AI 请求过于频繁，请稍后再试")
 	ErrInternal           = newErr(http.StatusInternalServerError, 50000, "服务器内部错误")
+	ErrBadGateway         = newErr(http.StatusBadGateway, 50200, "AI 服务调用失败")
 	ErrUnavailable        = newErr(http.StatusServiceUnavailable, 50300, "依赖服务不可用")
 )
 

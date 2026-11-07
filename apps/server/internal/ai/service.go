@@ -35,26 +35,16 @@ type SaveConfigInput struct {
 	ModelName string `json:"modelName"`
 }
 
-// ChatClient 是 AI 补全/格式化/优化能力的抽象；Task 1 不实现，仅预留注入点。
-type ChatClient interface {
-	Chat(ctx context.Context, provider Provider, apiKey, model, prompt string) (string, error)
-}
-
-// RateLimiter 是 AI 生成接口的限流抽象；Task 1 不实现，仅预留注入点。
-type RateLimiter interface {
-	Allow(ctx context.Context, key string) (bool, error)
-}
-
-// Service 提供 provider 查询与用户 AI 配置的读取/保存。
+// Service 提供 provider 查询、用户 AI 配置的读取/保存与代码生成能力。
 type Service struct {
 	db      *gorm.DB
 	enc     *Encryptor
-	limiter RateLimiter
+	limiter Limiter
 	client  ChatClient
 }
 
-// NewService 构造 AI 服务；limiter/client 为后续生成接口预留，可传 nil。
-func NewService(db *gorm.DB, enc *Encryptor, limiter RateLimiter, client ChatClient) *Service {
+// NewService 构造 AI 服务；limiter/client 为生成接口所需，可传 nil（仅配置查询时）。
+func NewService(db *gorm.DB, enc *Encryptor, limiter Limiter, client ChatClient) *Service {
 	return &Service{db: db, enc: enc, limiter: limiter, client: client}
 }
 
