@@ -191,10 +191,10 @@ Expected: FAIL。
      WHERE u.status = 'active' AND u.rating > ?
        AND EXISTS (SELECT 1 FROM rating_history rh WHERE rh.user_id=u.id AND rh.kind='contest')
        AND NOT EXISTS (SELECT 1 FROM rating_history rh
-                       WHERE rh.user_id=u.id AND rh.kind='contest' AND rh.created_at >= ?)
+                       WHERE rh.user_id=u.id AND rh.kind='contest' AND rh.created_at > ?)
      FOR UPDATE
      ```
-     `?` 为 `now.AddDate(0,0,-inactiveDays)`。
+     `?` 为 `now.AddDate(0,0,-inactiveDays)`；使用 `>` 表示“恰好 60 天”也衰减，与设计“≥ inactiveDays”一致。
   5. 逐人：`above=rating-threshold`；`raw=int(math.Round(float64(above)*float64(percent)/100))`；`decay=min(max, max(1, raw))`；`new=max(threshold, rating-decay)`；若 `new==rating` 跳过；`INSERT ... ON CONFLICT (user_id,kind,period_key) WHERE period_key <> '' DO NOTHING`；RowsAffected=1 才 `UPDATE users SET rating=?`。
   6. `UPDATE rating_runs SET processed_at=? WHERE key=?`；提交。
 - 提交后若有变化，`rdb.Incr(LeaderboardVersionKey)`；Redis 错误仅日志。
