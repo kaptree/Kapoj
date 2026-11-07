@@ -121,6 +121,12 @@ export const router = createRouter({
           meta: { title: '学习路线' },
         },
         {
+          path: 'learning-paths/:id(\\d+)',
+          name: 'learning-path-detail',
+          component: () => import('@/views/LearningPathDetailView.vue'),
+          meta: { title: '学习路线' },
+        },
+        {
           path: 'contests/new',
           name: 'contest-create',
           component: () => import('@/views/ContestEditView.vue'),
