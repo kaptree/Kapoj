@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/api/http'
 import { listLearningPaths } from '@/api/learning'
 import type { LearningPathItem, Me } from '@/api/types'
+import AppErrorState from '@/components/ui/AppErrorState.vue'
 import LearningPathListView from './LearningPathListView.vue'
 
 const auth = vi.hoisted(() => ({
@@ -204,6 +205,10 @@ describe('LearningPathListView', () => {
     await flushPromises()
     expect(failed.text()).toContain('加载学习路线失败')
     expect(failed.text()).toContain('重试')
+    // A failed load with no items shows exactly one error presentation: the
+    // AppErrorState, and not the grid branch's duplicate Message banner.
+    expect(failed.findComponent(AppErrorState).exists()).toBe(true)
+    expect(failed.findAll('.path-grid').length).toBe(0)
     failed.unmount()
   })
 

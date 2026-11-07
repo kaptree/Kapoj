@@ -119,7 +119,7 @@ watch(filter, (next, prev) => {
     <AppSurface padding="lg" class="learning-paths-surface">
       <AppErrorState v-if="error && !visibleItems.length" :description="error" @retry="load" />
 
-      <AppLoadingState v-if="loading && !visibleItems.length" label="正在加载学习路线" />
+      <AppLoadingState v-else-if="loading && !visibleItems.length" label="正在加载学习路线" />
 
       <AppEmptyState
         v-else-if="!error && !visibleItems.length"
