@@ -4025,7 +4025,7 @@ export interface paths {
         };
         /**
          * 学习路线详情（游客可访问，可选登录）
-         * @description 活跃官方/公开路线所有人可见；活跃私有路线仅作者与拥有 learning_path.admin.read 或 learning_path.official.manage 者可见；已下架路线需要 learning_path.admin.read 或 learning_path.official.manage。无权限或不存在均返回 40400。登录用户读取前服务端重算进度，`myCompletedCount` 为最新完成节点数；游客为 0。
+         * @description 活跃官方/公开路线所有人可见；活跃私有路线仅作者与拥有 learning_path.admin.read 或 learning_path.official.manage 者可见；已下架路线需要 learning_path.admin.read 或 learning_path.official.manage。无权限或不存在均返回 40400。详情接口不重算进度，`myCompletedCount` 反映服务端已存储进度；实时值以列表/树接口为准。
          */
         get: {
             parameters: {
