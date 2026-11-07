@@ -67,7 +67,7 @@
   - `rbac.PermRatingSettingsManage = "rating.settings.manage"`、`rbac.PermissionGroupRating = "Rating"`、`rbac.AuditActionRatingSettingsManage`、`rbac.AuditTargetRatingSettings`。
   - `adminapi.Options.Rating *rating.Service`；`GET/PUT /api/admin/rating/settings`。
   - 默认值：decayEnabled=true, threshold=2400, inactiveDays=60, percent=3, max=100, seasonEnabled=true, months=6, resetPercent=30, anchor=读取时当月 1 日（UTC）。
-  - 校验范围：threshold 1500–4000；inactiveDays 1–365；decayPercent 1–100；decayMax 1–1000；seasonMonths 1–24；resetPercent 0–100；anchor `YYYY-MM-DD`。
+  - 校验范围：threshold 1500–4000；inactiveDays 1–365；decayPercent 1–100；decayMax 1–1000；seasonMonths 1–24；resetPercent 0–100；anchor `YYYY-MM-DD` 且必须是某月 1 日；所有月份判断使用 UTC。
 - Consumes: 现有 `Service`/`Options`/`RatingHistory`、`rbac` 权限目录、`adminapi` handler。
 
 - [ ] **Step 1: 写失败测试**
@@ -75,10 +75,11 @@
 `settings_test.go`：
 ```go
 func TestSettingsDefaultsAndLazyCreate(t *testing.T)
-// 空库首次 Settings 创建默认行；anchor 为固定 now 的当月 1 日；
+// 空库首次 Settings 创建默认行；anchor 为固定 now 的 UTC 当月 1 日（非 UTC 时区也正确）；
 // rating_runs 含上一赛季跳过行，SeasonView 正确
 func TestUpdateSettingsValidationAndScheduleSkip(t *testing.T)
 // 非法 threshold/days/percent/max/months/reset/anchor -> 40001
+// 非 1 日 anchor -> 40001；仅修改 months 也插入新的上一赛季跳过行
 // 修改 anchor/months 插入新的上一赛季跳过行；未修改不插入
 func TestCurrentSeason(t *testing.T)
 // anchor=2026-11-01, months=6, now=2026-12-15 -> current 2026-11-01..2027-05-01,

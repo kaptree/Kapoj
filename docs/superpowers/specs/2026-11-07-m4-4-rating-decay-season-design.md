@@ -51,7 +51,8 @@
 
 ### 3.2 赛季重置
 
-- 赛季由锚点日期 `seasonAnchor`（默认当前月 1 日 UTC）与 `seasonMonths`（默认 6）计算；赛季 `[anchor + n*months, anchor + (n+1)*months)`。
+- 赛季由锚点日期 `seasonAnchor`（默认当前月 1 日 UTC，**必须是某月 1 日**）与 `seasonMonths`（默认 6）计算；赛季 `[anchor + n*months, anchor + (n+1)*months)`。
+- 所有“当前月份/当前赛季”判断统一使用 UTC；非 1 日锚点返回 40001“赛季锚点必须为某月 1 日”。
 - 赛季结束后首次扫描处理“刚结束的上一赛季”：
   - 计算当前赛季 `S` 与上一赛季 `S-1`；运行键 `season:<S-1 开始日期>`（例如 `season:2026-01-01`）。
   - 若服务跨多个赛季停机，只处理最近结束的上一赛季一次，不连续回补多个赛季；更早赛季视为跳过。
@@ -168,7 +169,7 @@ rating_history (
 ```
 
 - PUT 只接受设置字段；`currentSeason` 只读。
-- 校验：threshold 1500–4000；inactive days 1–365；percent 1–100；max 1–1000；months 1–24；reset percent 0–100；anchor 为合法日期。
+- 校验：threshold 1500–4000；inactive days 1–365；percent 1–100；max 1–1000；months 1–24；reset percent 0–100；anchor 为合法日期且必须是某月 1 日。
 - 设置修改写内容管理审计，target type `rating_settings`，action `rating.settings.manage`。
 
 ### 6.2 公开赛季
