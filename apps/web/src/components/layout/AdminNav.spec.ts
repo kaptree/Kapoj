@@ -28,6 +28,7 @@ const routes = [
   { path: '/admin/audit', component: { template: '<div />' } },
   { path: '/problems', component: { template: '<div />' } },
   { path: '/contests', component: { template: '<div />' } },
+  { path: '/admin/learning-paths', component: { template: '<div />' } },
 ]
 
 async function mountNav(path = '/admin') {
@@ -116,5 +117,28 @@ describe('AdminNav', () => {
     expect(wrapper.text()).not.toContain('题库管理')
     expect(wrapper.text()).not.toContain('比赛管理')
     expect(wrapper.text()).not.toContain('内容')
+  })
+
+  it('shows the learning paths entry with official.manage or admin.read', async () => {
+    let wrapper = await mountNav()
+    expect(wrapper.text()).not.toContain('学习路线')
+
+    // official.manage alone
+    auth.canAny.mockImplementation((codes) => codes.includes(PERM.learningPath.official.manage))
+    wrapper = await mountNav()
+    expect(auth.canAny).toHaveBeenCalledWith([
+      PERM.learningPath.official.manage,
+      PERM.learningPath.admin.read,
+    ])
+    expect(wrapper.find('a[href="/admin/learning-paths"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('学习路线')
+    wrapper.unmount()
+
+    // admin.read alone
+    auth.canAny.mockImplementation((codes) => codes.includes(PERM.learningPath.admin.read))
+    wrapper = await mountNav()
+    expect(wrapper.find('a[href="/admin/learning-paths"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('学习路线')
+    wrapper.unmount()
   })
 })

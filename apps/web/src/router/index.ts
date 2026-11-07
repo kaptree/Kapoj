@@ -254,6 +254,16 @@ export const router = createRouter({
             title: '游戏化管理',
           },
         },
+        {
+          path: 'learning-paths',
+          name: 'admin-learning-paths',
+          component: () => import('@/views/AdminLearningPathsView.vue'),
+          meta: {
+            requiresAuth: true,
+            anyPermission: [PERM.learningPath.official.manage, PERM.learningPath.admin.read],
+            title: '学习路线管理',
+          },
+        },
       ],
     },
   ],

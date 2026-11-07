@@ -62,6 +62,13 @@ const auditItem: AdminNavItem = {
   icon: 'pi pi-history',
 }
 
+const learningPathsItem: AdminNavItem = {
+  key: 'learning-paths',
+  path: '/admin/learning-paths',
+  label: '学习路线',
+  icon: 'pi pi-sitemap',
+}
+
 const groups = computed<AdminNavGroup[]>(() => {
   const contentItems: AdminNavItem[] = []
   if (auth.canAny(PROBLEM_MANAGE_PERMISSIONS)) {
@@ -74,6 +81,9 @@ const groups = computed<AdminNavGroup[]>(() => {
       label: '比赛管理',
       icon: 'pi pi-trophy',
     })
+  }
+  if (auth.canAny([PERM.learningPath.official.manage, PERM.learningPath.admin.read])) {
+    contentItems.push(learningPathsItem)
   }
 
   const items: AdminNavGroup[] = [{ key: 'overview', label: '概览', items: [overviewItem] }]
