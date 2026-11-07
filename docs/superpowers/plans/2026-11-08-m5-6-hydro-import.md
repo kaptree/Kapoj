@@ -139,6 +139,8 @@ func TestImportHydroMultipleAndPartialFailure(t *testing.T)
 func TestImportHydroSlugConflictDoesNotOverwrite(t *testing.T)
 func TestImportHydroValidation(t *testing.T)
 // 无题目文件夹/损坏 zip/缺 testdata/in 不成对/非法 slug/路径穿越/符号链接/超限/伪造解压大小
+func TestImportHydroRollbackOnZipLevelError(t *testing.T)
+// 先成功导入一题，再触发实际解压超限 -> 40001 且首题/测试文件回滚、无残留
 func TestImportHydroCleanupOnTestcaseFailure(t *testing.T)
 // 测试文件读取失败后题目与已写文件被清理
 ```
@@ -166,7 +168,7 @@ Expected: FAIL。
   - `zip.NewReader`；遍历条目做 `path.Clean`/绝对路径/`..`/symlink/加密/重复/大小校验；统计 header 解压总量，并用实际读取的共享 `io.LimitReader`/计数防止伪造 `UncompressedSize64`；YAML/题面单文件读取上限 1MB/100k 字符。
   - 找 `problem.yaml` 目录；每个目录读取 YAML（`Title string; Tags []string `yaml:"tag"``），题面回退，测试点成对排序；构建 `problem.Input`；调用 `s.Create` → `s.AddTestcase`（stream reader，score 10）→ 失败 `s.Delete` 清理。
   - slug `hydro-` + sanitize(folder)；冲突/非法记录 failed。
-  - 返回结果；无题目文件夹/整体非法返回 `httpx.ErrValidation`。
+  - 返回结果；无题目文件夹/整体非法返回 `httpx.ErrValidation`。若整包级错误发生在已导入部分题目之后（如实际解压超限），回滚本次已导入题目及文件后再返回 40001；可通过 `Options.MaxImportUncompressedBytes` 小上限在测试中验证。
 - `import_hydro_handler.go`：
   - `parseMultipart(c)`；`formFile(c,"file")`；`fh.Size > maxHydroZipBytes` → 40001；`svc.ImportHydro(ctx, actorID, f, fh.Size)`。
   - 逐题 `h.rbac.RecordAudit`（best-effort，`rbac.AuditMeta` from `CurrentAccess` + client IP/UA，action `problem.create`，target `problem`，id）。
