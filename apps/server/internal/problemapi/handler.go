@@ -43,6 +43,10 @@ type Options struct {
 	// MaxImportFileBytes overrides the uploaded HydroOJ package file limit.
 	// Zero means problem.MaxHydroZipBytes. Tests may set a small value.
 	MaxImportFileBytes int64
+	// MaxImportUncompressedBytes overrides the total decompressed bytes
+	// allowed during a HydroOJ import. Zero means the package default
+	// (problem.MaxHydroUncompressed). Tests may set a small value.
+	MaxImportUncompressedBytes int64
 }
 
 // auditTargetProblem 是内容管理审计的 target type。
@@ -62,6 +66,9 @@ func RegisterRoutes(
 	maxImport := o.MaxImportFileBytes
 	if maxImport <= 0 {
 		maxImport = problem.MaxHydroZipBytes
+	}
+	if o.MaxImportUncompressedBytes > 0 {
+		problem.WithHydroUncompressedLimit(o.MaxImportUncompressedBytes)(s)
 	}
 	h := &handler{svc: s, accepted: accepted, contests: contests, rbac: o.RBAC, solutions: o.Solutions, discussions: o.Discussions, maxImportFileBytes: maxImport}
 

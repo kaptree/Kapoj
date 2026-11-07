@@ -73,6 +73,8 @@ type Service struct {
 	repo          Repository
 	store         storage.Storage
 	learningGuard LearningGuard
+
+	hydroUncompressedLimit int64
 }
 
 func NewService(repo Repository, store storage.Storage, opts ...Option) *Service {

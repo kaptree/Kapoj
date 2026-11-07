@@ -20,11 +20,15 @@ import (
 const (
 	// MaxHydroZipBytes caps an uploaded HydroOJ package file.
 	MaxHydroZipBytes = 200 << 20
+	// MaxHydroUncompressed caps the total decompressed bytes read from a
+	// HydroOJ package. It is the default for the configurable import budget
+	// and the fixed limit for the declared-size pre-scan.
+	MaxHydroUncompressed = 1 << 30
 )
 
 const (
 	maxHydroZipBytes             = MaxHydroZipBytes
-	maxHydroUncompressed         = 1 << 30
+	maxHydroUncompressed         = MaxHydroUncompressed
 	maxHydroEntries              = 5000
 	maxHydroProblems             = 100
 	maxHydroTestcases            = 500
@@ -41,7 +45,10 @@ const (
 	hydroSlugPrefix    = "hydro-"
 )
 
-var errHydroTooLarge = errors.New("hydro: entry exceeds read limit")
+var (
+	errHydroTooLarge     = errors.New("hydro: entry exceeds read limit")
+	errHydroPackageLimit = errors.New("hydro: package exceeds decompressed limit")
+)
 
 // HydroImportResult reports the outcome of a HydroOJ package import.
 type HydroImportResult struct {
@@ -92,6 +99,13 @@ func (c *countingReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
+// WithHydroUncompressedLimit overrides the maximum total decompressed bytes
+// read during a HydroOJ import. Zero means the package default
+// (MaxHydroUncompressed).
+func WithHydroUncompressedLimit(n int64) Option {
+	return func(s *Service) { s.hydroUncompressedLimit = n }
+}
+
 // ImportHydro parses a HydroOJ exported zip package and imports every valid
 // problem as an offline problem owned by createdBy. A package that is damaged,
 // empty, over its limits, or carries a dangerous entry is rejected whole with a
@@ -111,6 +125,13 @@ func (s *Service) ImportHydro(ctx context.Context, createdBy int64, r io.ReaderA
 	result := &HydroImportResult{
 		Imported: []HydroImportedProblem{},
 		Failed:   []HydroImportFailure{},
+	}
+
+	// The configurable budget governs actual decompressed bytes read; the
+	// declared-size pre-scan below stays fixed at maxHydroUncompressed.
+	limit := s.hydroUncompressedLimit
+	if limit <= 0 {
+		limit = maxHydroUncompressed
 	}
 
 	byDir := map[string][]hydroEntry{}
@@ -166,6 +187,7 @@ func (s *Service) ImportHydro(ctx context.Context, createdBy int64, r io.ReaderA
 	}
 
 	var actual int64
+	var importedIDs []int64
 	for _, d := range dirs {
 		slug := slugs[d]
 		folder := path.Base(d)
@@ -177,17 +199,32 @@ func (s *Service) ImportHydro(ctx context.Context, createdBy int64, r io.ReaderA
 			result.Failed = append(result.Failed, HydroImportFailure{Folder: folder, Error: "题目标识已存在：" + slug})
 			continue
 		}
-		imp, fail, err := s.importHydroProblem(ctx, createdBy, d, byDir[d], byDir[d+"/testdata"], slug, &actual)
+		imp, fail, err := s.importHydroProblem(ctx, createdBy, d, byDir[d], byDir[d+"/testdata"], slug, &actual, limit)
 		if err != nil {
+			// A package-level error (e.g. the decompressed budget) aborts the
+			// whole import; roll back everything committed during this call so
+			// a failed response never leaves partial data behind.
+			s.rollbackHydroImported(ctx, importedIDs)
+			if errors.Is(err, errHydroPackageLimit) {
+				return nil, httpx.ErrValidation("题包解压后大小超过限制")
+			}
 			return nil, err
 		}
 		if fail != nil {
 			result.Failed = append(result.Failed, *fail)
 			continue
 		}
+		importedIDs = append(importedIDs, imp.ID)
 		result.Imported = append(result.Imported, imp)
 	}
 	return result, nil
+}
+
+// rollbackHydroImported deletes every problem imported during the current call.
+func (s *Service) rollbackHydroImported(ctx context.Context, ids []int64) {
+	for _, id := range ids {
+		s.cleanupHydroProblem(ctx, id)
+	}
 }
 
 func validateHydroEntry(f *zip.File) error {
@@ -261,7 +298,7 @@ func hydroSlug(folderDir string) (string, bool) {
 }
 
 // importHydroProblem imports one problem folder, returning the created problem,
-// a per-problem failure, or a whole-package error (budget exceeded).
+// a per-problem failure, or a package-level error (budget exceeded).
 func (s *Service) importHydroProblem(
 	ctx context.Context,
 	createdBy int64,
@@ -269,6 +306,7 @@ func (s *Service) importHydroProblem(
 	files, testFiles []hydroEntry,
 	slug string,
 	actual *int64,
+	limit int64,
 ) (HydroImportedProblem, *HydroImportFailure, error) {
 	folder := path.Base(dir)
 	fail := func(title, msg string) (HydroImportedProblem, *HydroImportFailure, error) {
@@ -295,8 +333,8 @@ func (s *Service) importHydroProblem(
 		}
 		return fail("", "problem.yaml 读取失败")
 	}
-	if *actual > maxHydroUncompressed {
-		return HydroImportedProblem{}, nil, httpx.ErrValidation("题包解压后大小超过限制")
+	if *actual > limit {
+		return HydroImportedProblem{}, nil, errHydroPackageLimit
 	}
 	var meta hydroYAML
 	if err := yaml.Unmarshal(yamlData, &meta); err != nil {
@@ -353,9 +391,9 @@ func (s *Service) importHydroProblem(
 			s.cleanupHydroProblem(ctx, p.ID)
 			return fail(title, hydroTestcaseError(err))
 		}
-		if *actual > maxHydroUncompressed {
+		if *actual > limit {
 			s.cleanupHydroProblem(ctx, p.ID)
-			return HydroImportedProblem{}, nil, httpx.ErrValidation("题包解压后大小超过限制")
+			return HydroImportedProblem{}, nil, errHydroPackageLimit
 		}
 	}
 

@@ -361,6 +361,37 @@ func TestImportHydroCleanupOnTestcaseFailure(t *testing.T) {
 	assert.Empty(t, e.files(t), "all stored files must be removed")
 }
 
+func TestImportHydroRollbackOnZipLevelError(t *testing.T) {
+	e := newEnv(t)
+	// 解压预算 100 字节：第一题（约 13 字节）导入成功，第二题的大测试点把
+	// 实际读取总量推到预算之上，触发整包错误并回滚已导入的题目与文件。
+	svc := problem.NewService(e.repo, e.store, problem.WithHydroUncompressedLimit(100))
+
+	data := buildZip(t,
+		zipEntry{name: "6760/problem.yaml", body: []byte("title: A\n")},
+		zipEntry{name: "6760/problem_zh.md", body: []byte("A")},
+		zipEntry{name: "6760/testdata/1.in", body: []byte("in")},
+		zipEntry{name: "6760/testdata/1.out", body: []byte("o")},
+		zipEntry{name: "6761/problem.yaml", body: []byte("title: B\n")},
+		zipEntry{name: "6761/problem_zh.md", body: []byte("B")},
+		zipEntry{name: "6761/testdata/1.in", body: bytes.Repeat([]byte("x"), 200)},
+		zipEntry{name: "6761/testdata/1.out", body: []byte("o")},
+	)
+
+	res, err := importZip(t, svc, 1, data)
+	var appErr *httpx.AppError
+	require.Error(t, err)
+	require.True(t, errors.As(err, &appErr), "expected AppError, got %v", err)
+	assert.Equal(t, 40001, appErr.Code, appErr.Message)
+	assert.Nil(t, res, "a package-level error must not return a result")
+
+	// 回滚：第一题与第二题的临时数据都不能残留。
+	var n int64
+	require.NoError(t, e.db.Model(&problem.Problem{}).Count(&n).Error)
+	assert.Zero(t, n, "all imported problems must be rolled back")
+	assert.Empty(t, e.files(t), "all stored files must be removed")
+}
+
 func TestImportHydroEmptyTestcaseFilesAllowed(t *testing.T) {
 	e := newEnv(t)
 	data := buildZip(t,
