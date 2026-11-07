@@ -12,18 +12,27 @@ import (
 // never reveals which private contest a rating change came from.
 const privateContestTitle = "私密比赛"
 
-// HistoryItem is one public contest rating change for a user.
+// Non-contest history titles shown to users.
+const (
+	decayTitle       = "Rating 衰减"
+	seasonResetTitle = "赛季重置"
+)
+
+// HistoryItem is one public rating change for a user, of any kind (contest,
+// decay or season reset).
 type HistoryItem struct {
-	ContestID    int64     `json:"contestId"`
-	ContestTitle string    `json:"contestTitle"`
-	Rank         int       `json:"rank"`
-	RatingBefore int       `json:"ratingBefore"`
-	RatingAfter  int       `json:"ratingAfter"`
-	Delta        int       `json:"delta"`
-	CreatedAt    time.Time `json:"createdAt"`
+	Kind         HistoryKind `json:"kind"`
+	ContestID    int64       `json:"contestId"`
+	ContestTitle string      `json:"contestTitle"`
+	Rank         int         `json:"rank"`
+	PeriodKey    string      `json:"periodKey"`
+	RatingBefore int         `json:"ratingBefore"`
+	RatingAfter  int         `json:"ratingAfter"`
+	Delta        int         `json:"delta"`
+	CreatedAt    time.Time   `json:"createdAt"`
 }
 
-// RatingHistory returns a user's contest rating history, newest first. A
+// RatingHistory returns a user's rating history of every kind, newest first. A
 // missing user is a 404; an existing user without records returns an empty
 // page.
 func (s *Service) RatingHistory(ctx context.Context, userID int64, page, size int) (httpx.Page[HistoryItem], error) {
@@ -44,27 +53,38 @@ func (s *Service) RatingHistory(ctx context.Context, userID int64, page, size in
 	page, size = normalizePage(page, size)
 
 	var total int64
-	if err := s.db.WithContext(ctx).Table("rating_history AS rh").
-		Joins("JOIN contests AS c ON c.id = rh.contest_id").
-		Where("rh.user_id = ? AND rh.kind = ?", userID, HistoryContest).
+	if err := s.db.WithContext(ctx).Table("rating_history").
+		Where("user_id = ?", userID).
 		Count(&total).Error; err != nil {
 		return httpx.Page[HistoryItem]{}, err
 	}
 
 	var rows []struct {
+		Kind         string    `gorm:"column:kind"`
 		ContestID    int64     `gorm:"column:contest_id"`
 		ContestTitle string    `gorm:"column:contest_title"`
 		Rank         int       `gorm:"column:rank"`
+		PeriodKey    string    `gorm:"column:period_key"`
 		RatingBefore int       `gorm:"column:rating_before"`
 		RatingAfter  int       `gorm:"column:rating_after"`
 		CreatedAt    time.Time `gorm:"column:created_at"`
 	}
 	if err := s.db.WithContext(ctx).Table("rating_history AS rh").
-		Select(`CASE WHEN c.is_public THEN rh.contest_id ELSE 0 END AS contest_id,
-			CASE WHEN c.is_public THEN c.title ELSE ? END AS contest_title,
-			rh.rank, rh.rating_before, rh.rating_after, rh.created_at`, privateContestTitle).
-		Joins("JOIN contests AS c ON c.id = rh.contest_id").
-		Where("rh.user_id = ? AND rh.kind = ?", userID, HistoryContest).
+		Select(`
+			rh.kind,
+			CASE WHEN c.is_public THEN rh.contest_id ELSE 0 END AS contest_id,
+			CASE
+				WHEN rh.kind = ? THEN ?
+				WHEN rh.kind = ? THEN ?
+				WHEN c.is_public THEN c.title
+				ELSE ?
+			END AS contest_title,
+			rh.rank, rh.period_key, rh.rating_before, rh.rating_after, rh.created_at`,
+			string(HistoryDecay), decayTitle,
+			string(HistorySeasonReset), seasonResetTitle,
+			privateContestTitle).
+		Joins("LEFT JOIN contests AS c ON c.id = rh.contest_id").
+		Where("rh.user_id = ?", userID).
 		Order("rh.created_at DESC, rh.id DESC").
 		Offset((page - 1) * size).
 		Limit(size).
@@ -75,9 +95,11 @@ func (s *Service) RatingHistory(ctx context.Context, userID int64, page, size in
 	items := make([]HistoryItem, len(rows))
 	for i, row := range rows {
 		items[i] = HistoryItem{
+			Kind:         HistoryKind(row.Kind),
 			ContestID:    row.ContestID,
 			ContestTitle: row.ContestTitle,
 			Rank:         row.Rank,
+			PeriodKey:    row.PeriodKey,
 			RatingBefore: row.RatingBefore,
 			RatingAfter:  row.RatingAfter,
 			Delta:        row.RatingAfter - row.RatingBefore,

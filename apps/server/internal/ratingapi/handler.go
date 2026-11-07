@@ -32,6 +32,7 @@ func RegisterRoutes(r gin.IRouter, s *rating.Service, opts ...Options) {
 	}
 	r.GET("/leaderboard/rating", h.leaderboard)
 	r.GET("/users/:id/rating-history", h.ratingHistory)
+	r.GET("/rating/season/current", h.seasonCurrent)
 }
 
 type handler struct {
@@ -99,4 +100,13 @@ func (h *handler) ratingHistory(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, result)
+}
+
+func (h *handler) seasonCurrent(c *gin.Context) {
+	season, err := h.svc.CurrentSeason(c.Request.Context())
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, season)
 }

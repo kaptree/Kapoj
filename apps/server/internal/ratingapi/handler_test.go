@@ -306,3 +306,66 @@ func TestRatingHistoryPublicAndNotFound(t *testing.T) {
 		assert.EqualValues(t, 40400, resp["code"], path)
 	}
 }
+
+func TestRatingSeasonCurrent(t *testing.T) {
+	f := newFx(t)
+
+	w, resp := f.do(http.MethodGet, "/api/rating/season/current")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data, ok := resp["data"].(map[string]any)
+	require.True(t, ok, "expected data object, got %T", resp["data"])
+	key, _ := data["key"].(string)
+	assert.Regexp(t, `^\d{4}-\d{2}-\d{2}$`, key)
+	assert.Contains(t, data["name"].(string), " ~ ")
+	assert.NotEmpty(t, data["startsAt"].(string))
+	assert.NotEmpty(t, data["endsAt"].(string))
+	assert.NotEmpty(t, data["nextResetAt"].(string))
+
+	// Lazy default settings creation on first read.
+	var count int64
+	require.NoError(t, f.db.Raw(`SELECT count(*) FROM rating_settings`).Scan(&count).Error)
+	assert.EqualValues(t, 1, count)
+}
+
+func TestRatingHistoryKinds(t *testing.T) {
+	f := newFx(t)
+	userID := f.user("kinds", 1500)
+	now := time.Now().UTC().Truncate(time.Second)
+	contestID := f.contest("公开赛")
+	f.history(userID, contestID, 1, 1500, 1532, now.Add(-2*time.Hour))
+	require.NoError(t, f.db.Create(&rating.RatingHistory{
+		UserID: userID, Kind: rating.HistoryDecay, PeriodKey: "2026-02",
+		Rank: 0, RatingBefore: 1532, RatingAfter: 1526, CreatedAt: now.Add(-time.Hour),
+	}).Error)
+	require.NoError(t, f.db.Create(&rating.RatingHistory{
+		UserID: userID, Kind: rating.HistorySeasonReset, PeriodKey: "2026-01-01",
+		Rank: 0, RatingBefore: 1526, RatingAfter: 1518, CreatedAt: now,
+	}).Error)
+
+	w, resp := f.do(http.MethodGet, fmt.Sprintf("/api/users/%d/rating-history", userID))
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	total, items := pageData(t, resp)
+	assert.EqualValues(t, 3, total)
+	require.Len(t, items, 3)
+
+	seasonReset := items[0].(map[string]any)
+	assert.Equal(t, "season_reset", seasonReset["kind"])
+	assert.Equal(t, "2026-01-01", seasonReset["periodKey"])
+	assert.EqualValues(t, 0, seasonReset["contestId"])
+	assert.Equal(t, "赛季重置", seasonReset["contestTitle"])
+	assert.EqualValues(t, 0, seasonReset["rank"])
+
+	decay := items[1].(map[string]any)
+	assert.Equal(t, "decay", decay["kind"])
+	assert.Equal(t, "2026-02", decay["periodKey"])
+	assert.EqualValues(t, 0, decay["contestId"])
+	assert.Equal(t, "Rating 衰减", decay["contestTitle"])
+	assert.EqualValues(t, 0, decay["rank"])
+
+	contestItem := items[2].(map[string]any)
+	assert.Equal(t, "contest", contestItem["kind"])
+	assert.Equal(t, "", contestItem["periodKey"])
+	assert.EqualValues(t, contestID, contestItem["contestId"])
+	assert.Equal(t, "公开赛", contestItem["contestTitle"])
+	assert.EqualValues(t, 1, contestItem["rank"])
+}
