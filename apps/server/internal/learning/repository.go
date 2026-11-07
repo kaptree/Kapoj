@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ErrNotFound 表示学习路线不存在。
@@ -260,6 +261,78 @@ func (r *Repository) ProblemSummaries(ctx context.Context, ids []int64) (map[int
 		out[row.ProblemID] = row
 	}
 	return out, nil
+}
+
+// ListActivePathIDsForUser returns the IDs of active paths visible to the
+// user: official, public, or created by them.
+func (r *Repository) ListActivePathIDsForUser(ctx context.Context, userID int64) ([]int64, error) {
+	var ids []int64
+	err := r.db.WithContext(ctx).Model(&LearningPath{}).
+		Where("is_active = ?", true).
+		Where("(is_official = ? OR is_public = ? OR created_by = ?)", true, true, userID).
+		Pluck("id", &ids).Error
+	return ids, err
+}
+
+// ListNodesByPathIDs returns the nodes of the given paths ordered by path id,
+// sort order and id. An empty path list yields nil without querying.
+func (r *Repository) ListNodesByPathIDs(ctx context.Context, pathIDs []int64) ([]LearningPathNode, error) {
+	if len(pathIDs) == 0 {
+		return nil, nil
+	}
+	var nodes []LearningPathNode
+	err := r.db.WithContext(ctx).Where("path_id IN ?", pathIDs).
+		Order("path_id ASC, sort_order ASC, id ASC").Find(&nodes).Error
+	return nodes, err
+}
+
+// ListProgressForPaths returns the user's progress rows for the given paths,
+// keyed by node ID. Guests (userID<=0) and empty path lists return an empty map.
+func (r *Repository) ListProgressForPaths(ctx context.Context, userID int64, pathIDs []int64) (map[int64]UserLearningProgress, error) {
+	out := make(map[int64]UserLearningProgress)
+	if userID <= 0 || len(pathIDs) == 0 {
+		return out, nil
+	}
+	var rows []UserLearningProgress
+	if err := r.db.WithContext(ctx).
+		Where("user_id = ? AND path_id IN ?", userID, pathIDs).
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for i := range rows {
+		out[rows[i].NodeID] = rows[i]
+	}
+	return out, nil
+}
+
+// AcceptedProblemIDs returns the distinct problem IDs the user has an accepted
+// submission for.
+func (r *Repository) AcceptedProblemIDs(ctx context.Context, userID int64) (map[int64]struct{}, error) {
+	out := make(map[int64]struct{})
+	var ids []int64
+	if err := r.db.WithContext(ctx).Table("submissions").
+		Where("user_id = ? AND status = ?", userID, "accepted").
+		Distinct("problem_id").
+		Pluck("problem_id", &ids).Error; err != nil {
+		return nil, err
+	}
+	for _, id := range ids {
+		out[id] = struct{}{}
+	}
+	return out, nil
+}
+
+// UpsertProgress inserts or updates progress rows, keyed by the unique
+// (user_id, node_id) constraint, updating status, solved_count, completed_at
+// and updated_at on conflict.
+func (r *Repository) UpsertProgress(ctx context.Context, rows []UserLearningProgress) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "user_id"}, {Name: "node_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"status", "solved_count", "completed_at", "updated_at"}),
+	}).Create(&rows).Error
 }
 
 func mapRepoError(err error) error {
