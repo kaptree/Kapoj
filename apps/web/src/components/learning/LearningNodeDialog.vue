@@ -62,6 +62,7 @@ const error = ref('')
 const problemOptions = ref<{ value: number; label: string }[]>([])
 const problemLoading = ref(false)
 const pickedProblem = ref<number | null>(null)
+const requiredTouched = ref(false)
 
 const isEditing = computed(() => props.editing !== null)
 
@@ -103,6 +104,7 @@ function resetForm() {
     form.parentId = props.editing.parentId
     form.requiredCount = props.editing.requiredCount
     form.sortOrder = props.editing.sortOrder
+    requiredTouched.value = true
     const byId = new Map(props.editing.problems.map((p) => [p.problemId, p.title]))
     form.problems = props.editing.problemIds.map((id) => ({
       problemId: id,
@@ -116,6 +118,7 @@ function resetForm() {
     form.requiredCount = 1
     form.problems = []
     form.sortOrder = defaultSortOrder()
+    requiredTouched.value = false
   }
 }
 
@@ -160,10 +163,21 @@ function onPickProblem(event: { value: number | null }) {
   const option = problemOptions.value.find((item) => item.value === id)
   form.problems.push({ problemId: id, title: option?.label ?? `题目 #${id}` })
   pickedProblem.value = null
+  syncRequiredCount()
 }
 
 function removeProblem(index: number) {
   form.problems.splice(index, 1)
+  syncRequiredCount()
+}
+
+function syncRequiredCount() {
+  if (props.editing || requiredTouched.value) return
+  form.requiredCount = Math.max(1, form.problems.length)
+}
+
+function onRequiredCountChange() {
+  requiredTouched.value = true
 }
 
 function validate(): string | null {
@@ -303,7 +317,13 @@ async function save() {
 
       <div class="node-row">
         <AppFormField label="完成题数" hint="1–题目数，默认等于题目数">
-          <InputNumber v-model="form.requiredCount" input-id="node-required" :min="1" fluid />
+          <InputNumber
+            v-model="form.requiredCount"
+            input-id="node-required"
+            :min="1"
+            fluid
+            @update:model-value="onRequiredCountChange"
+          />
         </AppFormField>
         <AppFormField label="排序">
           <InputNumber v-model="form.sortOrder" input-id="node-sort" :min="0" fluid />

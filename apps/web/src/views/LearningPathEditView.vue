@@ -478,7 +478,7 @@ async function doDeleteNode(node: LearningPathNodeItem) {
             </Column>
             <Column header="题目数" style="width: 6rem">
               <template #body="{ node }">
-                <span class="count-num">{{ node.data.problems.length }}</span>
+                <span class="count-num">{{ node.data.problemIds.length }}</span>
               </template>
             </Column>
             <Column header="完成题数" style="width: 7rem">

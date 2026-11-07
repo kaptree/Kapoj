@@ -130,7 +130,6 @@ describe('LearningNodeDialog', () => {
     await nextTick()
 
     const numbers = wrapper.findAllComponents(InputNumber)
-    numbers[0]!.vm.$emit('update:modelValue', 2)
     numbers[1]!.vm.$emit('update:modelValue', 1)
     await nextTick()
 
@@ -148,6 +147,67 @@ describe('LearningNodeDialog', () => {
     })
     expect(wrapper.emitted('saved')).toBeTruthy()
     expect(wrapper.emitted('update:visible')?.at(-1)).toEqual([false])
+    wrapper.unmount()
+  })
+
+  it('updates an untouched requiredCount default when a problem is removed', async () => {
+    vi.mocked(createLearningNode).mockResolvedValue(node({ id: 10 }))
+    const wrapper = mountDialog()
+    await flushPromises()
+
+    setField(titleInput(), '节点标题')
+
+    const selects = wrapper.findAllComponents(Select)
+    selects[1]!.vm.$emit('change', { originalEvent: new Event('change'), value: 101 })
+    await nextTick()
+    selects[1]!.vm.$emit('change', { originalEvent: new Event('change'), value: 102 })
+    await nextTick()
+
+    const removeButtons = Array.from(
+      document.querySelectorAll<HTMLElement>('.problem-table button'),
+    ).filter((button) => button.textContent?.trim() === '删除')
+    removeButtons[0]!.click()
+    await nextTick()
+
+    dialogButton('保存')!.click()
+    await flushPromises()
+
+    expect(createLearningNode).toHaveBeenCalledTimes(1)
+    expect(createLearningNode).toHaveBeenCalledWith(
+      5,
+      expect.objectContaining({ problemIds: [102], requiredCount: 1 }),
+    )
+    wrapper.unmount()
+  })
+
+  it('preserves a manually set requiredCount when problems are added', async () => {
+    vi.mocked(createLearningNode).mockResolvedValue(node({ id: 10 }))
+    const wrapper = mountDialog()
+    await flushPromises()
+
+    setField(titleInput(), '节点标题')
+
+    const selects = wrapper.findAllComponents(Select)
+    selects[1]!.vm.$emit('change', { originalEvent: new Event('change'), value: 101 })
+    await nextTick()
+    selects[1]!.vm.$emit('change', { originalEvent: new Event('change'), value: 102 })
+    await nextTick()
+
+    const numbers = wrapper.findAllComponents(InputNumber)
+    numbers[0]!.vm.$emit('update:modelValue', 1)
+    await nextTick()
+
+    selects[1]!.vm.$emit('change', { originalEvent: new Event('change'), value: 103 })
+    await nextTick()
+
+    dialogButton('保存')!.click()
+    await flushPromises()
+
+    expect(createLearningNode).toHaveBeenCalledTimes(1)
+    expect(createLearningNode).toHaveBeenCalledWith(
+      5,
+      expect.objectContaining({ problemIds: [101, 102, 103], requiredCount: 1 }),
+    )
     wrapper.unmount()
   })
 
@@ -264,8 +324,8 @@ describe('LearningNodeDialog', () => {
       title: '旧标题',
       descriptionMd: '旧描述',
       parentId: null,
-      problemIds: [101],
-      problems: [summary(101, 'A+B')],
+      problemIds: [101, 102],
+      problems: [summary(101, 'A+B'), summary(102, 'C+D')],
       sortOrder: 3,
       requiredCount: 1,
     })
@@ -281,7 +341,7 @@ describe('LearningNodeDialog', () => {
       title: '新标题',
       descriptionMd: '旧描述',
       parentId: null,
-      problemIds: [101],
+      problemIds: [101, 102],
       sortOrder: 3,
       requiredCount: 1,
     })
