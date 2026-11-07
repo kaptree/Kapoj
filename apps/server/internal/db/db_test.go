@@ -113,6 +113,8 @@ func TestMigrateCreatesRatingSchema(t *testing.T) {
 
 	assert.True(t, g.Migrator().HasTable("rating_history"), "缺少表 rating_history")
 	assert.True(t, g.Migrator().HasIndex(&rating.RatingHistory{}, "uniq_rating_history_user_contest"))
+	assert.True(t, g.Migrator().HasIndex(&rating.RatingHistory{}, "uniq_rating_history_user_period"))
+	assert.True(t, g.Migrator().HasColumn(&rating.RatingHistory{}, "period_key"))
 	assert.True(t, g.Migrator().HasColumn(&contest.Contest{}, "rating_settled_at"))
 
 	userID := time.Now().UnixNano()
@@ -138,6 +140,22 @@ func TestMigrateCreatesRatingSchema(t *testing.T) {
 			Rank: 0, RatingBefore: 1500, RatingAfter: 1490,
 		}).Error, "contest_id is nullable for future decay/season rows")
 	}
+}
+
+func TestMigrateCreatesRatingSettingsTables(t *testing.T) {
+	dsn := os.Getenv("KAPOJ_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("KAPOJ_TEST_DATABASE_URL not set; skipping database test")
+	}
+	g, err := open(dsn, io.Discard)
+	require.NoError(t, err)
+	require.NoError(t, Migrate(g))
+	sqlDB, err := g.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	assert.True(t, g.Migrator().HasTable("rating_settings"), "缺少表 rating_settings")
+	assert.True(t, g.Migrator().HasTable("rating_runs"), "缺少表 rating_runs")
 }
 
 func TestMigrateCreatesLearningSchema(t *testing.T) {

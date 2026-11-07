@@ -93,7 +93,7 @@ func New(d Deps) *gin.Engine {
 	}
 	userapi.RegisterRoutes(api, userSvc, userOpts)
 	if d.RBAC != nil {
-		adminapi.RegisterRoutes(api, d.RBAC, adminapi.Options{Game: d.Game})
+		adminapi.RegisterRoutes(api, d.RBAC, adminapi.Options{Game: d.Game, Rating: d.Rating})
 	}
 	if d.Game != nil {
 		gamificationapi.RegisterRoutes(api, uploads, d.Game, gamificationapi.Options{RBAC: d.RBAC})

@@ -21,8 +21,11 @@ const (
 	AuditActionUserUnban       = "user.unban"
 	AuditActionUserCoinsAdjust = "user.coins.adjust"
 
-	AuditTargetRole = "role"
-	AuditTargetUser = "user"
+	AuditActionRatingSettingsManage = "rating.settings.manage"
+
+	AuditTargetRole           = "role"
+	AuditTargetUser           = "user"
+	AuditTargetRatingSettings = "rating_settings"
 )
 
 // WriteAuditTx 在给定事务内写入管理员操作审计；失败会使调用方事务回滚。

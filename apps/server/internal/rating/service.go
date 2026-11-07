@@ -37,6 +37,10 @@ type RanklistProvider interface {
 type Options struct {
 	JudgeGrace   time.Duration
 	ScanInterval time.Duration
+
+	// Now supplies the clock used for settings/season computation. It defaults
+	// to time.Now and is injectable for tests.
+	Now func() time.Time
 }
 
 // Service settles rated contests and periodically scans for pending ones.
@@ -48,6 +52,7 @@ type Service struct {
 	judgeGrace time.Duration
 
 	scanInterval time.Duration
+	nowFn        func() time.Time
 }
 
 func NewService(db *gorm.DB, contests RanklistProvider, rdb *redis.Client, opts Options) *Service {
@@ -64,7 +69,16 @@ func NewService(db *gorm.DB, contests RanklistProvider, rdb *redis.Client, opts 
 		repo:         NewRepository(db),
 		judgeGrace:   opts.JudgeGrace,
 		scanInterval: opts.ScanInterval,
+		nowFn:        opts.Now,
 	}
+}
+
+// now returns the injected clock or the system clock.
+func (s *Service) now() time.Time {
+	if s.nowFn != nil {
+		return s.nowFn()
+	}
+	return time.Now()
 }
 
 // SettleContest settles one rated contest atomically. It returns true when

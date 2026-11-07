@@ -43,6 +43,8 @@ const (
 
 	PermLearningPathOfficialManage PermissionCode = "learning_path.official.manage"
 	PermLearningPathAdminRead      PermissionCode = "learning_path.admin.read"
+
+	PermRatingSettingsManage PermissionCode = "rating.settings.manage"
 )
 
 const (
@@ -53,6 +55,7 @@ const (
 	PermissionGroupContest      = "比赛"
 	PermissionGroupGamification = "游戏化"
 	PermissionGroupLearning     = "学习路线"
+	PermissionGroupRating       = "Rating"
 )
 
 // PermissionDef 描述权限目录中的一项，用于首次 Seed 与权限矩阵展示。
@@ -105,6 +108,8 @@ var permissionCatalog = []PermissionDef{
 
 	{Code: PermLearningPathOfficialManage, Name: "管理官方学习路线", GroupName: PermissionGroupLearning, Description: "创建、编辑与上下线官方学习路线"},
 	{Code: PermLearningPathAdminRead, Name: "查看全部学习路线", GroupName: PermissionGroupLearning, Description: "查看所有学习路线及已下架路线"},
+
+	{Code: PermRatingSettingsManage, Name: "管理 Rating 设置", GroupName: PermissionGroupRating, Description: "配置 Rating 衰减与赛季重置策略"},
 }
 
 // PermissionCodes 是按目录顺序排列的全部权限码。

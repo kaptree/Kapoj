@@ -8,12 +8,14 @@ import (
 
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
+	"github.com/kaptree/kapoj/apps/server/internal/rating"
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 )
 
 // Options 配置管理后台接口的可选依赖。
 type Options struct {
-	Game *gamification.Service
+	Game   *gamification.Service
+	Rating *rating.Service
 }
 
 // adjustCoins 处理 POST /admin/users/:id/coins，调整目标用户金币并在同一事务
