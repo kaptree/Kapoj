@@ -79,6 +79,18 @@ export const router = createRouter({
           meta: { title: '官方题解' },
         },
         {
+          path: 'problems/:id(\\d+)/solutions',
+          name: 'problem-solutions',
+          component: () => import('@/views/ProblemSolutionsView.vue'),
+          meta: { title: '解题思路' },
+        },
+        {
+          path: 'problems/:id(\\d+)/solutions/:postId(\\d+)',
+          name: 'problem-solution-detail',
+          component: () => import('@/views/ProblemSolutionDetailView.vue'),
+          meta: { title: '思路详情' },
+        },
+        {
           path: 'problems/:id(\\d+)/statistics',
           name: 'problem-statistics',
           component: () => import('@/views/ProblemStatisticsView.vue'),
