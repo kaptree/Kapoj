@@ -3,7 +3,6 @@ package learning_test
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -57,12 +56,6 @@ func TestTreeStructureAndGuestStatus(t *testing.T) {
 		Update("is_public", false).Error)
 	require.NoError(t, e.db.Model(&learning.LearningPathNode{}).Where("id = ?", childA1.ID).
 		Update("problem_ids_json", dbtypes.List[int64]{willHide.ID, 999999}).Error)
-
-	// 本阶段即使有已完成进度也保持游客态。
-	require.NoError(t, e.db.Create(&learning.UserLearningProgress{
-		UserID: e.author.ID, PathID: path.ID, NodeID: rootA.ID,
-		Status: learning.ProgressCompleted, SolvedCount: 5, UpdatedAt: time.Now(),
-	}).Error)
 
 	check := func(t *testing.T, v learning.Viewer, fullProblemIDs bool) {
 		t.Helper()
@@ -118,6 +111,165 @@ func TestTreeStructureAndGuestStatus(t *testing.T) {
 	check(t, viewerFor(e.other), false)
 	check(t, authorView, true)
 	check(t, viewerFor(e.admin), true)
+}
+
+func TestTreeUsesEvaluatedProgress(t *testing.T) {
+	e := newPathEnv(t)
+	ctx := context.Background()
+	authorView := viewerFor(e.author)
+
+	p1 := e.addProblem(t, "eval-p1", true)
+	p2 := e.addProblem(t, "eval-p2", true)
+	p3 := e.addProblem(t, "eval-p3", true)
+	p4 := e.addProblem(t, "eval-p4", true)
+
+	path := e.createPath(t, authorView, learning.PathInput{Title: "进度树", IsPublic: boolPtr(true)})
+	root := e.createNode(t, authorView, path.ID, learning.NodeInput{
+		Title: "根", ProblemIDs: []int64{p1.ID, p2.ID}, RequiredCount: intPtr(2),
+	})
+	child := e.createNode(t, authorView, path.ID, learning.NodeInput{
+		Title: "子", ParentID: &root.ID, ProblemIDs: []int64{p3.ID},
+	})
+	grand := e.createNode(t, authorView, path.ID, learning.NodeInput{
+		Title: "孙", ParentID: &child.ID, ProblemIDs: []int64{p4.ID},
+	})
+
+	// 用户 AC 根节点 required 题目后调用 Tree：root completed、child active、
+	// grandchild locked，solvedCount 正确。
+	e.addAccepted(t, e.author.ID, p1.ID)
+	e.addAccepted(t, e.author.ID, p2.ID)
+
+	tree, err := e.svc.Tree(ctx, authorView, path.ID)
+	require.NoError(t, err)
+	require.Len(t, tree.Nodes, 1)
+	rootItem := tree.Nodes[0]
+	assert.Equal(t, root.ID, rootItem.ID)
+	assert.Equal(t, learning.ProgressCompleted, rootItem.Status)
+	assert.Equal(t, 2, rootItem.SolvedCount)
+
+	require.Len(t, rootItem.Children, 1)
+	childItem := rootItem.Children[0]
+	assert.Equal(t, child.ID, childItem.ID)
+	assert.Equal(t, learning.ProgressActive, childItem.Status)
+	assert.Zero(t, childItem.SolvedCount)
+
+	require.Len(t, childItem.Children, 1)
+	assert.Equal(t, grand.ID, childItem.Children[0].ID)
+	assert.Equal(t, learning.ProgressLocked, childItem.Children[0].Status)
+	assert.Zero(t, childItem.Children[0].SolvedCount)
+}
+
+func TestTreeGuestStaysLocked(t *testing.T) {
+	e := newPathEnv(t)
+	ctx := context.Background()
+	authorView := viewerFor(e.author)
+
+	p1 := e.addProblem(t, "guest-tree-p1", true)
+	p2 := e.addProblem(t, "guest-tree-p2", true)
+
+	path := e.createPath(t, authorView, learning.PathInput{Title: "游客树", IsPublic: boolPtr(true)})
+	root := e.createNode(t, authorView, path.ID, learning.NodeInput{
+		Title: "根", ProblemIDs: []int64{p1.ID},
+	})
+	child := e.createNode(t, authorView, path.ID, learning.NodeInput{
+		Title: "子", ParentID: &root.ID, ProblemIDs: []int64{p2.ID},
+	})
+
+	// 作者完成根节点，写进度；游客不继承作者进度。
+	e.addAccepted(t, e.author.ID, p1.ID)
+	require.NoError(t, e.svc.EvaluateUser(ctx, e.author.ID))
+	var before int64
+	require.NoError(t, e.db.Model(&learning.UserLearningProgress{}).Count(&before).Error)
+	assert.Equal(t, int64(2), before, "作者完成根节点后仅根与子的两行进度")
+
+	tree, err := e.svc.Tree(ctx, learning.Viewer{}, path.ID)
+	require.NoError(t, err)
+	require.Len(t, tree.Nodes, 1)
+	assert.Equal(t, learning.ProgressActive, tree.Nodes[0].Status)
+	assert.Zero(t, tree.Nodes[0].SolvedCount)
+	require.Len(t, tree.Nodes[0].Children, 1)
+	assert.Equal(t, child.ID, tree.Nodes[0].Children[0].ID)
+	assert.Equal(t, learning.ProgressLocked, tree.Nodes[0].Children[0].Status)
+	assert.Zero(t, tree.Nodes[0].Children[0].SolvedCount)
+
+	var after int64
+	require.NoError(t, e.db.Model(&learning.UserLearningProgress{}).Count(&after).Error)
+	assert.Equal(t, before, after, "游客读取树不产生任何进度行")
+}
+
+func TestListPathsEvaluatesMyCompletedCount(t *testing.T) {
+	e := newPathEnv(t)
+	ctx := context.Background()
+	authorView := viewerFor(e.author)
+
+	p1 := e.addProblem(t, "list-eval-p1", true)
+
+	path := e.createPath(t, authorView, learning.PathInput{Title: "列表进度", IsPublic: boolPtr(true)})
+	e.createNode(t, authorView, path.ID, learning.NodeInput{
+		Title: "根", ProblemIDs: []int64{p1.ID},
+	})
+
+	findItem := func(items []learning.PathItem, id int64) *learning.PathItem {
+		for i := range items {
+			if items[i].ID == id {
+				return &items[i]
+			}
+		}
+		return nil
+	}
+
+	// 未 AC：myCompletedCount 为 0。
+	items, err := e.svc.ListPaths(ctx, authorView, false, false)
+	require.NoError(t, err)
+	item := findItem(items, path.ID)
+	require.NotNil(t, item)
+	assert.Zero(t, item.MyCompletedCount)
+
+	// AC 根节点题目后，ListPaths 先 EvaluateUser，myCompletedCount=1。
+	e.addAccepted(t, e.author.ID, p1.ID)
+	items, err = e.svc.ListPaths(ctx, authorView, false, false)
+	require.NoError(t, err)
+	item = findItem(items, path.ID)
+	require.NotNil(t, item)
+	assert.Equal(t, 1, item.MyCompletedCount)
+}
+
+func TestTreeCompletedLatchVisible(t *testing.T) {
+	e := newPathEnv(t)
+	ctx := context.Background()
+	authorView := viewerFor(e.author)
+
+	p1 := e.addProblem(t, "latch-tree-p1", true)
+	p2 := e.addProblem(t, "latch-tree-p2", true)
+	p3 := e.addProblem(t, "latch-tree-p3", true)
+
+	path := e.createPath(t, authorView, learning.PathInput{Title: "锁存树", IsPublic: boolPtr(true)})
+	root := e.createNode(t, authorView, path.ID, learning.NodeInput{
+		Title: "根", ProblemIDs: []int64{p1.ID, p2.ID}, RequiredCount: intPtr(2),
+	})
+
+	// 完成根节点（p1+p2）。
+	e.addAccepted(t, e.author.ID, p1.ID)
+	e.addAccepted(t, e.author.ID, p2.ID)
+	tree, err := e.svc.Tree(ctx, authorView, path.ID)
+	require.NoError(t, err)
+	require.Len(t, tree.Nodes, 1)
+	assert.Equal(t, learning.ProgressCompleted, tree.Nodes[0].Status)
+	assert.Equal(t, 2, tree.Nodes[0].SolvedCount)
+
+	// 改题并提高 required_count 后，已完成节点锁存：Tree 仍返回 completed +
+	// 完成时的 solvedCount，同时返回当前 requiredCount。
+	_, err = e.svc.UpdateNode(ctx, authorView, path.ID, root.ID, learning.NodeInput{
+		Title: "根", ProblemIDs: []int64{p1.ID, p3.ID, p2.ID}, RequiredCount: intPtr(3),
+	})
+	require.NoError(t, err)
+
+	tree, err = e.svc.Tree(ctx, authorView, path.ID)
+	require.NoError(t, err)
+	require.Len(t, tree.Nodes, 1)
+	assert.Equal(t, learning.ProgressCompleted, tree.Nodes[0].Status)
+	assert.Equal(t, 2, tree.Nodes[0].SolvedCount)
+	assert.Equal(t, 3, tree.Nodes[0].RequiredCount)
 }
 
 func TestTreePermissions(t *testing.T) {

@@ -116,9 +116,15 @@ func (s *Service) DeleteNode(ctx context.Context, v Viewer, pathID, nodeID int64
 	return mapServiceError(s.repo.DeleteNode(ctx, n))
 }
 
-// Tree 返回路线的结构树。权限与 FindPath 一致。本阶段仅提供结构状态：
-// 根节点 active、其余 locked、solvedCount 为 0，M4-2B 替换为真实进度。
+// Tree 返回路线的结构树。权限与 FindPath 一致。登录用户先重算进度，再读
+// 取该路线的进度行并覆盖节点状态；游客不重算、不读进度，根 active、其余
+// locked、solvedCount 0。
 func (s *Service) Tree(ctx context.Context, v Viewer, pathID int64) (*Tree, error) {
+	if v.UserID > 0 {
+		if err := s.EvaluateUser(ctx, v.UserID); err != nil {
+			return nil, err
+		}
+	}
 	path, err := s.FindPath(ctx, v, pathID)
 	if err != nil {
 		return nil, err
@@ -132,10 +138,17 @@ func (s *Service) Tree(ctx context.Context, v Viewer, pathID int64) (*Tree, erro
 	if err != nil {
 		return nil, err
 	}
+	var progress map[int64]UserLearningProgress
+	if v.UserID > 0 {
+		progress, err = s.repo.ListProgressForPaths(ctx, v.UserID, []int64{path.ID})
+		if err != nil {
+			return nil, err
+		}
+	}
 	// 公开树对非作者/非管理员只暴露公开题目的 ID，避免枚举已下线或
 	// 已删除题目；作者、admin.read 与 official.manage 保留完整存储 ID 供编辑。
 	fullProblemIDs := v.CanManageOfficial || v.CanViewAll || (v.UserID > 0 && path.Author.ID == v.UserID)
-	return &Tree{Path: *path, Nodes: buildNodeTree(nodes, summaries, fullProblemIDs)}, nil
+	return &Tree{Path: *path, Nodes: buildNodeTree(nodes, summaries, fullProblemIDs, progress)}, nil
 }
 
 // writablePath 加载可写路线并校验作者/管理员、官方与上下架权限。
@@ -306,7 +319,7 @@ func uniqueProblemIDs(nodes []LearningPathNode) []int64 {
 	return ids
 }
 
-func buildNodeTree(nodes []LearningPathNode, summaries map[int64]ProblemSummary, fullProblemIDs bool) []NodeItem {
+func buildNodeTree(nodes []LearningPathNode, summaries map[int64]ProblemSummary, fullProblemIDs bool, progress map[int64]UserLearningProgress) []NodeItem {
 	byID := make(map[int64]LearningPathNode, len(nodes))
 	for _, n := range nodes {
 		byID[n.ID] = n
@@ -327,7 +340,7 @@ func buildNodeTree(nodes []LearningPathNode, summaries map[int64]ProblemSummary,
 	var build func(int64, map[int64]bool) NodeItem
 	build = func(id int64, seen map[int64]bool) NodeItem {
 		n := byID[id]
-		item := newNodeItem(&n, summaries, fullProblemIDs)
+		item := newNodeItem(&n, summaries, fullProblemIDs, progress)
 		if seen[id] {
 			return item
 		}
@@ -344,7 +357,7 @@ func buildNodeTree(nodes []LearningPathNode, summaries map[int64]ProblemSummary,
 	return items
 }
 
-func newNodeItem(n *LearningPathNode, summaries map[int64]ProblemSummary, fullProblemIDs bool) NodeItem {
+func newNodeItem(n *LearningPathNode, summaries map[int64]ProblemSummary, fullProblemIDs bool, progress map[int64]UserLearningProgress) NodeItem {
 	item := NodeItem{
 		ID:            n.ID,
 		ParentID:      n.ParentID,
@@ -360,6 +373,12 @@ func newNodeItem(n *LearningPathNode, summaries map[int64]ProblemSummary, fullPr
 	}
 	if n.ParentID != nil {
 		item.Status = ProgressLocked
+	}
+	// 有进度行时用服务端存储的 SolvedCount/Status 覆盖默认状态；游客或
+	// 编辑响应（progress 为 nil）保持默认：根 active、子 locked、solved 0。
+	if p, ok := progress[n.ID]; ok {
+		item.SolvedCount = p.SolvedCount
+		item.Status = p.Status
 	}
 	for _, id := range n.ProblemIDs {
 		summary, ok := summaries[id]
@@ -380,6 +399,6 @@ func (s *Service) nodeItem(ctx context.Context, n *LearningPathNode) (*NodeItem,
 		return nil, err
 	}
 	// 节点写接口仅作者/管理员可调用，返回完整存储 ID 供编辑。
-	item := newNodeItem(n, summaries, true)
+	item := newNodeItem(n, summaries, true, nil)
 	return &item, nil
 }

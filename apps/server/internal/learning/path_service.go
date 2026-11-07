@@ -165,6 +165,12 @@ func (s *Service) DeletePath(ctx context.Context, v Viewer, id int64) error {
 // ListPaths 返回查看者可见的路线。includeInactive 仅对拥有 admin.read 或
 // official.manage 能力者生效；mine 只返回查看者创建的路线。
 func (s *Service) ListPaths(ctx context.Context, v Viewer, includeInactive, mine bool) ([]PathItem, error) {
+	// 登录用户先重算进度，保证 myCompletedCount 首次加载即为最新值。
+	if v.UserID > 0 {
+		if err := s.EvaluateUser(ctx, v.UserID); err != nil {
+			return nil, err
+		}
+	}
 	items, err := s.repo.List(ctx, ListFilter{
 		ViewerID:        v.UserID,
 		IncludeInactive: includeInactive && (v.CanViewAll || v.CanManageOfficial),
