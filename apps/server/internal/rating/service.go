@@ -73,12 +73,13 @@ func NewService(db *gorm.DB, contests RanklistProvider, rdb *redis.Client, opts 
 	}
 }
 
-// now returns the injected clock or the system clock.
+// now returns the injected clock or the system clock, normalized to UTC so
+// month-based season math is stable across deployments.
 func (s *Service) now() time.Time {
 	if s.nowFn != nil {
-		return s.nowFn()
+		return s.nowFn().UTC()
 	}
-	return time.Now()
+	return time.Now().UTC()
 }
 
 // SettleContest settles one rated contest atomically. It returns true when

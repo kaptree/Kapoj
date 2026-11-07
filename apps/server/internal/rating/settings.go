@@ -65,7 +65,7 @@ type SettingsView struct {
 // Settings returns the current settings, creating the default row lazily when
 // the table is empty.
 func (s *Service) Settings(ctx context.Context) (*SettingsView, error) {
-	now := s.now()
+	now := s.now().UTC()
 	var settings RatingSettings
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := s.ensureSettingsTx(tx, now); err != nil {
@@ -91,7 +91,7 @@ func (s *Service) UpdateSettings(ctx context.Context, actorID int64, in Settings
 	if err != nil {
 		return nil, err
 	}
-	now := s.now()
+	now := s.now().UTC()
 
 	var view *SettingsView
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -231,6 +231,8 @@ func seasonStart(anchor time.Time, months, index int) time.Time {
 // always on the first day of a month, so the number of month boundaries crossed
 // from the anchor, divided by the season length, is exact.
 func currentSeasonIndex(anchor time.Time, months int, now time.Time) int {
+	anchor = anchor.UTC()
+	now = now.UTC()
 	if now.Before(anchor) {
 		return 0
 	}
@@ -242,6 +244,9 @@ func parseAnchor(value string) (time.Time, error) {
 	anchor, err := time.Parse("2006-01-02", value)
 	if err != nil {
 		return time.Time{}, httpx.ErrValidation("赛季锚点必须是 YYYY-MM-DD 格式")
+	}
+	if anchor.Day() != 1 {
+		return time.Time{}, httpx.ErrValidation("赛季锚点必须为某月 1 日")
 	}
 	return anchor, nil
 }

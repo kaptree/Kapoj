@@ -102,6 +102,7 @@ func TestUpdateSettingsValidationAndScheduleSkip(t *testing.T) {
 		{"reset high", func(in *rating.SettingsInput) { in.SeasonResetPercent = 101 }},
 		{"anchor slash", func(in *rating.SettingsInput) { in.SeasonAnchor = "2026/12/01" }},
 		{"anchor garbage", func(in *rating.SettingsInput) { in.SeasonAnchor = "not-a-date" }},
+		{"anchor not day 1", func(in *rating.SettingsInput) { in.SeasonAnchor = "2026-11-15" }},
 	}
 	for _, tc := range cases {
 		in := validSettingsInput()
@@ -168,4 +169,42 @@ func TestCurrentSeason(t *testing.T) {
 	assert.Equal(t, "2027-05-01T00:00:00Z", season.StartsAt.Format(time.RFC3339))
 	assert.Equal(t, "2027-11-01T00:00:00Z", season.EndsAt.Format(time.RFC3339))
 	assert.Equal(t, "2027-11-01T00:00:00Z", season.NextResetAt.Format(time.RFC3339))
+}
+
+func TestSettingsDefaultAnchorUsesUTC(t *testing.T) {
+	g := testutil.PG(t)
+	// +14h 时区跨月边界：本地 2026-02-01 00:30 == UTC 2026-01-31 10:30，
+	// 默认 anchor 必须是 UTC 当月 1 日（2026-01-01），而非本地 2 月。
+	now := time.Date(2026, 2, 1, 0, 30, 0, 0, time.FixedZone("UTC+14", 14*3600))
+	svc := rating.NewService(g, nil, nil, rating.Options{Now: func() time.Time { return now }})
+
+	view, err := svc.Settings(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, "2026-01-01", view.SeasonAnchor, "默认 anchor 应为 UTC 当月 1 日")
+}
+
+func TestUpdateSettingsMonthsChangeSkipsPreviousSeason(t *testing.T) {
+	g := testutil.PG(t)
+	now := time.Date(2026, 12, 15, 0, 0, 0, 0, time.UTC)
+	svc := rating.NewService(g, nil, nil, rating.Options{Now: func() time.Time { return now }})
+
+	in := validSettingsInput() // anchor 2026-12-01, months 6
+	_, err := svc.UpdateSettings(context.Background(), managerID, in)
+	require.NoError(t, err)
+	var runsCount int64
+	require.NoError(t, g.Model(&rating.RatingRun{}).Count(&runsCount).Error)
+	assert.Equal(t, int64(1), runsCount, "首次创建仅预标记默认上一赛季")
+
+	// 仅修改 months：应插入新的上一赛季跳过行。
+	in.SeasonMonths = 3
+	view, err := svc.UpdateSettings(context.Background(), managerID, in)
+	require.NoError(t, err)
+	assert.Equal(t, 3, view.SeasonMonths)
+	require.NoError(t, g.Model(&rating.RatingRun{}).Count(&runsCount).Error)
+	assert.Equal(t, int64(2), runsCount, "修改 months 应预标记新上一赛季")
+
+	var run rating.RatingRun
+	require.NoError(t, g.Where("key = ?", "season:2026-09-01").First(&run).Error)
+	assert.Equal(t, rating.HistorySeasonReset, run.Kind)
+	require.NotNil(t, run.ProcessedAt)
 }
