@@ -284,7 +284,7 @@ export interface paths {
         };
         /**
          * 用户 Rating 历史（公开）
-         * @description 按时间倒序返回 kind=contest 的 Rating 变化；用户不存在返回 40400。
+         * @description 按时间倒序返回所有 kind（contest/decay/season_reset）的 Rating 变化；非比赛行 contestId=0、rank=0；用户不存在返回 40400。
          */
         get: {
             parameters: {
@@ -310,6 +310,45 @@ export interface paths {
                     };
                 };
                 404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rating/season/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 当前赛季（公开）
+         * @description 返回当前赛季的 key/name/startsAt/endsAt/nextResetAt；游客可读。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 当前赛季 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RatingSeasonResponse"];
+                    };
+                };
             };
         };
         put?: never;
@@ -612,6 +651,77 @@ export interface paths {
             };
         };
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/rating/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 获取 Rating 设置与当前赛季（rating.settings.manage）
+         * @description 返回衰减/赛季设置、当前赛季与下次重置时间；首次读取时懒创建默认设置。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Rating 设置与当前赛季 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RatingSettingsResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        /**
+         * 整体更新 Rating 设置（rating.settings.manage）
+         * @description 校验范围与赛季锚点（必须是某月 1 日）；currentSeason 只读；修改写审计 rating.settings.manage / target rating_settings。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RatingSettingsInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的设置与当前赛季 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RatingSettingsResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
         post?: never;
         delete?: never;
         options?: never;
@@ -5603,10 +5713,19 @@ export interface components {
             items: components["schemas"]["RatingLeaderboardRow"][];
         };
         RatingHistoryItem: {
-            /** Format: int64 */
+            /** @enum {string} */
+            kind: "contest" | "decay" | "season_reset";
+            /**
+             * Format: int64
+             * @description 比赛为原 id；衰减/重置与私密比赛为 0
+             */
             contestId: number;
+            /** @description 比赛标题、Rating 衰减 或 赛季重置；私密比赛为 私密比赛 */
             contestTitle: string;
+            /** @description 比赛为名次；衰减/重置为 0 */
             rank: number;
+            /** @description 衰减 YYYY-MM、重置为赛季开始日期、比赛为空字符串 */
+            periodKey: string;
             ratingBefore: number;
             ratingAfter: number;
             /** @description ratingAfter - ratingBefore */
@@ -5618,6 +5737,50 @@ export interface components {
             /** Format: int64 */
             total: number;
             items: components["schemas"]["RatingHistoryItem"][];
+        };
+        RatingSeasonView: {
+            /** @description 赛季开始日期 YYYY-MM-DD */
+            key: string;
+            /** @description 日期范围 YYYY-MM-DD ~ YYYY-MM-DD（结束日含） */
+            name: string;
+            /** Format: date-time */
+            startsAt: string;
+            /** Format: date-time */
+            endsAt: string;
+            /** Format: date-time */
+            nextResetAt: string;
+        };
+        RatingSettingsInput: {
+            decayEnabled: boolean;
+            decayThreshold: number;
+            decayInactiveDays: number;
+            decayPercent: number;
+            decayMax: number;
+            seasonEnabled: boolean;
+            seasonMonths: number;
+            seasonResetPercent: number;
+            /** @description YYYY-MM-DD，必须是某月 1 日 */
+            seasonAnchor: string;
+        };
+        RatingSettingsView: {
+            decayEnabled: boolean;
+            decayThreshold: number;
+            decayInactiveDays: number;
+            decayPercent: number;
+            decayMax: number;
+            seasonEnabled: boolean;
+            seasonMonths: number;
+            seasonResetPercent: number;
+            seasonAnchor: string;
+            currentSeason: components["schemas"]["RatingSeasonView"];
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        RatingSettingsResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["RatingSettingsView"];
+        };
+        RatingSeasonResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["RatingSeasonView"];
         };
         RatingLeaderboardPageResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["RatingLeaderboardPage"];

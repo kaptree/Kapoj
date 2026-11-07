@@ -80,9 +80,11 @@ describe('UserProfileView', () => {
       total: 1,
       items: [
         {
+          kind: 'contest',
           contestId: 5,
           contestTitle: '春季公开赛',
           rank: 2,
+          periodKey: '',
           ratingBefore: 1600,
           ratingAfter: 1624,
           delta: 24,

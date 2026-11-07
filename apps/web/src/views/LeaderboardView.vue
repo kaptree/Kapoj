@@ -16,12 +16,19 @@ import { useToast } from 'primevue/usetoast'
 import { ApiError } from '@/api/http'
 import {
   getActivitySummary,
+  getRatingSeason,
   listActivityLeaderboard,
   listRatingLeaderboard,
   listSharingLeaderboard,
   signInActivity,
 } from '@/api/leaderboard'
-import type { ActivitySummary, EquippedBadge, EquippedTitle, RatingLevel } from '@/api/types'
+import type {
+  ActivitySummary,
+  EquippedBadge,
+  EquippedTitle,
+  RatingLevel,
+  RatingSeasonView,
+} from '@/api/types'
 import IdentityShowcase from '@/components/IdentityShowcase.vue'
 import RatingLevelName from '@/components/RatingLevelName.vue'
 import AppEmptyState from '@/components/ui/AppEmptyState.vue'
@@ -112,6 +119,18 @@ const summaryLoading = ref(false)
 const summaryError = ref('')
 const signingIn = ref(false)
 let summarySeq = 0
+
+const season = ref<RatingSeasonView | null>(null)
+const nextResetDate = computed(() => season.value?.nextResetAt.slice(0, 10) ?? '')
+
+/** Season info is best-effort: a failed fetch silently leaves it hidden. */
+async function loadSeason() {
+  try {
+    season.value = await getRatingSeason()
+  } catch {
+    season.value = null
+  }
+}
 
 const isLoggedIn = computed(() => auth.isLoggedIn)
 const loginTarget = computed(() => ({ name: 'login', query: { redirect: route.fullPath } }))
@@ -224,7 +243,10 @@ async function signIn() {
   }
 }
 
-onMounted(() => void fetchPage('rating', states.rating.page))
+onMounted(() => {
+  void fetchPage('rating', states.rating.page)
+  void loadSeason()
+})
 
 // Tabs load lazily: the first visit to a tab fetches its own first page.
 watch(activeTab, (kind) => {
@@ -248,6 +270,10 @@ watch(
     />
 
     <AppSurface padding="lg" class="leaderboard-surface">
+      <p v-if="season" class="season-banner" aria-label="当前赛季">
+        赛季 {{ season.name }} · 下次重置 {{ nextResetDate }}
+      </p>
+
       <Tabs v-model:value="activeTab" lazy>
         <TabList>
           <Tab v-for="tab in tabDefs" :key="tab.key" :value="tab.key">{{ tab.label }}</Tab>
@@ -442,6 +468,17 @@ watch(
   display: flex;
   flex-direction: column;
   min-width: 0;
+}
+
+.season-banner {
+  margin: 0 0 var(--kapoj-space-3);
+  padding: var(--kapoj-space-2) var(--kapoj-space-3);
+  color: var(--kapoj-text-secondary);
+  font-family: var(--kapoj-font-mono);
+  font-size: 0.8125rem;
+  background: var(--kapoj-bg-elevated);
+  border: 1px solid var(--kapoj-border);
+  border-radius: var(--kapoj-radius-md);
 }
 
 .signin-card {

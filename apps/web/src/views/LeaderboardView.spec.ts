@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/api/http'
 import {
   getActivitySummary,
+  getRatingSeason,
   listActivityLeaderboard,
   listRatingLeaderboard,
   listSharingLeaderboard,
@@ -25,6 +26,7 @@ vi.mock('@/api/leaderboard', () => ({
   listActivityLeaderboard: vi.fn(),
   listSharingLeaderboard: vi.fn(),
   getActivitySummary: vi.fn(),
+  getRatingSeason: vi.fn(),
   signInActivity: vi.fn(),
 }))
 
@@ -118,6 +120,7 @@ beforeEach(() => {
   vi.mocked(listActivityLeaderboard).mockReset()
   vi.mocked(listSharingLeaderboard).mockReset()
   vi.mocked(getActivitySummary).mockReset()
+  vi.mocked(getRatingSeason).mockReset()
   vi.mocked(signInActivity).mockReset()
   vi.mocked(listRatingLeaderboard).mockResolvedValue({ total: 1, items: [ratingRow] })
   vi.mocked(listActivityLeaderboard).mockResolvedValue({ total: 1, items: [activityRow] })
@@ -126,6 +129,13 @@ beforeEach(() => {
     signedInToday: true,
     todayPoints: 17,
     totalPoints: 17,
+  })
+  vi.mocked(getRatingSeason).mockResolvedValue({
+    key: '2026-11-01',
+    name: '2026-11-01 ~ 2027-04-30',
+    startsAt: '2026-11-01T00:00:00Z',
+    endsAt: '2027-05-01T00:00:00Z',
+    nextResetAt: '2027-05-01T00:00:00Z',
   })
 })
 
@@ -145,6 +155,27 @@ describe('LeaderboardView', () => {
     expect(level.props('level').name).toBe('青名')
     expect(level.attributes('title')).toBe('m2bsolver1（青名）')
     expect(level.attributes('aria-label')).toBe('m2bsolver1（青名）')
+  })
+
+  it('shows current season and next reset', async () => {
+    const wrapper = await mountPage()
+
+    expect(getRatingSeason).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('赛季')
+    expect(wrapper.text()).toContain('2026-11-01 ~ 2027-04-30')
+    expect(wrapper.text()).toContain('下次重置')
+    expect(wrapper.text()).toContain('2027-05-01')
+  })
+
+  it('ignores season fetch failure', async () => {
+    vi.mocked(getRatingSeason).mockRejectedValue(new ApiError(500, 50000, '服务器错误'))
+    const wrapper = await mountPage()
+
+    // The leaderboard still renders and no error is surfaced for the season.
+    expect(wrapper.text()).not.toContain('服务器错误')
+    expect(wrapper.text()).not.toContain('赛季')
+    expect(listRatingLeaderboard).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('m2bsolver1')
   })
 
   it('shows the level name as text and keeps the black-red username legible', async () => {

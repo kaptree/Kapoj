@@ -15,11 +15,20 @@ import type {
   AdminUserRolesInput,
   AdminUserUpdateInput,
   Page,
+  RatingSettingsInput,
+  RatingSettingsView,
   Status,
 } from './types'
 
 /** Dashboard aggregate counters (admin.dashboard.view). */
 export const getAdminStats = () => http.get<AdminStats>('/admin/stats')
+
+/** Current rating settings together with the active season (rating.settings.manage). */
+export const getAdminRatingSettings = () => http.get<RatingSettingsView>('/admin/rating/settings')
+
+/** Replace rating settings; returns the updated view with the new season (rating.settings.manage). */
+export const updateAdminRatingSettings = (input: RatingSettingsInput) =>
+  http.put<RatingSettingsView>('/admin/rating/settings', input)
 
 export interface ListAdminUsersQuery {
   keyword?: string

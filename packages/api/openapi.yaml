@@ -118,7 +118,7 @@ paths:
       - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
     get:
       summary: 用户 Rating 历史（公开）
-      description: 按时间倒序返回 kind=contest 的 Rating 变化；用户不存在返回 40400。
+      description: 按时间倒序返回所有 kind（contest/decay/season_reset）的 Rating 变化；非比赛行 contestId=0、rank=0；用户不存在返回 40400。
       security: [{}, { bearer: [] }]
       parameters:
         - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
@@ -130,6 +130,17 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/RatingHistoryPageResponse' }
         '404': { $ref: '#/components/responses/Error' }
+  /rating/season/current:
+    get:
+      summary: 当前赛季（公开）
+      description: 返回当前赛季的 key/name/startsAt/endsAt/nextResetAt；游客可读。
+      security: [{}, { bearer: [] }]
+      responses:
+        '200':
+          description: 当前赛季
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RatingSeasonResponse' }
   /leaderboard/rating:
     get:
       summary: Rating 排行榜（公开）
@@ -228,6 +239,37 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AdminAuditPageResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /admin/rating/settings:
+    get:
+      summary: 获取 Rating 设置与当前赛季（rating.settings.manage）
+      description: 返回衰减/赛季设置、当前赛季与下次重置时间；首次读取时懒创建默认设置。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: Rating 设置与当前赛季
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RatingSettingsResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+    put:
+      summary: 整体更新 Rating 设置（rating.settings.manage）
+      description: 校验范围与赛季锚点（必须是某月 1 日）；currentSeason 只读；修改写审计 rating.settings.manage / target rating_settings。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RatingSettingsInput' }
+      responses:
+        '200':
+          description: 更新后的设置与当前赛季
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RatingSettingsResponse' }
         '400': { $ref: '#/components/responses/Error' }
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
@@ -3322,11 +3364,16 @@ components:
         items: { type: array, items: { $ref: '#/components/schemas/RatingLeaderboardRow' } }
     RatingHistoryItem:
       type: object
-      required: [contestId, contestTitle, rank, ratingBefore, ratingAfter, delta, createdAt]
+      required: [kind, contestId, contestTitle, rank, periodKey, ratingBefore, ratingAfter, delta, createdAt]
       properties:
-        contestId: { type: integer, format: int64 }
-        contestTitle: { type: string }
-        rank: { type: integer }
+        kind: { type: string, enum: [contest, decay, season_reset] }
+        contestId:
+          type: integer
+          format: int64
+          description: 比赛为原 id；衰减/重置与私密比赛为 0
+        contestTitle: { type: string, description: 比赛标题、Rating 衰减 或 赛季重置；私密比赛为 私密比赛 }
+        rank: { type: integer, description: 比赛为名次；衰减/重置为 0 }
+        periodKey: { type: string, description: 衰减 YYYY-MM、重置为赛季开始日期、比赛为空字符串 }
         ratingBefore: { type: integer }
         ratingAfter: { type: integer }
         delta: { type: integer, description: ratingAfter - ratingBefore }
@@ -3337,6 +3384,57 @@ components:
       properties:
         total: { type: integer, format: int64 }
         items: { type: array, items: { $ref: '#/components/schemas/RatingHistoryItem' } }
+    RatingSeasonView:
+      type: object
+      required: [key, name, startsAt, endsAt, nextResetAt]
+      properties:
+        key: { type: string, description: 赛季开始日期 YYYY-MM-DD }
+        name: { type: string, description: 日期范围 YYYY-MM-DD ~ YYYY-MM-DD（结束日含） }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        nextResetAt: { type: string, format: date-time }
+    RatingSettingsInput:
+      type: object
+      required: [decayEnabled, decayThreshold, decayInactiveDays, decayPercent, decayMax, seasonEnabled, seasonMonths, seasonResetPercent, seasonAnchor]
+      properties:
+        decayEnabled: { type: boolean }
+        decayThreshold: { type: integer, minimum: 1500, maximum: 4000 }
+        decayInactiveDays: { type: integer, minimum: 1, maximum: 365 }
+        decayPercent: { type: integer, minimum: 1, maximum: 100 }
+        decayMax: { type: integer, minimum: 1, maximum: 1000 }
+        seasonEnabled: { type: boolean }
+        seasonMonths: { type: integer, minimum: 1, maximum: 24 }
+        seasonResetPercent: { type: integer, minimum: 0, maximum: 100 }
+        seasonAnchor: { type: string, description: YYYY-MM-DD，必须是某月 1 日 }
+    RatingSettingsView:
+      type: object
+      required: [decayEnabled, decayThreshold, decayInactiveDays, decayPercent, decayMax, seasonEnabled, seasonMonths, seasonResetPercent, seasonAnchor, currentSeason, updatedAt]
+      properties:
+        decayEnabled: { type: boolean }
+        decayThreshold: { type: integer }
+        decayInactiveDays: { type: integer }
+        decayPercent: { type: integer }
+        decayMax: { type: integer }
+        seasonEnabled: { type: boolean }
+        seasonMonths: { type: integer }
+        seasonResetPercent: { type: integer }
+        seasonAnchor: { type: string }
+        currentSeason: { $ref: '#/components/schemas/RatingSeasonView' }
+        updatedAt: { type: string, format: date-time }
+    RatingSettingsResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/RatingSettingsView' }
+    RatingSeasonResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/RatingSeasonView' }
     RatingLeaderboardPageResponse:
       allOf:
         - $ref: '#/components/schemas/Envelope'

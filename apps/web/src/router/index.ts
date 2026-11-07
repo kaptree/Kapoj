@@ -245,6 +245,16 @@ export const router = createRouter({
           meta: { requiresAuth: true, permission: PERM.admin.audit.view, title: '审计日志' },
         },
         {
+          path: 'rating',
+          name: 'admin-rating',
+          component: () => import('@/views/AdminRatingView.vue'),
+          meta: {
+            requiresAuth: true,
+            permission: PERM.rating.settings.manage,
+            title: 'Rating 设置',
+          },
+        },
+        {
           path: 'gamification',
           name: 'gamification-admin',
           component: () => import('@/views/GamificationAdminView.vue'),

@@ -69,6 +69,13 @@ const learningPathsItem: AdminNavItem = {
   icon: 'pi pi-sitemap',
 }
 
+const ratingItem: AdminNavItem = {
+  key: 'rating',
+  path: '/admin/rating',
+  label: 'Rating 设置',
+  icon: 'pi pi-chart-line',
+}
+
 const groups = computed<AdminNavGroup[]>(() => {
   const contentItems: AdminNavItem[] = []
   if (auth.canAny(PROBLEM_MANAGE_PERMISSIONS)) {
@@ -95,6 +102,9 @@ const groups = computed<AdminNavGroup[]>(() => {
   }
   if (auth.can(PERM.admin.audit.view)) {
     items.push({ key: 'audit', label: '审计', items: [auditItem] })
+  }
+  if (auth.can(PERM.rating.settings.manage)) {
+    items.push({ key: 'rating', label: 'Rating', items: [ratingItem] })
   }
   if (auth.canAny(GAMIFICATION_MANAGE_PERMISSIONS)) {
     items.push({ key: 'gamification', label: '游戏化', items: [gamificationItem] })

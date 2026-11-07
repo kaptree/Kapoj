@@ -14,9 +14,11 @@ vi.mock('@/api/leaderboard', () => ({
 
 function historyItem(overrides: Partial<RatingHistoryItem> = {}): RatingHistoryItem {
   return {
+    kind: 'contest',
     contestId: 5,
     contestTitle: '春季公开赛',
     rank: 3,
+    periodKey: '',
     ratingBefore: 1500,
     ratingAfter: 1524,
     delta: 24,
@@ -136,6 +138,89 @@ describe('RatingHistoryCard', () => {
     expect(link.text()).toBe('秋季公开赛')
   })
 
+  it('renders contest, decay and season_reset rows with labels', async () => {
+    vi.mocked(getRatingHistory).mockResolvedValue(
+      historyPage([
+        historyItem({ kind: 'contest', contestId: 1, contestTitle: '春季公开赛' }),
+        historyItem({
+          kind: 'decay',
+          contestId: 0,
+          contestTitle: 'Rating 衰减',
+          rank: 0,
+          periodKey: '2026-10',
+          delta: -6,
+          ratingAfter: 2594,
+        }),
+        historyItem({
+          kind: 'season_reset',
+          contestId: 0,
+          contestTitle: '赛季重置',
+          rank: 0,
+          periodKey: '2026-11-01',
+          delta: -420,
+          ratingAfter: 2270,
+        }),
+      ]),
+    )
+    const wrapper = await mountCard()
+
+    expect(wrapper.text()).toContain('比赛')
+    expect(wrapper.text()).toContain('衰减')
+    expect(wrapper.text()).toContain('赛季重置')
+    expect(wrapper.text()).toContain('春季公开赛')
+    expect(wrapper.text()).toContain('Rating 衰减')
+    // Non-contest ranks render as an em dash.
+    expect(wrapper.text()).toContain('—')
+  })
+
+  it('links only contest rows', async () => {
+    vi.mocked(getRatingHistory).mockResolvedValue(
+      historyPage([
+        historyItem({ kind: 'contest', contestId: 42, contestTitle: '秋季公开赛' }),
+        historyItem({ kind: 'decay', contestId: 0, contestTitle: 'Rating 衰减' }),
+        historyItem({ kind: 'season_reset', contestId: 0, contestTitle: '赛季重置' }),
+      ]),
+    )
+    const wrapper = await mountCard()
+
+    const links = wrapper.findAll('a[href^="/contests/"]')
+    expect(links).toHaveLength(1)
+    expect(links[0]!.text()).toBe('秋季公开赛')
+    expect(wrapper.text()).toContain('Rating 衰减')
+    expect(wrapper.text()).toContain('赛季重置')
+  })
+
+  it('updates chart label/count for all kinds', async () => {
+    vi.mocked(getRatingHistory).mockResolvedValue(
+      historyPage([
+        historyItem({
+          kind: 'contest',
+          contestId: 3,
+          ratingAfter: 1600,
+          createdAt: '2026-01-03T12:00:00Z',
+        }),
+        historyItem({
+          kind: 'decay',
+          contestId: 0,
+          ratingAfter: 1500,
+          createdAt: '2026-01-02T12:00:00Z',
+        }),
+        historyItem({
+          kind: 'season_reset',
+          contestId: 0,
+          ratingAfter: 1400,
+          createdAt: '2026-01-01T12:00:00Z',
+        }),
+      ]),
+    )
+    const wrapper = await mountCard()
+
+    const chart = wrapper.find('svg.rating-chart')
+    expect(chart.exists()).toBe(true)
+    expect(chart.attributes('aria-label')).toContain('共 3 条 Rating 变化')
+    expect(wrapper.text()).toContain('最近 20 条 Rating 变化')
+  })
+
   it('renders an accessible SVG chart for two or more points in chronological order', async () => {
     vi.mocked(getRatingHistory).mockResolvedValue(
       historyPage([
@@ -164,7 +249,7 @@ describe('RatingHistoryCard', () => {
     expect(chart.attributes('viewBox')).toBe('0 0 320 80')
     expect(chart.attributes('role')).toBe('img')
     expect(chart.attributes('aria-label')).toContain('Rating 历史曲线')
-    expect(chart.attributes('aria-label')).toContain('2 场')
+    expect(chart.attributes('aria-label')).toContain('2 条')
 
     const points = polylinePoints(wrapper)
     expect(points).toHaveLength(2)

@@ -26,6 +26,7 @@ const routes = [
   { path: '/admin/users', component: { template: '<div />' } },
   { path: '/admin/roles', component: { template: '<div />' } },
   { path: '/admin/audit', component: { template: '<div />' } },
+  { path: '/admin/rating', component: { template: '<div />' } },
   { path: '/problems', component: { template: '<div />' } },
   { path: '/contests', component: { template: '<div />' } },
   { path: '/admin/learning-paths', component: { template: '<div />' } },
@@ -97,6 +98,17 @@ describe('AdminNav', () => {
     expect(auth.can).toHaveBeenCalledWith(PERM.admin.audit.view)
     expect(wrapper.find('a[href="/admin/audit"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('审计日志')
+  })
+
+  it('shows the rating settings entry only with rating.settings.manage', async () => {
+    let wrapper = await mountNav()
+    expect(wrapper.text()).not.toContain('Rating 设置')
+
+    auth.can.mockImplementation((code) => code === PERM.rating.settings.manage)
+    wrapper = await mountNav()
+    expect(auth.can).toHaveBeenCalledWith(PERM.rating.settings.manage)
+    expect(wrapper.find('a[href="/admin/rating"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Rating 设置')
   })
 
   it('shows the content links by problem/contest permission', async () => {

@@ -117,7 +117,7 @@ test.describe.serial('admin RBAC browser acceptance', () => {
     await expect(page.getByText('超级管理员')).toBeVisible()
     const contentAdminRow = page.locator('tr').filter({ hasText: 'content_admin' }).first()
     await contentAdminRow.getByRole('button', { name: '权限' }).click()
-    await expect(page.locator('.p-dialog:visible input[type=checkbox]')).toHaveCount(34)
+    await expect(page.locator('.p-dialog:visible input[type=checkbox]')).toHaveCount(35)
     await page.locator('.p-dialog:visible').getByRole('button', { name: '取消' }).click()
 
     await page.goto('/admin/audit')
@@ -136,6 +136,7 @@ test.describe.serial('admin RBAC browser acceptance', () => {
       '用户管理',
       '角色权限',
       '审计日志',
+      'Rating 设置',
       '游戏化管理',
       '题库管理',
       '比赛管理',
@@ -178,6 +179,7 @@ test.describe.serial('admin RBAC browser acceptance', () => {
     for (const label of ['用户管理', '角色权限', '审计日志']) {
       await expect(drawer.getByRole('link', { name: label })).toBeVisible()
     }
+    await expect(drawer.getByRole('link', { name: 'Rating 设置' })).toHaveCount(0)
     await expect(drawer.getByRole('link', { name: '游戏化管理' })).toHaveCount(0)
     await expect(drawer.getByRole('link', { name: '题库管理' })).toHaveCount(0)
 

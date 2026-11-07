@@ -6,6 +6,7 @@ import type {
   Page,
   RatingHistoryPage,
   RatingLeaderboardPage,
+  RatingSeasonView,
   SharingLeaderboardRow,
 } from './types'
 
@@ -27,6 +28,9 @@ export const listSharingLeaderboard = (q: PageQuery) =>
 
 export const getRatingHistory = (userId: number, q: PageQuery) =>
   http.get<RatingHistoryPage>(`/users/${userId}/rating-history`, { params: pageParams(q) })
+
+/** Current rating season (public). */
+export const getRatingSeason = () => http.get<RatingSeasonView>('/rating/season/current')
 
 export const getActivitySummary = () => http.get<ActivitySummary>('/activity/summary')
 

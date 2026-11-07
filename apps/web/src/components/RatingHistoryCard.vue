@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
+import Tag from 'primevue/tag'
 
 import { ApiError } from '@/api/http'
 import { getRatingHistory } from '@/api/leaderboard'
@@ -100,7 +101,7 @@ const chartData = computed<ChartData | null>(() => {
   return {
     points,
     polyline: points.map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(' '),
-    label: `Rating 历史曲线：共 ${entries.length} 场比赛，Rating 从 ${first} 到 ${last}。`,
+    label: `Rating 历史曲线：共 ${entries.length} 条 Rating 变化，Rating 从 ${first} 到 ${last}。`,
   }
 })
 
@@ -110,8 +111,26 @@ function deltaClass(delta: number): string {
   return 'delta--neutral'
 }
 
-function contestName(item: RatingHistoryItem): string {
-  return item.contestId === 0 ? '私密比赛' : item.contestTitle || '未命名比赛'
+function kindLabel(kind: RatingHistoryItem['kind']): string {
+  switch (kind) {
+    case 'decay':
+      return '衰减'
+    case 'season_reset':
+      return '赛季重置'
+    default:
+      return '比赛'
+  }
+}
+
+function kindSeverity(kind: RatingHistoryItem['kind']): string {
+  switch (kind) {
+    case 'decay':
+      return 'warn'
+    case 'season_reset':
+      return 'secondary'
+    default:
+      return 'info'
+  }
 }
 </script>
 
@@ -120,7 +139,7 @@ function contestName(item: RatingHistoryItem): string {
     <header class="rating-history__head">
       <div class="rating-history__heading">
         <h2 class="rating-history__title">Rating 历史</h2>
-        <p class="rating-history__hint">最近 {{ PAGE_SIZE }} 场 Rated 比赛的 Rating 变化</p>
+        <p class="rating-history__hint">最近 {{ PAGE_SIZE }} 条 Rating 变化</p>
       </div>
       <p v-if="rating !== undefined" class="rating-history__current">
         当前 Rating
@@ -167,22 +186,28 @@ function contestName(item: RatingHistoryItem): string {
         aria-label="Rating 历史表格，可横向滚动"
       >
         <DataTable :value="items" size="small" class="rating-history-table">
+          <Column header="类型" style="width: 96px">
+            <template #body="{ data }">
+              <Tag :value="kindLabel(data.kind)" :severity="kindSeverity(data.kind)" />
+            </template>
+          </Column>
+
           <Column header="比赛" style="min-width: 180px">
             <template #body="{ data }">
               <RouterLink
-                v-if="data.contestId > 0"
+                v-if="data.kind === 'contest' && data.contestId > 0"
                 :to="{ name: 'contest-detail', params: { id: data.contestId } }"
                 class="contest-link"
               >
-                {{ contestName(data) }}
+                {{ data.contestTitle }}
               </RouterLink>
-              <span v-else class="contest-private">{{ contestName(data) }}</span>
+              <span v-else class="contest-private">{{ data.contestTitle }}</span>
             </template>
           </Column>
 
           <Column header="名次" style="width: 72px">
             <template #body="{ data }">
-              <span class="num">{{ data.rank }}</span>
+              <span class="num">{{ data.kind === 'contest' ? data.rank : '—' }}</span>
             </template>
           </Column>
 
