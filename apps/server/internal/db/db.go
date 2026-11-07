@@ -45,6 +45,7 @@ func Migrate(g *gorm.DB) error {
 	return g.AutoMigrate(
 		&user.User{}, &problem.Problem{}, &problem.Testcase{},
 		&problem.ProblemSolutionUnlock{},
+		&problem.SolutionPost{}, &problem.SolutionReply{},
 		&contest.Contest{}, &contest.ContestProblem{}, &contest.ContestParticipant{},
 		&contest.Announcement{}, &submission.Submission{},
 		&rating.RatingHistory{},

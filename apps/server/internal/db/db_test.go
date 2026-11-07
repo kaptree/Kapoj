@@ -79,6 +79,26 @@ func TestMigrateCreatesOfficialSolutionSchema(t *testing.T) {
 	assert.True(t, g.Migrator().HasIndex(&problem.ProblemSolutionUnlock{}, "uniq_problem_solution_unlocks"))
 }
 
+func TestMigrateCreatesDiscussionSchema(t *testing.T) {
+	dsn := os.Getenv("KAPOJ_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("KAPOJ_TEST_DATABASE_URL not set; skipping database test")
+	}
+	g, err := open(dsn, io.Discard)
+	require.NoError(t, err)
+	require.NoError(t, Migrate(g))
+	sqlDB, err := g.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	assert.True(t, g.Migrator().HasTable("problem_solution_posts"), "缺少表 problem_solution_posts")
+	assert.True(t, g.Migrator().HasTable("problem_solution_replies"), "缺少表 problem_solution_replies")
+	assert.True(t, g.Migrator().HasColumn(&problem.SolutionPost{}, "deleted_at"))
+	assert.True(t, g.Migrator().HasColumn(&problem.SolutionReply{}, "deleted_at"))
+	assert.True(t, g.Migrator().HasColumn(&problem.SolutionPost{}, "content_md"))
+	assert.True(t, g.Migrator().HasColumn(&problem.SolutionReply{}, "content_md"))
+}
+
 func TestMigrateCreatesRatingSchema(t *testing.T) {
 	dsn := os.Getenv("KAPOJ_TEST_DATABASE_URL")
 	if dsn == "" {
