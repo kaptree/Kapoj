@@ -3,7 +3,7 @@
 > 本文档基于 `plan.md` 细化，是 kapOJ（Kap Online Judge）平台的详细开发规格说明书。
 > 目标：**打造出最有趣味的 Online Judge 平台**。
 > 文档包含完整的架构设计、数据库设计、模块需求，并为每个模块提供了可直接交给 Codex 的**开发提示词（Prompt）**。
-> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)，前端 UI 迁移见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。当前进度：**M4-2A 与 RBAC-D 已完成**（M0–M3 已完成；M4 进行中。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页、签到、Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线模型、权限、路线/节点 CRUD 与树结构；RBAC-A 交付权限目录、内置角色、首次 Seed/旧角色映射、实时 Access 解析、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/`canAny`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化，以及文档、HTTP 冒烟与浏览器 E2E。学习路线进度/事件/守卫与前端、社交互动、Rating 衰减/赛季重置尚未实现）。前端 UI 已完成 UI-00～UI-18 的 PrimeVue 4 迁移、UI-30（M4-C 排行榜/历史）与 RBAC-D 管理后台页面直接实现，剩余 UI-19 题库编辑与 UI-20 异常页；该迁移已提交。
+> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)，前端 UI 迁移见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。当前进度：**M4-2A、RBAC-D 与 M5-A 已完成**（M0–M3 已完成；M4 进行中；M5 部分完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页、签到、Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线模型、权限、路线/节点 CRUD 与树结构；RBAC-A 交付权限目录、内置角色、首次 Seed/旧角色映射、实时 Access 解析、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/`canAny`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化，以及文档、HTTP 冒烟与浏览器 E2E；M5-A 交付 AI 后端基础（多 provider 配置、用户 API key AES-GCM 加密存储、OpenAI 兼容补全/格式化/优化与题目 AI 提示缓存/限流，AI 路由仅在配置 `KAPOJ_AI_ENCRYPTION_KEY` 时挂载）。学习路线进度/事件/守卫与前端、社交互动、Rating 衰减/赛季重置，以及 AI 出题造数据/前端/HydroOJ 导入/证书/头像（M5-4～M5-8）尚未实现）。前端 UI 已完成 UI-00～UI-18 的 PrimeVue 4 迁移、UI-30（M4-C 排行榜/历史）与 RBAC-D 管理后台页面直接实现，剩余 UI-19 题库编辑与 UI-20 异常页；该迁移已提交。
 
 ---
 
@@ -471,6 +471,15 @@ user_ai_configs (
   api_key_encrypted                      -- 用户自行填写的 key，AES 加密后存储
 )
 ```
+
+**实现状态（M5-A ✅，M5-1～M5-3 已完成）**
+
+- 已建表：`ai_providers`（code 唯一 `uniq_ai_providers_code`）、`user_ai_configs`（user_id 唯一 `uniq_user_ai_configs_user`）、`ai_hints`（problem_id 唯一 `uniq_ai_hints_problem`）。
+- 平台级 provider 的密钥不写入数据库；`ai_providers.api_key_ref` 保留为环境变量名或密钥服务 ID 引用，当前固定为空字符串，M5-A 不实现平台代付 key。
+- 内置 provider seed（幂等，`ON CONFLICT DO NOTHING`，不覆盖已有行）：`deepseek` / DeepSeek / `https://api.deepseek.com/v1` / `deepseek-chat`、`openai` / OpenAI / `https://api.openai.com/v1` / `gpt-4o-mini`、`qwen` / 通义千问 / `https://dashscope.aliyuncs.com/compatible-mode/v1` / `qwen-plus`、`glm` / 智谱 GLM / `https://open.bigmodel.cn/api/paas/v4` / `glm-4-flash`。
+- `user_ai_configs.api_key_encrypted` 使用 AES-256-GCM（随机 12 字节 nonce，输出 `v1:`+base64(nonce+ciphertext)），密钥为 base64 编码的 32 字节（`KAPOJ_AI_ENCRYPTION_KEY`）；接口只返回脱敏值（长度 >8 显示前 3 字符 + … + 后 4 字符，否则 `****`），不写日志、不写审计摘要。
+- 提示缓存：`ai_hints` 每题唯一；首个用户触发后生成，后续用户直接读取缓存，不要求用户 AI 配置、不消耗限流；非公开题对无 `problem.view_hidden` 的用户与不存在一致返回 40400，不泄露存在性。
+
 
 ---
 
@@ -1313,6 +1322,16 @@ user_ai_configs (
 ---
 
 ## 6. AI 辅助功能模块
+
+**实现状态（M5-A ✅，M5-1～M5-3 已完成；M5-4～M5-8 待办）**
+
+- **启用/关闭语义**：AI 路由（`/api/ai/configs` GET/POST、`/api/ai/complete`、`/api/ai/format`、`/api/ai/optimize`、`/api/ai/hint`）仅在配置了合法的 `KAPOJ_AI_ENCRYPTION_KEY`（base64 编码的 32 字节，`openssl rand -base64 32` 生成）时挂载；未配置时后端正常启动，只是这些路由不存在（404）。非法 base64 或长度不对时启动直接报错。
+- **provider**：启动时幂等 seed 四个内置 provider（`deepseek`/`openai`/`qwen`/`glm`，见 3.9）；只有 `is_active=true` 的 provider 可用，未知/停用 provider 被拒绝。
+- **加密**：用户 API key 使用 AES-256-GCM 加密存储（随机 nonce，`v1:` 前缀），接口只返回脱敏值，不写日志/审计；平台 provider 的密钥不写入数据库。
+- **OpenAI 客户端**：`POST {base_url}/chat/completions`，Bearer key，解析 `choices[0].message.content`；非 2xx / 空 choices / 畸形 JSON / 超时统一映射为 `50200 AI 服务调用失败`（`KAPOJ_AI_REQUEST_TIMEOUT` 控制超时，默认 45s），不泄露 key 与上游响应体敏感内容。
+- **限流**：补全/格式化/优化/首次生成提示按用户 Redis 冷却（`kapoj:ai:cool:<userID>`，`SetNX`，`KAPOJ_AI_COOLDOWN` 默认 2s），超限返回 `42903`；Redis 故障返回 `50300`；缓存命中的提示不消耗冷却。
+- **提示缓存**：`POST /api/ai/hint` 登录 + `LoadAccess`；缓存命中直接返回 `cached=true`，未命中要求用户配置并调用模型后 `INSERT ... ON CONFLICT (problem_id) DO NOTHING` 写入缓存；非公开题对无 `problem.view_hidden` 的用户返回 40400。
+- **范围外**：M5-4（出题造数据）、M5-5（AI 前端工具栏/提示/配置页）、M5-6（HydroOJ 导入）、M5-7（证书）、M5-8（头像上传）均未实现；M5-A 不新增管理员权限码。
 
 ### 6.1 功能清单
 

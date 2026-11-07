@@ -2,7 +2,7 @@
 
 打造最有趣味的 Online Judge 平台。规格见 [`DEVELOPMENT.md`](DEVELOPMENT.md)，进度见 [`docs/任务清单.md`](docs/任务清单.md) 与 [`docs/开发日志.md`](docs/开发日志.md)。
 
-当前进度：**M4-2A 与 RBAC-D 已完成**（M0–M3 已完成；M4 进行中。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页（Rating/活跃度/共享三 Tab、等级颜色、签到）、用户主页 Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线后端模型、官方/自定义权限、路线/节点 CRUD 与树结构，路线 API 已可用；RBAC-A 交付权限模型、权限目录、首次 Seed/旧角色映射、实时 Access、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化；学习路线进度/事件/守卫与前端、社交、Rating 衰减/赛季重置尚未实现）。前端并行进行 PrimeVue 4 迁移，**UI-00～UI-18、UI-30（M4-C 排行榜/历史）与 RBAC-D 管理后台页面已完成并提交**，剩余题库编辑（UI-19）、异常页（UI-20）与学习路线前端（UI-31，M4-2C），详见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。
+当前进度：**M4-2A、RBAC-D 与 M5-A 已完成**（M0–M3 已完成；M4 进行中；M5 部分完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页（Rating/活跃度/共享三 Tab、等级颜色、签到）、用户主页 Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线后端模型、官方/自定义权限、路线/节点 CRUD 与树结构，路线 API 已可用；RBAC-A 交付权限模型、权限目录、首次 Seed/旧角色映射、实时 Access、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化；M5-A 交付 AI 后端基础：多 provider 配置、用户 API key 加密存储、补全/格式化/优化与题目提示缓存/限流；学习路线进度/事件/守卫与前端、社交、Rating 衰减/赛季重置，以及 AI 出题造数据/前端/HydroOJ 导入/证书/头像（M5-4～M5-8）尚未实现）。前端并行进行 PrimeVue 4 迁移，**UI-00～UI-18、UI-30（M4-C 排行榜/历史）与 RBAC-D 管理后台页面已完成并提交**，剩余题库编辑（UI-19）、异常页（UI-20）与学习路线前端（UI-31，M4-2C），详见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。
 
 ## 目录结构
 
@@ -173,6 +173,28 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 - 服务启动时在数据库迁移后执行 `rbac.Seed`。只有首次部署（`rbac_meta` 中没有 `seed_version`）才写入内置角色权限并把旧 `users.role` 映射为新角色：`super_admin → super_admin`、`problem_admin → content_admin`、`contest_admin → contest_admin`、`user → 不分配`。
 - 首次 Seed 后，修改 `users.role` 不会再自动获得 RBAC 角色，也不会重新授权；请用 RBAC-B 的管理 API 维护 `user_roles`（`PUT /api/admin/users/{id}/roles`）。重启不会重复插入角色/权限/关联，也不会恢复已删除的角色权限。
 - 自 RBAC-C 起，管理授权只认 `user_roles`/`role_permissions`；`users.role`/JWT role 仅作展示/兼容，不再用于任何管理接口授权。
+
+## AI 辅助（M5-A）
+
+**启用方式**
+
+- AI 接口只有后端配置了 `KAPOJ_AI_ENCRYPTION_KEY`（base64 编码的 32 字节密钥）时才挂载；不配置时后端正常启动，`/api/ai/*` 路由不存在（404）。生成密钥：`openssl rand -base64 32`。
+- 可选参数：`KAPOJ_AI_REQUEST_TIMEOUT`（AI 上游请求超时，默认 `45s`）、`KAPOJ_AI_COOLDOWN`（同一用户两次 AI 调用最小间隔，默认 `2s`）。
+
+**用户如何使用**
+
+- 用户登录后通过 `POST /api/ai/configs` 保存自己的 AI provider、模型与 API key（key 使用 AES-256-GCM 加密存储，`GET /api/ai/configs` 只返回脱敏值）。内置 provider：`deepseek`、`openai`、`qwen`、`glm`。
+- 保存配置后即可调用 `POST /api/ai/complete`（代码补全）、`POST /api/ai/format`（格式化）、`POST /api/ai/optimize`（优化），以及 `POST /api/ai/hint`（题目 AI 提示，首个用户生成后全局缓存，后续用户复用）。
+
+**接口与规则**
+
+- `GET/POST /api/ai/configs`：查询/保存当前用户的 AI 配置；未配置时 `configured=false`；`apiKeyMasked` 只返回脱敏值，不返回明文或密文。provider 必须为启用状态，model 为空时使用 provider 默认模型，首次保存必须提供 key，已有配置且 key 留空则保留原密钥。
+- `POST /api/ai/complete`：返回补全片段 `{completion}`；请求体 `{code, language, cursor}`（cursor 必填）。
+- `POST /api/ai/format`：返回格式化后的完整代码 `{code}`。
+- `POST /api/ai/optimize`：返回 `{suggestions, code}`。
+- `POST /api/ai/hint`：请求体 `{problemId}`，返回 `{hint, cached}`；缓存命中不要求用户配置、不消耗限流；非公开题对无 `problem.view_hidden` 的用户返回 40400。
+- 所有 AI 接口仅登录用户可用（未登录 40100）；无 AI 配置调用生成接口返回 40001；限流返回 42903；AI 上游失败返回 50200；Redis 不可用返回 50300。
+- **安全**：平台 provider 的密钥不写入数据库；用户 key 只加密存储、接口只返回脱敏值，不写日志/审计。不要把真实 API key 写进文档或提交到仓库。
 
 ## 测试与检查
 

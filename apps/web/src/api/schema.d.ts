@@ -3844,6 +3844,268 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ai/configs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 查询当前用户 AI 配置（登录）
+         * @description 返回脱敏后的用户 AI 配置与启用的 provider 列表；未配置时 configured=false。 apiKeyMasked 只返回脱敏值，绝不包含明文或密文。所有 AI 接口仅登录用户可用。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description AI 配置视图 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AIConfigViewResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        /**
+         * 保存用户 AI 配置（登录）
+         * @description provider 必须为启用的 provider code；首次保存必须提供 apiKey；modelName 为空时使用 provider 默认模型； 已有配置且 apiKey 留空时保留原密钥。保存成功返回脱敏视图。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AISaveConfigInput"];
+                };
+            };
+            responses: {
+                /** @description 保存后的 AI 配置视图 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AIConfigViewResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 代码自动补全（登录，限流）
+         * @description 在光标处补全代码片段；要求已配置 AI provider/key。调用按用户限流（KAPOJ_AI_COOLDOWN）， 无配置或参数非法返回 40001，限流返回 42903，上游 AI 服务失败返回 50200，Redis 不可用返回 50300。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AICompleteInput"];
+                };
+            };
+            responses: {
+                /** @description 补全片段 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AICompleteResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                429: components["responses"]["Error"];
+                502: components["responses"]["Error"];
+                503: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/format": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 代码格式化（登录，限流）
+         * @description 返回格式化后的完整代码；要求已配置 AI provider/key。其余语义与 /ai/complete 一致： 参数非法 40001、限流 42903、上游失败 50200、Redis 不可用 50300。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AIFormatInput"];
+                };
+            };
+            responses: {
+                /** @description 格式化后的代码 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AIFormatResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                429: components["responses"]["Error"];
+                502: components["responses"]["Error"];
+                503: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/optimize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 代码优化（登录，限流）
+         * @description 返回优化建议与优化后代码；要求已配置 AI provider/key。模型返回无法解析为 JSON 时， 原文作为建议、原代码作为代码返回（不丢失用户代码）。其余语义与 /ai/complete 一致。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AIOptimizeInput"];
+                };
+            };
+            responses: {
+                /** @description 优化建议与代码 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AIOptimizeResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                429: components["responses"]["Error"];
+                502: components["responses"]["Error"];
+                503: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/hint": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 获取题目 AI 提示（登录，缓存）
+         * @description 首个用户触发后生成并缓存，后续用户直接读取缓存；缓存命中不要求用户 AI 配置、也不消耗限流。 非公开题目仅拥有 problem.view_hidden 或 super 可请求，否则与不存在一致返回 40400，不泄露存在性。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AIHintInput"];
+                };
+            };
+            responses: {
+                /** @description AI 提示；cached 表示是否命中缓存 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AIHintResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+                429: components["responses"]["Error"];
+                502: components["responses"]["Error"];
+                503: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -5112,6 +5374,94 @@ export interface components {
             data: {
                 deleted: boolean;
             };
+        };
+        AIProviderOption: {
+            /** @description provider code，如 deepseek/openai/qwen/glm */
+            code: string;
+            name: string;
+            defaultModel: string;
+        };
+        /** @description 用户 AI 配置脱敏视图；apiKeyMasked 绝不包含明文或密文 API key。 */
+        AIConfigView: {
+            /** @description 是否已配置；false 时 provider/modelName/apiKeyMasked 均为空字符串 */
+            configured: boolean;
+            /** @description provider code；未配置时为空字符串 */
+            provider: string;
+            /** @description 模型名；未配置时为空字符串 */
+            modelName: string;
+            /** @description 脱敏后的 API key；未配置时为空字符串 */
+            apiKeyMasked: string;
+            /** @description 启用的 provider 列表 */
+            providers: components["schemas"]["AIProviderOption"][];
+        };
+        AISaveConfigInput: {
+            /** @description provider code，必须为启用状态 */
+            provider: string;
+            /** @description 首次保存必填；已有配置且留空时保留原密钥 */
+            apiKey?: string;
+            /** @description 为空时使用 provider 默认模型 */
+            modelName?: string;
+        };
+        /** @description 代码自动补全请求体；cursor 必填（字节偏移）。 */
+        AICompleteInput: {
+            /** @description 按 UTF-8 字节数不超过 64 KiB */
+            code: string;
+            language: string;
+            /** @description 光标位置（字节偏移，0..len(code)） */
+            cursor: number;
+        };
+        AICompleteOutput: {
+            /** @description 补全片段（不含外层 Markdown 代码围栏） */
+            completion: string;
+        };
+        /** @description 代码格式化请求体；cursor 可选（会被忽略）。 */
+        AIFormatInput: {
+            /** @description 按 UTF-8 字节数不超过 64 KiB */
+            code: string;
+            language: string;
+            cursor?: number;
+        };
+        AIFormatOutput: {
+            /** @description 格式化后的完整代码 */
+            code: string;
+        };
+        /** @description 代码优化请求体；cursor 可选（会被忽略）。 */
+        AIOptimizeInput: {
+            /** @description 按 UTF-8 字节数不超过 64 KiB */
+            code: string;
+            language: string;
+            cursor?: number;
+        };
+        AIOptimizeOutput: {
+            /** @description 优化建议 */
+            suggestions: string;
+            /** @description 优化后的代码 */
+            code: string;
+        };
+        AIHintInput: {
+            /** Format: int64 */
+            problemId: number;
+        };
+        AIHintOutput: {
+            /** @description 中文提示文本 */
+            hint: string;
+            /** @description 是否命中已缓存的提示 */
+            cached: boolean;
+        };
+        AIConfigViewResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AIConfigView"];
+        };
+        AICompleteResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AICompleteOutput"];
+        };
+        AIFormatResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AIFormatOutput"];
+        };
+        AIOptimizeResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AIOptimizeOutput"];
+        };
+        AIHintResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AIHintOutput"];
         };
     };
     responses: {
