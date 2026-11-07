@@ -204,6 +204,7 @@ KAPOJ_DOCKER_TESTS=1 go test -p 1 ./internal/sandbox/
 corepack pnpm test:web
 corepack pnpm lint:web
 corepack pnpm build:web
+corepack pnpm test:e2e     # 管理后台真实浏览器验收（Playwright + 本机 Chrome）
 ```
 
 修改 `packages/api/openapi.yaml` 后，重新生成前端类型：

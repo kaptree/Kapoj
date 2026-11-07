@@ -61,7 +61,7 @@ describe('AdminLayout', () => {
 
   it('opens the mobile drawer with the admin nav and closes on navigate', async () => {
     const { wrapper } = await mountLayout()
-    const toggle = wrapper.find('.admin-menu-toggle')
+    const toggle = wrapper.find('.app-menu-toggle')
 
     expect(toggle.exists()).toBe(true)
     expect(toggle.attributes('aria-expanded')).toBe('false')
@@ -70,10 +70,10 @@ describe('AdminLayout', () => {
     await flushPromises()
 
     expect(toggle.attributes('aria-expanded')).toBe('true')
-    expect(document.body.querySelector('#admin-mobile-nav')).toBeTruthy()
+    expect(document.body.querySelector('#app-mobile-nav')).toBeTruthy()
 
     // The drawer's admin nav emits navigate, which closes the drawer.
-    const drawerNav = document.body.querySelector('#admin-mobile-nav')!
+    const drawerNav = document.body.querySelector('#app-mobile-nav')!
     const link = drawerNav.querySelector('a[href="/admin"]')
     expect(link).toBeTruthy()
     ;(link as HTMLElement).click()

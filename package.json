@@ -6,6 +6,7 @@
     "dev:web": "corepack pnpm --filter web dev",
     "build:web": "corepack pnpm --filter web build",
     "test:web": "corepack pnpm --filter web test",
+    "test:e2e": "corepack pnpm --filter web test:e2e",
     "lint:web": "corepack pnpm --filter web lint",
     "gen:api": "corepack pnpm --filter @kapoj/api gen"
   }
