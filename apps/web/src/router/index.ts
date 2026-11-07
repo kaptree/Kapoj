@@ -121,10 +121,22 @@ export const router = createRouter({
           meta: { title: '学习路线' },
         },
         {
+          path: 'learning-paths/new',
+          name: 'learning-path-create',
+          component: () => import('@/views/LearningPathEditView.vue'),
+          meta: { requiresAuth: true, title: '新建学习路线' },
+        },
+        {
           path: 'learning-paths/:id(\\d+)',
           name: 'learning-path-detail',
           component: () => import('@/views/LearningPathDetailView.vue'),
           meta: { title: '学习路线' },
+        },
+        {
+          path: 'learning-paths/:id(\\d+)/edit',
+          name: 'learning-path-edit',
+          component: () => import('@/views/LearningPathEditView.vue'),
+          meta: { requiresAuth: true, title: '编辑学习路线' },
         },
         {
           path: 'contests/new',
