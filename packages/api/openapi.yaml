@@ -455,6 +455,7 @@ paths:
         - { name: status, in: query, schema: { $ref: '#/components/schemas/ContestStatus' } }
         - { name: includeHidden, in: query, schema: { type: boolean }, description: 需要 contest.view_hidden 权限；需携带 bearer token }
         - { name: mine, in: query, schema: { type: boolean }, description: 仅返回当前登录用户已报名的比赛；游客使用返回 40001 }
+        - { name: problemId, in: query, schema: { type: integer, format: int64, minimum: 1 }, description: 仅返回包含该题的比赛；带此参数时使用“公开 OR 本人已报名 OR contest.view_hidden”联合可见性；非法值返回 40001 }
         - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
         - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
       responses:
@@ -758,6 +759,207 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/StatsResponse' }
+        '404': { $ref: '#/components/responses/Error' }
+  /problems/{id}/official-solution:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      summary: 官方题解访问视图（可选登录）
+      description: >-
+        返回解锁价格、访问状态（free|accepted|purchased|creator|locked|guest）以及可编辑/可购买标记；
+        仅当访问状态允许时返回 solutionMd/solutionCode，locked/guest 不返回正文。
+        隐藏题要求 problem.view_hidden 或 super，否则与不存在一致返回 40400，不沿用比赛参与者 fallback。
+      security: [{}, { bearer: [] }]
+      responses:
+        '200':
+          description: 官方题解访问视图
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OfficialSolutionViewResponse' }
+        '404': { $ref: '#/components/responses/Error' }
+    put:
+      summary: 保存官方题解（登录；题目创建者或超级管理员）
+      description: >-
+        唯一写入口，不修改题面/测试数据。仅题目创建者（problem.created_by）或 super 可编辑，否则返回 40300。
+        说明不超过 50000 字符、代码不超过 65536 字节、价格 0–1000000 金币（0 表示免费）。
+        隐藏题无 problem.view_hidden/super 时返回 40400。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OfficialSolutionInput' }
+      responses:
+        '200':
+          description: 更新后的官方题解访问视图
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OfficialSolutionViewResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /problems/{id}/official-solution/purchase:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      summary: 支付金币解锁官方题解（登录）
+      description: >-
+        价格 0、已通过、创建者/super 或已解锁时不扣费并返回当前视图；价格 >0 且未解锁时在事务内
+        写入解锁记录并扣金币。重复请求幂等，不重复扣费；金币不足返回 40001。解锁永久有效，改价不影响已解锁用户。
+        隐藏题无 problem.view_hidden/super 时返回 40400。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 购买/解锁后的官方题解访问视图
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OfficialSolutionViewResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /problems/{id}/solutions:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      summary: 解题思路帖子列表（游客可读，可选登录）
+      description: >-
+        按 created_at DESC, id DESC 分页（每页 20 条），正文只返回摘要。游客可读；
+        隐藏题要求 problem.view_hidden 或 super，否则与不存在一致返回 40400，不沿用比赛参与者 fallback。
+      security: [{}, { bearer: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: 帖子分页列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SolutionPostPageResponse' }
+        '404': { $ref: '#/components/responses/Error' }
+    post:
+      summary: 发布解题思路帖子（登录）
+      description: 标题 1–100 字符、正文 1–50000 字符。隐藏题无 problem.view_hidden/super 时返回 40400。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SolutionPostInput' }
+      responses:
+        '201':
+          description: 已创建的帖子详情
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SolutionPostDetailResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /problems/{id}/solutions/{postId}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      - { name: postId, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      summary: 解题思路帖子详情与回复（游客可读，可选登录）
+      description: 返回帖子正文与回复列表（回复按 created_at ASC, id ASC，单帖上限 500 条）。隐藏题或帖子不存在返回 40400。
+      security: [{}, { bearer: [] }]
+      responses:
+        '200':
+          description: 帖子详情（含回复）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SolutionPostDetailResponse' }
+        '404': { $ref: '#/components/responses/Error' }
+    put:
+      summary: 编辑解题思路帖子（登录；仅作者）
+      description: 仅帖子作者可编辑，否则返回 40300。标题 1–100 字符、正文 1–50000 字符。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SolutionPostInput' }
+      responses:
+        '200':
+          description: 更新后的帖子详情
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SolutionPostDetailResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+    delete:
+      summary: 删除解题思路帖子（登录；作者/题目创建者/拥有 problem.update 的管理员）
+      description: 软删除；作者、题目创建者或拥有 problem.update 的管理员可删除，否则返回 40300。删除后列表/详情返回 40400。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 已删除
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /problems/{id}/solutions/{postId}/replies:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      - { name: postId, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      summary: 回复解题思路帖子（登录）
+      description: 回复正文 1–10000 字符；单帖回复上限 500 条，超出返回 40001。隐藏题或帖子不存在返回 40400。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SolutionReplyInput' }
+      responses:
+        '201':
+          description: 已创建的回复
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SolutionReplyItemResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /problems/{id}/solutions/{postId}/replies/{replyId}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      - { name: postId, in: path, required: true, schema: { type: integer, format: int64 } }
+      - { name: replyId, in: path, required: true, schema: { type: integer, format: int64 } }
+    put:
+      summary: 编辑回复（登录；仅回复作者）
+      description: 仅回复作者可编辑，否则返回 40300。回复正文 1–10000 字符。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SolutionReplyInput' }
+      responses:
+        '200':
+          description: 更新后的回复
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SolutionReplyItemResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+    delete:
+      summary: 删除回复（登录；回复作者/题目创建者/拥有 problem.update 的管理员）
+      description: 软删除；回复作者、题目创建者或拥有 problem.update 的管理员可删除，否则返回 40300。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 已删除
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
   /problems/{id}/testcases:
     parameters:
@@ -2320,8 +2522,6 @@ components:
         outputFormatMd: { type: string, maxLength: 20000 }
         samples: { type: array, maxItems: 10, items: { $ref: '#/components/schemas/Sample' } }
         hintMd: { type: string, maxLength: 50000 }
-        solutionMd: { type: string, maxLength: 50000 }
-        solutionCode: { type: string }
         type: { $ref: '#/components/schemas/ProblemType' }
         tags: { type: array, maxItems: 10, items: { type: string, minLength: 1, maxLength: 20 } }
         difficulty: { type: integer, minimum: 1, maximum: 5 }
@@ -2340,8 +2540,6 @@ components:
         - outputFormatMd
         - samples
         - hintMd
-        - solutionMd
-        - solutionCode
         - type
         - tags
         - difficulty
@@ -2357,8 +2555,6 @@ components:
         outputFormatMd: { type: string, maxLength: 20000 }
         samples: { type: array, maxItems: 10, items: { $ref: '#/components/schemas/Sample' } }
         hintMd: { type: string, maxLength: 50000 }
-        solutionMd: { type: string, maxLength: 50000 }
-        solutionCode: { type: string }
         type: { $ref: '#/components/schemas/ProblemType' }
         tags: { type: array, maxItems: 10, items: { type: string, minLength: 1, maxLength: 20 } }
         difficulty: { type: integer, minimum: 1, maximum: 5 }
@@ -2387,13 +2583,14 @@ components:
       allOf:
         - $ref: '#/components/schemas/ProblemListItem'
         - type: object
-          required: [statementMd, inputFormatMd, outputFormatMd, samples, hintMd]
+          required: [statementMd, inputFormatMd, outputFormatMd, samples, hintMd, solutionPriceCoins]
           properties:
             statementMd: { type: string }
             inputFormatMd: { type: string }
             outputFormatMd: { type: string }
             samples: { type: array, items: { $ref: '#/components/schemas/Sample' } }
             hintMd: { type: string }
+            solutionPriceCoins: { type: integer, format: int64, description: 官方题解解锁价格（金币），0 表示所有人免费；对所有可读题目始终返回，不受题解访问状态影响 }
             solutionMd: { type: string, description: 拥有题目管理权限（problem.update/delete/publish/testcase.manage/checker.manage）或本人已通过该题时可见 }
             solutionCode: { type: string, description: 拥有题目管理权限或本人已通过该题时可见 }
             checkerUploaded: { type: boolean, description: 拥有题目管理权限或本人已通过该题时可见 }
@@ -3537,3 +3734,119 @@ components:
           required: [data]
           properties:
             data: { $ref: '#/components/schemas/AIHintOutput' }
+    SolutionAccess:
+      type: string
+      description: 官方题解访问状态；locked/guest 不返回正文。
+      enum: [free, accepted, purchased, creator, locked, guest]
+    OfficialSolutionInput:
+      type: object
+      description: 官方题解的唯一写入口；不修改题面/测试数据。
+      required: [solutionMd, solutionCode, priceCoins]
+      properties:
+        solutionMd: { type: string, maxLength: 50000, description: 官方说明（Markdown），不超过 50000 字符 }
+        solutionCode: { type: string, description: 官方代码，不超过 65536 字节 }
+        priceCoins: { type: integer, format: int64, minimum: 0, maximum: 1000000, description: 解锁价格（金币），0 表示所有人免费 }
+    OfficialSolutionView:
+      type: object
+      description: 官方题解访问视图；solutionMd/solutionCode 仅在允许的访问状态（creator/accepted/purchased/free）下返回。
+      required: [priceCoins, access, canEdit, canPurchase]
+      properties:
+        priceCoins: { type: integer, format: int64, description: 解锁价格（金币），0 表示免费 }
+        access: { $ref: '#/components/schemas/SolutionAccess' }
+        canEdit: { type: boolean, description: 是否为题目创建者或 super，可编辑官方题解 }
+        canPurchase: { type: boolean, description: 登录且价格 > 0、未通过/未解锁时是否可购买 }
+        solutionMd: { type: string, description: 官方说明；locked/guest 时不返回 }
+        solutionCode: { type: string, description: 官方代码；locked/guest 时不返回 }
+    SolutionAuthor:
+      type: object
+      description: 帖子/回复作者的公开摘要；仅含 id/username/nickname，不含邮箱。
+      required: [id, username, nickname]
+      properties:
+        id: { type: integer, format: int64 }
+        username: { type: string }
+        nickname: { type: string }
+    SolutionPostInput:
+      type: object
+      description: 发布/编辑帖子的输入；标题 1–100 字符、正文 1–50000 字符。
+      required: [title, contentMd]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 100 }
+        contentMd: { type: string, minLength: 1, maxLength: 50000 }
+    SolutionReplyInput:
+      type: object
+      description: 发布/编辑回复的输入；正文 1–10000 字符。
+      required: [contentMd]
+      properties:
+        contentMd: { type: string, minLength: 1, maxLength: 10000 }
+    SolutionPostItem:
+      type: object
+      description: 帖子列表项；正文不返回，只返回摘要（前 200 字符）。
+      required: [id, problemId, userId, title, excerpt, author, replyCount, createdAt, updatedAt, canEdit, canDelete]
+      properties:
+        id: { type: integer, format: int64 }
+        problemId: { type: integer, format: int64 }
+        userId: { type: integer, format: int64 }
+        title: { type: string }
+        excerpt: { type: string, description: 正文摘要（按 rune 截取前 200 字符） }
+        author: { $ref: '#/components/schemas/SolutionAuthor' }
+        replyCount: { type: integer, format: int64 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        canEdit: { type: boolean, description: 当前用户是否为作者 }
+        canDelete: { type: boolean, description: 作者、题目创建者或拥有 problem.update 的管理员可删除 }
+    SolutionPostDetail:
+      allOf:
+        - $ref: '#/components/schemas/SolutionPostItem'
+        - type: object
+          required: [contentMd, replies]
+          properties:
+            contentMd: { type: string, description: 帖子正文（Markdown） }
+            replies: { type: array, items: { $ref: '#/components/schemas/SolutionReplyItem' } }
+    SolutionReplyItem:
+      type: object
+      description: 帖子回复；回复按 created_at ASC, id ASC 排序。
+      required: [id, postId, userId, contentMd, author, createdAt, updatedAt, canEdit, canDelete]
+      properties:
+        id: { type: integer, format: int64 }
+        postId: { type: integer, format: int64 }
+        userId: { type: integer, format: int64 }
+        contentMd: { type: string }
+        author: { $ref: '#/components/schemas/SolutionAuthor' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        canEdit: { type: boolean, description: 当前用户是否为回复作者 }
+        canDelete: { type: boolean, description: 作者、题目创建者或拥有 problem.update 的管理员可删除 }
+    SolutionPostPage:
+      type: object
+      required: [total, items]
+      properties:
+        total: { type: integer, format: int64 }
+        items: { type: array, items: { $ref: '#/components/schemas/SolutionPostItem' } }
+    OfficialSolutionViewResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/OfficialSolutionView' }
+    SolutionPostPageResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/SolutionPostPage' }
+    SolutionPostDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/SolutionPostDetail' }
+    SolutionReplyItemResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/SolutionReplyItem' }

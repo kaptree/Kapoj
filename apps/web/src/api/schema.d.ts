@@ -1145,6 +1145,8 @@ export interface paths {
                     includeHidden?: boolean;
                     /** @description 仅返回当前登录用户已报名的比赛；游客使用返回 40001 */
                     mine?: boolean;
+                    /** @description 仅返回包含该题的比赛；带此参数时使用“公开 OR 本人已报名 OR contest.view_hidden”联合可见性；非法值返回 40001 */
+                    problemId?: number;
                     page?: number;
                     page_size?: number;
                 };
@@ -1839,6 +1841,454 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/problems/{id}/official-solution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * 官方题解访问视图（可选登录）
+         * @description 返回解锁价格、访问状态（free|accepted|purchased|creator|locked|guest）以及可编辑/可购买标记； 仅当访问状态允许时返回 solutionMd/solutionCode，locked/guest 不返回正文。 隐藏题要求 problem.view_hidden 或 super，否则与不存在一致返回 40400，不沿用比赛参与者 fallback。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 官方题解访问视图 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OfficialSolutionViewResponse"];
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        /**
+         * 保存官方题解（登录；题目创建者或超级管理员）
+         * @description 唯一写入口，不修改题面/测试数据。仅题目创建者（problem.created_by）或 super 可编辑，否则返回 40300。 说明不超过 50000 字符、代码不超过 65536 字节、价格 0–1000000 金币（0 表示免费）。 隐藏题无 problem.view_hidden/super 时返回 40400。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["OfficialSolutionInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的官方题解访问视图 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OfficialSolutionViewResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/problems/{id}/official-solution/purchase": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 支付金币解锁官方题解（登录）
+         * @description 价格 0、已通过、创建者/super 或已解锁时不扣费并返回当前视图；价格 >0 且未解锁时在事务内 写入解锁记录并扣金币。重复请求幂等，不重复扣费；金币不足返回 40001。解锁永久有效，改价不影响已解锁用户。 隐藏题无 problem.view_hidden/super 时返回 40400。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 购买/解锁后的官方题解访问视图 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OfficialSolutionViewResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/problems/{id}/solutions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * 解题思路帖子列表（游客可读，可选登录）
+         * @description 按 created_at DESC, id DESC 分页（每页 20 条），正文只返回摘要。游客可读； 隐藏题要求 problem.view_hidden 或 super，否则与不存在一致返回 40400，不沿用比赛参与者 fallback。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    page_size?: number;
+                };
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 帖子分页列表 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SolutionPostPageResponse"];
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        /**
+         * 发布解题思路帖子（登录）
+         * @description 标题 1–100 字符、正文 1–50000 字符。隐藏题无 problem.view_hidden/super 时返回 40400。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SolutionPostInput"];
+                };
+            };
+            responses: {
+                /** @description 已创建的帖子详情 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SolutionPostDetailResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/problems/{id}/solutions/{postId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                postId: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * 解题思路帖子详情与回复（游客可读，可选登录）
+         * @description 返回帖子正文与回复列表（回复按 created_at ASC, id ASC，单帖上限 500 条）。隐藏题或帖子不存在返回 40400。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                    postId: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 帖子详情（含回复） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SolutionPostDetailResponse"];
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        /**
+         * 编辑解题思路帖子（登录；仅作者）
+         * @description 仅帖子作者可编辑，否则返回 40300。标题 1–100 字符、正文 1–50000 字符。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                    postId: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SolutionPostInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的帖子详情 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SolutionPostDetailResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        /**
+         * 删除解题思路帖子（登录；作者/题目创建者/拥有 problem.update 的管理员）
+         * @description 软删除；作者、题目创建者或拥有 problem.update 的管理员可删除，否则返回 40300。删除后列表/详情返回 40400。
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                    postId: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已删除 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/problems/{id}/solutions/{postId}/replies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                postId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 回复解题思路帖子（登录）
+         * @description 回复正文 1–10000 字符；单帖回复上限 500 条，超出返回 40001。隐藏题或帖子不存在返回 40400。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                    postId: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SolutionReplyInput"];
+                };
+            };
+            responses: {
+                /** @description 已创建的回复 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SolutionReplyItemResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/problems/{id}/solutions/{postId}/replies/{replyId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                postId: number;
+                replyId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 编辑回复（登录；仅回复作者）
+         * @description 仅回复作者可编辑，否则返回 40300。回复正文 1–10000 字符。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                    postId: number;
+                    replyId: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SolutionReplyInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的回复 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SolutionReplyItemResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        /**
+         * 删除回复（登录；回复作者/题目创建者/拥有 problem.update 的管理员）
+         * @description 软删除；回复作者、题目创建者或拥有 problem.update 的管理员可删除，否则返回 40300。
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                    postId: number;
+                    replyId: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已删除 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -4532,8 +4982,6 @@ export interface components {
             outputFormatMd?: string;
             samples?: components["schemas"]["Sample"][];
             hintMd?: string;
-            solutionMd?: string;
-            solutionCode?: string;
             type?: components["schemas"]["ProblemType"];
             tags?: string[];
             difficulty: number;
@@ -4555,8 +5003,6 @@ export interface components {
             outputFormatMd: string;
             samples: components["schemas"]["Sample"][];
             hintMd: string;
-            solutionMd: string;
-            solutionCode: string;
             type: components["schemas"]["ProblemType"];
             tags: string[];
             difficulty: number;
@@ -4591,6 +5037,11 @@ export interface components {
             outputFormatMd: string;
             samples: components["schemas"]["Sample"][];
             hintMd: string;
+            /**
+             * Format: int64
+             * @description 官方题解解锁价格（金币），0 表示所有人免费；对所有可读题目始终返回，不受题解访问状态影响
+             */
+            solutionPriceCoins: number;
             /** @description 拥有题目管理权限（problem.update/delete/publish/testcase.manage/checker.manage）或本人已通过该题时可见 */
             solutionMd?: string;
             /** @description 拥有题目管理权限或本人已通过该题时可见 */
@@ -5462,6 +5913,120 @@ export interface components {
         };
         AIHintResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["AIHintOutput"];
+        };
+        /**
+         * @description 官方题解访问状态；locked/guest 不返回正文。
+         * @enum {string}
+         */
+        SolutionAccess: "free" | "accepted" | "purchased" | "creator" | "locked" | "guest";
+        /** @description 官方题解的唯一写入口；不修改题面/测试数据。 */
+        OfficialSolutionInput: {
+            /** @description 官方说明（Markdown），不超过 50000 字符 */
+            solutionMd: string;
+            /** @description 官方代码，不超过 65536 字节 */
+            solutionCode: string;
+            /**
+             * Format: int64
+             * @description 解锁价格（金币），0 表示所有人免费
+             */
+            priceCoins: number;
+        };
+        /** @description 官方题解访问视图；solutionMd/solutionCode 仅在允许的访问状态（creator/accepted/purchased/free）下返回。 */
+        OfficialSolutionView: {
+            /**
+             * Format: int64
+             * @description 解锁价格（金币），0 表示免费
+             */
+            priceCoins: number;
+            access: components["schemas"]["SolutionAccess"];
+            /** @description 是否为题目创建者或 super，可编辑官方题解 */
+            canEdit: boolean;
+            /** @description 登录且价格 > 0、未通过/未解锁时是否可购买 */
+            canPurchase: boolean;
+            /** @description 官方说明；locked/guest 时不返回 */
+            solutionMd?: string;
+            /** @description 官方代码；locked/guest 时不返回 */
+            solutionCode?: string;
+        };
+        /** @description 帖子/回复作者的公开摘要；仅含 id/username/nickname，不含邮箱。 */
+        SolutionAuthor: {
+            /** Format: int64 */
+            id: number;
+            username: string;
+            nickname: string;
+        };
+        /** @description 发布/编辑帖子的输入；标题 1–100 字符、正文 1–50000 字符。 */
+        SolutionPostInput: {
+            title: string;
+            contentMd: string;
+        };
+        /** @description 发布/编辑回复的输入；正文 1–10000 字符。 */
+        SolutionReplyInput: {
+            contentMd: string;
+        };
+        /** @description 帖子列表项；正文不返回，只返回摘要（前 200 字符）。 */
+        SolutionPostItem: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            problemId: number;
+            /** Format: int64 */
+            userId: number;
+            title: string;
+            /** @description 正文摘要（按 rune 截取前 200 字符） */
+            excerpt: string;
+            author: components["schemas"]["SolutionAuthor"];
+            /** Format: int64 */
+            replyCount: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** @description 当前用户是否为作者 */
+            canEdit: boolean;
+            /** @description 作者、题目创建者或拥有 problem.update 的管理员可删除 */
+            canDelete: boolean;
+        };
+        SolutionPostDetail: components["schemas"]["SolutionPostItem"] & {
+            /** @description 帖子正文（Markdown） */
+            contentMd: string;
+            replies: components["schemas"]["SolutionReplyItem"][];
+        };
+        /** @description 帖子回复；回复按 created_at ASC, id ASC 排序。 */
+        SolutionReplyItem: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            postId: number;
+            /** Format: int64 */
+            userId: number;
+            contentMd: string;
+            author: components["schemas"]["SolutionAuthor"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** @description 当前用户是否为回复作者 */
+            canEdit: boolean;
+            /** @description 作者、题目创建者或拥有 problem.update 的管理员可删除 */
+            canDelete: boolean;
+        };
+        SolutionPostPage: {
+            /** Format: int64 */
+            total: number;
+            items: components["schemas"]["SolutionPostItem"][];
+        };
+        OfficialSolutionViewResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["OfficialSolutionView"];
+        };
+        SolutionPostPageResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["SolutionPostPage"];
+        };
+        SolutionPostDetailResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["SolutionPostDetail"];
+        };
+        SolutionReplyItemResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["SolutionReplyItem"];
         };
     };
     responses: {
