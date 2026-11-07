@@ -64,12 +64,14 @@ function stats(submitCount: number, acceptCount: number): ProblemStats {
   }
 }
 
+const RouterLinkStub = { props: ['to'], template: '<a :href="to"><slot /></a>' }
+
 function mountView() {
   return mount(ProblemDetailView, {
     global: {
       plugins: [PrimeVue, ToastService, createPinia()],
       stubs: {
-        RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
+        RouterLink: RouterLinkStub,
       },
     },
   })
@@ -78,6 +80,8 @@ function mountView() {
 beforeEach(() => {
   auth.can.mockReset()
   auth.can.mockReturnValue(false)
+  route.params.id = '1'
+  route.query = {}
 })
 
 describe('ProblemDetailView', () => {
@@ -182,6 +186,32 @@ describe('ProblemDetailView', () => {
     wrapper = mountView()
     await flushPromises()
     expect(wrapper.text()).toContain('编辑')
+    wrapper.unmount()
+  })
+
+  it('shows a contest back-link pointing to contest-detail when ?contestId is present', async () => {
+    route.query = { contestId: '123' }
+    vi.mocked(getProblem).mockResolvedValue(detail(1))
+    vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('返回比赛 #123')
+    const link = wrapper
+      .findAllComponents(RouterLinkStub)
+      .find((w) => w.text().includes('返回比赛'))
+    expect(link).toBeTruthy()
+    expect(link!.props('to')).toEqual({ name: 'contest-detail', params: { id: 123 } })
+    wrapper.unmount()
+  })
+
+  it('does not show the contest back-link without ?contestId', async () => {
+    vi.mocked(getProblem).mockResolvedValue(detail(1))
+    vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('返回比赛')
     wrapper.unmount()
   })
 })

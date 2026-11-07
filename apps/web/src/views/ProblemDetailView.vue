@@ -124,6 +124,15 @@ const showSolutionResources = computed(
       >
         <template #actions>
           <Button
+            v-if="contestId"
+            as="router-link"
+            :to="{ name: 'contest-detail', params: { id: contestId } }"
+            :label="`返回比赛 #${contestId}`"
+            icon="pi pi-arrow-left"
+            severity="secondary"
+            outlined
+          />
+          <Button
             as="router-link"
             :to="{
               name: 'problem-submit',
