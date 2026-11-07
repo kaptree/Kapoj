@@ -592,6 +592,55 @@ func TestContestListFilters(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
+func TestContestProblemIDValidation(t *testing.T) {
+	f := newFx(t)
+	for _, bad := range []string{"0", "-1", "abc", "1.5"} {
+		w, resp := f.do(http.MethodGet, "/api/contests?problemId="+bad, "", nil)
+		require.Equal(t, http.StatusBadRequest, w.Code, "problemId=%q", bad)
+		assert.EqualValues(t, 40001, resp["code"], "problemId=%q", bad)
+	}
+
+	// 合法正整数返回 200（无比赛时 total=0）。
+	w, resp := f.do(http.MethodGet, "/api/contests?problemId=1", "", nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.NotNil(t, resp["data"])
+}
+
+func TestContestListByProblemEndpoint(t *testing.T) {
+	f := newFx(t)
+	p1, p2 := f.problem("sum"), f.problem("product")
+
+	// 公开比赛含 p1+p2，私有比赛只含 p1。
+	public := body(p1.ID, p2.ID)
+	_, resp := f.do(http.MethodPost, "/api/contests", f.token("contest_admin"), public)
+	publicID := idOf(resp)
+
+	private := body(p1.ID, p2.ID)
+	private["title"] = "Private p1"
+	private["isPublic"] = false
+	private["problems"] = []map[string]any{{"problemId": p1.ID, "displayId": "A", "score": 100}}
+	_, resp = f.do(http.MethodPost, "/api/contests", f.token("contest_admin"), private)
+	privateID := idOf(resp)
+
+	// 游客：只看到包含 p1 的公开比赛。
+	w, resp := f.do(http.MethodGet, fmt.Sprintf("/api/contests?problemId=%d", p1.ID), "", nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.EqualValues(t, 1, resp["data"].(map[string]any)["total"])
+	assert.Equal(t, float64(publicID), resp["data"].(map[string]any)["items"].([]any)[0].(map[string]any)["id"])
+
+	// 游客：p2 只被公开比赛包含，也能看到。
+	w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/contests?problemId=%d", p2.ID), "", nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.EqualValues(t, 1, resp["data"].(map[string]any)["total"])
+
+	// 报名私有比赛后，user 通过 problemId 看到 public + private。
+	w, _ = f.do(http.MethodPost, fmt.Sprintf("/api/contests/%d/register", privateID), f.token("user"), map[string]any{})
+	require.Equal(t, http.StatusOK, w.Code)
+	w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/contests?problemId=%d", p1.ID), f.token("user"), nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.EqualValues(t, 2, resp["data"].(map[string]any)["total"])
+}
+
 type fakeContestActivity struct {
 	joinUserIDs       []int64
 	joinContestIDs    []int64

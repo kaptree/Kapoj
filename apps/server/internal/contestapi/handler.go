@@ -157,6 +157,14 @@ func (h *handler) list(c *gin.Context) {
 		IncludeHidden: c.Query("includeHidden") == "true",
 		Mine:          c.Query("mine") == "true",
 	}
+	if raw := c.Query("problemId"); raw != "" {
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || id <= 0 {
+			httpx.Fail(c, httpx.ErrValidation("problemId 必须是正整数"))
+			return
+		}
+		q.ProblemID = id
+	}
 	page, size := httpx.ParsePage(c.Request.URL.RawQuery)
 	result, err := h.svc.List(c.Request.Context(), viewer(c), q, page, size)
 	if err != nil {

@@ -34,6 +34,7 @@ type ListFilter struct {
 	Now               time.Time
 	ViewerID          int64
 	ParticipantUserID int64
+	ProblemID         int64
 }
 
 type ProblemRow struct {
@@ -165,7 +166,24 @@ func escapeLike(s string) string {
 
 func (r *gormRepository) List(ctx context.Context, f ListFilter, offset, limit int) ([]ListRow, int64, error) {
 	q := r.db.WithContext(ctx).Model(&Contest{})
-	if f.ParticipantUserID != 0 {
+	if f.ProblemID != 0 {
+		// 关联比赛筛选：先限定包含该题的比赛，再按“公开 OR 本人已报名 OR
+		// view_hidden/super”联合可见性，不复用 mine=true 的互斥语义。
+		q = q.Where(`EXISTS (
+			SELECT 1 FROM contest_problems cpb
+			WHERE cpb.contest_id = contests.id AND cpb.problem_id = ?
+		)`, f.ProblemID)
+		if !f.IncludeHidden {
+			if f.ViewerID != 0 {
+				q = q.Where(`(is_public = true OR EXISTS (
+					SELECT 1 FROM contest_participants cpc
+					WHERE cpc.contest_id = contests.id AND cpc.user_id = ?
+				))`, f.ViewerID)
+			} else {
+				q = q.Where("is_public = true")
+			}
+		}
+	} else if f.ParticipantUserID != 0 {
 		q = q.Where(`EXISTS (
 			SELECT 1 FROM contest_participants cp
 			WHERE cp.contest_id = contests.id AND cp.user_id = ?

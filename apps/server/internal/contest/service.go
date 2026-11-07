@@ -36,6 +36,7 @@ type ListQuery struct {
 	Status        Status
 	IncludeHidden bool
 	Mine          bool
+	ProblemID     int64
 }
 
 func (q ListQuery) Normalize() (ListQuery, error) {
@@ -199,8 +200,13 @@ func (s *Service) List(ctx context.Context, v Viewer, q ListQuery, page, size in
 	filter := ListFilter{
 		Keyword: q.Keyword, Mode: q.Mode, Status: q.Status,
 		IncludeHidden: q.IncludeHidden && v.CanViewHidden, Now: now, ViewerID: v.UserID,
+		ProblemID: q.ProblemID,
 	}
-	if q.Mine {
+	if q.ProblemID != 0 {
+		// 关联比赛：公开 OR 本人已报名 OR view_hidden/super，直接依据权限授予，
+		// 不再要求 includeHidden=true，也不复用 mine=true 的互斥语义。
+		filter.IncludeHidden = v.CanViewHidden
+	} else if q.Mine {
 		if v.UserID == 0 {
 			return httpx.Page[ListItem]{}, invalid("请先登录后查看我报名的比赛")
 		}

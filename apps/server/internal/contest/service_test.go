@@ -284,6 +284,99 @@ func TestListFilters(t *testing.T) {
 	assert.EqualValues(t, 1, page.Total)
 }
 
+func TestContestListByProblemVisibility(t *testing.T) {
+	e := newEnv(t)
+	p0, p1 := e.problems[0].ID, e.problems[1].ID
+
+	makeContest := func(title string, public bool, problemIDs ...int64) *contest.Contest {
+		in := baseInput(e)
+		in.Title = title
+		in.IsPublic = public
+		in.Problems = make([]contest.ProblemInput, len(problemIDs))
+		for i, pid := range problemIDs {
+			in.Problems[i] = contest.ProblemInput{ProblemID: pid, DisplayID: string(rune('A' + i)), Score: 100}
+		}
+		c, err := e.svc.Create(context.Background(), manager(), in)
+		require.NoError(t, err)
+		return c
+	}
+
+	public := makeContest("Public A", true, p0, p1)
+	private := makeContest("Private A", false, p0)
+	makeContest("Public B", true, p1) // 不含 p0，用于验证按题过滤
+
+	// 游客：只能看到包含 p0 的公开比赛。
+	page, err := e.svc.List(context.Background(), contest.Viewer{}, contest.ListQuery{ProblemID: p0}, 1, 20)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, page.Total)
+	assert.Equal(t, public.ID, page.Items[0].ID)
+
+	// 已报名 private 的 user：公开 + 已报名的 private 均可见。
+	require.NoError(t, e.svc.Register(context.Background(), userID, private.ID, "", ""))
+	page, err = e.svc.List(context.Background(), user(), contest.ListQuery{ProblemID: p0}, 1, 20)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, page.Total)
+	byID := map[int64]contest.ListItem{}
+	for _, it := range page.Items {
+		byID[it.ID] = it
+	}
+	assert.True(t, byID[private.ID].Registered, "registered 仍按 ViewerID 计算")
+	assert.False(t, byID[public.ID].Registered)
+
+	// 未报名 private 的 other：private 隐藏，只看到公开。
+	page, err = e.svc.List(context.Background(), contest.Viewer{UserID: otherID}, contest.ListQuery{ProblemID: p0}, 1, 20)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, page.Total)
+	assert.Equal(t, public.ID, page.Items[0].ID)
+
+	// view_hidden/super 看到全部包含 p0 的比赛（无需 includeHidden=true）。
+	page, err = e.svc.List(context.Background(), manager(), contest.ListQuery{ProblemID: p0}, 1, 20)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, page.Total)
+}
+
+func TestContestListByProblemKeepsExistingListBehavior(t *testing.T) {
+	e := newEnv(t)
+	p0 := e.problems[0].ID
+
+	makeContest := func(title string, public bool) *contest.Contest {
+		in := baseInput(e)
+		in.Title = title
+		in.IsPublic = public
+		in.Problems = []contest.ProblemInput{{ProblemID: p0, DisplayID: "A", Score: 100}}
+		c, err := e.svc.Create(context.Background(), manager(), in)
+		require.NoError(t, err)
+		return c
+	}
+
+	public := makeContest("Public", true)
+	private := makeContest("Private", false)
+	require.NoError(t, e.svc.Register(context.Background(), userID, private.ID, "", ""))
+
+	// 无 problemId：游客只看到公开比赛。
+	page, err := e.svc.List(context.Background(), contest.Viewer{}, contest.ListQuery{}, 1, 20)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, page.Total)
+	assert.Equal(t, public.ID, page.Items[0].ID)
+
+	// mine=true：仅返回本人报名的比赛（互斥语义保持不变）。
+	page, err = e.svc.List(context.Background(), user(), contest.ListQuery{Mine: true}, 1, 20)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, page.Total)
+	assert.Equal(t, private.ID, page.Items[0].ID)
+
+	// includeHidden 且 view_hidden：看到全部。
+	page, err = e.svc.List(context.Background(), manager(), contest.ListQuery{IncludeHidden: true}, 1, 20)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, page.Total)
+
+	// includeHidden 但无 view_hidden：仍隐藏 private。
+	page, err = e.svc.List(context.Background(), user(), contest.ListQuery{IncludeHidden: true}, 1, 20)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, page.Total)
+	assert.Equal(t, public.ID, page.Items[0].ID)
+}
+
 func TestUpdateKeepsCredentials(t *testing.T) {
 	e := newEnv(t)
 	in := baseInput(e)
