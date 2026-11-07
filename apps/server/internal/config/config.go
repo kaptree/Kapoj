@@ -1,7 +1,9 @@
 package config
 
 import (
+	"encoding/base64"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/spf13/viper"
@@ -20,6 +22,9 @@ type Config struct {
 	MaxEquippedBadges  int
 	RatingScanInterval time.Duration
 	RatingJudgeGrace   time.Duration
+	AIEncryptionKey    string
+	AIRequestTimeout   time.Duration
+	AICooldown         time.Duration
 }
 
 const minSecretLen = 32
@@ -42,6 +47,9 @@ func Load() (*Config, error) {
 	v.SetDefault("max_equipped_badges", 3)
 	v.SetDefault("rating_scan_interval", "60s")
 	v.SetDefault("rating_judge_grace", "10m")
+	v.SetDefault("ai_encryption_key", "")
+	v.SetDefault("ai_request_timeout", "45s")
+	v.SetDefault("ai_cooldown", "2s")
 
 	cfg := &Config{
 		HTTPAddr:           v.GetString("http_addr"),
@@ -56,6 +64,9 @@ func Load() (*Config, error) {
 		MaxEquippedBadges:  v.GetInt("max_equipped_badges"),
 		RatingScanInterval: v.GetDuration("rating_scan_interval"),
 		RatingJudgeGrace:   v.GetDuration("rating_judge_grace"),
+		AIEncryptionKey:    v.GetString("ai_encryption_key"),
+		AIRequestTimeout:   v.GetDuration("ai_request_timeout"),
+		AICooldown:         v.GetDuration("ai_cooldown"),
 	}
 
 	if len(cfg.JWTSecret) < minSecretLen {
@@ -79,5 +90,28 @@ func Load() (*Config, error) {
 	if cfg.RatingJudgeGrace < time.Minute || cfg.RatingJudgeGrace > time.Hour {
 		return nil, errors.New("KAPOJ_RATING_JUDGE_GRACE must be between 1m and 60m")
 	}
+	if cfg.AIRequestTimeout <= 0 {
+		return nil, errors.New("KAPOJ_AI_REQUEST_TIMEOUT must be a positive duration")
+	}
+	if cfg.AICooldown <= 0 {
+		return nil, errors.New("KAPOJ_AI_COOLDOWN must be a positive duration")
+	}
+	if cfg.AIEncryptionKey != "" {
+		if err := validateAIEncryptionKey(cfg.AIEncryptionKey); err != nil {
+			return nil, err
+		}
+	}
 	return cfg, nil
+}
+
+// validateAIEncryptionKey 要求非空密钥为合法 base64 且解码后为 32 字节。
+func validateAIEncryptionKey(key string) error {
+	decoded, err := base64.StdEncoding.DecodeString(key)
+	if err != nil {
+		return fmt.Errorf("KAPOJ_AI_ENCRYPTION_KEY is not valid base64: %w", err)
+	}
+	if len(decoded) != 32 {
+		return fmt.Errorf("KAPOJ_AI_ENCRYPTION_KEY must decode to 32 bytes, got %d", len(decoded))
+	}
+	return nil
 }

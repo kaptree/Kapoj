@@ -12,6 +12,8 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/activity"
 	"github.com/kaptree/kapoj/apps/server/internal/activityapi"
 	"github.com/kaptree/kapoj/apps/server/internal/adminapi"
+	"github.com/kaptree/kapoj/apps/server/internal/ai"
+	"github.com/kaptree/kapoj/apps/server/internal/aiapi"
 	"github.com/kaptree/kapoj/apps/server/internal/auth"
 	"github.com/kaptree/kapoj/apps/server/internal/config"
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
@@ -53,6 +55,7 @@ type Deps struct {
 	Activity *activity.Service
 	Learning *learning.Service
 	RBAC     *rbac.Service
+	AI       *ai.Service
 }
 
 func New(d Deps) *gin.Engine {
@@ -111,6 +114,9 @@ func New(d Deps) *gin.Engine {
 	}
 	if d.Learning != nil {
 		learningapi.RegisterRoutes(api, d.Learning, learningapi.Options{RBAC: d.RBAC})
+	}
+	if d.AI != nil {
+		aiapi.RegisterRoutes(api, d.AI, aiapi.Options{RBAC: d.RBAC})
 	}
 	contestRepo := contest.NewGormRepository(d.DB)
 	contestSvc := contest.NewService(contestRepo)

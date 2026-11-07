@@ -3,6 +3,7 @@ package router
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kaptree/kapoj/apps/server/internal/activity"
+	"github.com/kaptree/kapoj/apps/server/internal/ai"
 	"github.com/kaptree/kapoj/apps/server/internal/auth"
 	"github.com/kaptree/kapoj/apps/server/internal/config"
 	"github.com/kaptree/kapoj/apps/server/internal/learning"
@@ -244,6 +246,55 @@ func TestRouterWiresActivityHooksWithoutGameService(t *testing.T) {
 		Take(&logRow).Error)
 	assert.Equal(t, submissionID, logRow.RefID)
 	assert.Equal(t, 2, logRow.Points)
+}
+
+func TestRouterWiresAIEndpoints(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	store, err := storage.NewLocal(t.TempDir())
+	require.NoError(t, err)
+	g := testutil.PG(t)
+	require.NoError(t, ai.SeedProviders(context.Background(), g))
+
+	// Without an AI service the routes are not mounted.
+	plain := New(Deps{
+		DB: g, Redis: rdb, Storage: store,
+		Config: &config.Config{
+			JWTSecret: strings.Repeat("s", 32), AccessTokenTTL: 15 * time.Minute,
+			RefreshTokenTTL: time.Hour, SubmitCooldown: time.Second,
+		},
+		Enqueuer: noopQueue{},
+	})
+	w, _ := call(plain, http.MethodGet, "/api/ai/configs", "", "")
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	enc, err := ai.NewEncryptor(base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")))
+	require.NoError(t, err)
+	aiSvc := ai.NewService(g, enc, nil, nil)
+
+	h := New(Deps{
+		DB: g, Redis: rdb, Storage: store,
+		Config: &config.Config{
+			JWTSecret: strings.Repeat("s", 32), AccessTokenTTL: 15 * time.Minute,
+			RefreshTokenTTL: time.Hour, SubmitCooldown: time.Second,
+		},
+		Enqueuer: noopQueue{},
+		AI:       aiSvc,
+	})
+
+	w, resp := call(h, http.MethodGet, "/api/ai/configs", "", "")
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.EqualValues(t, 40100, resp["code"])
+
+	w, resp = call(h, http.MethodPost, "/api/auth/register", "",
+		`{"username":"aiguy","email":"aiguy@example.com","password":"correct-horse"}`)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	token := resp["data"].(map[string]any)["accessToken"].(string)
+
+	w, resp = call(h, http.MethodGet, "/api/ai/configs", token, "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, false, resp["data"].(map[string]any)["configured"])
 }
 
 func TestRouterMountsAdminRBACRoutes(t *testing.T) {

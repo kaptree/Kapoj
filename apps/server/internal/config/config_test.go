@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"strconv"
 	"strings"
 	"testing"
@@ -156,4 +157,33 @@ func TestLoadSubmitCooldown(t *testing.T) {
 	t.Setenv("KAPOJ_SUBMIT_COOLDOWN", "0s")
 	_, err = Load()
 	assert.Error(t, err)
+}
+
+func TestLoadAIConfig(t *testing.T) {
+	t.Setenv("KAPOJ_JWT_SECRET", strings.Repeat("a", 32))
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Empty(t, cfg.AIEncryptionKey)
+	assert.Equal(t, 45*time.Second, cfg.AIRequestTimeout)
+	assert.Equal(t, 2*time.Second, cfg.AICooldown)
+
+	t.Setenv("KAPOJ_AI_REQUEST_TIMEOUT", "10s")
+	t.Setenv("KAPOJ_AI_COOLDOWN", "1s")
+	cfg, err = Load()
+	require.NoError(t, err)
+	assert.Equal(t, 10*time.Second, cfg.AIRequestTimeout)
+	assert.Equal(t, time.Second, cfg.AICooldown)
+
+	// 合法 base64 32 字节密钥。
+	validKey := base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", 32)))
+	t.Setenv("KAPOJ_AI_ENCRYPTION_KEY", validKey)
+	cfg, err = Load()
+	require.NoError(t, err)
+	assert.Equal(t, validKey, cfg.AIEncryptionKey)
+
+	for _, raw := range []string{"not-base64-!!", base64.StdEncoding.EncodeToString([]byte("short"))} {
+		t.Setenv("KAPOJ_AI_ENCRYPTION_KEY", raw)
+		_, err = Load()
+		assert.Error(t, err, "KAPOJ_AI_ENCRYPTION_KEY=%q must be rejected", raw)
+	}
 }

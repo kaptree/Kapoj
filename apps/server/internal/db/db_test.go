@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kaptree/kapoj/apps/server/internal/activity"
+	"github.com/kaptree/kapoj/apps/server/internal/ai"
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/learning"
@@ -148,6 +149,26 @@ func TestMigrateCreatesRBACSchema(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, g.Where("key = ?", key).Delete(&rbac.Meta{}).Error) })
 	require.NoError(t, g.Create(&rbac.Meta{Key: key, Value: "1"}).Error)
 	assert.Error(t, g.Create(&rbac.Meta{Key: key, Value: "2"}).Error, "rbac_meta.key 必须唯一")
+}
+
+func TestMigrateCreatesAITables(t *testing.T) {
+	dsn := os.Getenv("KAPOJ_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("KAPOJ_TEST_DATABASE_URL not set; skipping database test")
+	}
+	g, err := open(dsn, io.Discard)
+	require.NoError(t, err)
+	require.NoError(t, Migrate(g))
+	sqlDB, err := g.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	for _, table := range []string{"ai_providers", "user_ai_configs", "ai_hints"} {
+		assert.True(t, g.Migrator().HasTable(table), "缺少表 %s", table)
+	}
+	assert.True(t, g.Migrator().HasIndex(&ai.Provider{}, "uniq_ai_providers_code"))
+	assert.True(t, g.Migrator().HasIndex(&ai.UserConfig{}, "uniq_user_ai_configs_user"))
+	assert.True(t, g.Migrator().HasIndex(&ai.Hint{}, "uniq_ai_hints_problem"))
 }
 
 func TestMigrateCreatesActivitySchema(t *testing.T) {

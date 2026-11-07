@@ -16,6 +16,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/kaptree/kapoj/apps/server/internal/activity"
+	"github.com/kaptree/kapoj/apps/server/internal/ai"
 	"github.com/kaptree/kapoj/apps/server/internal/config"
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/db"
@@ -55,6 +56,9 @@ func run() error {
 	if err := rbac.Seed(context.Background(), g); err != nil {
 		return err
 	}
+	if err := ai.SeedProviders(context.Background(), g); err != nil {
+		return err
+	}
 	store, err := storage.NewLocal(cfg.StorageDir)
 	if err != nil {
 		return err
@@ -81,6 +85,17 @@ func run() error {
 	learningSvc := learning.NewService(learning.NewRepository(g))
 	rbacSvc := rbac.NewService(g)
 
+	// AI service is only mounted when a valid encryption key is configured;
+	// an empty key means AI routes stay absent but the server starts normally.
+	var aiSvc *ai.Service
+	if cfg.AIEncryptionKey != "" {
+		enc, err := ai.NewEncryptor(cfg.AIEncryptionKey)
+		if err != nil {
+			return err
+		}
+		aiSvc = ai.NewService(g, enc, nil, nil)
+	}
+
 	gameServer := asynq.NewServer(
 		asynq.RedisClientOpt{Addr: cfg.RedisAddr},
 		asynq.Config{
@@ -106,6 +121,7 @@ func run() error {
 		Handler: router.New(router.Deps{
 			DB: g, Redis: rdb, Storage: store, Config: cfg, Enqueuer: queue, Game: gameSvc,
 			Rating: ratingSvc, Activity: activitySvc, Learning: learningSvc, RBAC: rbacSvc,
+			AI: aiSvc,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}

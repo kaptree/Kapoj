@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/kaptree/kapoj/apps/server/internal/activity"
+	"github.com/kaptree/kapoj/apps/server/internal/ai"
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/learning"
@@ -56,5 +57,6 @@ func Migrate(g *gorm.DB) error {
 		&learning.UserLearningProgress{},
 		&rbac.Role{}, &rbac.Permission{}, &rbac.RolePermission{},
 		&rbac.UserRole{}, &rbac.AdminAuditLog{}, &rbac.Meta{},
+		&ai.Provider{}, &ai.UserConfig{}, &ai.Hint{},
 	)
 }
