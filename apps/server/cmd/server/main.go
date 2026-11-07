@@ -107,7 +107,11 @@ func run() error {
 		},
 	)
 	gameMux := asynq.NewServeMux()
-	gamequeue.Register(gameMux, gameSvc)
+	gameHandlers := []gamequeue.Handler{gameSvc}
+	if learningSvc != nil {
+		gameHandlers = append(gameHandlers, learningSvc)
+	}
+	gamequeue.Register(gameMux, gamequeue.NewChain(gameHandlers...))
 	if err := gameServer.Start(gameMux); err != nil {
 		return err
 	}
