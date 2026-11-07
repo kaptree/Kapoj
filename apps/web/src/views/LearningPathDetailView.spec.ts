@@ -127,6 +127,43 @@ describe('LearningPathDetailView', () => {
     wrapper.unmount()
   })
 
+  it('renders nested tree with default expansion and toggles collapse/expand', async () => {
+    const grandchild = node({ id: 3, parentId: 2, title: '孙子节点' })
+    const childA = node({ id: 2, parentId: 1, title: '子节点A', children: [grandchild] })
+    const childB = node({ id: 4, parentId: 1, title: '子节点B' })
+    const root = node({ id: 1, title: '根节点', status: 'active', children: [childA, childB] })
+    vi.mocked(getLearningTree).mockResolvedValue({ path: path(), nodes: [root] })
+    const wrapper = mountView()
+    await flushPromises()
+
+    // Nested children render by default (expand-all) without any interaction.
+    expect(wrapper.text()).toContain('根节点')
+    expect(wrapper.text()).toContain('子节点A')
+    expect(wrapper.text()).toContain('子节点B')
+    expect(wrapper.text()).toContain('孙子节点')
+
+    // Collapse the root: children disappear.
+    const rootRow = wrapper.findAll('tr').find((tr) => tr.text().includes('根节点'))!
+    const toggle = rootRow.findAll('button').find((button) => button.text().trim() !== '查看')!
+    await toggle.trigger('click')
+
+    expect(wrapper.text()).not.toContain('子节点A')
+    expect(wrapper.text()).not.toContain('子节点B')
+    expect(wrapper.text()).not.toContain('孙子节点')
+
+    // Expand the root again: children reappear.
+    const rootRowAfter = wrapper.findAll('tr').find((tr) => tr.text().includes('根节点'))!
+    const toggleAfter = rootRowAfter
+      .findAll('button')
+      .find((button) => button.text().trim() !== '查看')!
+    await toggleAfter.trigger('click')
+
+    expect(wrapper.text()).toContain('子节点A')
+    expect(wrapper.text()).toContain('子节点B')
+    expect(wrapper.text()).toContain('孙子节点')
+    wrapper.unmount()
+  })
+
   it('selects a node and shows its problems with links', async () => {
     const nodes: LearningPathNodeItem[] = [
       node({
