@@ -211,7 +211,7 @@ problem_solution_replies (
 
 - `solutionMd`/`solutionCode` 只在 allowed 访问状态返回；locked/guest 不返回。
 - 隐藏题：无 `problem.view_hidden`/super 返回 404；不沿用比赛参与者 fallback，避免比赛期间通过题解资源绕过题面可见性。
-- 题目详情页对无 `problem.view_hidden` 的非公开题隐藏/禁用四个资源卡片（比赛参赛者仍可看题面，但资源区不开放）。
+- 题目详情页对无 `problem.view_hidden` 的非公开题隐藏“官方题解”和“解题思路”卡片；提交统计/关联比赛仍可查看（比赛参赛者仍可看题面和比赛信息，但题解/讨论不开放）。
 - `PUT` 输入：
 
 ```json
@@ -364,7 +364,7 @@ API 客户端：
 
 1. **关联比赛可见性**：带 `problemId` 的列表使用“公开 OR 本人已报名 OR `contest.view_hidden`/super”的联合查询，不复用 `mine=true` 的互斥语义。
 2. **题目主更新不再写官方题解**：`solutionMd`/`solutionCode` 从 `ProblemInput`/`ProblemUpdateInput` 移除，`PUT /problems/:id` 不写这两列；官方题解专用 PUT 是唯一写入口，避免全量替换清空官方题解。
-3. **隐藏题资源可见性**：官方题解和讨论区对非公开题要求 `problem.view_hidden`/super，不沿用比赛参与者题面 fallback；详情页对无权限用户隐藏/禁用资源卡片，防止比赛期间通过题解/讨论绕过题面可见性。
+3. **隐藏题资源可见性**：官方题解和讨论区对非公开题要求 `problem.view_hidden`/super，不沿用比赛参与者题面 fallback；详情页对无权限用户隐藏官方题解/解题思路卡片，保留提交统计/关联比赛，防止比赛期间通过题解/讨论绕过题面可见性。
 4. **详情页价格展示**：`ProblemDetail` 始终返回 `solutionPriceCoins`，用于资源卡片显示“免费/金币 N”。
 
 ## 14. 待实施计划决定
