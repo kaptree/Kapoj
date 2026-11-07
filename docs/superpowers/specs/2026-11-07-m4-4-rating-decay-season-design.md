@@ -92,7 +92,7 @@ updated_at                timestamptz
 
 ### 4.1 rating_settings
 
-见 3.3。单例主键 `id=1`；迁移/启动时幂等插入默认行（`ON CONFLICT DO NOTHING`），`season_anchor` 默认 `date_trunc('month', now())::date`。
+见 3.3。单例主键 `id=1`；首次读取设置时若不存在则按默认值创建（`ON CONFLICT DO NOTHING`），`season_anchor` 默认取当次读取时间的当月 1 日（UTC）。这样空库/测试库被清空后也能自动恢复默认设置。
 
 ### 4.2 rating_runs
 
