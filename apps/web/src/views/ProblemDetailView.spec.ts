@@ -10,7 +10,7 @@ import { getProblem, getStatistics } from '@/api/problems'
 import type { ProblemDetail, ProblemStats } from '@/api/types'
 import ProblemDetailView from './ProblemDetailView.vue'
 
-const route = reactive({ params: { id: '1' } })
+const route = reactive({ params: { id: '1' }, query: {} })
 
 const auth = vi.hoisted(() => ({
   can: vi.fn<(code: string) => boolean>(() => false),
@@ -31,15 +31,7 @@ vi.mock('@/stores/auth', () => ({
   useAuthStore: () => auth,
 }))
 
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>((r) => {
-    resolve = r
-  })
-  return { promise, resolve }
-}
-
-function detail(id: number): ProblemDetail {
+function detail(id: number, overrides: Partial<ProblemDetail> = {}): ProblemDetail {
   return {
     id,
     title: `Problem ${id}`,
@@ -59,6 +51,8 @@ function detail(id: number): ProblemDetail {
     submitCount: 0,
     acceptCount: 0,
     createdAt: '',
+    solutionPriceCoins: 0,
+    ...overrides,
   } as ProblemDetail
 }
 
@@ -74,16 +68,11 @@ function mountView() {
   return mount(ProblemDetailView, {
     global: {
       plugins: [PrimeVue, ToastService, createPinia()],
-      stubs: { RouterLink: { template: '<a><slot /></a>' } },
+      stubs: {
+        RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
+      },
     },
   })
-}
-
-async function openStatsTab(wrapper: ReturnType<typeof mountView>) {
-  const tab = wrapper.findAll('[role="tab"]').find((el) => el.text() === '提交统计')
-  expect(tab).toBeTruthy()
-  await tab!.trigger('click')
-  await flushPromises()
 }
 
 beforeEach(() => {
@@ -92,75 +81,79 @@ beforeEach(() => {
 })
 
 describe('ProblemDetailView', () => {
-  it('renders the statement, meta and samples', async () => {
-    vi.mocked(getProblem).mockResolvedValue({
-      ...detail(1),
-      title: 'Two Sum',
-      slug: 'two-sum',
-      statementMd: 'statement text',
-      inputFormatMd: 'input format',
-      outputFormatMd: 'output format',
-      samples: [{ input: '1 2', output: '3' }],
-      hintMd: 'hint text',
-      tags: ['math'],
-      source: '测试来源',
-      difficulty: 3,
-    })
+  it('renders the hint as a card below the statement and four resource links', async () => {
+    vi.mocked(getProblem).mockResolvedValue(
+      detail(1, { statementMd: 'statement text', hintMd: 'hint text' }),
+    )
     vi.mocked(getStatistics).mockResolvedValue(stats(10, 5))
     const wrapper = mountView()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Two Sum')
-    expect(wrapper.text()).toContain('提高')
-    expect(wrapper.text()).toContain('传统题')
-    expect(wrapper.text()).toContain('1000 ms')
-    expect(wrapper.text()).toContain('256 MB')
-    expect(wrapper.text()).toContain('来源：测试来源')
-    expect(wrapper.text()).toContain('math')
     expect(wrapper.text()).toContain('statement text')
-    expect(wrapper.text()).toContain('input format')
-    expect(wrapper.text()).toContain('output format')
-    expect(wrapper.text()).toContain('输入 1')
-    expect(wrapper.text()).toContain('1 2')
+    expect(wrapper.text()).toContain('提示')
     expect(wrapper.text()).toContain('hint text')
-    expect(wrapper.text()).toContain('提交代码')
+
+    expect(wrapper.text()).toContain('官方题解')
+    expect(wrapper.text()).toContain('解题思路')
+    expect(wrapper.text()).toContain('提交统计')
+    expect(wrapper.text()).toContain('关联比赛')
+
+    expect(wrapper.find('a[href="/problems/1/official-solution"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/problems/1/solutions"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/problems/1/statistics"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/problems/1/contests"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
-  it('ignores statistics that arrive after the route moved to another problem', async () => {
-    const firstDetail = deferred<ProblemDetail>()
-    const firstStats = deferred<ProblemStats>()
-    const secondDetail = deferred<ProblemDetail>()
-    const secondStats = deferred<ProblemStats>()
-    vi.mocked(getProblem).mockImplementation((id) =>
-      String(id) === '1' ? firstDetail.promise : secondDetail.promise,
-    )
-    vi.mocked(getStatistics).mockImplementation((id) =>
-      String(id) === '1' ? firstStats.promise : secondStats.promise,
-    )
-
-    route.params.id = '1'
+  it('shows 暂无提示 when there is no hint', async () => {
+    vi.mocked(getProblem).mockResolvedValue(detail(1))
+    vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
     const wrapper = mountView()
-
-    firstDetail.resolve(detail(1))
     await flushPromises()
-    expect(getStatistics).toHaveBeenCalledWith('1')
 
-    route.params.id = '2'
-    await flushPromises()
-    secondDetail.resolve(detail(2))
-    await flushPromises()
-    expect(getStatistics).toHaveBeenCalledWith('2')
+    expect(wrapper.text()).toContain('暂无提示')
+    wrapper.unmount()
+  })
 
-    secondStats.resolve(stats(10, 5))
+  it('shows 免费 for a free solution and 金币 N for a paid one', async () => {
+    vi.mocked(getProblem).mockResolvedValue(detail(1, { solutionPriceCoins: 0 }))
+    vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
+    let wrapper = mountView()
     await flushPromises()
-    await openStatsTab(wrapper)
-    expect(wrapper.text()).toContain('50.0%')
+    expect(wrapper.text()).toContain('免费')
+    wrapper.unmount()
 
-    firstStats.resolve(stats(10, 0))
+    vi.mocked(getProblem).mockResolvedValue(detail(1, { solutionPriceCoins: 100 }))
+    wrapper = mountView()
     await flushPromises()
-    expect(wrapper.text()).toContain('50.0%')
+    expect(wrapper.text()).toContain('金币 100')
+    wrapper.unmount()
+  })
 
+  it('hides official and discussion links for a hidden problem without view_hidden', async () => {
+    vi.mocked(getProblem).mockResolvedValue(detail(1, { isPublic: false, solutionPriceCoins: 100 }))
+    vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('官方题解')
+    expect(wrapper.text()).not.toContain('解题思路')
+    expect(wrapper.text()).toContain('提交统计')
+    expect(wrapper.text()).toContain('关联比赛')
+    expect(wrapper.find('a[href="/problems/1/official-solution"]').exists()).toBe(false)
+    expect(wrapper.find('a[href="/problems/1/solutions"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('keeps official and discussion links for a hidden problem with view_hidden', async () => {
+    auth.can.mockReturnValue(true)
+    vi.mocked(getProblem).mockResolvedValue(detail(1, { isPublic: false, solutionPriceCoins: 100 }))
+    vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('a[href="/problems/1/official-solution"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/problems/1/solutions"]').exists()).toBe(true)
     wrapper.unmount()
   })
 

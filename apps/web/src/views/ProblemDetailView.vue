@@ -3,12 +3,6 @@ import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
-import ProgressBar from 'primevue/progressbar'
-import Tab from 'primevue/tab'
-import TabList from 'primevue/tablist'
-import TabPanel from 'primevue/tabpanel'
-import TabPanels from 'primevue/tabpanels'
-import Tabs from 'primevue/tabs'
 import { useToast } from 'primevue/usetoast'
 
 import { ApiError } from '@/api/http'
@@ -24,6 +18,7 @@ import AppSurface from '@/components/ui/AppSurface.vue'
 import { PERM } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useTheme } from '@/theme/theme'
+import { formatCoins } from '@/utils/gamification'
 
 const route = useRoute()
 const auth = useAuthStore()
@@ -39,9 +34,7 @@ const contestId = computed(() => {
 const problem = ref<ProblemDetail | null>(null)
 const stats = ref<ProblemStats | null>(null)
 const loading = ref(false)
-const statsLoading = ref(false)
 const error = ref('')
-const activeTab = ref('hint')
 
 const typeLabels = { traditional: '传统题', special: '特判题', interactive: '交互题' } as const
 
@@ -53,8 +46,6 @@ async function load(id: string) {
   error.value = ''
   problem.value = null
   stats.value = null
-  statsLoading.value = false
-  activeTab.value = 'hint'
 
   try {
     const detail = await getProblem(id)
@@ -63,7 +54,6 @@ async function load(id: string) {
 
     // Statistics are a nice-to-have; the page works without them, but a late
     // response for a previous problem must not overwrite this one.
-    statsLoading.value = true
     const nextStats = await getStatistics(id).catch(() => null)
     if (seq !== latest) return
     stats.value = nextStats
@@ -74,7 +64,6 @@ async function load(id: string) {
   } finally {
     if (seq === latest) {
       loading.value = false
-      statsLoading.value = false
     }
   }
 }
@@ -102,8 +91,18 @@ async function copy(text: string) {
 }
 
 const rate = computed(() => (stats.value ? `${(stats.value.acceptRate * 100).toFixed(1)}%` : '-'))
-const acceptPercent = computed(() =>
-  stats.value ? Math.min(100, Math.max(0, stats.value.acceptRate * 100)) : 0,
+
+const solutionPriceLabel = computed(() => {
+  const price = problem.value?.solutionPriceCoins ?? 0
+  return price > 0 ? `金币 ${formatCoins(price)}` : '免费'
+})
+
+const statsLabel = computed(() =>
+  stats.value ? `通过率 ${rate.value} · ${stats.value.submitCount} 提交` : '查看提交统计',
+)
+
+const showSolutionResources = computed(
+  () => problem.value?.isPublic !== false || auth.can(PERM.problem.viewHidden),
 )
 </script>
 
@@ -175,135 +174,141 @@ const acceptPercent = computed(() =>
       </Message>
 
       <div class="detail-grid">
-        <AppSurface as="article" padding="lg" class="statement-card">
-          <section aria-labelledby="problem-statement-title">
-            <h2 id="problem-statement-title" class="section-title">题目描述</h2>
-            <MarkdownView :source="problem?.statementMd ?? ''" :theme="isDark ? 'dark' : 'light'" />
-          </section>
+        <div class="left-column">
+          <AppSurface as="article" padding="lg" class="statement-card">
+            <section aria-labelledby="problem-statement-title">
+              <h2 id="problem-statement-title" class="section-title">题目描述</h2>
+              <MarkdownView
+                :source="problem?.statementMd ?? ''"
+                :theme="isDark ? 'dark' : 'light'"
+              />
+            </section>
 
-          <section v-if="problem?.inputFormatMd" aria-labelledby="problem-input-title">
-            <h2 id="problem-input-title" class="section-title">输入格式</h2>
+            <section v-if="problem?.inputFormatMd" aria-labelledby="problem-input-title">
+              <h2 id="problem-input-title" class="section-title">输入格式</h2>
+              <MarkdownView
+                :source="problem?.inputFormatMd ?? ''"
+                :theme="isDark ? 'dark' : 'light'"
+              />
+            </section>
+
+            <section v-if="problem?.outputFormatMd" aria-labelledby="problem-output-title">
+              <h2 id="problem-output-title" class="section-title">输出格式</h2>
+              <MarkdownView
+                :source="problem?.outputFormatMd ?? ''"
+                :theme="isDark ? 'dark' : 'light'"
+              />
+            </section>
+
+            <section v-if="problem?.samples.length" aria-labelledby="problem-samples-title">
+              <h2 id="problem-samples-title" class="section-title">样例</h2>
+              <div v-for="(s, i) in problem?.samples ?? []" :key="i" class="sample-grid">
+                <div class="sample-panel">
+                  <div class="sample-head">
+                    <span>输入 {{ i + 1 }}</span>
+                    <Button
+                      type="button"
+                      text
+                      size="small"
+                      icon="pi pi-copy"
+                      label="复制"
+                      :aria-label="`复制输入 ${i + 1}`"
+                      @click="copy(s.input)"
+                    />
+                  </div>
+                  <pre tabindex="0">{{ s.input }}</pre>
+                </div>
+                <div class="sample-panel">
+                  <div class="sample-head">
+                    <span>输出 {{ i + 1 }}</span>
+                    <Button
+                      type="button"
+                      text
+                      size="small"
+                      icon="pi pi-copy"
+                      label="复制"
+                      :aria-label="`复制输出 ${i + 1}`"
+                      @click="copy(s.output)"
+                    />
+                  </div>
+                  <pre tabindex="0">{{ s.output }}</pre>
+                </div>
+              </div>
+            </section>
+          </AppSurface>
+
+          <AppSurface as="section" padding="lg" class="hint-card">
+            <h2 id="problem-hint-title" class="section-title">提示</h2>
             <MarkdownView
-              :source="problem?.inputFormatMd ?? ''"
+              v-if="problem?.hintMd"
+              :source="problem?.hintMd ?? ''"
               :theme="isDark ? 'dark' : 'light'"
             />
-          </section>
+            <AppEmptyState v-else icon="pi pi-lightbulb" title="暂无提示" />
+          </AppSurface>
+        </div>
 
-          <section v-if="problem?.outputFormatMd" aria-labelledby="problem-output-title">
-            <h2 id="problem-output-title" class="section-title">输出格式</h2>
-            <MarkdownView
-              :source="problem?.outputFormatMd ?? ''"
-              :theme="isDark ? 'dark' : 'light'"
-            />
-          </section>
+        <aside class="info-column" aria-label="题目资源">
+          <RouterLink
+            v-if="showSolutionResources"
+            class="resource-link"
+            :to="`/problems/${problem?.id}/official-solution`"
+          >
+            <AppSurface as="div" padding="md" interactive class="resource-card">
+              <span class="resource-card__icon" aria-hidden="true">
+                <i class="pi pi-book" />
+              </span>
+              <span class="resource-card__body">
+                <span class="resource-card__title">官方题解</span>
+                <span class="resource-card__sub">{{ solutionPriceLabel }}</span>
+              </span>
+              <i class="pi pi-chevron-right resource-card__arrow" aria-hidden="true" />
+            </AppSurface>
+          </RouterLink>
 
-          <section v-if="problem?.samples.length" aria-labelledby="problem-samples-title">
-            <h2 id="problem-samples-title" class="section-title">样例</h2>
-            <div v-for="(s, i) in problem?.samples ?? []" :key="i" class="sample-grid">
-              <div class="sample-panel">
-                <div class="sample-head">
-                  <span>输入 {{ i + 1 }}</span>
-                  <Button
-                    type="button"
-                    text
-                    size="small"
-                    icon="pi pi-copy"
-                    label="复制"
-                    :aria-label="`复制输入 ${i + 1}`"
-                    @click="copy(s.input)"
-                  />
-                </div>
-                <pre tabindex="0">{{ s.input }}</pre>
-              </div>
-              <div class="sample-panel">
-                <div class="sample-head">
-                  <span>输出 {{ i + 1 }}</span>
-                  <Button
-                    type="button"
-                    text
-                    size="small"
-                    icon="pi pi-copy"
-                    label="复制"
-                    :aria-label="`复制输出 ${i + 1}`"
-                    @click="copy(s.output)"
-                  />
-                </div>
-                <pre tabindex="0">{{ s.output }}</pre>
-              </div>
-            </div>
-          </section>
-        </AppSurface>
+          <RouterLink
+            v-if="showSolutionResources"
+            class="resource-link"
+            :to="`/problems/${problem?.id}/solutions`"
+          >
+            <AppSurface as="div" padding="md" interactive class="resource-card">
+              <span class="resource-card__icon" aria-hidden="true">
+                <i class="pi pi-comments" />
+              </span>
+              <span class="resource-card__body">
+                <span class="resource-card__title">解题思路</span>
+                <span class="resource-card__sub">帖子 / 回复</span>
+              </span>
+              <i class="pi pi-chevron-right resource-card__arrow" aria-hidden="true" />
+            </AppSurface>
+          </RouterLink>
 
-        <AppSurface as="aside" padding="lg" class="info-card">
-          <Tabs v-model:value="activeTab">
-            <TabList>
-              <Tab value="hint">提示</Tab>
-              <Tab v-if="problem?.solutionMd !== undefined" value="solution">解题思路</Tab>
-              <Tab v-if="problem?.solutionCode !== undefined" value="code">解题代码</Tab>
-              <Tab value="stats">提交统计</Tab>
-              <Tab value="contest">关联比赛</Tab>
-            </TabList>
-            <TabPanels>
-              <TabPanel value="hint">
-                <MarkdownView
-                  v-if="problem?.hintMd"
-                  :source="problem?.hintMd ?? ''"
-                  :theme="isDark ? 'dark' : 'light'"
-                />
-                <AppEmptyState v-else icon="pi pi-lightbulb" title="暂无提示" />
-              </TabPanel>
+          <RouterLink class="resource-link" :to="`/problems/${problem?.id}/statistics`">
+            <AppSurface as="div" padding="md" interactive class="resource-card">
+              <span class="resource-card__icon" aria-hidden="true">
+                <i class="pi pi-chart-bar" />
+              </span>
+              <span class="resource-card__body">
+                <span class="resource-card__title">提交统计</span>
+                <span class="resource-card__sub">{{ statsLabel }}</span>
+              </span>
+              <i class="pi pi-chevron-right resource-card__arrow" aria-hidden="true" />
+            </AppSurface>
+          </RouterLink>
 
-              <TabPanel v-if="problem?.solutionMd !== undefined" value="solution">
-                <MarkdownView
-                  v-if="problem?.solutionMd"
-                  :source="problem?.solutionMd ?? ''"
-                  :theme="isDark ? 'dark' : 'light'"
-                />
-                <AppEmptyState v-else icon="pi pi-compass" title="暂无解题思路" />
-              </TabPanel>
-
-              <TabPanel v-if="problem?.solutionCode !== undefined" value="code">
-                <pre v-if="problem?.solutionCode" class="code-block" tabindex="0">{{
-                  problem?.solutionCode
-                }}</pre>
-                <AppEmptyState v-else icon="pi pi-code" title="暂无解题代码" />
-              </TabPanel>
-
-              <TabPanel value="stats">
-                <AppLoadingState v-if="statsLoading" label="正在加载统计" :rows="2" />
-                <div v-else-if="stats" class="stats">
-                  <dl class="stats-grid">
-                    <div>
-                      <dt>提交数</dt>
-                      <dd class="num">{{ stats.submitCount }}</dd>
-                    </div>
-                    <div>
-                      <dt>通过数</dt>
-                      <dd class="num">{{ stats.acceptCount }}</dd>
-                    </div>
-                    <div>
-                      <dt>通过率</dt>
-                      <dd class="num">{{ rate }}</dd>
-                    </div>
-                  </dl>
-                  <ProgressBar :value="acceptPercent" :show-value="false" class="stats-bar" />
-                </div>
-                <AppEmptyState v-else icon="pi pi-chart-bar" title="暂时无法获取统计" />
-              </TabPanel>
-
-              <TabPanel value="contest">
-                <RouterLink
-                  v-if="contestId"
-                  :to="{ name: 'contest-detail', params: { id: contestId } }"
-                  class="contest-link"
-                >
-                  返回比赛 #{{ contestId }}
-                </RouterLink>
-                <AppEmptyState v-else icon="pi pi-trophy" title="暂无关联比赛" />
-              </TabPanel>
-            </TabPanels>
-          </Tabs>
-        </AppSurface>
+          <RouterLink class="resource-link" :to="`/problems/${problem?.id}/contests`">
+            <AppSurface as="div" padding="md" interactive class="resource-card">
+              <span class="resource-card__icon" aria-hidden="true">
+                <i class="pi pi-trophy" />
+              </span>
+              <span class="resource-card__body">
+                <span class="resource-card__title">关联比赛</span>
+                <span class="resource-card__sub">查看包含本题的比赛</span>
+              </span>
+              <i class="pi pi-chevron-right resource-card__arrow" aria-hidden="true" />
+            </AppSurface>
+          </RouterLink>
+        </aside>
       </div>
     </div>
   </div>
@@ -384,6 +389,13 @@ const acceptPercent = computed(() =>
   align-items: start;
 }
 
+.left-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kapoj-space-4);
+  min-width: 0;
+}
+
 .statement-card {
   min-width: 0;
 }
@@ -435,58 +447,62 @@ const acceptPercent = computed(() =>
   line-height: 1.6;
 }
 
-.info-card {
+.info-column {
   position: sticky;
   top: calc(var(--kapoj-header-height) + var(--kapoj-space-4));
-}
-
-.code-block {
-  max-height: 480px;
-  padding: var(--kapoj-space-3);
-  margin: 0;
-  overflow: auto;
-  color: var(--kapoj-text);
-  font-family: var(--kapoj-font-mono);
-  font-size: 12px;
-  line-height: 1.6;
-  background: var(--kapoj-bg);
-  border: 1px solid var(--kapoj-border);
-  border-radius: var(--kapoj-radius-sm);
-}
-
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--kapoj-space-3);
-  margin: 0;
-}
-
-.stats-grid div {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--kapoj-space-3);
 }
 
-.stats-grid dt {
-  color: var(--kapoj-text-muted);
-  font-size: 10px;
-  text-transform: uppercase;
+.resource-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
 }
 
-.stats-grid dd {
-  margin: 0;
-  color: var(--kapoj-text);
-  font-size: 1.1rem;
-  font-weight: 600;
+.resource-card {
+  display: flex;
+  align-items: center;
+  gap: var(--kapoj-space-3);
 }
 
-.stats-bar {
-  margin-top: var(--kapoj-space-4);
-}
-
-.contest-link {
+.resource-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
   color: var(--kapoj-primary);
+  font-size: 1.1rem;
+  background: var(--kapoj-primary-soft);
+  border: 1px solid color-mix(in srgb, var(--kapoj-primary) 28%, transparent);
+  border-radius: var(--kapoj-radius-md);
+}
+
+.resource-card__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.resource-card__title {
+  color: var(--kapoj-text);
+  font-size: 0.95rem;
   font-weight: 600;
+}
+
+.resource-card__sub {
+  color: var(--kapoj-text-secondary);
+  font-size: 0.8125rem;
+}
+
+.resource-card__arrow {
+  color: var(--kapoj-text-muted);
+  font-size: 0.85rem;
 }
 
 @media (max-width: 1024px) {
@@ -494,7 +510,7 @@ const acceptPercent = computed(() =>
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .info-card {
+  .info-column {
     position: static;
   }
 }
@@ -505,10 +521,6 @@ const acceptPercent = computed(() =>
   }
 
   .meta-bar {
-    gap: var(--kapoj-space-2);
-  }
-
-  .stats-grid {
     gap: var(--kapoj-space-2);
   }
 }

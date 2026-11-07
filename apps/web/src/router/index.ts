@@ -73,6 +73,24 @@ export const router = createRouter({
           meta: { requiresAuth: true, title: '提交代码' },
         },
         {
+          path: 'problems/:id(\\d+)/official-solution',
+          name: 'problem-official-solution',
+          component: () => import('@/views/ProblemOfficialSolutionView.vue'),
+          meta: { title: '官方题解' },
+        },
+        {
+          path: 'problems/:id(\\d+)/statistics',
+          name: 'problem-statistics',
+          component: () => import('@/views/ProblemStatisticsView.vue'),
+          meta: { title: '提交统计' },
+        },
+        {
+          path: 'problems/:id(\\d+)/contests',
+          name: 'problem-contests',
+          component: () => import('@/views/ProblemContestsView.vue'),
+          meta: { title: '关联比赛' },
+        },
+        {
           path: 'submissions',
           name: 'submissions',
           component: () => import('@/views/SubmissionsView.vue'),

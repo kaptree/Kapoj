@@ -31,8 +31,6 @@ function emptyForm(): FormState {
     outputFormatMd: '',
     samples: [],
     hintMd: '',
-    solutionMd: '',
-    solutionCode: '',
     type: 'traditional',
     tags: [],
     difficulty: 1,
@@ -60,8 +58,6 @@ function fill(p: ProblemDetail) {
     outputFormatMd: p.outputFormatMd,
     samples: p.samples.map((s) => ({ ...s })),
     hintMd: p.hintMd,
-    solutionMd: p.solutionMd ?? '',
-    solutionCode: p.solutionCode ?? '',
     type: p.type,
     tags: [...p.tags],
     difficulty: p.difficulty,
@@ -236,12 +232,6 @@ async function remove() {
             <el-tab-pane label="提示" lazy
               ><MarkdownEditor v-model="form.hintMd" height="240px"
             /></el-tab-pane>
-            <el-tab-pane label="解题思路" lazy
-              ><MarkdownEditor v-model="form.solutionMd"
-            /></el-tab-pane>
-            <el-tab-pane label="解题代码" lazy>
-              <el-input v-model="form.solutionCode" type="textarea" :rows="14" class="mono" />
-            </el-tab-pane>
           </el-tabs>
         </el-form-item>
 
@@ -287,8 +277,5 @@ async function remove() {
 }
 .testcases {
   margin-top: 16px;
-}
-.mono :deep(textarea) {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 </style>

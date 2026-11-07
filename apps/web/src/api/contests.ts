@@ -19,6 +19,7 @@ export interface ListContestsQuery {
   status?: ContestStatus | ''
   includeHidden?: boolean
   mine?: boolean
+  problemId?: number | string
   page?: number
   pageSize?: number
 }
@@ -31,6 +32,7 @@ export const listContests = (q: ListContestsQuery = {}) =>
       status: q.status || undefined,
       includeHidden: q.includeHidden ? 'true' : undefined,
       mine: q.mine ? 'true' : undefined,
+      problemId: q.problemId ?? undefined,
       page: q.page,
       page_size: q.pageSize,
     },

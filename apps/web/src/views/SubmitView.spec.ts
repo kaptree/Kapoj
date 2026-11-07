@@ -55,6 +55,7 @@ function detail(id: number): ProblemDetail {
     submitCount: 0,
     acceptCount: 0,
     createdAt: '',
+    solutionPriceCoins: 0,
   } as ProblemDetail
 }
 

@@ -1,5 +1,7 @@
 import { http } from './client'
 import type {
+  OfficialSolutionInput,
+  OfficialSolutionView,
   Page,
   ProblemDetail,
   ProblemInput,
@@ -42,6 +44,15 @@ export const deleteProblem = (id: number | string) =>
 
 export const getStatistics = (id: number | string) =>
   http.get<ProblemStats>(`/problems/${id}/statistics`)
+
+export const getOfficialSolution = (id: number | string) =>
+  http.get<OfficialSolutionView>(`/problems/${id}/official-solution`)
+
+export const updateOfficialSolution = (id: number | string, input: OfficialSolutionInput) =>
+  http.put<OfficialSolutionView>(`/problems/${id}/official-solution`, input)
+
+export const purchaseOfficialSolution = (id: number | string) =>
+  http.post<OfficialSolutionView>(`/problems/${id}/official-solution/purchase`)
 
 export const listTestcases = (id: number | string) =>
   http.get<Testcase[]>(`/problems/${id}/testcases`)
