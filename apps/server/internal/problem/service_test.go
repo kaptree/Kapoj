@@ -514,6 +514,94 @@ func TestDeleteWithSubmissionsKeepsFiles(t *testing.T) {
 	assertCode(t, err, 40400)
 }
 
+type fakeGuard struct {
+	blocked bool
+	err     error
+}
+
+func (g fakeGuard) IsProblemInActivePath(context.Context, int64) (bool, error) {
+	return g.blocked, g.err
+}
+
+func TestProblemUpdateBlocksUnpublishWhenReferenced(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	guard := &fakeGuard{blocked: true}
+	svc := problem.NewService(e.repo, e.store, problem.WithLearningGuard(guard))
+
+	// 先发布一道题，再尝试下线：wasPublic=true 且改为 false 时被守卫拦截。
+	pub := e.create(t, input("guard-pub"))
+	e.addCase(t, pub.ID)
+	in := input("guard-pub")
+	in.IsPublic = true
+	_, err := svc.Update(ctx, pub.ID, in)
+	require.NoError(t, err)
+
+	in.IsPublic = false
+	_, err = svc.Update(ctx, pub.ID, in)
+	assertCode(t, err, 40001)
+	got, err := e.repo.FindByID(ctx, pub.ID)
+	require.NoError(t, err)
+	assert.True(t, got.IsPublic, "被拦截的下线操作必须保持题目仍为公开")
+
+	// 保持公开（wasPublic=true 且仍为 true）即使被引用也允许。
+	in.IsPublic = true
+	_, err = svc.Update(ctx, pub.ID, in)
+	require.NoError(t, err)
+
+	// 原本就是私有的题目（wasPublic=false）不受守卫影响。
+	priv := e.create(t, input("guard-priv"))
+	in = input("guard-priv")
+	_, err = svc.Update(ctx, priv.ID, in)
+	require.NoError(t, err, "已是私有的题目允许更新")
+
+	// 从私有发布为公开（wasPublic=false）即使被引用也允许。
+	e.addCase(t, priv.ID)
+	in.IsPublic = true
+	_, err = svc.Update(ctx, priv.ID, in)
+	require.NoError(t, err, "发布操作不受守卫影响")
+}
+
+func TestProblemDeleteBlocksWhenReferenced(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+
+	blocked := problem.NewService(e.repo, e.store, problem.WithLearningGuard(&fakeGuard{blocked: true}))
+	p := e.create(t, input("guard-del"))
+	e.addCase(t, p.ID)
+
+	_, err := blocked.Delete(ctx, p.ID)
+	assertCode(t, err, 40001)
+	_, err = e.repo.FindByID(ctx, p.ID)
+	require.NoError(t, err, "被拦截的删除操作必须保留题目")
+
+	allowed := problem.NewService(e.repo, e.store, problem.WithLearningGuard(&fakeGuard{}))
+	offlined, err := allowed.Delete(ctx, p.ID)
+	require.NoError(t, err)
+	assert.False(t, offlined)
+	_, err = e.repo.FindByID(ctx, p.ID)
+	assert.Error(t, err, "未引用时删除正常执行")
+}
+
+func TestProblemGuardErrorPropagates(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	dbErr := errors.New("database unavailable")
+	svc := problem.NewService(e.repo, e.store,
+		problem.WithLearningGuard(&fakeGuard{blocked: true, err: dbErr}))
+
+	p := e.create(t, input("guard-err"))
+	e.addCase(t, p.ID)
+	in := input("guard-err")
+	in.IsPublic = true
+	_, err := svc.Update(ctx, p.ID, in)
+	require.NoError(t, err)
+
+	in.IsPublic = false
+	_, err = svc.Update(ctx, p.ID, in)
+	require.ErrorIs(t, err, dbErr, "守卫返回的数据库错误必须原样返回")
+}
+
 func TestStatisticsAcceptRate(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()

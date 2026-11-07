@@ -131,8 +131,14 @@ func New(d Deps) *gin.Engine {
 	contestapi.RegisterRoutes(api, contestSvc, contestOpts)
 	problemRepo := problem.NewGormRepository(d.DB)
 	submissionRepo := submission.NewGormRepository(d.DB)
+	var problemSvc *problem.Service
+	if d.Learning != nil {
+		problemSvc = problem.NewService(problemRepo, d.Storage, problem.WithLearningGuard(d.Learning))
+	} else {
+		problemSvc = problem.NewService(problemRepo, d.Storage)
+	}
 	problemapi.RegisterRoutes(api, problemJSON, uploads,
-		problem.NewService(problemRepo, d.Storage), submissionRepo, contestRepo,
+		problemSvc, submissionRepo, contestRepo,
 		problemapi.Options{
 			RBAC:        d.RBAC,
 			Solutions:   problem.NewOfficialSolutionService(d.DB, problemRepo),

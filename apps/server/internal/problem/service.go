@@ -50,16 +50,37 @@ type Stats struct {
 	AcceptRate  float64 `json:"acceptRate"`
 }
 
+// LearningGuard decides whether a problem is referenced by an active learning
+// path and therefore must not be unpublished or deleted. The zero value (nil)
+// disables the guard.
+type LearningGuard interface {
+	IsProblemInActivePath(ctx context.Context, problemID int64) (bool, error)
+}
+
+// Option customizes a problem Service.
+type Option func(*Service)
+
+// WithLearningGuard installs a guard that blocks unpublishing or deleting a
+// problem referenced by an active learning path.
+func WithLearningGuard(g LearningGuard) Option {
+	return func(s *Service) { s.learningGuard = g }
+}
+
 // Service holds problem business rules. Authorization (who may call write
 // methods) is enforced by the HTTP layer; the service only decides what a
 // Viewer may see.
 type Service struct {
-	repo  Repository
-	store storage.Storage
+	repo          Repository
+	store         storage.Storage
+	learningGuard LearningGuard
 }
 
-func NewService(repo Repository, store storage.Storage) *Service {
-	return &Service{repo: repo, store: store}
+func NewService(repo Repository, store storage.Storage, opts ...Option) *Service {
+	s := &Service{repo: repo, store: store}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 func (s *Service) Create(ctx context.Context, createdBy int64, in Input) (*Problem, error) {
@@ -95,7 +116,19 @@ func (s *Service) Update(ctx context.Context, id int64, in Input) (*Problem, err
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
+	wasPublic := p.IsPublic
 	apply(p, in)
+	// Taking a public problem offline is guarded against active learning path
+	// references; publishing or keeping it public is never blocked.
+	if wasPublic && !p.IsPublic && s.learningGuard != nil {
+		referenced, err := s.learningGuard.IsProblemInActivePath(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if referenced {
+			return nil, httpx.ErrValidation("题目被学习路线引用，不能下线/删除")
+		}
+	}
 	// Publishability is checked by the repository inside the same transaction
 	// as the update, together with the row lock.
 	if err := s.repo.Update(ctx, p); err != nil {
@@ -134,6 +167,15 @@ func (s *Service) List(ctx context.Context, v Viewer, q ListQuery, page, size in
 }
 
 func (s *Service) Delete(ctx context.Context, id int64) (bool, error) {
+	if s.learningGuard != nil {
+		referenced, err := s.learningGuard.IsProblemInActivePath(ctx, id)
+		if err != nil {
+			return false, err
+		}
+		if referenced {
+			return false, httpx.ErrValidation("题目被学习路线引用，不能下线/删除")
+		}
+	}
 	res, err := s.repo.Delete(ctx, id)
 	if err != nil {
 		return false, mapRepoErr(err)

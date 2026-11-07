@@ -159,6 +159,20 @@ func (r *Repository) Item(ctx context.Context, viewerID, id int64) (*PathItem, e
 	return &item, nil
 }
 
+// IsProblemInActivePath reports whether the problem is referenced by any node
+// of an active (not soft-deleted) learning path.
+func (r *Repository) IsProblemInActivePath(ctx context.Context, problemID int64) (bool, error) {
+	var exists bool
+	err := r.db.WithContext(ctx).Raw(`
+		SELECT EXISTS (
+			SELECT 1 FROM learning_path_nodes AS n
+			JOIN learning_paths AS p ON p.id = n.path_id
+			WHERE p.is_active = true
+			  AND n.problem_ids_json @> jsonb_build_array(?::bigint)
+		)`, problemID).Scan(&exists).Error
+	return exists, err
+}
+
 // CountUnavailableNodeProblems counts distinct problems referenced by the
 // path's nodes that no longer exist or are not public.
 func (r *Repository) CountUnavailableNodeProblems(ctx context.Context, pathID int64) (int64, error) {

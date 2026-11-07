@@ -445,6 +445,55 @@ func TestListPathsFiltersNodeCountAndOrder(t *testing.T) {
 		"管理员 mine 只看自己创建的路线")
 }
 
+func TestIsProblemInActivePath(t *testing.T) {
+	e := newPathEnv(t)
+	ctx := context.Background()
+	authorView, adminView := viewerFor(e.author), viewerFor(e.admin)
+
+	official := e.createPath(t, adminView, learning.PathInput{Title: "官方路线", IsOfficial: boolPtr(true)})
+	public := e.createPath(t, authorView, learning.PathInput{Title: "公开路线", IsPublic: boolPtr(true)})
+	private := e.createPath(t, authorView, learning.PathInput{Title: "私有路线"})
+
+	officialRef := e.addProblem(t, "guard-official", true).ID
+	publicRef := e.addProblem(t, "guard-public", true).ID
+	privateRef := e.addProblem(t, "guard-private", true).ID
+	e.addNode(t, official.ID, officialRef)
+	e.addNode(t, public.ID, publicRef)
+	e.addNode(t, private.ID, privateRef)
+
+	for _, id := range []int64{officialRef, publicRef, privateRef} {
+		ok, err := e.svc.IsProblemInActivePath(ctx, id)
+		require.NoError(t, err)
+		assert.True(t, ok, "官方/公开/私有活跃路线引用均应命中")
+	}
+
+	// 仅被下架路线引用的题目不算命中。
+	inactive := e.createPath(t, adminView, learning.PathInput{Title: "下架路线", IsOfficial: boolPtr(true)})
+	inactiveRef := e.addProblem(t, "guard-inactive", true).ID
+	e.addNode(t, inactive.ID, inactiveRef)
+	require.NoError(t, e.svc.DeletePath(ctx, adminView, inactive.ID))
+	ok, err := e.svc.IsProblemInActivePath(ctx, inactiveRef)
+	require.NoError(t, err)
+	assert.False(t, ok, "下架路线引用不应命中")
+
+	// 删除引用节点后不再命中。
+	removedRef := e.addProblem(t, "guard-removed", true).ID
+	node := e.addNode(t, public.ID, removedRef)
+	ok, err = e.svc.IsProblemInActivePath(ctx, removedRef)
+	require.NoError(t, err)
+	assert.True(t, ok)
+	require.NoError(t, e.svc.DeleteNode(ctx, adminView, public.ID, node.ID))
+	ok, err = e.svc.IsProblemInActivePath(ctx, removedRef)
+	require.NoError(t, err)
+	assert.False(t, ok, "删除引用节点后不应命中")
+
+	// 未被任何路线引用的题目不应命中。
+	unreferenced := e.addProblem(t, "guard-none", true).ID
+	ok, err = e.svc.IsProblemInActivePath(ctx, unreferenced)
+	require.NoError(t, err)
+	assert.False(t, ok)
+}
+
 func TestFindPathPermissions(t *testing.T) {
 	e := newPathEnv(t)
 	ctx := context.Background()

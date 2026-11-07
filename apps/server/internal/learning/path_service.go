@@ -14,6 +14,12 @@ type Service struct {
 
 func NewService(repo *Repository) *Service { return &Service{repo: repo} }
 
+// IsProblemInActivePath reports whether the problem is referenced by any node
+// of an active learning path. Used by the problem service's LearningGuard.
+func (s *Service) IsProblemInActivePath(ctx context.Context, problemID int64) (bool, error) {
+	return s.repo.IsProblemInActivePath(ctx, problemID)
+}
+
 // CreatePath 创建学习路线。普通用户创建自定义路线，默认私有、活跃，且
 // 不能设置官方标记/上下架状态；拥有 official.manage 能力的管理员可以创建
 // 官方路线并显式设置各状态。
