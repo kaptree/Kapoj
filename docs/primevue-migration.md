@@ -3,7 +3,7 @@
 > 本文档是美化工程的唯一进度来源。每次会话开始先读这里，结束时更新状态、验证结果和设计决策。
 >
 > - 最后更新：2026-11-08
-> - 当前阶段：P2 页面（UI-19 待开始）；M4-C 新功能 UI-30、M4-7 学习路线 UI-31、RBAC-D 管理后台 UI-36 与 M4-4 Rating 设置 UI-37 已完成
+> - 当前阶段：P2 页面（UI-19 待开始）；M4-C 新功能 UI-30、M4-7 学习路线 UI-31、RBAC-D 管理后台 UI-36、M4-4 Rating 设置 UI-37 与 M5-6 题目导入 UI-35 已完成
 > - 工作分支：`feat/m1-problems-judge`（RBAC-D 管理后台在 `feat/rbac-d-admin-ui` 完成）
 > - 本次基线：`0f2d62d feat(web): rating history card`
 
@@ -11,14 +11,14 @@
 
 | 状态 | 数量 |
 | --- | ---: |
-| done | 23 |
+| done | 24 |
 | in-progress | 0 |
 | blocked | 0 |
-| todo | 6 |
+| todo | 5 |
 
-其中现有 UI 迁移任务 `UI-00～UI-18` 已完成，M4-C 新功能 `UI-30`（排行榜、签到与 Rating 历史卡片）、M4-7 新功能 `UI-31`（学习路线）与 RBAC-D 管理后台 `UI-36`（管理壳/仪表盘/用户/角色/审计页面）已直接使用 PrimeVue 4 完成；剩余 `UI-19` 题库编辑与 `UI-20` 异常页；`UI-32～UI-35` 为尚未实现的新功能，不计入现有页面迁移完成度。
+其中现有 UI 迁移任务 `UI-00～UI-18` 已完成，M4-C 新功能 `UI-30`（排行榜、签到与 Rating 历史卡片）、M4-7 新功能 `UI-31`（学习路线）、RBAC-D 管理后台 `UI-36`（管理壳/仪表盘/用户/角色/审计页面）与 M5-6 题目导入 `UI-35`（导入页）已直接使用 PrimeVue 4 完成；剩余 `UI-19` 题库编辑与 `UI-20` 异常页；`UI-32～UI-34` 为尚未实现的新功能，不计入现有页面迁移完成度。
 
-M4-C 排行榜、签到与 Rating 历史（UI-30）、M4-7 学习路线（UI-31）、RBAC-D 管理后台（UI-36）与 M4-4 Rating 设置页（UI-37）已直接使用 PrimeVue 4 完成；现有页面迁移剩余 UI-19 → UI-20。若后续某页面进入功能开发，先标记 `blocked` 并跳过。
+M4-C 排行榜、签到与 Rating 历史（UI-30）、M4-7 学习路线（UI-31）、RBAC-D 管理后台（UI-36）、M4-4 Rating 设置页（UI-37）与 M5-6 题目导入页（UI-35）已直接使用 PrimeVue 4 完成；现有页面迁移剩余 UI-19 → UI-20。若后续某页面进入功能开发，先标记 `blocked` 并跳过。
 
 ## 进度表
 
@@ -51,7 +51,7 @@ M4-C 排行榜、签到与 Rating 历史（UI-30）、M4-7 学习路线（UI-31�
 | UI-32 | 新功能 | 社交互动 | P3 | todo | UI-00 | 直接使用 PrimeVue；评论/点赞/关注 | 尚未实现 |
 | UI-33 | 新功能 | 证书认证 | P3 | todo | UI-00 | 直接使用 PrimeVue；提交/审核/核验 | 尚未实现 |
 | UI-34 | 新功能 | AI 辅助面板 | P3 | todo | UI-00、UI-06 | 直接使用 PrimeVue；API key 配置/提示 | 尚未实现 |
-| UI-35 | 新功能 | 题目导入 | P3 | todo | UI-00、UI-19 | 直接使用 PrimeVue；HydroOJ 导入 | 尚未实现 |
+| UI-35 | 新功能 | 题目导入 | P3 | done | UI-00 | 直接使用 PrimeVue；HydroOJ 导入 | 2026-11-08 完成。`ProblemImportView`（`/problems/import`）复用 AppPageHeader/AppSurface/DataTable/Message/Button；题目列表「导入题包」入口与详情创建者链接；不新增 UI 依赖 |
 | UI-37 | 新功能 | M4-4 Rating 设置页：`AdminRatingView` | P3 | done | UI-00、UI-36 | 直接使用 PrimeVue；衰减/赛季设置与只读当前赛季 | 2026-11-08 完成。`AdminRatingView`（`/admin/rating`）复用 AppPageHeader/AppSurface/AppFormField/ToggleSwitch/InputNumber/InputText/Toast；`AdminNav` 增加「Rating」入口；不新增 UI 依赖 |
 
 ## Legacy allowlist
@@ -503,6 +503,14 @@ M4-C 排行榜、签到与 Rating 历史（UI-30）、M4-7 学习路线（UI-31�
 - `corepack pnpm --filter web build`：通过；仅有既有的 >500 kB chunk 提示（Monaco/编辑器相关），无新增错误。
 - Element Plus 残留检查：四个学习路线视图、`LearningNodeDialog` 与全部 spec 无 `element-plus`、`<el-`、`ElMessage`、`v-loading`；legacy allowlist 保持 7 个文件不变（UI-19/UI-20/`main.ts`）。
 - 真实浏览器 E2E（Playwright + 本机 Chrome，见 `apps/web/e2e/learning-paths.spec.ts`）：官方/自定义路线列表与卡片、树详情（`TreeTable` 状态 Tag/进度条、游客根 active/其余 locked）、编辑页节点树（添加/编辑/上移/下移/删除叶子、题目/`requiredCount` 校验）、官方管理页（下架/恢复）、私有/公开可见性、完成锁存、`myCompletedCount` 更新与 375px 窄屏横向滚动/对话框可操作，控制台无错误。
+
+### 2026-11-08 / UI-35
+
+- `corepack pnpm --filter web test`：71 个测试文件 / 464 个测试通过。新增/更新 `ProblemImportView`、`ProblemListView`（导入入口）、`ProblemDetailView`（创建者链接）与 `api/problems` 断言。
+- `corepack pnpm --filter web lint`：ESLint 与 Prettier 通过。
+- `corepack pnpm --filter web build`：通过；仅有既有的 >500 kB chunk 提示（Monaco/编辑器相关），无新增错误。
+- Element Plus 残留检查：`ProblemImportView.vue` 与 spec 无 `element-plus`、`<el-`、`ElMessage`、`v-loading`；legacy allowlist 保持 7 个文件不变（UI-19/UI-20/`main.ts`）。
+- 真实导入冒烟（后端 `127.0.0.1:18080` + 前端 5173 代理 18080）：API 上传根目录 `Export.zip` 返回 `imported=[hydro-6760 求和 / 循环、DAI / 10]`、`failed=[]`，重复上传进入 `failed`（题目标识已存在）不覆盖；数据库确认 `is_public=false`、`created_by`=上传者、`source=HydroOJ`、10 组测试点 `score=10`/`sort_order` 1..10、Markdown 题面；`GET /problems/:id` 游客/管理员返回 `author{id,username,nickname}`。真实浏览器（in-app browser，816px 视口）：`m2badmin` 登录 → `/problems/import` 页头/文件选择（`.zip` accept、200MB 提示）/「开始导入」禁用态 → 选择 `Export.zip` 后按钮启用 → 上传显示「导入成功 1 道」结果表（求和/hydro-6760/10/编辑链接）→ 详情页「创建者 m2badmin」链接 `/users/1`，控制台无错误。375px 窄屏视觉检查因 in-app browser 固定 816px 视口延后至最终评审（前端单测已覆盖移动端布局规则）。
 
 ## 已知问题与风险
 

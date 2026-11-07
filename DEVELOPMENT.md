@@ -3,7 +3,7 @@
 > 本文档基于 `plan.md` 细化，是 kapOJ（Kap Online Judge）平台的详细开发规格说明书。
 > 目标：**打造出最有趣味的 Online Judge 平台**。
 > 文档包含完整的架构设计、数据库设计、模块需求，并为每个模块提供了可直接交给 Codex 的**开发提示词（Prompt）**。
-> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)，前端 UI 迁移见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。当前进度：**M4-2A、M4-2B、M4-2C、M4-4、RBAC-D 与 M5-A 已完成**（M0–M3 已完成；M4 进行中；M5 部分完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页、签到、Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线模型、权限、路线/节点 CRUD 与树结构；M4-2B 交付服务端进度计算（AC 事件补算 + 读取补算、完成锁存）与题目下线/删除守卫；M4-2C 交付学习路线前端（列表/树详情/编辑/官方管理页，PrimeVue TreeTable/DataTable，UI-31）；M4-4 交付 Rating 衰减与赛季重置（`rating.settings.manage` 权限与 Rating 分组、管理设置 API、`/admin/rating` 设置页、月度高分段衰减、赛季软重置、`decay`/`season_reset` 历史与公开赛季接口）；RBAC-A 交付权限目录、内置角色、首次 Seed/旧角色映射、实时 Access 解析、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/`canAny`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化，以及文档、HTTP 冒烟与浏览器 E2E；M5-A 交付 AI 后端基础（多 provider 配置、用户 API key AES-GCM 加密存储、OpenAI 兼容补全/格式化/优化与题目 AI 提示缓存/限流，AI 路由仅在配置 `KAPOJ_AI_ENCRYPTION_KEY` 时挂载）。社交互动，以及 AI 出题造数据/前端/HydroOJ 导入/证书/头像（M5-4～M5-8）尚未实现）。前端 UI 已完成 UI-00～UI-18 的 PrimeVue 4 迁移、UI-30（M4-C 排行榜/历史）、UI-31（M4-7 学习路线）与 RBAC-D 管理后台页面直接实现，剩余 UI-19 题库编辑与 UI-20 异常页；该迁移已提交。题目详情页已改造为「题面 + 提示卡片 + 右侧四资源卡片」，并交付官方题解（创建者编辑 + 金币解锁）、解题思路论坛（帖子/回复/软删除）、提交统计页与关联比赛页，详见 4.3；题目主更新不再写入题解字段，官方题解专用接口是唯一写入口。
+> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)，前端 UI 迁移见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。当前进度：**M4-2A、M4-2B、M4-2C、M4-4、RBAC-D、M5-A 与 M5-6 已完成**（M0–M3 已完成；M4 进行中；M5 部分完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页、签到、Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线模型、权限、路线/节点 CRUD 与树结构；M4-2B 交付服务端进度计算（AC 事件补算 + 读取补算、完成锁存）与题目下线/删除守卫；M4-2C 交付学习路线前端（列表/树详情/编辑/官方管理页，PrimeVue TreeTable/DataTable，UI-31）；M4-4 交付 Rating 衰减与赛季重置（`rating.settings.manage` 权限与 Rating 分组、管理设置 API、`/admin/rating` 设置页、月度高分段衰减、赛季软重置、`decay`/`season_reset` 历史与公开赛季接口）；RBAC-A 交付权限目录、内置角色、首次 Seed/旧角色映射、实时 Access 解析、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/`canAny`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化，以及文档、HTTP 冒烟与浏览器 E2E；M5-A 交付 AI 后端基础（多 provider 配置、用户 API key AES-GCM 加密存储、OpenAI 兼容补全/格式化/优化与题目 AI 提示缓存/限流，AI 路由仅在配置 `KAPOJ_AI_ENCRYPTION_KEY` 时挂载）；M5-6 交付 HydroOJ 题包导入（`POST /api/problems/import/hydro`、大小限制/防路径穿越、slug 冲突不覆盖、默认下线、逐题部分成功与整包回滚，见 §7）与题目详情公开创建者摘要（`author{id,username,nickname}`），前端新增 `/problems/import` 导入页、题目列表「导入题包」入口与详情创建者链接。社交互动，以及 AI 出题造数据/前端/证书/头像（M5-4、M5-5、M5-7、M5-8）尚未实现）。前端 UI 已完成 UI-00～UI-18 的 PrimeVue 4 迁移、UI-30（M4-C 排行榜/历史）、UI-31（M4-7 学习路线）与 RBAC-D 管理后台页面直接实现，剩余 UI-19 题库编辑与 UI-20 异常页；该迁移已提交。题目详情页已改造为「题面 + 提示卡片 + 右侧四资源卡片」，并交付官方题解（创建者编辑 + 金币解锁）、解题思路论坛（帖子/回复/软删除）、提交统计页与关联比赛页，详见 4.3；题目主更新不再写入题解字段，官方题解专用接口是唯一写入口。
 
 ---
 
@@ -1522,6 +1522,15 @@ problem/
 - 导入规则：slug 已存在时报错，不覆盖已有题目；压缩包限制大小（如 200MB）并校验路径，防止路径穿越（zip slip）；导入后题目默认为下线状态，由题目管理员确认后上架。
 - 字段映射以实际 HydroOJ 题包为准，实现前用 2–3 个真实题包验证。
 
+**实现状态（M5-6 已完成）**
+
+- 接口：`POST /api/problems/import/hydro`（multipart，字段 `file`），需登录且拥有 `problem.create`；路由 body 上限 210 MiB（200 MiB 文件 + multipart 开销）。
+- 格式与映射：zip 内每个含 `problem.yaml` 的目录视为一道题；`problem.yaml` 只取 `title`（trim 后 1–100 字符）与 `tag`（字符串数组，走 `normalizeTags`）；`problem_zh.md`（缺失/为空回退 `problem.md`）整体作为 `statement_md`（≤100,000 字符，不拆分 input/output/samples）；`testdata/` 下同名 `.in`/`.out` 成对映射为测试数据（score=10，按文件名数字优先再字典序排序）；slug=`hydro-` + 文件夹名净化（小写、非 `[a-z0-9-]` 替换为 `-`、去首尾 `-`，需满足 2–63 位 slug 规则）。`gen.py`/`std.cpp`/`additional_file/` 等非测试数据忽略，不执行题包内脚本。
+- 默认值：导入题目 `is_public=false`（下线）、`created_by`=上传者、`source='HydroOJ'`、`type='traditional'`、`difficulty=1`、`time_limit_ms=1000`、`memory_limit_mb=256`。
+- 限制：题包文件 ≤200 MiB、解压总量 ≤1 GiB、条目 ≤5000、题目文件夹 ≤100、单题测试点 ≤500、单个测试文件 ≤16 MiB、单题测试数据 ≤200 MiB、`problem.yaml` ≤1 MiB、题面 ≤100,000 字符。防 zip slip：拒绝绝对路径、反斜杠、`.`/`..` 路径段、符号链接、加密条目、非常规文件，忽略 `__MACOSX/` 与隐藏文件；实际解压字节按读取计数校验，防止伪造 `UncompressedSize64`。整包损坏/加密/无题目文件夹/超限返回 40001，body 超 210 MiB 由中间件返回 413。
+- 部分成功：题包可解析且至少发现一个题目文件夹时返回 200，`imported`/`failed` 逐题结果；slug 冲突（`题目标识已存在：hydro-xxxx`）、缺文件、非法 slug、测试数据不配对等单题失败进入 `failed`，不阻断其他题；若整包级错误（如实际解压超限）发生在已导入部分题目之后，回滚本次已导入题目及其测试文件再返回 40001，不残留部分数据。每个成功题目 best-effort 写 `problem.create` 审计。
+- 作者摘要：`GET /problems/:id` 公开返回可选 `author {id, username, nickname}`（所有能看到该题的用户，不含 email）；`created_by <= 0` 或用户不存在时省略 author；仅 GET 详情填充，POST/PUT 可省略。
+
 **Codex 提示词（题目导入）**
 
 ```text
@@ -1598,9 +1607,11 @@ problem/
 | M2     | 比赛系统（三种赛制 + 榜单 + 公告）     | 可办比赛的平台     | ✅   |
 | M3     | 游戏化模块（成就/任务/徽章/称号/金币） | 有趣味的成长体系   | ✅   |
 | M4     | 排行榜 + Rating + 学习路线             | 社区与成长闭环     | 🚧   |
-| M5     | AI 辅助 + 题目导入 + 证书认证          | 完整版 kapOJ       | ⬜   |
+| M5     | AI 辅助 + 题目导入 + 证书认证          | 完整版 kapOJ       | 🚧   |
 
 状态图例：✅ 已完成　🚧 进行中　⬜ 未开始。只有模块的验收标准全部满足后才标记 ✅。
+
+M5 进度：M5-A（AI 后端基础：多 provider 配置、用户 API key 加密存储、补全/格式化/优化与题目提示缓存/限流）与 M5-6（HydroOJ 题包导入 + 题目详情公开创建者摘要，见 §7）已完成；M5-4（AI 出题造数据）、M5-5（AI 前端）、M5-7（证书认证）、M5-8（头像上传）仍未完成，因此 M5 整体保持 🚧。
 
 M3 进度：M3-A（金币、事件、成就、任务后端）、M3-B（徽章、称号、公开身份后端）与 M3-C（成就页、任务大厅、徽章商城、称号商店、装扮管理、游戏化管理、公开身份接入与真实浏览器验收）均已完成，M3 标记为 ✅。
 

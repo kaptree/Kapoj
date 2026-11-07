@@ -2,7 +2,7 @@
 
 打造最有趣味的 Online Judge 平台。规格见 [`DEVELOPMENT.md`](DEVELOPMENT.md)，进度见 [`docs/任务清单.md`](docs/任务清单.md) 与 [`docs/开发日志.md`](docs/开发日志.md)。
 
-当前进度：**M4-2A、M4-2B、M4-2C、M4-4、RBAC-D 与 M5-A 已完成**（M0–M3 已完成；M4 进行中；M5 部分完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页（Rating/活跃度/共享三 Tab、等级颜色、签到）、用户主页 Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线后端模型、官方/自定义权限、路线/节点 CRUD 与树结构，路线 API 已可用；M4-2B 交付服务端进度计算（AC 事件补算 + 读取补算、完成锁存）与题目下线/删除守卫；M4-2C 交付学习路线前端列表/树详情/编辑/官方管理页；M4-4 交付 Rating 衰减与赛季重置（`rating.settings.manage` 权限与 Rating 分组、管理设置 API、`/admin/rating` 设置页、月度高分段衰减、赛季软重置、`decay`/`season_reset` 历史与公开赛季接口）；RBAC-A 交付权限模型、权限目录、首次 Seed/旧角色映射、实时 Access、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化；M5-A 交付 AI 后端基础：多 provider 配置、用户 API key 加密存储、补全/格式化/优化与题目提示缓存/限流；社交，以及 AI 出题造数据/前端/HydroOJ 导入/证书/头像（M5-4～M5-8）尚未实现）。前端并行进行 PrimeVue 4 迁移，**UI-00～UI-18、UI-30（M4-C 排行榜/历史）、UI-31（M4-7 学习路线）与 RBAC-D 管理后台页面已完成并提交**，剩余题库编辑（UI-19）与异常页（UI-20），详见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。题目详情资源区、官方题解与解题思路论坛已完成（见下）。
+当前进度：**M4-2A、M4-2B、M4-2C、M4-4、RBAC-D、M5-A 与 M5-6 已完成**（M0–M3 已完成；M4 进行中；M5 部分完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页（Rating/活跃度/共享三 Tab、等级颜色、签到）、用户主页 Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线后端模型、官方/自定义权限、路线/节点 CRUD 与树结构，路线 API 已可用；M4-2B 交付服务端进度计算（AC 事件补算 + 读取补算、完成锁存）与题目下线/删除守卫；M4-2C 交付学习路线前端列表/树详情/编辑/官方管理页；M4-4 交付 Rating 衰减与赛季重置（`rating.settings.manage` 权限与 Rating 分组、管理设置 API、`/admin/rating` 设置页、月度高分段衰减、赛季软重置、`decay`/`season_reset` 历史与公开赛季接口）；RBAC-A 交付权限模型、权限目录、首次 Seed/旧角色映射、实时 Access、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化；M5-A 交付 AI 后端基础：多 provider 配置、用户 API key 加密存储、补全/格式化/优化与题目提示缓存/限流；M5-6 交付 HydroOJ 题包导入（`POST /api/problems/import/hydro`、大小限制/防路径穿越、slug 冲突不覆盖、默认下线、部分成功与回滚）与题目详情公开创建者摘要（`author{id,username,nickname}`），前端新增 `/problems/import` 导入页与详情创建者链接（见下）；社交，以及 AI 出题造数据/前端/证书/头像（M5-4、M5-5、M5-7、M5-8）尚未实现）。前端并行进行 PrimeVue 4 迁移，**UI-00～UI-18、UI-30（M4-C 排行榜/历史）、UI-31（M4-7 学习路线）、UI-35（M5-6 题目导入）与 RBAC-D 管理后台页面已完成并提交**，剩余题库编辑（UI-19）与异常页（UI-20），详见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。题目详情资源区、官方题解与解题思路论坛已完成（见下）。
 
 ## 目录结构
 
@@ -230,6 +230,14 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 - **解题思路**：每个登录用户可发布帖子（标题 + Markdown 正文），其他用户可回复；作者可编辑/删除自己的内容，题目创建者或 `problem.update` 管理员可删除他人内容。`GET/POST /api/problems/:id/solutions`、`GET/PUT/DELETE /api/problems/:id/solutions/:postId`、`POST/PUT/DELETE /api/problems/:id/solutions/:postId/replies...`。
 - **关联比赛**：`GET /api/contests?problemId=<id>` 返回包含该题且当前用户可见的比赛（公开 OR 本人已报名 OR 拥有 `contest.view_hidden`）。
 - 隐藏题的官方题解与讨论对无 `problem.view_hidden` 的用户返回 404；详情页对无权限用户隐藏官方题解/解题思路卡片。
+
+## 题目导入（M5-6）
+
+- 拥有 `problem.create` 权限的账号可在题目列表「导入题包」进入 `/problems/import`，上传 HydroOJ 导出的 zip 题包（单文件 ≤ 200 MB）；也可用 `POST /api/problems/import/hydro`（multipart，字段 `file`）通过 API 导入。规格见 [`DEVELOPMENT.md`](DEVELOPMENT.md) §7。
+- 每个含 `problem.yaml` 的目录视为一道题：`problem.yaml` 的 `title`/`tag` 映射为题目标题/标签，`problem_zh.md`（缺失回退 `problem.md`）作为 Markdown 题面，`testdata/` 下同名 `.in`/`.out` 成对映射为测试点（score=10，按数字再字典序排序）。
+- 导入题目默认下线（`is_public=false`），创建者为上传者，`source=HydroOJ`，难度 1、1000ms/256MB；slug 为 `hydro-<净化后的文件夹名>`，与已有题目冲突时不覆盖，单题失败进入 `failed`，不影响其他题。
+- 限制与安全：题包 ≤200 MiB（body 210 MiB）、解压 ≤1 GiB、条目 ≤5000、题数 ≤100、单题测试点 ≤500、单文件 ≤16 MiB；拒绝绝对路径/`..`/符号链接/加密条目/非常规文件，忽略 `__MACOSX` 与隐藏文件，不执行题包内脚本。
+- 题目详情页对所有人展示「创建者」并链接 `/users/:id`（`author{id,username,nickname}`，无创建者时不显示）；发布后即可正常提交评测。
 
 ## 测试与检查
 
