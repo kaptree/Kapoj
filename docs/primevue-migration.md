@@ -2,8 +2,8 @@
 
 > 本文档是美化工程的唯一进度来源。每次会话开始先读这里，结束时更新状态、验证结果和设计决策。
 >
-> - 最后更新：2026-11-07
-> - 当前阶段：P2 页面（UI-19 待开始）；M4-C 新功能 UI-30、M4-7 学习路线 UI-31 与 RBAC-D 管理后台 UI-36 已完成
+> - 最后更新：2026-11-08
+> - 当前阶段：P2 页面（UI-19 待开始）；M4-C 新功能 UI-30、M4-7 学习路线 UI-31、RBAC-D 管理后台 UI-36 与 M4-4 Rating 设置 UI-37 已完成
 > - 工作分支：`feat/m1-problems-judge`（RBAC-D 管理后台在 `feat/rbac-d-admin-ui` 完成）
 > - 本次基线：`0f2d62d feat(web): rating history card`
 
@@ -11,14 +11,14 @@
 
 | 状态 | 数量 |
 | --- | ---: |
-| done | 22 |
+| done | 23 |
 | in-progress | 0 |
 | blocked | 0 |
 | todo | 6 |
 
 其中现有 UI 迁移任务 `UI-00～UI-18` 已完成，M4-C 新功能 `UI-30`（排行榜、签到与 Rating 历史卡片）、M4-7 新功能 `UI-31`（学习路线）与 RBAC-D 管理后台 `UI-36`（管理壳/仪表盘/用户/角色/审计页面）已直接使用 PrimeVue 4 完成；剩余 `UI-19` 题库编辑与 `UI-20` 异常页；`UI-32～UI-35` 为尚未实现的新功能，不计入现有页面迁移完成度。
 
-M4-C 排行榜、签到与 Rating 历史（UI-30）、M4-7 学习路线（UI-31）与 RBAC-D 管理后台（UI-36）已直接使用 PrimeVue 4 完成；现有页面迁移剩余 UI-19 → UI-20。若后续某页面进入功能开发，先标记 `blocked` 并跳过。
+M4-C 排行榜、签到与 Rating 历史（UI-30）、M4-7 学习路线（UI-31）、RBAC-D 管理后台（UI-36）与 M4-4 Rating 设置页（UI-37）已直接使用 PrimeVue 4 完成；现有页面迁移剩余 UI-19 → UI-20。若后续某页面进入功能开发，先标记 `blocked` 并跳过。
 
 ## 进度表
 
@@ -52,6 +52,7 @@ M4-C 排行榜、签到与 Rating 历史（UI-30）、M4-7 学习路线（UI-31�
 | UI-33 | 新功能 | 证书认证 | P3 | todo | UI-00 | 直接使用 PrimeVue；提交/审核/核验 | 尚未实现 |
 | UI-34 | 新功能 | AI 辅助面板 | P3 | todo | UI-00、UI-06 | 直接使用 PrimeVue；API key 配置/提示 | 尚未实现 |
 | UI-35 | 新功能 | 题目导入 | P3 | todo | UI-00、UI-19 | 直接使用 PrimeVue；HydroOJ 导入 | 尚未实现 |
+| UI-37 | 新功能 | M4-4 Rating 设置页：`AdminRatingView` | P3 | done | UI-00、UI-36 | 直接使用 PrimeVue；衰减/赛季设置与只读当前赛季 | 2026-11-08 完成。`AdminRatingView`（`/admin/rating`）复用 AppPageHeader/AppSurface/AppFormField/ToggleSwitch/InputNumber/InputText/Toast；`AdminNav` 增加「Rating」入口；不新增 UI 依赖 |
 
 ## Legacy allowlist
 

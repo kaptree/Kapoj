@@ -3,7 +3,7 @@
 > 本文档基于 `plan.md` 细化，是 kapOJ（Kap Online Judge）平台的详细开发规格说明书。
 > 目标：**打造出最有趣味的 Online Judge 平台**。
 > 文档包含完整的架构设计、数据库设计、模块需求，并为每个模块提供了可直接交给 Codex 的**开发提示词（Prompt）**。
-> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)，前端 UI 迁移见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。当前进度：**M4-2A、M4-2B、M4-2C、RBAC-D 与 M5-A 已完成**（M0–M3 已完成；M4 进行中；M5 部分完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页、签到、Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线模型、权限、路线/节点 CRUD 与树结构；M4-2B 交付服务端进度计算（AC 事件补算 + 读取补算、完成锁存）与题目下线/删除守卫；M4-2C 交付学习路线前端（列表/树详情/编辑/官方管理页，PrimeVue TreeTable/DataTable，UI-31）；RBAC-A 交付权限目录、内置角色、首次 Seed/旧角色映射、实时 Access 解析、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/`canAny`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化，以及文档、HTTP 冒烟与浏览器 E2E；M5-A 交付 AI 后端基础（多 provider 配置、用户 API key AES-GCM 加密存储、OpenAI 兼容补全/格式化/优化与题目 AI 提示缓存/限流，AI 路由仅在配置 `KAPOJ_AI_ENCRYPTION_KEY` 时挂载）。社交互动、Rating 衰减/赛季重置，以及 AI 出题造数据/前端/HydroOJ 导入/证书/头像（M5-4～M5-8）尚未实现）。前端 UI 已完成 UI-00～UI-18 的 PrimeVue 4 迁移、UI-30（M4-C 排行榜/历史）、UI-31（M4-7 学习路线）与 RBAC-D 管理后台页面直接实现，剩余 UI-19 题库编辑与 UI-20 异常页；该迁移已提交。题目详情页已改造为「题面 + 提示卡片 + 右侧四资源卡片」，并交付官方题解（创建者编辑 + 金币解锁）、解题思路论坛（帖子/回复/软删除）、提交统计页与关联比赛页，详见 4.3；题目主更新不再写入题解字段，官方题解专用接口是唯一写入口。
+> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)，前端 UI 迁移见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。当前进度：**M4-2A、M4-2B、M4-2C、M4-4、RBAC-D 与 M5-A 已完成**（M0–M3 已完成；M4 进行中；M5 部分完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页、签到、Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线模型、权限、路线/节点 CRUD 与树结构；M4-2B 交付服务端进度计算（AC 事件补算 + 读取补算、完成锁存）与题目下线/删除守卫；M4-2C 交付学习路线前端（列表/树详情/编辑/官方管理页，PrimeVue TreeTable/DataTable，UI-31）；M4-4 交付 Rating 衰减与赛季重置（`rating.settings.manage` 权限与 Rating 分组、管理设置 API、`/admin/rating` 设置页、月度高分段衰减、赛季软重置、`decay`/`season_reset` 历史与公开赛季接口）；RBAC-A 交付权限目录、内置角色、首次 Seed/旧角色映射、实时 Access 解析、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/`canAny`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化，以及文档、HTTP 冒烟与浏览器 E2E；M5-A 交付 AI 后端基础（多 provider 配置、用户 API key AES-GCM 加密存储、OpenAI 兼容补全/格式化/优化与题目 AI 提示缓存/限流，AI 路由仅在配置 `KAPOJ_AI_ENCRYPTION_KEY` 时挂载）。社交互动，以及 AI 出题造数据/前端/HydroOJ 导入/证书/头像（M5-4～M5-8）尚未实现）。前端 UI 已完成 UI-00～UI-18 的 PrimeVue 4 迁移、UI-30（M4-C 排行榜/历史）、UI-31（M4-7 学习路线）与 RBAC-D 管理后台页面直接实现，剩余 UI-19 题库编辑与 UI-20 异常页；该迁移已提交。题目详情页已改造为「题面 + 提示卡片 + 右侧四资源卡片」，并交付官方题解（创建者编辑 + 金币解锁）、解题思路论坛（帖子/回复/软删除）、提交统计页与关联比赛页，详见 4.3；题目主更新不再写入题解字段，官方题解专用接口是唯一写入口。
 
 ---
 
@@ -187,12 +187,34 @@ users (
 -- 新用户 rating 默认 1500。
 -- 实现差异（M4-A）：rating_history 已由 db.Migrate 创建，唯一索引名为 uniq_rating_history_user_contest，
 -- 使用部分唯一索引 (user_id, contest_id) WHERE contest_id IS NOT NULL；contest_id 可空，kind 本阶段只写 contest。
+-- 实现差异（M4-4）：rating_history 增加 period_key（默认 ''，比赛结算恒为空串），新增部分唯一索引
+-- uniq_rating_history_user_period：(user_id, kind, period_key) WHERE period_key <> ''；
+-- kind 扩展为 contest / decay / season_reset，衰减与重置行 contest_id=NULL、rank=0、period_key 非空。
 
 rating_history (
-  id, user_id, contest_id NULL, kind, rank, rating_before, rating_after, created_at
+  id, user_id, contest_id NULL, kind, rank, rating_before, rating_after, period_key, created_at
 )
 -- 唯一约束：(user_id, contest_id) WHERE contest_id IS NOT NULL，保证同一场比赛的 Rating 只结算一次；
--- 可空 contest_id 与 kind 为后续 Rating 衰减/赛季重置预留
+--           (user_id, kind, period_key) WHERE period_key <> ''，保证同一用户同一 kind+period 只写一行；
+-- kind：contest（比赛结算，period_key=''）/ decay（月度衰减，period_key=YYYY-MM）/ season_reset（赛季重置，period_key=赛季开始日）
+
+-- M4-4 新增：Rating 衰减/赛季设置单例与幂等运行标记
+rating_settings (
+  id,                -- 固定 1，单例
+  decay_enabled, decay_threshold, decay_inactive_days, decay_percent, decay_max,
+  season_enabled, season_months, season_reset_percent, season_anchor,
+  updated_by, updated_at
+)
+-- 默认值见 5.5；首次读取时若不存在则按默认值创建（ON CONFLICT DO NOTHING），
+-- 并把该锚点下「上一赛季」运行键预标记为已跳过，避免首次部署立即触发历史赛季重置。
+
+rating_runs (
+  key         text primary key,   -- decay:YYYY-MM / season:YYYY-MM-DD（赛季开始日）
+  kind        text not null,      -- decay / season_reset
+  processed_at timestamptz null,  -- 空表示已认领未完成，可被下次扫描重试
+  created_at  timestamptz not null
+)
+-- key 唯一保证幂等；与 rating_history 的部分唯一索引配合，重复 tick/多实例不重复扣分/重置。
 
 -- RBAC-A 新增（2026-11-06）
 roles (
@@ -932,7 +954,7 @@ user_ai_configs (
 - 统一 `/admin` 管理后台：仪表盘、用户管理、角色权限、审计日志；现有题目/比赛/游戏化页面先迁移权限判断并沿用入口。
 - 兼容迁移现有 `super_admin` / `problem_admin` / `contest_admin` 账号；`users.role` 与 JWT role 保留为 legacy/展示字段，自 RBAC-C 起不再参与任何管理授权，只用于展示。
 
-**权限目录（34 个权限码，稳定不可改名）**
+**权限目录（35 个权限码，稳定不可改名）**
 
 | 分组 | 权限码 |
 |------|--------|
@@ -943,6 +965,9 @@ user_ai_configs (
 | 比赛 | `contest.view_hidden`、`contest.create`、`contest.update`、`contest.delete`、`contest.participant.read`、`contest.announcement.manage` |
 | 游戏化 | `gamification.achievement.manage`、`gamification.task.manage`、`gamification.badge.manage`、`gamification.title.manage`、`gamification.config.manage` |
 | 学习路线 | `learning_path.official.manage`、`learning_path.admin.read` |
+| Rating | `rating.settings.manage` |
+
+> `rating.settings.manage`（第 35 个权限码，M4-4 新增，分组「Rating」）用于管理 Rating 衰减与赛季重置设置；默认只授予 `super_admin`（super 绕过），不自动授予 `content_admin`。修改设置写审计 action=`rating.settings.manage`、target=`rating_settings`。
 
 **内置角色（7 个，均由首次 Seed 创建，`is_system=true`）**
 
@@ -997,6 +1022,8 @@ user_ai_configs (
 | PUT | `/api/admin/users/:id/roles` | `user.roles.assign` | 整体替换用户角色 |
 | POST | `/api/admin/users/:id/ban` | `user.ban` | 封禁 |
 | POST | `/api/admin/users/:id/unban` | `user.ban` | 解封 |
+| GET | `/api/admin/rating/settings` | `rating.settings.manage` | Rating 衰减/赛季设置 + 当前赛季与下次重置（M4-4） |
+| PUT | `/api/admin/rating/settings` | `rating.settings.manage` | 整体更新 Rating 设置；校验范围；写审计（M4-4） |
 
 - **保护规则**：系统角色不可删除、code/name 不可改；`super_admin` 权限不可修改；只有 super 能授予/移除/封禁/解封 super；禁止封禁自己（40001）；禁止移除/封禁最后一个 active super（40001）。角色/权限变更、用户角色分配、封禁/解封、管理员编辑用户在同一事务内写审计，失败回滚。
 - 自定义角色 code 创建后不可修改（`^[a-z][a-z0-9_]{2,63}$`），权限用 code 整体替换、重复去重、非法 code 返回 40001。
@@ -1301,7 +1328,7 @@ user_ai_configs (
 - **评测宽限**：若比赛仍有 `pending`/`judging` 提交且 `now < end_time + KAPOJ_RATING_JUDGE_GRACE`，本轮跳过且不设置标记；超过宽限后按已判结果结算，避免永久卡死。`KAPOJ_RATING_SCAN_INTERVAL` 取值 10s–10m（默认 60s），`KAPOJ_RATING_JUDGE_GRACE` 取值 1m–60m（默认 10m）。
 - **等级**：8 档灰/绿/青/蓝/紫/橙/红/黑红，阈值与颜色见上表；接口返回 `level: {key,name,color,accentColor}`。黑红名 `color=#000000`、`accentColor=#FF0000`，其他等级 `accentColor` 为空字符串。
 - **Rating 榜**：`GET /api/leaderboard/rating?page=&page_size=`，公开；只含 `status=active` 用户，按 Rating 倒序、用户 ID 升序，`score` 为 Rating，行内附带 `equippedBadges`/`equippedTitle`。基础行 Redis 缓存 60 秒，key 为 `kapoj:leaderboard:rating:v<version>:<page>:<size>`；结算成功后递增 `kapoj:leaderboard:rating:version`；Redis/缓存故障时回退数据库；缓存故障本身不会导致 5xx（身份装饰查询失败仍可能返回 5xx）。
-- **Rating 历史**：`GET /api/users/:id/rating-history?page=&page_size=`，公开；按 `created_at DESC, id DESC` 返回 `kind=contest` 记录，字段为 `contestId`、`contestTitle`、`rank`、`ratingBefore`、`ratingAfter`、`delta`、`createdAt`；用户不存在返回 40400。
+- **Rating 历史**：`GET /api/users/:id/rating-history?page=&page_size=`，公开；按 `created_at DESC, id DESC` 返回所有 kind（`contest`/`decay`/`season_reset`），字段为 `kind`、`contestId`、`contestTitle`、`rank`、`periodKey`、`ratingBefore`、`ratingAfter`、`delta`、`createdAt`；用户不存在返回 40400。非比赛行 `contestId=0`、`rank=0`、标题分别为「Rating 衰减」「赛季重置」，`periodKey` 为 `YYYY-MM`（衰减）或赛季开始日（重置）；比赛行 `periodKey=''`，私密比赛仍脱敏为「私密比赛」且 `contestId=0`。分页 total 包含所有 kind。
 - **活跃度（M4-B）**：提交创建成功 +2（每日上限 40）、比赛报名成功 +10（每日上限 50）、每日签到 +5（每天一次）；`activity_logs` 唯一约束 `(user_id, action, ref_type, ref_id)` 保证同一提交/比赛/日期不重复计分。去重、每日上限与用户行锁在同一事务内完成；达到上限返回 no-op，不影响提交/报名主流程。
 - **签到金币（M4-B）**：每个本地自然日首次 `POST /api/activity/signin` 同时奖励 5 活跃度与 5 金币，签到日志、`coin_transactions`（`reason=signin`、`ref_type=day`、`ref_id=YYYYMMDD`）与 `users.coins` 在同一事务内提交；重复签到返回 `awarded=false`、`activityPoints=0`、`coins=0`，不重复发币。`GET /api/activity/summary` 返回 `signedInToday`、`todayPoints`、`totalPoints`。
 - **共享积分（M4-B）**：创建或克隆比赛成功后写入 `shared_items(type=contest)`，每场 20 分；启动时幂等回填已有 `created_by>0` 的比赛。共享分公式为 `20 * 比赛共享数 + 5 * 题解点赞数`，本阶段题解点赞未实现，第二项恒为 0。
@@ -1310,7 +1337,11 @@ user_ai_configs (
 - **排行榜页（M4-C）**：`/leaderboard` 提供 Rating（默认）、活跃度、共享三个 Tab；每个 Tab 独立维护页码、加载、错误与空态，切换不串数据，分页每页 20 条。Rating Tab 展示服务端等级颜色，黑红名首字符黑、其余红；用户列链接个人主页并展示装备称号/徽章；活跃度/共享榜分数使用千分位。导航“排行榜”已启用，首页提供快捷入口。
 - **签到入口（M4-C）**：活跃度 Tab 对登录用户展示今日活跃度、总活跃度与“签到 +5 金币”按钮；首次签到按服务端返回值提示 +5 活跃度/+5 金币，成功后刷新登录用户、签到摘要与活跃度榜第 1 页；当日已签到显示禁用按钮与中文状态；游客显示登录 CTA；失败展示服务端中文错误。
 - **Rating 历史（M4-C）**：用户主页展示最近 20 条 Rating 历史表格与简单 SVG 折线（无新增图表依赖）；私密比赛 `contestId=0` 显示“私密比赛”且不生成链接；无记录显示“暂无 Rating 记录”。
-- **尚未实现**：学习路线前端（模型/权限/CRUD/树结构已在 M4-2A 完成，服务端进度/事件/守卫已在 M4-2B 完成）、社交互动（评论/点赞/关注/题解点赞/通知）与 Rating 衰减/赛季重置属于后续 M4 阶段。`rating_history` 的 `kind` 与可空 `contest_id` 已为衰减/赛季预留，`shared_items.like_count` 已为题解点赞预留。
+- **Rating 衰减与赛季重置（M4-4）**：复用 Rating 扫描器 tick（默认 60s，可用 `KAPOJ_RATING_SCAN_INTERVAL` 调整），在比赛结算后调用 `RunAdjustments(now)`，与结算共用同一 PostgreSQL 全局 advisory lock；不新增独立 worker 进程。策略存于单例 `rating_settings`（管理页 `/admin/rating` 或 `GET/PUT /api/admin/rating/settings`，需 `rating.settings.manage`），默认：衰减启用、阈值 2400、未活跃 60 天、月比例 3%、单次上限 100；赛季启用、周期 6 个月、重置比例 30%、锚点为首次读取时的当月 1 日（UTC）。
+  - **衰减**：仅 `status=active` 且 `rating > decayThreshold`、最近一次 `kind=contest` 历史距今 ≥ `decayInactiveDays` 的用户；每月最多执行一次（运行键 `decay:YYYY-MM`，UTC）。单次 `above=rating-threshold`、`raw=round(above*percent/100)`、`decay=min(max,max(1,raw))`、`new=max(threshold,rating-decay)`，取整统一 `math.Round`；`rating>threshold` 时至少扣 1。写入 `kind=decay`、`periodKey=YYYY-MM`、`rank=0`；仅插入历史成功（`ON CONFLICT DO NOTHING`）才更新 `users.rating`。跨月停机只处理当前月，不回补。
+  - **赛季重置**：赛季 `[anchor + n*months, anchor + (n+1)*months)`（anchor 必须是某月 1 日，UTC）；赛季结束后首次扫描处理「刚结束的上一赛季」（运行键 `season:<上一赛季开始日>`），跨多赛季只处理最近结束的上一赛季。所有 `rating != 1500` 用户 `new=max(0, round(1500+(rating-1500)*(100-resetPercent)/100))`（默认 30%：2600→2270、1200→1290）；`new==rating`（含 1500、0%、四舍五入不变）不写历史、不更新 Rating，但该赛季运行仍标记已处理。写入 `kind=season_reset`、`periodKey=赛季开始日`、`rank=0`。首次创建默认设置与修改 `seasonAnchor`/`seasonMonths` 时，预标记新周期「上一赛季」运行键为已跳过，不立即触发重置。
+  - **幂等与缓存**：`rating_runs` 唯一键 + 认领与处理同事务（失败回滚）；成功修改 Rating 后 best-effort 递增 `kapoj:leaderboard:rating:version`，Redis 故障只记日志。公开赛季接口 `GET /api/rating/season/current`（游客可读）返回 `{key,name,startsAt,endsAt,nextResetAt}`；排行榜页顶部展示当前赛季与下次重置（失败静默降级）。
+- **尚未实现**：学习路线前端（模型/权限/CRUD/树结构已在 M4-2A 完成，服务端进度/事件/守卫已在 M4-2B 完成）、社交互动（评论/点赞/关注/题解点赞/通知）属于后续 M4 阶段。`shared_items.like_count` 已为题解点赞预留。
 
 **Codex 提示词（排行榜）**
 
@@ -1573,7 +1604,7 @@ problem/
 
 M3 进度：M3-A（金币、事件、成就、任务后端）、M3-B（徽章、称号、公开身份后端）与 M3-C（成就页、任务大厅、徽章商城、称号商店、装扮管理、游戏化管理、公开身份接入与真实浏览器验收）均已完成，M3 标记为 ✅。
 
-M4 进度：M4-A（Rating 结算、8 级等级、Rating 历史与 Rating 榜后端）、M4-B（活跃度、签到金币、共享分、活跃度/共享榜与三榜缓存）、M4-C（排行榜页、每日签到入口、用户主页 Rating 历史卡片、导航与首页入口）、M4-2A（学习路线模型、权限、路线/节点 CRUD 与树结构）、M4-2B（服务端进度计算、AC 事件补算、完成锁存与题目下线守卫）与 M4-2C（学习路线前端列表/树/编辑/官方管理页）已完成；社交互动与 Rating 衰减/赛季重置尚未完成，因此 M4 整体保持 🚧。
+M4 进度：M4-A（Rating 结算、8 级等级、Rating 历史与 Rating 榜后端）、M4-B（活跃度、签到金币、共享分、活跃度/共享榜与三榜缓存）、M4-C（排行榜页、每日签到入口、用户主页 Rating 历史卡片、导航与首页入口）、M4-2A（学习路线模型、权限、路线/节点 CRUD 与树结构）、M4-2B（服务端进度计算、AC 事件补算、完成锁存与题目下线守卫）、M4-2C（学习路线前端列表/树/编辑/官方管理页）与 M4-4（Rating 衰减与赛季重置：`rating.settings.manage` 权限、管理设置 API 与 `/admin/rating` 设置页、月度高分段衰减、赛季软重置、`decay`/`season_reset` 历史与公开赛季接口）已完成；社交互动尚未完成，因此 M4 整体保持 🚧。
 
 平台管理后台/RBAC 进度：RBAC-A（权限模型、权限目录、首次 Seed/旧角色映射、实时 Access、权限中间件、`/users/me` 权限字段）与 RBAC-B（角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志、仪表盘统计 API）已完成；RBAC-C（现有管理接口迁移）与 RBAC-D（管理后台前端与 E2E）尚未开始。设计与拆分见 [`docs/superpowers/specs/2026-11-06-admin-rbac-design.md`](docs/superpowers/specs/2026-11-06-admin-rbac-design.md)。
 
