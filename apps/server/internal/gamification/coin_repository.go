@@ -54,26 +54,39 @@ func (r *Repository) SpendCoins(ctx context.Context, userID, amount int64, reaso
 		return err
 	}
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		coins, err := lockUserCoins(tx, userID)
-		if err != nil {
-			return err
-		}
-		txRecord := &CoinTransaction{
-			UserID: userID, Amount: -amount, Type: CoinSpend,
-			Reason: reason, RefType: refType, RefID: refID,
-		}
-		res := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(txRecord)
-		if res.Error != nil {
-			return res.Error
-		}
-		if res.RowsAffected == 0 {
-			return nil
-		}
-		if coins < amount {
-			return httpx.ErrValidation("金币不足")
-		}
-		return addUserCoins(tx, userID, -amount)
+		return SpendCoinsTx(tx, userID, amount, reason, refType, refID)
 	})
+}
+
+// SpendCoinsTx 在调用方事务内锁定用户行后校验余额、扣款并写入流水。重复引用视为
+// 已处理，不会再次扣款；余额不足返回 40001。供需要与其他写操作保持一致（如官方题
+// 解解锁）的事务复用。
+func SpendCoinsTx(tx *gorm.DB, userID, amount int64, reason, refType string, refID int64) error {
+	if amount <= 0 {
+		return httpx.ErrValidation("金币数量必须为正数")
+	}
+	if err := validateCoinRef(refType, refID); err != nil {
+		return err
+	}
+	coins, err := lockUserCoins(tx, userID)
+	if err != nil {
+		return err
+	}
+	txRecord := &CoinTransaction{
+		UserID: userID, Amount: -amount, Type: CoinSpend,
+		Reason: reason, RefType: refType, RefID: refID,
+	}
+	res := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(txRecord)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return nil
+	}
+	if coins < amount {
+		return httpx.ErrValidation("金币不足")
+	}
+	return addUserCoins(tx, userID, -amount)
 }
 
 // AdminAdjustCoins 允许管理员正负调整金币，调整后余额不得为负。

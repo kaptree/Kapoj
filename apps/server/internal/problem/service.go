@@ -80,7 +80,7 @@ func apply(p *Problem, in Input) {
 	p.Title, p.Slug = in.Title, in.Slug
 	p.StatementMD, p.InputFormatMD, p.OutputFormatMD = in.StatementMD, in.InputFormatMD, in.OutputFormatMD
 	p.Samples, p.Tags = in.Samples, in.Tags
-	p.HintMD, p.SolutionMD, p.SolutionCode = in.HintMD, in.SolutionMD, in.SolutionCode
+	p.HintMD = in.HintMD
 	p.Type, p.Difficulty = in.Type, in.Difficulty
 	p.TimeLimitMS, p.MemoryLimitMB = in.TimeLimitMS, in.MemoryLimitMB
 	p.IsPublic, p.Source = in.IsPublic, in.Source

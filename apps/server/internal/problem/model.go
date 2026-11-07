@@ -34,20 +34,23 @@ type Problem struct {
 	HintMD         string               `gorm:"column:hint_md;type:text;not null;default:''"`
 	SolutionMD     string               `gorm:"column:solution_md;type:text;not null;default:''"`
 	SolutionCode   string               `gorm:"type:text;not null;default:''"`
-	Type           Type                 `gorm:"size:20;not null;default:traditional"`
-	Tags           dbtypes.List[string] `gorm:"column:tags_json;type:jsonb;not null;default:'[]';index:idx_problems_tags,type:gin"`
-	Difficulty     int                  `gorm:"not null;default:1;index"`
-	TimeLimitMS    int                  `gorm:"column:time_limit_ms;not null;default:1000"`
-	MemoryLimitMB  int                  `gorm:"column:memory_limit_mb;not null;default:256"`
-	CheckerPath    string               `gorm:"size:255;not null;default:''"`
-	IsPublic       bool                 `gorm:"not null;default:false;index"`
-	Source         string               `gorm:"size:200;not null;default:''"`
-	SubmitCount    int                  `gorm:"not null;default:0"`
-	AcceptCount    int                  `gorm:"not null;default:0"`
-	CreatedBy      int64                `gorm:"not null;default:0"`
-	CreatedAt      time.Time            `gorm:"type:timestamptz;not null"`
-	UpdatedAt      time.Time            `gorm:"type:timestamptz;not null"`
-	Testcases      []Testcase           `gorm:"foreignKey:ProblemID;constraint:OnDelete:CASCADE" json:"-"`
+	// SolutionPriceCoins 是官方题解的解锁价格（金币）；0 表示所有人免费。
+	// 范围 0..1,000,000。仅通过官方题解接口写入。
+	SolutionPriceCoins int64                `gorm:"column:solution_price_coins;not null;default:0"`
+	Type               Type                 `gorm:"size:20;not null;default:traditional"`
+	Tags               dbtypes.List[string] `gorm:"column:tags_json;type:jsonb;not null;default:'[]';index:idx_problems_tags,type:gin"`
+	Difficulty         int                  `gorm:"not null;default:1;index"`
+	TimeLimitMS        int                  `gorm:"column:time_limit_ms;not null;default:1000"`
+	MemoryLimitMB      int                  `gorm:"column:memory_limit_mb;not null;default:256"`
+	CheckerPath        string               `gorm:"size:255;not null;default:''"`
+	IsPublic           bool                 `gorm:"not null;default:false;index"`
+	Source             string               `gorm:"size:200;not null;default:''"`
+	SubmitCount        int                  `gorm:"not null;default:0"`
+	AcceptCount        int                  `gorm:"not null;default:0"`
+	CreatedBy          int64                `gorm:"not null;default:0"`
+	CreatedAt          time.Time            `gorm:"type:timestamptz;not null"`
+	UpdatedAt          time.Time            `gorm:"type:timestamptz;not null"`
+	Testcases          []Testcase           `gorm:"foreignKey:ProblemID;constraint:OnDelete:CASCADE" json:"-"`
 }
 
 type Testcase struct {

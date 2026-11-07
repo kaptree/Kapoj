@@ -145,6 +145,60 @@ func TestSpendCoinsConcurrent(t *testing.T) {
 	assert.EqualValues(t, 1, count)
 }
 
+func TestSpendCoinsTxWithinCallerTransaction(t *testing.T) {
+	e := newCoinEnv(t)
+	ctx := context.Background()
+	require.NoError(t, e.repo.AdminAdjustCoins(ctx, coinUserID, 50, "初始"))
+
+	// 在调用方事务内扣款，写入流水并扣减余额。
+	require.NoError(t, e.db.Transaction(func(tx *gorm.DB) error {
+		return gamification.SpendCoinsTx(tx, coinUserID, 30, "problem_solution", "problem_solution", 5)
+	}))
+	balance, err := e.repo.Balance(ctx, coinUserID)
+	require.NoError(t, err)
+	assert.EqualValues(t, 20, balance)
+
+	// 相同引用幂等，不重复扣款。
+	require.NoError(t, e.db.Transaction(func(tx *gorm.DB) error {
+		return gamification.SpendCoinsTx(tx, coinUserID, 30, "problem_solution", "problem_solution", 5)
+	}))
+	balance, err = e.repo.Balance(ctx, coinUserID)
+	require.NoError(t, err)
+	assert.EqualValues(t, 20, balance)
+
+	// 余额不足返回 40001 且整体回滚（无流水、余额不变）。
+	err = e.db.Transaction(func(tx *gorm.DB) error {
+		return gamification.SpendCoinsTx(tx, coinUserID, 999, "problem_solution", "problem_solution", 6)
+	})
+	assertCode(t, err, 40001)
+	balance, err = e.repo.Balance(ctx, coinUserID)
+	require.NoError(t, err)
+	assert.EqualValues(t, 20, balance)
+	var count int64
+	require.NoError(t, e.db.Model(&gamification.CoinTransaction{}).
+		Where("reason = ? AND ref_id = ?", "problem_solution", 6).Count(&count).Error)
+	assert.Zero(t, count, "失败扣款必须回滚流水")
+}
+
+func TestSpendCoinsTxRejectsInvalidReference(t *testing.T) {
+	e := newCoinEnv(t)
+	require.NoError(t, e.repo.AdminAdjustCoins(context.Background(), coinUserID, 10, "初始"))
+
+	err := e.db.Transaction(func(tx *gorm.DB) error {
+		return gamification.SpendCoinsTx(tx, coinUserID, 5, "problem_solution", "", 1)
+	})
+	assertCode(t, err, 40001)
+
+	err = e.db.Transaction(func(tx *gorm.DB) error {
+		return gamification.SpendCoinsTx(tx, coinUserID, 5, "problem_solution", "problem_solution", 0)
+	})
+	assertCode(t, err, 40001)
+
+	balance, err := e.repo.Balance(context.Background(), coinUserID)
+	require.NoError(t, err)
+	assert.EqualValues(t, 10, balance)
+}
+
 func TestAdminAdjustCoinsAllowsRepeatedNotes(t *testing.T) {
 	e := newCoinEnv(t)
 	require.NoError(t, e.repo.AdminAdjustCoins(context.Background(), coinUserID, 5, "活动"))

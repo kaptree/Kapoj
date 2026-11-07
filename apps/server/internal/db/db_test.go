@@ -16,6 +16,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/learning"
+	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/rating"
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 )
@@ -59,6 +60,23 @@ func TestMigrateCreatesGamificationSchema(t *testing.T) {
 	assert.True(t, g.Migrator().HasIndex(&gamification.UserLoginDay{}, "uniq_user_login_days"))
 	assert.True(t, g.Migrator().HasIndex(&gamification.UserBadge{}, "uniq_user_badges"))
 	assert.True(t, g.Migrator().HasIndex(&gamification.UserTitle{}, "uniq_user_titles"))
+}
+
+func TestMigrateCreatesOfficialSolutionSchema(t *testing.T) {
+	dsn := os.Getenv("KAPOJ_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("KAPOJ_TEST_DATABASE_URL not set; skipping database test")
+	}
+	g, err := open(dsn, io.Discard)
+	require.NoError(t, err)
+	require.NoError(t, Migrate(g))
+	sqlDB, err := g.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	assert.True(t, g.Migrator().HasTable("problem_solution_unlocks"), "缺少表 problem_solution_unlocks")
+	assert.True(t, g.Migrator().HasColumn(&problem.Problem{}, "solution_price_coins"))
+	assert.True(t, g.Migrator().HasIndex(&problem.ProblemSolutionUnlock{}, "uniq_problem_solution_unlocks"))
 }
 
 func TestMigrateCreatesRatingSchema(t *testing.T) {

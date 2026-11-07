@@ -18,8 +18,6 @@ type Input struct {
 	OutputFormatMD string   `json:"outputFormatMd"`
 	Samples        []Sample `json:"samples"`
 	HintMD         string   `json:"hintMd"`
-	SolutionMD     string   `json:"solutionMd"`
-	SolutionCode   string   `json:"solutionCode"`
 	Type           Type     `json:"type"`
 	Tags           []string `json:"tags"`
 	Difficulty     int      `json:"difficulty"`
@@ -70,15 +68,11 @@ func (in Input) Normalize() (Input, error) {
 		{"输入格式", in.InputFormatMD, 20000},
 		{"输出格式", in.OutputFormatMD, 20000},
 		{"提示", in.HintMD, 50000},
-		{"解题思路", in.SolutionMD, 50000},
 		{"来源", in.Source, 200},
 	} {
 		if runes(f.value) > f.max {
 			return in, invalid("%s不能超过 %d 个字符", f.name, f.max)
 		}
-	}
-	if len(in.SolutionCode) > 65536 {
-		return in, invalid("解题代码不能超过 65536 字节")
 	}
 
 	if in.Type == "" {

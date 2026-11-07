@@ -338,8 +338,7 @@ func TestProblemCreateAcceptsPayloadOver1MiB(t *testing.T) {
 	b["inputFormatMd"] = strings.Repeat("入", 20000)
 	b["outputFormatMd"] = strings.Repeat("出", 20000)
 	b["hintMd"] = strings.Repeat("提", 50000)
-	b["solutionMd"] = strings.Repeat("解", 50000)
-	b["solutionCode"] = strings.Repeat("x", 65536)
+	b["padding"] = strings.Repeat("x", 200000)
 	samples := make([]map[string]string, 10)
 	for i := range samples {
 		samples[i] = map[string]string{
@@ -446,9 +445,9 @@ func TestHiddenProblemLooksNonexistent(t *testing.T) {
 
 func TestDetailHidesSolutionFromUsers(t *testing.T) {
 	f := newFx(t)
-	id := f.publish("sol", map[string]any{
-		"hintMd": "a hint", "solutionMd": "secret idea", "solutionCode": "secret code",
-	})
+	id := f.publish("sol", map[string]any{"hintMd": "a hint"})
+	// 官方题解通过专用接口写入。
+	f.setSolution(id, f.token("problem_admin"), "secret idea", "secret code", 50)
 	p := path("/api/problems/%d", id)
 
 	for _, role := range []string{"guest", "user", "contest_admin"} {
@@ -472,8 +471,6 @@ func TestDetailShowsSolutionAfterAccepted(t *testing.T) {
 	f := newFx(t)
 	admin := f.token("problem_admin")
 	b := body("unlock")
-	b["solutionMd"] = "SECRET_SOLUTION"
-	b["solutionCode"] = "SECRET_CODE"
 	w, resp := f.do(http.MethodPost, "/api/problems", admin, b)
 	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
 	id := idOf(resp)
@@ -481,6 +478,7 @@ func TestDetailShowsSolutionAfterAccepted(t *testing.T) {
 	b["isPublic"] = true
 	w, _ = f.do(http.MethodPut, fmt.Sprintf("/api/problems/%d", id), admin, b)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	f.setSolution(id, admin, "SECRET_SOLUTION", "SECRET_CODE", 100)
 
 	w, reg := f.do(http.MethodPost, "/api/auth/register", "", map[string]string{
 		"username": "solver", "email": "solver@example.com", "password": "correct-horse",
@@ -775,9 +773,8 @@ func TestProblemListAndDetailRespectViewHiddenPermission(t *testing.T) {
 func TestProblemSolutionRequiresManagementCapability(t *testing.T) {
 	f := newFx(t)
 	b := body("sol")
-	b["solutionMd"] = "SECRET_MD"
-	b["solutionCode"] = "SECRET_CODE"
 	id := f.create(b)
+	f.setSolution(id, f.token("problem_admin"), "SECRET_MD", "SECRET_CODE", 100)
 
 	f.createRole("view_hidden_only", rbac.PermProblemViewHidden)
 	viewHidden := f.userWithRole("view_hidden_only")

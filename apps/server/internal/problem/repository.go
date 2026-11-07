@@ -64,7 +64,7 @@ func NewGormRepository(db *gorm.DB) Repository { return &gormRepository{db: db} 
 
 var editableColumns = []string{
 	"title", "slug", "statement_md", "input_format_md", "output_format_md",
-	"samples_json", "hint_md", "solution_md", "solution_code", "type",
+	"samples_json", "hint_md", "type",
 	"tags_json", "difficulty", "time_limit_ms", "memory_limit_mb",
 	"is_public", "source", "updated_at",
 }

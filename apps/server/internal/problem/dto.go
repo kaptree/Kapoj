@@ -28,10 +28,11 @@ type DetailDTO struct {
 	Samples        []Sample `json:"samples"`
 	HintMD         string   `json:"hintMd"`
 
-	SolutionMD      *string `json:"solutionMd,omitempty"`
-	SolutionCode    *string `json:"solutionCode,omitempty"`
-	CheckerUploaded *bool   `json:"checkerUploaded,omitempty"`
-	CreatedBy       *int64  `json:"createdBy,omitempty"`
+	SolutionPriceCoins int64   `json:"solutionPriceCoins"`
+	SolutionMD         *string `json:"solutionMd,omitempty"`
+	SolutionCode       *string `json:"solutionCode,omitempty"`
+	CheckerUploaded    *bool   `json:"checkerUploaded,omitempty"`
+	CreatedBy          *int64  `json:"createdBy,omitempty"`
 }
 
 type TestcaseDTO struct {
@@ -62,12 +63,13 @@ func ToDetail(p *Problem, includeSolution bool) DetailDTO {
 		samples = []Sample{}
 	}
 	d := DetailDTO{
-		ListItem:       ToListItem(p),
-		StatementMD:    p.StatementMD,
-		InputFormatMD:  p.InputFormatMD,
-		OutputFormatMD: p.OutputFormatMD,
-		Samples:        samples,
-		HintMD:         p.HintMD,
+		ListItem:           ToListItem(p),
+		StatementMD:        p.StatementMD,
+		InputFormatMD:      p.InputFormatMD,
+		OutputFormatMD:     p.OutputFormatMD,
+		Samples:            samples,
+		HintMD:             p.HintMD,
+		SolutionPriceCoins: p.SolutionPriceCoins,
 	}
 	if includeSolution {
 		uploaded := p.CheckerPath != ""

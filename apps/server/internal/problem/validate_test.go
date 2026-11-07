@@ -76,8 +76,6 @@ func TestNormalizeTextLimits(t *testing.T) {
 		"input format":       func(i *Input) { i.InputFormatMD = strings.Repeat("a", 20001) },
 		"output format":      func(i *Input) { i.OutputFormatMD = strings.Repeat("a", 20001) },
 		"hint":               func(i *Input) { i.HintMD = strings.Repeat("a", 50001) },
-		"solution":           func(i *Input) { i.SolutionMD = strings.Repeat("a", 50001) },
-		"solution code":      func(i *Input) { i.SolutionCode = strings.Repeat("a", 65537) },
 		"source":             func(i *Input) { i.Source = strings.Repeat("a", 201) },
 	}
 	for name, mutate := range cases {
@@ -88,7 +86,6 @@ func TestNormalizeTextLimits(t *testing.T) {
 
 	ok := validInput()
 	ok.StatementMD = strings.Repeat("字", 100000)
-	ok.SolutionCode = strings.Repeat("a", 65536)
 	_, err := ok.Normalize()
 	assert.NoError(t, err)
 }

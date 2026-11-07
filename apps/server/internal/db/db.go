@@ -44,6 +44,7 @@ func newLogger(w io.Writer) logger.Interface {
 func Migrate(g *gorm.DB) error {
 	return g.AutoMigrate(
 		&user.User{}, &problem.Problem{}, &problem.Testcase{},
+		&problem.ProblemSolutionUnlock{},
 		&contest.Contest{}, &contest.ContestProblem{}, &contest.ContestParticipant{},
 		&contest.Announcement{}, &submission.Submission{},
 		&rating.RatingHistory{},

@@ -37,7 +37,8 @@ type ContestAccess interface {
 
 // Options 配置题目接口的可选依赖。
 type Options struct {
-	RBAC *rbac.Service
+	RBAC      *rbac.Service
+	Solutions *problem.OfficialSolutionService
 }
 
 // auditTargetProblem 是内容管理审计的 target type。
@@ -54,7 +55,7 @@ func RegisterRoutes(
 	if len(opts) > 0 {
 		o = opts[0]
 	}
-	h := &handler{svc: s, accepted: accepted, contests: contests, rbac: o.RBAC}
+	h := &handler{svc: s, accepted: accepted, contests: contests, rbac: o.RBAC, solutions: o.Solutions}
 
 	// resolver 为 nil 时 RequirePermission 会拒绝所有写操作，LoadAccess 为
 	// 空操作；生产环境 router 始终传入 RBAC service。
@@ -74,6 +75,10 @@ func RegisterRoutes(
 	api.GET("/problems/:id", load, h.get)
 	api.GET("/problems/:id/statistics", load, h.statistics)
 
+	api.GET("/problems/:id/official-solution", load, h.getOfficialSolution)
+	api.PUT("/problems/:id/official-solution", middleware.RequireAuth(), load, h.updateOfficialSolution)
+	api.POST("/problems/:id/official-solution/purchase", middleware.RequireAuth(), load, h.purchaseOfficialSolution)
+
 	problemJSON.POST("/problems", require(string(rbac.PermProblemCreate)), audit(string(rbac.PermProblemCreate)), h.create)
 	problemJSON.PUT("/problems/:id", require(string(rbac.PermProblemUpdate)), audit(string(rbac.PermProblemUpdate)), h.update)
 	api.DELETE("/problems/:id", require(string(rbac.PermProblemDelete)), audit(string(rbac.PermProblemDelete)), h.delete)
@@ -88,10 +93,11 @@ func RegisterRoutes(
 }
 
 type handler struct {
-	svc      *problem.Service
-	accepted AcceptedChecker
-	contests ContestAccess
-	rbac     *rbac.Service
+	svc       *problem.Service
+	accepted  AcceptedChecker
+	contests  ContestAccess
+	rbac      *rbac.Service
+	solutions *problem.OfficialSolutionService
 }
 
 func viewer(c *gin.Context) problem.Viewer {
