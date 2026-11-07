@@ -300,7 +300,8 @@ git commit -m "feat(web): add admin learning paths page"
 - Modify: `README.md`
 - Modify: `运行手册.md`
 - Modify: `docs/primevue-migration.md`
-- Test: 全量后端、评测、前端；真实浏览器
+- Create: `apps/web/e2e/learning-paths.spec.ts`
+- Test: 全量后端、评测、前端；Playwright 真实浏览器
 
 **Interfaces:**
 - Consumes: Task 1–4。
@@ -336,8 +337,11 @@ corepack pnpm build:web
 git diff --check
 ```
 
-- [ ] **Step 3: 真实浏览器 E2E**
+- [ ] **Step 3: 真实浏览器 E2E（Playwright）**
 
+Run: `cd /Users/admin/codespace/kapoj && corepack pnpm --filter web test:e2e -- learning-paths.spec.ts`
+
+- 使用现有 `E2E_ADMIN_USER`/`E2E_ADMIN_PASSWORD`（默认 `m2badmin`/`correct-horse`）与普通用户；通过 API 建临时路线/节点/提交，浏览器验证页面。
 - 管理员（`learning_path.official.manage`）创建官方路线：根节点 required 2 + 两个子节点；普通用户看到根 active、子 locked。
 - 普通用户 AC 根节点所需题目（临时插入 accepted 提交或真实提交），刷新树：根 completed、子 active；完成子节点后 completed；完成数 `myCompletedCount` 更新。
 - 已完成节点改题/提高 required 后刷新，已完成用户不回退；另一用户按新配置重算。
@@ -349,7 +353,7 @@ git diff --check
 - [ ] **Step 4: 提交**
 
 ```bash
-git add DEVELOPMENT.md docs/任务清单.md docs/开发日志.md README.md 运行手册.md docs/primevue-migration.md
+git add DEVELOPMENT.md docs/任务清单.md docs/开发日志.md README.md 运行手册.md docs/primevue-migration.md apps/web/e2e/learning-paths.spec.ts
 git commit -m "docs: record learning path frontend"
 ```
 
