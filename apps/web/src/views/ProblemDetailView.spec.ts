@@ -214,4 +214,44 @@ describe('ProblemDetailView', () => {
     expect(wrapper.text()).not.toContain('返回比赛')
     wrapper.unmount()
   })
+
+  it('shows the public author with a link to their profile (guest visible)', async () => {
+    vi.mocked(getProblem).mockResolvedValue(
+      detail(1, { author: { id: 7, username: 'alice', nickname: 'Alice' } }),
+    )
+    vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('创建者')
+    const link = wrapper.find('a[href="/users/7"]')
+    expect(link.exists()).toBe(true)
+    expect(link.text()).toContain('Alice')
+    wrapper.unmount()
+  })
+
+  it('falls back to the username when the author has no nickname', async () => {
+    vi.mocked(getProblem).mockResolvedValue(
+      detail(1, { author: { id: 7, username: 'alice', nickname: '' } }),
+    )
+    vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
+    const wrapper = mountView()
+    await flushPromises()
+
+    const link = wrapper.find('a[href="/users/7"]')
+    expect(link.exists()).toBe(true)
+    expect(link.text()).toBe('alice')
+    wrapper.unmount()
+  })
+
+  it('does not show the author when the problem has none', async () => {
+    vi.mocked(getProblem).mockResolvedValue(detail(1))
+    vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('创建者')
+    expect(wrapper.find('a[href^="/users/"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
 })

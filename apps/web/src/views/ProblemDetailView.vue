@@ -104,6 +104,12 @@ const statsLabel = computed(() =>
 const showSolutionResources = computed(
   () => problem.value?.isPublic !== false || auth.can(PERM.problem.viewHidden),
 )
+
+const authorName = computed(() => {
+  const author = problem.value?.author
+  if (!author) return ''
+  return author.nickname || author.username
+})
 </script>
 
 <template>
@@ -164,6 +170,12 @@ const showSolutionResources = computed(
           <i class="pi pi-database" aria-hidden="true" /> {{ problem?.memoryLimitMb }} MB
         </span>
         <span v-if="problem?.source" class="meta-item">来源：{{ problem?.source }}</span>
+        <span v-if="problem?.author" class="meta-item author-item">
+          <i class="pi pi-user" aria-hidden="true" /> 创建者
+          <RouterLink :to="`/users/${problem.author.id}`" class="author-link">
+            {{ authorName }}
+          </RouterLink>
+        </span>
         <span v-if="problem?.tags.length" class="tag-list">
           <span v-for="t in problem?.tags ?? []" :key="t" class="tag-chip">{{ t }}</span>
         </span>
@@ -362,6 +374,16 @@ const showSolutionResources = computed(
 .meta-item i {
   color: var(--kapoj-text-muted);
   font-size: 12px;
+}
+
+.author-link {
+  color: var(--kapoj-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.author-link:hover {
+  text-decoration: underline;
 }
 
 .type-chip {

@@ -742,6 +742,32 @@ paths:
         '403': { $ref: '#/components/responses/Error' }
         '409': { $ref: '#/components/responses/Error' }
         '413': { $ref: '#/components/responses/Error' }
+  /problems/import/hydro:
+    post:
+      summary: 导入 HydroOJ 题包（problem.create）；逐题成功/失败，导入后题目默认下线
+      description: >-
+        上传 HydroOJ 导出的 zip 题包（不超过 200MB），按题目文件夹解析 problem.yaml/problem_zh.md/testdata
+        并创建下线题目，创建者为上传者。题包整体非法返回 40001；单题失败进入 failed，不阻断其他题。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary, description: HydroOJ 导出的 .zip 题包，不超过 200 MiB }
+      responses:
+        '200':
+          description: 导入结果（imported 成功项、failed 失败项）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HydroImportResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '413': { $ref: '#/components/responses/Error' }
   /problems/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
@@ -2645,6 +2671,15 @@ components:
             solutionCode: { type: string, description: 拥有题目管理权限或本人已通过该题时可见 }
             checkerUploaded: { type: boolean, description: 拥有题目管理权限或本人已通过该题时可见 }
             createdBy: { type: integer, format: int64, description: 拥有题目管理权限或本人已通过该题时可见 }
+            author: { $ref: '#/components/schemas/ProblemAuthor' }
+    ProblemAuthor:
+      type: object
+      description: 题目创建者的公开摘要；仅含 id/username/nickname，不含邮箱。
+      required: [id, username, nickname]
+      properties:
+        id: { type: integer, format: int64 }
+        username: { type: string }
+        nickname: { type: string }
     Testcase:
       type: object
       required: [id, sortOrder, score, isSample, inputSize, outputSize]
@@ -2785,6 +2820,37 @@ components:
           required: [data]
           properties:
             data: { $ref: '#/components/schemas/ProblemDetail' }
+    HydroImportedProblem:
+      type: object
+      description: 成功导入的题目摘要。
+      required: [id, title, slug, testcaseCount]
+      properties:
+        id: { type: integer, format: int64 }
+        title: { type: string }
+        slug: { type: string }
+        testcaseCount: { type: integer }
+    HydroImportFailure:
+      type: object
+      description: 未能导入的题目及其原因。
+      required: [folder, title, error]
+      properties:
+        folder: { type: string }
+        title: { type: string }
+        error: { type: string }
+    HydroImportResult:
+      type: object
+      description: 一次题包导入的逐题结果；合法题包允许部分成功。
+      required: [imported, failed]
+      properties:
+        imported: { type: array, items: { $ref: '#/components/schemas/HydroImportedProblem' } }
+        failed: { type: array, items: { $ref: '#/components/schemas/HydroImportFailure' } }
+    HydroImportResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/HydroImportResult' }
     DeleteProblemResponse:
       allOf:
         - $ref: '#/components/schemas/Envelope'

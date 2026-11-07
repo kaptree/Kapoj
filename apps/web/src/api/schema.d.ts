@@ -1814,6 +1814,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/problems/import/hydro": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 导入 HydroOJ 题包（problem.create）；逐题成功/失败，导入后题目默认下线
+         * @description 上传 HydroOJ 导出的 zip 题包（不超过 200MB），按题目文件夹解析 problem.yaml/problem_zh.md/testdata 并创建下线题目，创建者为上传者。题包整体非法返回 40001；单题失败进入 failed，不阻断其他题。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "multipart/form-data": {
+                        /**
+                         * Format: binary
+                         * @description HydroOJ 导出的 .zip 题包，不超过 200 MiB
+                         */
+                        file: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 导入结果（imported 成功项、failed 失败项） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["HydroImportResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                413: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/problems/{id}": {
         parameters: {
             query?: never;
@@ -5166,6 +5219,14 @@ export interface components {
              * @description 拥有题目管理权限或本人已通过该题时可见
              */
             createdBy?: number;
+            author?: components["schemas"]["ProblemAuthor"];
+        };
+        /** @description 题目创建者的公开摘要；仅含 id/username/nickname，不含邮箱。 */
+        ProblemAuthor: {
+            /** Format: int64 */
+            id: number;
+            username: string;
+            nickname: string;
         };
         Testcase: {
             /** Format: int64 */
@@ -5263,6 +5324,28 @@ export interface components {
         };
         ProblemDetailResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["ProblemDetail"];
+        };
+        /** @description 成功导入的题目摘要。 */
+        HydroImportedProblem: {
+            /** Format: int64 */
+            id: number;
+            title: string;
+            slug: string;
+            testcaseCount: number;
+        };
+        /** @description 未能导入的题目及其原因。 */
+        HydroImportFailure: {
+            folder: string;
+            title: string;
+            error: string;
+        };
+        /** @description 一次题包导入的逐题结果；合法题包允许部分成功。 */
+        HydroImportResult: {
+            imported: components["schemas"]["HydroImportedProblem"][];
+            failed: components["schemas"]["HydroImportFailure"][];
+        };
+        HydroImportResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["HydroImportResult"];
         };
         DeleteProblemResponse: components["schemas"]["Envelope"] & {
             data: {

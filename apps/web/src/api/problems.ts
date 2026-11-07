@@ -1,5 +1,6 @@
 import { http } from './client'
 import type {
+  HydroImportResult,
   OfficialSolutionInput,
   OfficialSolutionView,
   Page,
@@ -89,4 +90,10 @@ export function uploadChecker(id: number | string, file: File) {
   const form = new FormData()
   form.append('file', file)
   return http.postForm<null>(`/problems/${id}/checker`, form)
+}
+
+export function importHydroProblems(file: File) {
+  const form = new FormData()
+  form.append('file', file)
+  return http.postForm<HydroImportResult>('/problems/import/hydro', form)
 }

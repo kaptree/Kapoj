@@ -61,6 +61,12 @@ export const router = createRouter({
           meta: { requiresAuth: true, permission: PERM.problem.create, title: '新建题目' },
         },
         {
+          path: 'problems/import',
+          name: 'problem-import',
+          component: () => import('@/views/ProblemImportView.vue'),
+          meta: { requiresAuth: true, permission: PERM.problem.create, title: '导入题包' },
+        },
+        {
           path: 'problems/:id(\\d+)',
           name: 'problem-detail',
           component: () => import('@/views/ProblemDetailView.vue'),

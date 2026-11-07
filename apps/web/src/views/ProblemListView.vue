@@ -121,6 +121,15 @@ function rate(p: ProblemListItem) {
           label="新建题目"
           icon="pi pi-plus"
         />
+        <Button
+          v-if="canCreate"
+          as="router-link"
+          :to="{ name: 'problem-import' }"
+          label="导入题包"
+          icon="pi pi-upload"
+          severity="secondary"
+          outlined
+        />
       </template>
     </AppPageHeader>
 

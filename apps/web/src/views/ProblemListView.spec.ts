@@ -49,6 +49,7 @@ function problem(overrides: Partial<ProblemListItem> = {}): ProblemListItem {
 const routes = [
   { path: '/problems', name: 'problems', component: { template: '<div />' } },
   { path: '/problems/new', name: 'problem-create', component: { template: '<div />' } },
+  { path: '/problems/import', name: 'problem-import', component: { template: '<div />' } },
   { path: '/problems/:id(\\d+)', name: 'problem-detail', component: { template: '<div />' } },
 ]
 
@@ -143,6 +144,7 @@ describe('ProblemListView', () => {
     const { wrapper } = await mountPage()
 
     expect(wrapper.find('a[href="/problems/new"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/problems/import"]').exists()).toBe(true)
     expect(wrapper.find('#show-hidden').exists()).toBe(true)
 
     wrapper.findComponent(ToggleSwitch).vm.$emit('update:modelValue', true)
@@ -163,6 +165,7 @@ describe('ProblemListView', () => {
     const { wrapper } = await mountPage()
 
     expect(wrapper.find('a[href="/problems/new"]').exists()).toBe(false)
+    expect(wrapper.find('a[href="/problems/import"]').exists()).toBe(false)
     expect(wrapper.find('#show-hidden').exists()).toBe(false)
   })
 
