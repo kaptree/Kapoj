@@ -3,7 +3,7 @@
 > 本文档基于 `plan.md` 细化，是 kapOJ（Kap Online Judge）平台的详细开发规格说明书。
 > 目标：**打造出最有趣味的 Online Judge 平台**。
 > 文档包含完整的架构设计、数据库设计、模块需求，并为每个模块提供了可直接交给 Codex 的**开发提示词（Prompt）**。
-> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)，前端 UI 迁移见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。当前进度：**M4-2A、RBAC-D 与 M5-A 已完成**（M0–M3 已完成；M4 进行中；M5 部分完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页、签到、Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线模型、权限、路线/节点 CRUD 与树结构；RBAC-A 交付权限目录、内置角色、首次 Seed/旧角色映射、实时 Access 解析、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/`canAny`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化，以及文档、HTTP 冒烟与浏览器 E2E；M5-A 交付 AI 后端基础（多 provider 配置、用户 API key AES-GCM 加密存储、OpenAI 兼容补全/格式化/优化与题目 AI 提示缓存/限流，AI 路由仅在配置 `KAPOJ_AI_ENCRYPTION_KEY` 时挂载）。学习路线进度/事件/守卫与前端、社交互动、Rating 衰减/赛季重置，以及 AI 出题造数据/前端/HydroOJ 导入/证书/头像（M5-4～M5-8）尚未实现）。前端 UI 已完成 UI-00～UI-18 的 PrimeVue 4 迁移、UI-30（M4-C 排行榜/历史）与 RBAC-D 管理后台页面直接实现，剩余 UI-19 题库编辑与 UI-20 异常页；该迁移已提交。题目详情页已改造为「题面 + 提示卡片 + 右侧四资源卡片」，并交付官方题解（创建者编辑 + 金币解锁）、解题思路论坛（帖子/回复/软删除）、提交统计页与关联比赛页，详见 4.3；题目主更新不再写入题解字段，官方题解专用接口是唯一写入口。
+> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)，前端 UI 迁移见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。当前进度：**M4-2A、M4-2B、RBAC-D 与 M5-A 已完成**（M0–M3 已完成；M4 进行中；M5 部分完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页、签到、Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线模型、权限、路线/节点 CRUD 与树结构；M4-2B 交付服务端进度计算（AC 事件补算 + 读取补算、完成锁存）与题目下线/删除守卫；RBAC-A 交付权限目录、内置角色、首次 Seed/旧角色映射、实时 Access 解析、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/`canAny`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化，以及文档、HTTP 冒烟与浏览器 E2E；M5-A 交付 AI 后端基础（多 provider 配置、用户 API key AES-GCM 加密存储、OpenAI 兼容补全/格式化/优化与题目 AI 提示缓存/限流，AI 路由仅在配置 `KAPOJ_AI_ENCRYPTION_KEY` 时挂载）。学习路线前端（M4-2C）、社交互动、Rating 衰减/赛季重置，以及 AI 出题造数据/前端/HydroOJ 导入/证书/头像（M5-4～M5-8）尚未实现）。前端 UI 已完成 UI-00～UI-18 的 PrimeVue 4 迁移、UI-30（M4-C 排行榜/历史）与 RBAC-D 管理后台页面直接实现，剩余 UI-19 题库编辑与 UI-20 异常页；该迁移已提交。题目详情页已改造为「题面 + 提示卡片 + 右侧四资源卡片」，并交付官方题解（创建者编辑 + 金币解锁）、解题思路论坛（帖子/回复/软删除）、提交统计页与关联比赛页，详见 4.3；题目主更新不再写入题解字段，官方题解专用接口是唯一写入口。
 
 ---
 
@@ -472,7 +472,7 @@ user_learning_progress (
 - `is_active=false` 为软删除（下架），路线、节点与用户进度都保留；只有管理员可通过 `includeInactive=true` 查看并恢复。
 - `is_official=true` 强制 `is_public=true`；官方标记仅创建时由管理员设置、创建后不可修改，上下架状态仅管理员可设置。
 - 节点校验：父节点属于同一路线、不能成环、最大深度 8 层；题目 1–50 道、不重复且存在/公开；`required_count` 为 1–题目数；仅叶子节点可删除。
-- **M4-2A 已完成**：模型/迁移、官方/自定义权限、路线与节点 CRUD、树结构接口。**M4-2B 待办**：服务端进度计算、AC 事件、完成锁存与题目下线守卫；**M4-2C 待办**：前端列表/树/编辑/管理页。
+- **M4-2A 已完成**：模型/迁移、官方/自定义权限、路线与节点 CRUD、树结构接口。**M4-2B 已完成**：服务端进度计算（`EvaluateUser`）、AC 事件补算、读取补算、完成锁存与题目下线守卫；**M4-2C 待办**：前端列表/树/编辑/管理页。
 
 ### 3.9 AI 辅助
 
@@ -838,12 +838,14 @@ user_ai_configs (
 - 解锁规则：节点只有在父节点完成后才可挑战；节点完成 = 通过其 `required_count` 道题（默认为节点内全部题目）。根节点默认解锁。进度由服务端根据 AC 计算，不接受客户端上报。
 - 前端用 PrimeVue 4 `TreeTable` 或自定义树形组件可视化。结构是树而非 DAG，每个节点只有一个父节点。
 
-**实现状态（M4-2A）**
+**实现状态（M4-2B）**
 
 - 已完成 `learning_paths`、`learning_path_nodes`、`user_learning_progress` 模型/迁移与 OpenAPI/前端类型。
 - 已交付官方/自定义权限、私有/公开/下架可见性、路线 CRUD、软删除/恢复校验、节点 CRUD、父节点/环/深度/题目/`required_count` 校验与叶子删除限制。
-- `GET /api/learning-paths/:id/tree` 当前仅返回结构状态：根节点 `active`、其余 `locked`、`solvedCount=0`；真实进度在 M4-2B 实现。公开树对非作者且无学习路线管理/只读权限者只返回公开题目的 `problemIds`，作者、拥有 `learning_path.admin.read` 或 `learning_path.official.manage` 者保留完整存储列表供编辑。
-- M4-2B 待办：`EvaluateUser`、AC 事件补算、完成锁存与题目 `LearningGuard`。M4-2C 待办：前端列表/树/编辑/管理页。当前不计算 `myCompletedCount`。
+- 服务端进度（`learning.Service.EvaluateUser`）：按用户在节点题目集合中去重 AC 的题数计算 `solved_count`，`solved_count >= required_count` 即完成；根节点默认 `active`，子节点仅在父节点 `completed` 后 `active`、否则 `locked`；已完成节点锁存（改题/提高 `required_count` 不回退已完成用户，`solved_count` 保留完成时的值，未完成节点按新配置重算）；游客（`userID<=0`）为 no-op，不写进度；只处理用户可见的活跃路线。`GET /learning-paths` 与 `GET /learning-paths/:id/tree` 对登录用户读取前先 `EvaluateUser`，`solvedCount/status/myCompletedCount` 均为服务端值；游客树根 `active`、其余 `locked`、`solvedCount=0`、无进度行。公开树对非作者且无学习路线管理/只读权限者只返回公开题目的 `problemIds`，作者、拥有 `learning_path.admin.read` 或 `learning_path.official.manage` 者保留完整存储列表供编辑。
+- AC 事件（`learning.Service.HandleGameEvent`）：只处理 `submission.accepted`，重新 `EvaluateUser` 该用户；`gamequeue.NewChain` 在 `main.go` 中把 gamification 与 learning 组合为同一个 Asynq handler，依次调用、任一失败返回错误触发重试，二者幂等。
+- 题目下线守卫（`problem.LearningGuard`/`WithLearningGuard`，router 注入 `learning.Service`）：`IsProblemInActivePath` 判断题目是否被任一活跃路线节点引用；`Update` 将 `is_public` 由 true 改为 false 与 `Delete` 物理删除前检查，命中返回 40001「题目被学习路线引用，不能下线/删除」；移除引用节点后允许下线/删除。
+- M4-2C 待办：前端列表/树/编辑/管理页。
 
 **Codex 提示词（学习路线）**
 
@@ -1296,7 +1298,7 @@ user_ai_configs (
 - **排行榜页（M4-C）**：`/leaderboard` 提供 Rating（默认）、活跃度、共享三个 Tab；每个 Tab 独立维护页码、加载、错误与空态，切换不串数据，分页每页 20 条。Rating Tab 展示服务端等级颜色，黑红名首字符黑、其余红；用户列链接个人主页并展示装备称号/徽章；活跃度/共享榜分数使用千分位。导航“排行榜”已启用，首页提供快捷入口。
 - **签到入口（M4-C）**：活跃度 Tab 对登录用户展示今日活跃度、总活跃度与“签到 +5 金币”按钮；首次签到按服务端返回值提示 +5 活跃度/+5 金币，成功后刷新登录用户、签到摘要与活跃度榜第 1 页；当日已签到显示禁用按钮与中文状态；游客显示登录 CTA；失败展示服务端中文错误。
 - **Rating 历史（M4-C）**：用户主页展示最近 20 条 Rating 历史表格与简单 SVG 折线（无新增图表依赖）；私密比赛 `contestId=0` 显示“私密比赛”且不生成链接；无记录显示“暂无 Rating 记录”。
-- **尚未实现**：学习路线进度/事件/守卫与前端（模型/权限/CRUD/树结构已在 M4-2A 完成）、社交互动（评论/点赞/关注/题解点赞/通知）与 Rating 衰减/赛季重置属于后续 M4 阶段。`rating_history` 的 `kind` 与可空 `contest_id` 已为衰减/赛季预留，`shared_items.like_count` 已为题解点赞预留。
+- **尚未实现**：学习路线前端（模型/权限/CRUD/树结构已在 M4-2A 完成，服务端进度/事件/守卫已在 M4-2B 完成）、社交互动（评论/点赞/关注/题解点赞/通知）与 Rating 衰减/赛季重置属于后续 M4 阶段。`rating_history` 的 `kind` 与可空 `contest_id` 已为衰减/赛季预留，`shared_items.like_count` 已为题解点赞预留。
 
 **Codex 提示词（排行榜）**
 
@@ -1559,7 +1561,7 @@ problem/
 
 M3 进度：M3-A（金币、事件、成就、任务后端）、M3-B（徽章、称号、公开身份后端）与 M3-C（成就页、任务大厅、徽章商城、称号商店、装扮管理、游戏化管理、公开身份接入与真实浏览器验收）均已完成，M3 标记为 ✅。
 
-M4 进度：M4-A（Rating 结算、8 级等级、Rating 历史与 Rating 榜后端）、M4-B（活跃度、签到金币、共享分、活跃度/共享榜与三榜缓存）、M4-C（排行榜页、每日签到入口、用户主页 Rating 历史卡片、导航与首页入口）与 M4-2A（学习路线模型、权限、路线/节点 CRUD 与树结构）已完成；学习路线进度/事件/守卫与前端、社交互动与 Rating 衰减/赛季重置尚未完成，因此 M4 整体保持 🚧。
+M4 进度：M4-A（Rating 结算、8 级等级、Rating 历史与 Rating 榜后端）、M4-B（活跃度、签到金币、共享分、活跃度/共享榜与三榜缓存）、M4-C（排行榜页、每日签到入口、用户主页 Rating 历史卡片、导航与首页入口）、M4-2A（学习路线模型、权限、路线/节点 CRUD 与树结构）与 M4-2B（服务端进度计算、AC 事件补算、完成锁存与题目下线守卫）已完成；学习路线前端（M4-2C）、社交互动与 Rating 衰减/赛季重置尚未完成，因此 M4 整体保持 🚧。
 
 平台管理后台/RBAC 进度：RBAC-A（权限模型、权限目录、首次 Seed/旧角色映射、实时 Access、权限中间件、`/users/me` 权限字段）与 RBAC-B（角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志、仪表盘统计 API）已完成；RBAC-C（现有管理接口迁移）与 RBAC-D（管理后台前端与 E2E）尚未开始。设计与拆分见 [`docs/superpowers/specs/2026-11-06-admin-rbac-design.md`](docs/superpowers/specs/2026-11-06-admin-rbac-design.md)。
 

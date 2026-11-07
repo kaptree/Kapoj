@@ -1739,7 +1739,7 @@ export interface paths {
         };
         /**
          * 整体替换题目（problem.update；修改 isPublic 另需 problem.publish）；必须提交全部可编辑字段
-         * @description PUT 是整体替换：未提交的字段会变成零值（字符串清空、数组清空、isPublic=false）， 不会保留原值。发布需至少 1 个测试点，特判题还需 checker。 修改 isPublic（公开/下线）需要 problem.update + problem.publish，仅 problem.update 不能发布或下线。
+         * @description PUT 是整体替换：未提交的字段会变成零值（字符串清空、数组清空、isPublic=false）， 不会保留原值。发布需至少 1 个测试点，特判题还需 checker。 修改 isPublic（公开/下线）需要 problem.update + problem.publish，仅 problem.update 不能发布或下线。 题目被任一活跃学习路线引用时，将 isPublic 从 true 改为 false（下线）返回 40001 「题目被学习路线引用，不能下线/删除」；需先移除引用节点后才能下线。
          */
         put: {
             parameters: {
@@ -1774,7 +1774,10 @@ export interface paths {
             };
         };
         post?: never;
-        /** 删除题目（problem.delete）；已有提交记录时只下线 */
+        /**
+         * 删除题目（problem.delete）；已有提交记录时只下线
+         * @description 被任一活跃学习路线引用时返回 40001「题目被学习路线引用，不能下线/删除」， 需先移除引用节点后才能删除。无提交记录时物理删除，有提交记录时仅下线。
+         */
         delete: {
             parameters: {
                 query?: never;
@@ -3946,7 +3949,7 @@ export interface paths {
         };
         /**
          * 学习路线列表（游客可访问，可选登录）
-         * @description 返回当前查看者可见的活跃路线：官方路线、公开自定义路线，以及自己创建的私有路线。 私有路线仅作者与拥有 learning_path.admin.read 或 learning_path.official.manage 者可见；`mine=true` 只返回自己创建的路线。 `includeInactive=true` 需要 learning_path.admin.read 或 learning_path.official.manage，用于查看已下架（软删除）路线；普通用户传入会被忽略。 排序为官方优先，其次 `sortOrder`、`id`。M4-2A 尚未计算进度，`myCompletedCount` 只反映已存储的完成节点数，通常为 0。
+         * @description 返回当前查看者可见的活跃路线：官方路线、公开自定义路线，以及自己创建的私有路线。 私有路线仅作者与拥有 learning_path.admin.read 或 learning_path.official.manage 者可见；`mine=true` 只返回自己创建的路线。 `includeInactive=true` 需要 learning_path.admin.read 或 learning_path.official.manage，用于查看已下架（软删除）路线；普通用户传入会被忽略。 排序为官方优先，其次 `sortOrder`、`id`。登录用户读取前服务端会重算该用户可见路线的进度并写回，`myCompletedCount` 为最新完成节点数；游客为 0。
          */
         get: {
             parameters: {
@@ -4022,7 +4025,7 @@ export interface paths {
         };
         /**
          * 学习路线详情（游客可访问，可选登录）
-         * @description 活跃官方/公开路线所有人可见；活跃私有路线仅作者与拥有 learning_path.admin.read 或 learning_path.official.manage 者可见；已下架路线需要 learning_path.admin.read 或 learning_path.official.manage。无权限或不存在均返回 40400。M4-2A 尚未计算进度，`myCompletedCount` 通常为 0。
+         * @description 活跃官方/公开路线所有人可见；活跃私有路线仅作者与拥有 learning_path.admin.read 或 learning_path.official.manage 者可见；已下架路线需要 learning_path.admin.read 或 learning_path.official.manage。无权限或不存在均返回 40400。登录用户读取前服务端重算进度，`myCompletedCount` 为最新完成节点数；游客为 0。
          */
         get: {
             parameters: {
@@ -4127,7 +4130,7 @@ export interface paths {
         };
         /**
          * 学习路线树（游客可访问，可选登录）
-         * @description 返回路线元信息、节点层级、节点题目摘要与当前用户进度。可见性与路线详情一致： 私有路线仅作者或拥有 learning_path.admin.read / learning_path.official.manage 者可见， 已下架路线需要 learning_path.admin.read 或 learning_path.official.manage，否则返回 40400。 节点只返回公开题目的 `problemId/title/slug/difficulty`，不返回题解。 公开树对非作者且无学习路线管理/只读权限者仅返回公开题目 id；作者、拥有 learning_path.admin.read 或 learning_path.official.manage 者保留完整存储列表 （含已下线/缺失题目）用于编辑。当前为 M4-2A 临时状态：根节点 `active`、其余节点 `locked`、 `solvedCount=0`；M4-2B 将替换为基于 AC 的服务端进度与完成锁存。
+         * @description 返回路线元信息、节点层级、节点题目摘要与当前用户进度。可见性与路线详情一致： 私有路线仅作者或拥有 learning_path.admin.read / learning_path.official.manage 者可见， 已下架路线需要 learning_path.admin.read 或 learning_path.official.manage，否则返回 40400。 节点只返回公开题目的 `problemId/title/slug/difficulty`，不返回题解。 公开树对非作者且无学习路线管理/只读权限者仅返回公开题目 id；作者、拥有 learning_path.admin.read 或 learning_path.official.manage 者保留完整存储列表 （含已下线/缺失题目）用于编辑。登录用户读取前服务端重算并写回进度： `solvedCount` 为该节点题目中去重 AC 的题数，`solvedCount >= requiredCount` 时 `status` 为 `completed`；根节点默认 `active`，子节点仅在父节点 `completed` 后为 `active`、否则 `locked`。 已完成节点锁存：之后修改节点题目或提高 `requiredCount` 不回退已完成用户（`solvedCount` 保留 完成时的值），未完成/进行中节点按新配置重算。游客不写进度：根节点 `active`、其余 `locked`、`solvedCount=0`。
          */
         get: {
             parameters: {
@@ -5709,7 +5712,7 @@ export interface components {
             username: string;
             nickname: string;
         };
-        /** @description 学习路线元信息，不含节点树；`myCompletedCount` 为当前用户已存储的完成节点数，M4-2A 尚未计算进度时通常为 0。 */
+        /** @description 学习路线元信息，不含节点树；`myCompletedCount` 为服务端重算后的当前用户完成节点数（游客为 0）。 */
         LearningPathItem: {
             /** Format: int64 */
             id: number;
@@ -5725,7 +5728,7 @@ export interface components {
             author: components["schemas"]["LearningPathAuthor"];
             /** @description 节点总数 */
             nodeCount: number;
-            /** @description 当前用户已完成节点数；游客为 0 */
+            /** @description 服务端重算的当前用户已完成节点数；游客为 0 */
             myCompletedCount: number;
             sortOrder: number;
             /** Format: date-time */
@@ -5742,14 +5745,14 @@ export interface components {
             coverUrl?: string;
             /** @description 仅创建时拥有 learning_path.official.manage 者可设置；创建后不可修改；设为 true 时强制公开 */
             isOfficial?: boolean;
-            /** @description 公开后出现在路线列表，其他用户可查看树；个人进度挑战待 M4-2B 实现 */
+            /** @description 公开后出现在路线列表，其他用户可查看树并按自己的进度挑战 */
             isPublic?: boolean;
             /** @description 创建/更新时仅拥有 learning_path.official.manage 者可设置；false 为软删除，true 为恢复上架 */
             isActive?: boolean;
             sortOrder?: number;
         };
         /**
-         * @description 节点状态；M4-2A 树接口仅返回 active（根节点）与 locked（子节点）。
+         * @description 节点状态；`locked` 未解锁、`active` 进行中、`completed` 已完成（锁存，不回退）。
          * @enum {string}
          */
         LearningNodeStatus: "locked" | "active" | "completed";
@@ -5779,7 +5782,7 @@ export interface components {
             sortOrder: number;
             /** @description 完成本节点所需通过的题数 */
             requiredCount: number;
-            /** @description 当前用户已通过题数；M4-2A 临时恒为 0 */
+            /** @description 当前用户在该节点题目中去重 AC 的题数（服务端计算）；游客为 0；已完成节点保留完成时的值 */
             solvedCount: number;
             status: components["schemas"]["LearningNodeStatus"];
             children: components["schemas"]["LearningPathNodeItem"][];
