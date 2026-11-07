@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"strings"
 
 	"gorm.io/gorm"
@@ -69,6 +70,11 @@ func (s *Service) Optimize(ctx context.Context, userID int64, in GenerateInput) 
 	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
 		return OptimizeResult{Suggestions: out, Code: in.Code}, nil
 	}
+	if strings.TrimSpace(parsed.Code) == "" {
+		// A successfully parsed JSON object whose code field is missing or
+		// blank must still preserve the user's original code.
+		parsed.Code = in.Code
+	}
 	return OptimizeResult(parsed), nil
 }
 
@@ -94,6 +100,7 @@ func (s *Service) generate(ctx context.Context, userID int64, in GenerateInput, 
 	req.Temperature = generationTemperature
 	out, err := s.client.Chat(ctx, req)
 	if err != nil {
+		slog.Warn("ai: chat completion failed", "operation", "generate", "err", err)
 		return "", httpx.ErrBadGateway
 	}
 	return out, nil
@@ -130,6 +137,7 @@ func (s *Service) chatRequest(ctx context.Context, userID int64) (ChatRequest, e
 
 	apiKey, err := s.enc.Decrypt(cfg.APIKeyEncrypted)
 	if err != nil {
+		slog.Error("ai: decrypt api key failed", "operation", "decrypt", "err", err)
 		return ChatRequest{}, httpx.ErrBadGateway
 	}
 	return ChatRequest{BaseURL: provider.BaseURL, APIKey: apiKey, Model: model}, nil
@@ -173,18 +181,18 @@ func validateGenerateInput(in GenerateInput, requireCursor bool) error {
 }
 
 // stripCodeFence removes a single surrounding Markdown code fence
-// (```lang ... ```) if present.
+// (```lang ... ```) if present. Content without a fence is trimmed
+// consistently, and single-line fences such as ```code``` are unwrapped
+// rather than dropped.
 func stripCodeFence(s string) string {
 	t := strings.TrimSpace(s)
 	if !strings.HasPrefix(t, "```") {
-		return s
+		return t
 	}
-	rest := t[3:]
+	rest := strings.TrimPrefix(t, "```")
 	if i := strings.IndexByte(rest, '\n'); i >= 0 {
 		rest = rest[i+1:]
-	} else {
-		return ""
 	}
 	rest = strings.TrimSuffix(rest, "```")
-	return strings.TrimRight(rest, "\r\n")
+	return strings.TrimSpace(rest)
 }

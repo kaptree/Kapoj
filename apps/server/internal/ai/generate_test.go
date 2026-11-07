@@ -132,6 +132,28 @@ func TestAIOptimizeJSONFallback(t *testing.T) {
 	assert.Equal(t, "orig code", res.Code, "fallback must preserve the user's code")
 }
 
+func TestAIOptimizePreservesCodeWhenEmpty(t *testing.T) {
+	g := testutil.PG(t)
+	ctx := context.Background()
+	require.NoError(t, ai.SeedProviders(ctx, g))
+
+	cases := []string{
+		"{}",
+		`{"suggestions":"x"}`,
+		`{"suggestions":"x","code":"   "}`,
+	}
+	for _, out := range cases {
+		client := &fakeChatClient{fn: func(ai.ChatRequest) (string, error) { return out, nil }}
+		svc := newGenerateService(t, g, client, nil)
+		_, err := svc.SaveConfig(ctx, 1, ai.SaveConfigInput{Provider: "deepseek", APIKey: "k"})
+		require.NoError(t, err)
+
+		res, err := svc.Optimize(ctx, 1, ai.GenerateInput{Code: "orig code", Language: "cpp"})
+		require.NoError(t, err)
+		assert.Equal(t, "orig code", res.Code, "case %q must fall back to the user's code", out)
+	}
+}
+
 func TestAIGenerateRequiresConfig(t *testing.T) {
 	g := testutil.PG(t)
 	ctx := context.Background()

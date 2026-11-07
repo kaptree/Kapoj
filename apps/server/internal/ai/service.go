@@ -126,8 +126,9 @@ func (s *Service) SaveConfig(ctx context.Context, userID int64, in SaveConfigInp
 	}
 
 	encrypted := existing.APIKeyEncrypted
-	if strings.TrimSpace(in.APIKey) != "" {
-		encrypted, err = s.enc.Encrypt(in.APIKey)
+	key := strings.TrimSpace(in.APIKey)
+	if key != "" {
+		encrypted, err = s.enc.Encrypt(key)
 		if err != nil {
 			return nil, err
 		}

@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -79,11 +80,13 @@ func (s *Service) Hint(ctx context.Context, userID, problemID int64, canViewHidd
 	req.Temperature = generationTemperature
 	out, err := s.client.Chat(ctx, req)
 	if err != nil {
+		slog.Warn("ai: chat completion failed", "operation", "hint", "err", err)
 		return HintView{}, httpx.ErrBadGateway
 	}
 	content := strings.TrimSpace(out)
 	if content == "" {
-		content = "暂无可用的 AI 提示。"
+		slog.Warn("ai: chat completion returned empty content", "operation", "hint")
+		return HintView{}, httpx.ErrBadGateway
 	}
 
 	inserted := Hint{

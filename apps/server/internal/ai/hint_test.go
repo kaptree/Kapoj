@@ -131,6 +131,28 @@ func TestAIHintHiddenProblemPermission(t *testing.T) {
 	require.Len(t, client.calls, 2)
 }
 
+func TestAIHintEmptyOutputReturns502AndDoesNotCache(t *testing.T) {
+	g := testutil.PG(t)
+	ctx := context.Background()
+	require.NoError(t, ai.SeedProviders(ctx, g))
+
+	client := &fakeChatClient{fn: func(ai.ChatRequest) (string, error) { return "   \n\t", nil }}
+	svc := newGenerateService(t, g, client, nil)
+	_, err := svc.SaveConfig(ctx, 1, ai.SaveConfigInput{Provider: "deepseek", APIKey: "k"})
+	require.NoError(t, err)
+
+	pid := createProblem(t, g, "空提示题", true)
+
+	_, err = svc.Hint(ctx, 1, pid, false)
+	var appErr *httpx.AppError
+	require.ErrorAs(t, err, &appErr)
+	assert.Equal(t, 50200, appErr.Code)
+
+	var count int64
+	require.NoError(t, g.Model(&ai.Hint{}).Where("problem_id = ?", pid).Count(&count).Error)
+	assert.EqualValues(t, 0, count, "an empty hint must not be cached")
+}
+
 // blockingClient blocks every Chat call until released, so concurrent callers
 // all reach the insert simultaneously.
 type blockingClient struct {

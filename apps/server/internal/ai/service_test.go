@@ -106,6 +106,31 @@ func TestAIConfigRejectsUnknownProviderAndEmptyModel(t *testing.T) {
 	assertValidationCode(t, err, 40001)
 }
 
+func TestAIConfigTrimsAPIKeyWhitespace(t *testing.T) {
+	g := testutil.PG(t)
+	ctx := context.Background()
+	require.NoError(t, ai.SeedProviders(ctx, g))
+	svc := newService(t, g)
+
+	const key = "sk-abc-1234"
+	_, err := svc.SaveConfig(ctx, 1, ai.SaveConfigInput{Provider: "deepseek", APIKey: "  " + key + "\n\t"})
+	require.NoError(t, err)
+
+	// The stored ciphertext must decrypt to the trimmed key.
+	var cfg ai.UserConfig
+	require.NoError(t, g.Where("user_id = ?", 1).First(&cfg).Error)
+	enc, err := ai.NewEncryptor(testKeyB64)
+	require.NoError(t, err)
+	plain, err := enc.Decrypt(cfg.APIKeyEncrypted)
+	require.NoError(t, err)
+	assert.Equal(t, key, plain, "stored/decrypted key must have no surrounding whitespace")
+
+	// The masked view reflects the trimmed key.
+	view, err := svc.GetConfig(ctx, 1)
+	require.NoError(t, err)
+	assert.Equal(t, "sk-…1234", view.APIKeyMasked)
+}
+
 func assertValidationCode(t *testing.T, err error, code int) {
 	t.Helper()
 	var appErr *httpx.AppError
