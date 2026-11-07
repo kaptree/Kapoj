@@ -39,9 +39,10 @@ import (
 )
 
 const (
-	maxBodyBytes        = 1 << 20  // JSON endpoints
-	maxProblemJSONBytes = 4 << 20  // problem create/update: statements and samples
-	maxUploadBytes      = 40 << 20 // file upload endpoints: two 16 MiB files plus form fields
+	maxBodyBytes        = 1 << 20   // JSON endpoints
+	maxProblemJSONBytes = 4 << 20   // problem create/update: statements and samples
+	maxUploadBytes      = 40 << 20  // file upload endpoints: two 16 MiB files plus form fields
+	maxImportBodyBytes  = 210 << 20 // HydroOJ package upload: 200 MiB file plus multipart overhead
 )
 
 type Deps struct {
@@ -86,6 +87,7 @@ func New(d Deps) *gin.Engine {
 	api := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxBodyBytes))
 	problemJSON := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxProblemJSONBytes))
 	uploads := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxUploadBytes))
+	imports := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxImportBodyBytes))
 	userSvc := user.NewService(users)
 	userOpts := userapi.Options{RBAC: d.RBAC}
 	if d.Game != nil {
@@ -137,7 +139,7 @@ func New(d Deps) *gin.Engine {
 	} else {
 		problemSvc = problem.NewService(problemRepo, d.Storage)
 	}
-	problemapi.RegisterRoutes(api, problemJSON, uploads,
+	problemapi.RegisterRoutes(api, problemJSON, uploads, imports,
 		problemSvc, submissionRepo, contestRepo,
 		problemapi.Options{
 			RBAC:        d.RBAC,

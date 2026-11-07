@@ -40,13 +40,16 @@ type Options struct {
 	RBAC        *rbac.Service
 	Solutions   *problem.OfficialSolutionService
 	Discussions *problem.DiscussionService
+	// MaxImportFileBytes overrides the uploaded HydroOJ package file limit.
+	// Zero means problem.MaxHydroZipBytes. Tests may set a small value.
+	MaxImportFileBytes int64
 }
 
 // auditTargetProblem 是内容管理审计的 target type。
 const auditTargetProblem = "problem"
 
 func RegisterRoutes(
-	api, problemJSON, uploads gin.IRouter,
+	api, problemJSON, uploads, imports gin.IRouter,
 	s *problem.Service,
 	accepted AcceptedChecker,
 	contests ContestAccess,
@@ -56,7 +59,11 @@ func RegisterRoutes(
 	if len(opts) > 0 {
 		o = opts[0]
 	}
-	h := &handler{svc: s, accepted: accepted, contests: contests, rbac: o.RBAC, solutions: o.Solutions, discussions: o.Discussions}
+	maxImport := o.MaxImportFileBytes
+	if maxImport <= 0 {
+		maxImport = problem.MaxHydroZipBytes
+	}
+	h := &handler{svc: s, accepted: accepted, contests: contests, rbac: o.RBAC, solutions: o.Solutions, discussions: o.Discussions, maxImportFileBytes: maxImport}
 
 	// resolver 为 nil 时 RequirePermission 会拒绝所有写操作，LoadAccess 为
 	// 空操作；生产环境 router 始终传入 RBAC service。
@@ -100,6 +107,8 @@ func RegisterRoutes(
 
 	uploads.POST("/problems/:id/testcases", require(string(rbac.PermProblemTestcaseManage)), audit(string(rbac.PermProblemTestcaseManage)), h.addTestcase)
 	uploads.POST("/problems/:id/checker", require(string(rbac.PermProblemCheckerManage)), audit(string(rbac.PermProblemCheckerManage)), h.uploadChecker)
+
+	imports.POST("/problems/import/hydro", require(string(rbac.PermProblemCreate)), h.importHydro)
 }
 
 type handler struct {
@@ -109,6 +118,8 @@ type handler struct {
 	rbac        *rbac.Service
 	solutions   *problem.OfficialSolutionService
 	discussions *problem.DiscussionService
+
+	maxImportFileBytes int64
 }
 
 func viewer(c *gin.Context) problem.Viewer {
