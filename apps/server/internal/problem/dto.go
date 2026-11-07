@@ -19,7 +19,8 @@ type ListItem struct {
 }
 
 // DetailDTO is the full problem view. The pointer fields are only set for
-// problem managers and are omitted from the JSON otherwise.
+// problem managers and are omitted from the JSON otherwise, except Author,
+// which is public for everyone who can read the problem.
 type DetailDTO struct {
 	ListItem
 	StatementMD    string   `json:"statementMd"`
@@ -27,6 +28,10 @@ type DetailDTO struct {
 	OutputFormatMD string   `json:"outputFormatMd"`
 	Samples        []Sample `json:"samples"`
 	HintMD         string   `json:"hintMd"`
+
+	// Author is the public creator summary. It is nil when the problem has no
+	// creator (created_by <= 0) or the user no longer exists.
+	Author *AuthorSummary `json:"author,omitempty"`
 
 	SolutionPriceCoins int64   `json:"solutionPriceCoins"`
 	SolutionMD         *string `json:"solutionMd,omitempty"`
@@ -57,7 +62,7 @@ func ToListItem(p *Problem) ListItem {
 	}
 }
 
-func ToDetail(p *Problem, includeSolution bool) DetailDTO {
+func ToDetail(p *Problem, includeSolution bool, author *AuthorSummary) DetailDTO {
 	samples := []Sample(p.Samples)
 	if samples == nil {
 		samples = []Sample{}
@@ -69,6 +74,7 @@ func ToDetail(p *Problem, includeSolution bool) DetailDTO {
 		OutputFormatMD:     p.OutputFormatMD,
 		Samples:            samples,
 		HintMD:             p.HintMD,
+		Author:             author,
 		SolutionPriceCoins: p.SolutionPriceCoins,
 	}
 	if includeSolution {

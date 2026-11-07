@@ -150,6 +150,15 @@ func (s *Service) Get(ctx context.Context, v Viewer, id int64) (*Problem, error)
 	return p, nil
 }
 
+// Author returns the public summary of a problem creator. A non-positive id or
+// a missing user yields nil; database errors are returned unchanged.
+func (s *Service) Author(ctx context.Context, userID int64) (*AuthorSummary, error) {
+	if userID <= 0 {
+		return nil, nil
+	}
+	return s.repo.FindAuthor(ctx, userID)
+}
+
 func (s *Service) List(ctx context.Context, v Viewer, q ListQuery, page, size int) (httpx.Page[ListItem], error) {
 	page = min(max(page, 1), maxListPage)
 	items, total, err := s.repo.List(ctx, Filter{

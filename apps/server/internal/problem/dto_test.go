@@ -30,7 +30,7 @@ func keys(t *testing.T, v any) map[string]any {
 }
 
 func TestDetailDTOHidesManagerFields(t *testing.T) {
-	user := keys(t, ToDetail(fullProblem(), false))
+	user := keys(t, ToDetail(fullProblem(), false, nil))
 	for _, k := range []string{"solutionMd", "solutionCode", "checkerUploaded", "createdBy", "checkerPath", "checker_path"} {
 		assert.NotContains(t, user, k, "non-managers must not see %s", k)
 	}
@@ -39,7 +39,7 @@ func TestDetailDTOHidesManagerFields(t *testing.T) {
 	assert.EqualValues(t, 3, user["id"])
 	assert.NotContains(t, user, "checkerPath")
 
-	mgr := keys(t, ToDetail(fullProblem(), true))
+	mgr := keys(t, ToDetail(fullProblem(), true, nil))
 	assert.Equal(t, "secret idea", mgr["solutionMd"])
 	assert.Equal(t, "secret code", mgr["solutionCode"])
 	assert.Equal(t, true, mgr["checkerUploaded"])
@@ -50,7 +50,7 @@ func TestDetailDTOHidesManagerFields(t *testing.T) {
 func TestDetailDTOManagerEmptyValuesStillPresent(t *testing.T) {
 	p := fullProblem()
 	p.SolutionMD, p.SolutionCode, p.CheckerPath = "", "", ""
-	mgr := keys(t, ToDetail(p, true))
+	mgr := keys(t, ToDetail(p, true, nil))
 	assert.Contains(t, mgr, "solutionMd")
 	assert.Contains(t, mgr, "solutionCode")
 	assert.Equal(t, false, mgr["checkerUploaded"])
@@ -69,9 +69,20 @@ func TestDTOArraysNeverNull(t *testing.T) {
 	p := &Problem{ID: 1}
 	for name, m := range map[string]map[string]any{
 		"list":   keys(t, ToListItem(p)),
-		"detail": keys(t, ToDetail(p, false)),
+		"detail": keys(t, ToDetail(p, false, nil)),
 	} {
 		assert.Equal(t, []any{}, m["tags"], name)
 	}
-	assert.Equal(t, []any{}, keys(t, ToDetail(p, false))["samples"])
+	assert.Equal(t, []any{}, keys(t, ToDetail(p, false, nil))["samples"])
+}
+
+func TestDetailAuthorOptional(t *testing.T) {
+	author := &AuthorSummary{ID: 9, Username: "alice", Nickname: "Alice"}
+	with := keys(t, ToDetail(fullProblem(), false, author))
+	assert.Equal(t, map[string]any{
+		"id": float64(9), "username": "alice", "nickname": "Alice",
+	}, with["author"], "author is public and carries only id/username/nickname")
+
+	without := keys(t, ToDetail(fullProblem(), false, nil))
+	assert.NotContains(t, without, "author", "a nil author omits the key entirely")
 }

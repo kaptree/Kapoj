@@ -49,6 +49,10 @@ type Repository interface {
 	SetCheckerPath(ctx context.Context, id int64, path string) error
 	Delete(ctx context.Context, id int64) (DeleteResult, error)
 
+	// FindAuthor returns the public summary of a user (id/username/nickname),
+	// or (nil, nil) when the user does not exist.
+	FindAuthor(ctx context.Context, userID int64) (*AuthorSummary, error)
+
 	AddTestcase(ctx context.Context, tc *Testcase) error
 	ListTestcases(ctx context.Context, problemID int64) ([]Testcase, error)
 	FindTestcase(ctx context.Context, problemID, id int64) (*Testcase, error)
@@ -79,6 +83,22 @@ func (r *gormRepository) FindByID(ctx context.Context, id int64) (*Problem, erro
 		return nil, mapErr(err)
 	}
 	return &p, nil
+}
+
+func (r *gormRepository) FindAuthor(ctx context.Context, userID int64) (*AuthorSummary, error) {
+	var a AuthorSummary
+	err := r.db.WithContext(ctx).
+		Table("users").
+		Select("id, username, nickname").
+		Where("id = ?", userID).
+		Take(&a).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &a, nil
 }
 
 func escapeLike(s string) string {

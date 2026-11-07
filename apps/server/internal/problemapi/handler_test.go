@@ -914,3 +914,85 @@ func TestProblemWritesAudit(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	assert.Equal(t, int64(1), auditCount("problem.delete"))
 }
+
+func TestProblemDetailIncludesPublicAuthor(t *testing.T) {
+	f := newFx(t)
+	_, userID := f.registerUser("user")
+	require.NotZero(t, userID)
+
+	repo := problem.NewGormRepository(f.db)
+	p := &problem.Problem{
+		Title: "Authored", Slug: "authored", StatementMD: "statement",
+		Type: problem.TypeTraditional, Difficulty: 1, TimeLimitMS: 1000, MemoryLimitMB: 256,
+		IsPublic: true, CreatedBy: userID,
+	}
+	require.NoError(t, repo.Create(context.Background(), p))
+	require.NoError(t, repo.AddTestcase(context.Background(), &problem.Testcase{
+		ProblemID: p.ID, InputFile: "1.in", OutputFile: "1.out", Score: 10,
+	}))
+
+	// 游客也能看到公开的创建者摘要。
+	w, resp := f.do(http.MethodGet, path("/api/problems/%d", p.ID), "", nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data := resp["data"].(map[string]any)
+	author, ok := data["author"].(map[string]any)
+	require.True(t, ok, "guest must see the public author summary")
+
+	assert.EqualValues(t, userID, author["id"])
+	assert.NotEmpty(t, author["username"])
+	assert.NotEmpty(t, author["nickname"])
+	assert.Len(t, author, 3, "author must expose only id/username/nickname")
+	assert.NotContains(t, author, "email", "email must never be exposed")
+}
+
+func TestProblemDetailOmitsAuthorForMissingCreator(t *testing.T) {
+	f := newFx(t)
+	repo := problem.NewGormRepository(f.db)
+
+	for name, createdBy := range map[string]int64{
+		"zero":         0,
+		"missing-user": 999999,
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := &problem.Problem{
+				Title: "No author " + name, Slug: "no-author-" + name, StatementMD: "statement",
+				Type: problem.TypeTraditional, Difficulty: 1, TimeLimitMS: 1000, MemoryLimitMB: 256,
+				IsPublic: true, CreatedBy: createdBy,
+			}
+			require.NoError(t, repo.Create(context.Background(), p))
+			require.NoError(t, repo.AddTestcase(context.Background(), &problem.Testcase{
+				ProblemID: p.ID, InputFile: "1.in", OutputFile: "1.out", Score: 10,
+			}))
+
+			// created_by 缺失/无对应用户：仍 200，只是省略 author。
+			w, resp := f.do(http.MethodGet, path("/api/problems/%d", p.ID), "", nil)
+			assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+			assert.NotContains(t, resp["data"].(map[string]any), "author")
+		})
+	}
+}
+
+func TestProblemDetailAuthorDBError(t *testing.T) {
+	f := newFx(t)
+	_, userID := f.registerUser("user")
+
+	repo := problem.NewGormRepository(f.db)
+	p := &problem.Problem{
+		Title: "Author DB error", Slug: "author-db-error", StatementMD: "statement",
+		Type: problem.TypeTraditional, Difficulty: 1, TimeLimitMS: 1000, MemoryLimitMB: 256,
+		IsPublic: true, CreatedBy: userID,
+	}
+	require.NoError(t, repo.Create(context.Background(), p))
+	require.NoError(t, repo.AddTestcase(context.Background(), &problem.Testcase{
+		ProblemID: p.ID, InputFile: "1.in", OutputFile: "1.out", Score: 10,
+	}))
+
+	// 临时改表名：题目查询仍成功，但作者查询因表不存在而失败 → 500。
+	require.NoError(t, f.db.Exec("ALTER TABLE users RENAME TO users_hidden").Error)
+	w, resp := f.do(http.MethodGet, path("/api/problems/%d", p.ID), "", nil)
+	restoreErr := f.db.Exec("ALTER TABLE users_hidden RENAME TO users").Error
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.EqualValues(t, 50000, resp["code"])
+	assert.NoError(t, restoreErr)
+}

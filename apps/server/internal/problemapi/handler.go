@@ -203,7 +203,12 @@ func (h *handler) get(c *gin.Context) {
 			}
 		}
 	}
-	httpx.OK(c, problem.ToDetail(p, includeSolution))
+	author, err := h.svc.Author(c.Request.Context(), p.CreatedBy)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, problem.ToDetail(p, includeSolution, author))
 }
 
 func (h *handler) statistics(c *gin.Context) {
@@ -230,7 +235,7 @@ func (h *handler) create(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
-	httpx.Created(c, problem.ToDetail(p, true))
+	httpx.Created(c, problem.ToDetail(p, true, nil))
 }
 
 func (h *handler) update(c *gin.Context) {
@@ -256,7 +261,7 @@ func (h *handler) update(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
-	httpx.OK(c, problem.ToDetail(p, true))
+	httpx.OK(c, problem.ToDetail(p, true, nil))
 }
 
 func (h *handler) delete(c *gin.Context) {
