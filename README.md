@@ -2,7 +2,7 @@
 
 打造最有趣味的 Online Judge 平台。规格见 [`DEVELOPMENT.md`](DEVELOPMENT.md)，进度见 [`docs/任务清单.md`](docs/任务清单.md) 与 [`docs/开发日志.md`](docs/开发日志.md)。
 
-当前进度：**M4-2A、RBAC-D 与 M5-A 已完成**（M0–M3 已完成；M4 进行中；M5 部分完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页（Rating/活跃度/共享三 Tab、等级颜色、签到）、用户主页 Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线后端模型、官方/自定义权限、路线/节点 CRUD 与树结构，路线 API 已可用；RBAC-A 交付权限模型、权限目录、首次 Seed/旧角色映射、实时 Access、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化；M5-A 交付 AI 后端基础：多 provider 配置、用户 API key 加密存储、补全/格式化/优化与题目提示缓存/限流；学习路线进度/事件/守卫与前端、社交、Rating 衰减/赛季重置，以及 AI 出题造数据/前端/HydroOJ 导入/证书/头像（M5-4～M5-8）尚未实现）。前端并行进行 PrimeVue 4 迁移，**UI-00～UI-18、UI-30（M4-C 排行榜/历史）与 RBAC-D 管理后台页面已完成并提交**，剩余题库编辑（UI-19）、异常页（UI-20）与学习路线前端（UI-31，M4-2C），详见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。
+当前进度：**M4-2A、RBAC-D 与 M5-A 已完成**（M0–M3 已完成；M4 进行中；M5 部分完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页（Rating/活跃度/共享三 Tab、等级颜色、签到）、用户主页 Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线后端模型、官方/自定义权限、路线/节点 CRUD 与树结构，路线 API 已可用；RBAC-A 交付权限模型、权限目录、首次 Seed/旧角色映射、实时 Access、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化；M5-A 交付 AI 后端基础：多 provider 配置、用户 API key 加密存储、补全/格式化/优化与题目提示缓存/限流；学习路线进度/事件/守卫与前端、社交、Rating 衰减/赛季重置，以及 AI 出题造数据/前端/HydroOJ 导入/证书/头像（M5-4～M5-8）尚未实现）。前端并行进行 PrimeVue 4 迁移，**UI-00～UI-18、UI-30（M4-C 排行榜/历史）与 RBAC-D 管理后台页面已完成并提交**，剩余题库编辑（UI-19）、异常页（UI-20）与学习路线前端（UI-31，M4-2C），详见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。题目详情资源区、官方题解与解题思路论坛已完成（见下）。
 
 ## 目录结构
 
@@ -195,6 +195,15 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 - `POST /api/ai/hint`：请求体 `{problemId}`，返回 `{hint, cached}`；缓存命中不要求用户配置、不消耗限流；非公开题对无 `problem.view_hidden` 的用户返回 40400。
 - 所有 AI 接口仅登录用户可用（未登录 40100）；无 AI 配置调用生成接口返回 40001；限流返回 42903；AI 上游失败返回 50200；Redis 不可用返回 50300。
 - **安全**：平台 provider 的密钥不写入数据库；用户 key 只加密存储、接口只返回脱敏值，不写日志/审计。不要把真实 API key 写进文档或提交到仓库。
+
+## 题目详情资源、官方题解与解题思路论坛
+
+题目详情页右侧的 Tabs 已改为四个可点击资源卡片（官方题解、解题思路、提交统计、关联比赛），提示单独放在题面下方；五个子页面路由为 `/problems/:id/official-solution`、`/problems/:id/solutions`、`/problems/:id/solutions/:postId`、`/problems/:id/statistics`、`/problems/:id/contests`。规格见 [`DEVELOPMENT.md`](DEVELOPMENT.md) 4.3，设计见 [`docs/superpowers/specs/2026-11-07-problem-detail-resources-design.md`](docs/superpowers/specs/2026-11-07-problem-detail-resources-design.md)。
+
+- **官方题解**：由题目创建者（或超级管理员）编辑说明/代码与价格；创建者、超级管理员、已通过该题的用户免费查看，价格 0 时所有人免费，其他用户支付金币永久解锁（改价不影响已解锁用户）。`GET/PUT /api/problems/:id/official-solution`、`POST /api/problems/:id/official-solution/purchase`；`ProblemDetail.solutionPriceCoins` 用于卡片显示「免费 / 金币 N」。
+- **解题思路**：每个登录用户可发布帖子（标题 + Markdown 正文），其他用户可回复；作者可编辑/删除自己的内容，题目创建者或 `problem.update` 管理员可删除他人内容。`GET/POST /api/problems/:id/solutions`、`GET/PUT/DELETE /api/problems/:id/solutions/:postId`、`POST/PUT/DELETE /api/problems/:id/solutions/:postId/replies...`。
+- **关联比赛**：`GET /api/contests?problemId=<id>` 返回包含该题且当前用户可见的比赛（公开 OR 本人已报名 OR 拥有 `contest.view_hidden`）。
+- 隐藏题的官方题解与讨论对无 `problem.view_hidden` 的用户返回 404；详情页对无权限用户隐藏官方题解/解题思路卡片。
 
 ## 测试与检查
 

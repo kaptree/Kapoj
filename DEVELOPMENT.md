@@ -3,7 +3,7 @@
 > 本文档基于 `plan.md` 细化，是 kapOJ（Kap Online Judge）平台的详细开发规格说明书。
 > 目标：**打造出最有趣味的 Online Judge 平台**。
 > 文档包含完整的架构设计、数据库设计、模块需求，并为每个模块提供了可直接交给 Codex 的**开发提示词（Prompt）**。
-> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)，前端 UI 迁移见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。当前进度：**M4-2A、RBAC-D 与 M5-A 已完成**（M0–M3 已完成；M4 进行中；M5 部分完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页、签到、Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线模型、权限、路线/节点 CRUD 与树结构；RBAC-A 交付权限目录、内置角色、首次 Seed/旧角色映射、实时 Access 解析、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/`canAny`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化，以及文档、HTTP 冒烟与浏览器 E2E；M5-A 交付 AI 后端基础（多 provider 配置、用户 API key AES-GCM 加密存储、OpenAI 兼容补全/格式化/优化与题目 AI 提示缓存/限流，AI 路由仅在配置 `KAPOJ_AI_ENCRYPTION_KEY` 时挂载）。学习路线进度/事件/守卫与前端、社交互动、Rating 衰减/赛季重置，以及 AI 出题造数据/前端/HydroOJ 导入/证书/头像（M5-4～M5-8）尚未实现）。前端 UI 已完成 UI-00～UI-18 的 PrimeVue 4 迁移、UI-30（M4-C 排行榜/历史）与 RBAC-D 管理后台页面直接实现，剩余 UI-19 题库编辑与 UI-20 异常页；该迁移已提交。
+> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)，前端 UI 迁移见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。当前进度：**M4-2A、RBAC-D 与 M5-A 已完成**（M0–M3 已完成；M4 进行中；M5 部分完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页、签到、Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线模型、权限、路线/节点 CRUD 与树结构；RBAC-A 交付权限目录、内置角色、首次 Seed/旧角色映射、实时 Access 解析、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/`canAny`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化，以及文档、HTTP 冒烟与浏览器 E2E；M5-A 交付 AI 后端基础（多 provider 配置、用户 API key AES-GCM 加密存储、OpenAI 兼容补全/格式化/优化与题目 AI 提示缓存/限流，AI 路由仅在配置 `KAPOJ_AI_ENCRYPTION_KEY` 时挂载）。学习路线进度/事件/守卫与前端、社交互动、Rating 衰减/赛季重置，以及 AI 出题造数据/前端/HydroOJ 导入/证书/头像（M5-4～M5-8）尚未实现）。前端 UI 已完成 UI-00～UI-18 的 PrimeVue 4 迁移、UI-30（M4-C 排行榜/历史）与 RBAC-D 管理后台页面直接实现，剩余 UI-19 题库编辑与 UI-20 异常页；该迁移已提交。题目详情页已改造为「题面 + 提示卡片 + 右侧四资源卡片」，并交付官方题解（创建者编辑 + 金币解锁）、解题思路论坛（帖子/回复/软删除）、提交统计页与关联比赛页，详见 4.3；题目主更新不再写入题解字段，官方题解专用接口是唯一写入口。
 
 ---
 
@@ -240,7 +240,8 @@ problems (
   id, title, slug, statement_md,        -- 题目描述 Markdown
   input_format_md, output_format_md,    -- 输入输出格式
   samples_json,                          -- 结构化样例（用于展示与导入校验），须与 statement_md 中的样例一致
-  hint_md, solution_md, solution_code,   -- 提示/思路/解题代码
+  hint_md, solution_md, solution_code,   -- 提示/官方题解说明/官方题解代码
+  solution_price_coins,                  -- 官方题解解锁价格（金币）；0 表示免费，范围 0..1,000,000
   type,                                  -- traditional / special / interactive
   tags_json, difficulty,
   time_limit_ms, memory_limit_mb,
@@ -253,6 +254,24 @@ problem_testcases (
   id, problem_id, input_file, output_file, score, is_sample, sort_order
 )
 -- 唯一约束：(problem_id, sort_order)
+
+-- 题目资源区新增（2026-11-07，官方题解与解题思路论坛）
+problem_solution_unlocks (
+  id, user_id, problem_id, price_paid, created_at
+)
+-- 唯一约束：(user_id, problem_id)；解锁永久有效，创建者改价不影响已解锁用户
+
+problem_solution_posts (
+  id, problem_id, user_id, title, content_md,
+  created_at, updated_at, deleted_at
+)
+-- deleted_at 软删除；列表/详情过滤已删除
+
+problem_solution_replies (
+  id, post_id, user_id, content_md,
+  created_at, updated_at, deleted_at
+)
+-- deleted_at 软删除；帖子删除后其回复整体不可见
 
 -- 实现差异（M1-A）：
 -- 存储：M1 使用本地文件系统（KAPOJ_STORAGE_DIR，默认 data），通过 storage.Storage 接口抽象，MinIO 实现推迟到 M3/M5；
@@ -659,6 +678,15 @@ user_ai_configs (
 | POST   | /problems/:id/testcases/reorder | 调整测试点顺序（管理员）        |
 | DELETE | /problems/:id/testcases/:tid | 删除测试点（管理员）               |
 | POST   | /problems/:id/checker    | 上传特判 checker（管理员，仅特判题）   |
+| GET    | /problems/:id/official-solution          | 官方题解访问视图（价格/访问状态/是否可编辑可购买；有权限时返回正文） |
+| PUT    | /problems/:id/official-solution          | 保存官方题解说明/代码/价格（创建者或 super） |
+| POST   | /problems/:id/official-solution/purchase | 金币解锁官方题解（幂等） |
+| GET    | /problems/:id/solutions                  | 解题思路帖子分页列表 |
+| POST   | /problems/:id/solutions                  | 发布帖子（登录） |
+| GET    | /problems/:id/solutions/:postId          | 帖子详情 + 回复 |
+| PUT/DELETE | /problems/:id/solutions/:postId       | 编辑/删除帖子（作者或管理员） |
+| POST   | /problems/:id/solutions/:postId/replies  | 回复帖子（登录） |
+| PUT/DELETE | /problems/:id/solutions/:postId/replies/:replyId | 编辑/删除回复（作者或管理员） |
 
 **实现状态（M1-A）**
 
@@ -672,6 +700,18 @@ user_ai_configs (
 - 交互题允许创建与存储，M1 不参与评测；提交时的拒绝逻辑在 M1-B。
 - 前端使用 md-editor-v3 编辑与渲染 Markdown，渲染结果统一经 `sanitize-html` 净化；KaTeX 与 highlight.js 使用本地实例，不加载 CDN 资源。
 - 关联比赛：M2 之前详情页显示「比赛功能将在 M2 上线」。
+
+**实现状态（题目资源区、官方题解与解题思路论坛，2026-11-07）**
+
+- 详情页右侧的 Tabs 改为四个可点击资源卡片：官方题解、解题思路、提交统计、关联比赛；提示单独放在题面下方。右侧卡片均为整块 `RouterLink`，移动端全宽纵向排列。
+- 官方题解：内容沿用 `solution_md`/`solution_code`；`PUT /problems/:id` 不再写入这两列，`ProblemInput`/`ProblemUpdateInput` 已移除 solution 字段；官方题解 `PUT /problems/:id/official-solution` 是唯一写入口，避免整体替换清空题解。`ProblemDetail` 始终返回 `solutionPriceCoins`（用于卡片显示「免费/金币 N」）。
+  - 访问状态六态：`creator`（创建者/super）、`accepted`（已通过）、`purchased`（已解锁）、`free`（价格 0，游客也可看）、`locked`（登录未通过/未购买）、`guest`（游客且价格 >0）；正文只在 creator/accepted/purchased/free 返回。
+  - 编辑仅创建者或 super；价格 0–1,000,000，说明 ≤50,000 字符，代码 ≤65,536 字节。
+  - 购买：价格 0/已通过/创建者/super/已解锁不扣费；否则事务内写 `problem_solution_unlocks` + `gamification.SpendCoinsTx` 扣金币与流水，余额不足（40001）整体回滚；重复购买幂等不重复扣费。解锁永久有效，改价不影响已解锁用户。
+  - 隐藏题：无 `problem.view_hidden`/super 返回 404，不沿用比赛参与者题面 fallback。
+- 解题思路论坛：帖子列表（`created_at DESC, id DESC`，分页 20）/详情/回复（`created_at ASC`，上限 500）；游客可读，写操作要求登录。标题 1–100 字、帖子正文 1–50,000 字、回复 1–10,000 字；作者可编辑/删除自己的内容，题目创建者或 `problem.update` 管理员可删除他人帖子/回复（`canEdit`/`canDelete` 由后端按 viewer 计算）；删除为软删除，删除帖子后其回复整体不可见。
+- 关联比赛：`GET /api/contests?problemId=<正整数>` 返回包含该题且当前用户可见的比赛（公开 OR 本人已报名 OR `contest.view_hidden`/super 联合可见性，不复用 `mine=true` 的互斥语义）；无参数保持原行为。
+- 提交统计页复用 `GET /problems/:id/statistics`。
 
 **Codex 提示词（题库与题目）**
 

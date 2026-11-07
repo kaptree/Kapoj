@@ -130,13 +130,13 @@ func TestDiscussionValidationAndAuth(t *testing.T) {
 
 	// 隐藏题：无 view_hidden -> 404；view_hidden -> 200。
 	hidden := f.create(body("disc-hidden"))
-	w, resp = f.do(http.MethodGet, path("/api/problems/%d/solutions", hidden), "", nil)
+	w, _ = f.do(http.MethodGet, path("/api/problems/%d/solutions", hidden), "", nil)
 	assert.Equal(t, http.StatusNotFound, w.Code)
-	w, resp = f.do(http.MethodGet, path("/api/problems/%d/solutions", hidden), f.token("user"), nil)
+	w, _ = f.do(http.MethodGet, path("/api/problems/%d/solutions", hidden), f.token("user"), nil)
 	assert.Equal(t, http.StatusNotFound, w.Code)
 
 	f.createRole("disc_view_hidden", rbac.PermProblemViewHidden)
 	viewHidden := f.userWithRole("disc_view_hidden")
-	w, resp = f.do(http.MethodGet, path("/api/problems/%d/solutions", hidden), viewHidden, nil)
+	w, _ = f.do(http.MethodGet, path("/api/problems/%d/solutions", hidden), viewHidden, nil)
 	assert.Equal(t, http.StatusOK, w.Code)
 }
