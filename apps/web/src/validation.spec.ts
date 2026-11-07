@@ -4,6 +4,7 @@ import {
   byteLength,
   validateAvatarUrl,
   validateBio,
+  validateCoverUrl,
   validateEmail,
   validateLoginAccount,
   validateLoginPassword,
@@ -121,5 +122,28 @@ describe('validateAvatarUrl', () => {
     expect(validateAvatarUrl(`https://example.com/${'a'.repeat(500)}`)).toBe(
       '头像地址不能超过 512 个字符',
     )
+  })
+})
+
+describe('validateCoverUrl', () => {
+  const message = '封面地址需为 http 或 https 链接'
+
+  it('allows empty values and http(s) URLs', () => {
+    expect(validateCoverUrl('')).toBeNull()
+    expect(validateCoverUrl('   ')).toBeNull()
+    expect(validateCoverUrl('https://example.com/a.png')).toBeNull()
+    expect(validateCoverUrl('http://localhost:8080/a.png')).toBeNull()
+  })
+
+  it('rejects other schemes and malformed values', () => {
+    expect(validateCoverUrl('ftp://example.com/a.png')).toBe(message)
+    expect(validateCoverUrl('javascript:alert(1)')).toBe(message)
+    expect(validateCoverUrl('not-a-url')).toBe(message)
+    expect(validateCoverUrl('https://')).toBe(message)
+  })
+
+  it('rejects URLs longer than 512 characters', () => {
+    expect(validateCoverUrl(`https://example.com/${'a'.repeat(500)}`)).toBe(message)
+    expect(validateCoverUrl('a'.repeat(513))).toBe(message)
   })
 })

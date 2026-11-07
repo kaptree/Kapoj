@@ -115,6 +115,12 @@ export const router = createRouter({
           meta: { title: '比赛' },
         },
         {
+          path: 'learning-paths',
+          name: 'learning-paths',
+          component: () => import('@/views/LearningPathListView.vue'),
+          meta: { title: '学习路线' },
+        },
+        {
           path: 'contests/new',
           name: 'contest-create',
           component: () => import('@/views/ContestEditView.vue'),

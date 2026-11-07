@@ -95,6 +95,14 @@ export type AdminRoleItem = Schemas['AdminRoleItem']
 export type AdminRoleInput = Schemas['AdminRoleInput']
 export type AdminRoleUpdateInput = Schemas['AdminRoleUpdateInput']
 export type AdminRolePermissionsInput = Schemas['AdminRolePermissionsInput']
+export type LearningPathAuthor = Schemas['LearningPathAuthor']
+export type LearningPathItem = Schemas['LearningPathItem']
+export type LearningPathInput = Schemas['LearningPathInput']
+export type LearningPathNodeItem = Schemas['LearningPathNodeItem']
+export type LearningNodeInput = Schemas['LearningNodeInput']
+export type LearningTree = Schemas['LearningTree']
+export type LearningNodeStatus = Schemas['LearningNodeStatus']
+export type LearningProblemSummary = Schemas['LearningProblemSummary']
 
 export interface Page<T> {
   total: number

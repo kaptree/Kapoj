@@ -71,3 +71,19 @@ export function validateAvatarUrl(value: string): string | null {
   }
   return null
 }
+
+export function validateCoverUrl(value: string): string | null {
+  const trimmed = value.trim()
+  if (trimmed === '') return null
+  if (trimmed.length > 512) return '封面地址需为 http 或 https 链接'
+
+  try {
+    const url = new URL(trimmed)
+    if ((url.protocol !== 'http:' && url.protocol !== 'https:') || !url.hostname) {
+      return '封面地址需为 http 或 https 链接'
+    }
+  } catch {
+    return '封面地址需为 http 或 https 链接'
+  }
+  return null
+}

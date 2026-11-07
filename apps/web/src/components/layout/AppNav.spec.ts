@@ -17,6 +17,7 @@ const routes = [
   { path: '/', component: { template: '<div />' } },
   { path: '/problems', component: { template: '<div />' } },
   { path: '/problems/:id', component: { template: '<div />' } },
+  { path: '/learning-paths', component: { template: '<div />' } },
   { path: '/leaderboard', component: { template: '<div />' } },
   { path: '/admin', component: { template: '<div />' } },
 ]
@@ -37,10 +38,33 @@ describe('AppNav', () => {
   it('renders the primary and growth navigation groups', async () => {
     const wrapper = await mountNav()
 
-    for (const label of ['首页', '题库', '测评记录', '比赛', '排行榜', '成长', '成就', '任务']) {
+    for (const label of [
+      '首页',
+      '题库',
+      '测评记录',
+      '比赛',
+      '学习路线',
+      '排行榜',
+      '成长',
+      '成就',
+      '任务',
+    ]) {
       expect(wrapper.text()).toContain(label)
     }
     expect(wrapper.find('nav').attributes('aria-label')).toBe('主导航')
+  })
+
+  it('links the learning path entry for both guests and logged-in users', async () => {
+    let wrapper = await mountNav()
+    const guestLink = wrapper.find('a[href="/learning-paths"]')
+    expect(guestLink.exists()).toBe(true)
+    expect(guestLink.text()).toContain('学习路线')
+
+    auth.canAny.mockReturnValue(true)
+    wrapper = await mountNav()
+    const loggedInLink = wrapper.find('a[href="/learning-paths"]')
+    expect(loggedInLink.exists()).toBe(true)
+    expect(loggedInLink.text()).toContain('学习路线')
   })
 
   it('shows 管理后台 for any admin permission, not for normal users', async () => {
