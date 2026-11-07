@@ -2,7 +2,7 @@
 
 打造最有趣味的 Online Judge 平台。规格见 [`DEVELOPMENT.md`](DEVELOPMENT.md)，进度见 [`docs/任务清单.md`](docs/任务清单.md) 与 [`docs/开发日志.md`](docs/开发日志.md)。
 
-当前进度：**M4-2A、M4-2B、RBAC-D 与 M5-A 已完成**（M0–M3 已完成；M4 进行中；M5 部分完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页（Rating/活跃度/共享三 Tab、等级颜色、签到）、用户主页 Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线后端模型、官方/自定义权限、路线/节点 CRUD 与树结构，路线 API 已可用；M4-2B 交付服务端进度计算（AC 事件补算 + 读取补算、完成锁存）与题目下线/删除守卫；RBAC-A 交付权限模型、权限目录、首次 Seed/旧角色映射、实时 Access、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化；M5-A 交付 AI 后端基础：多 provider 配置、用户 API key 加密存储、补全/格式化/优化与题目提示缓存/限流；学习路线前端（M4-2C）、社交、Rating 衰减/赛季重置，以及 AI 出题造数据/前端/HydroOJ 导入/证书/头像（M5-4～M5-8）尚未实现）。前端并行进行 PrimeVue 4 迁移，**UI-00～UI-18、UI-30（M4-C 排行榜/历史）与 RBAC-D 管理后台页面已完成并提交**，剩余题库编辑（UI-19）、异常页（UI-20）与学习路线前端（UI-31，M4-2C），详见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。题目详情资源区、官方题解与解题思路论坛已完成（见下）。
+当前进度：**M4-2A、M4-2B、M4-2C、RBAC-D 与 M5-A 已完成**（M0–M3 已完成；M4 进行中；M5 部分完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页（Rating/活跃度/共享三 Tab、等级颜色、签到）、用户主页 Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线后端模型、官方/自定义权限、路线/节点 CRUD 与树结构，路线 API 已可用；M4-2B 交付服务端进度计算（AC 事件补算 + 读取补算、完成锁存）与题目下线/删除守卫；M4-2C 交付学习路线前端列表/树详情/编辑/官方管理页；RBAC-A 交付权限模型、权限目录、首次 Seed/旧角色映射、实时 Access、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化；M5-A 交付 AI 后端基础：多 provider 配置、用户 API key 加密存储、补全/格式化/优化与题目提示缓存/限流；社交、Rating 衰减/赛季重置，以及 AI 出题造数据/前端/HydroOJ 导入/证书/头像（M5-4～M5-8）尚未实现）。前端并行进行 PrimeVue 4 迁移，**UI-00～UI-18、UI-30（M4-C 排行榜/历史）、UI-31（M4-7 学习路线）与 RBAC-D 管理后台页面已完成并提交**，剩余题库编辑（UI-19）与异常页（UI-20），详见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。题目详情资源区、官方题解与解题思路论坛已完成（见下）。
 
 ## 目录结构
 
@@ -121,9 +121,16 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 - 签到金币：`POST /api/activity/signin` 每个本地自然日首次签到额外 +5 金币，签到活跃度、金币流水与余额在同一事务内完成；重复签到返回 `awarded=false`，不重复发币。`GET /api/activity/summary` 返回今日是否签到、今日活跃度与总活跃度。
 - 共享积分：创建或克隆比赛 +20，服务启动时会把已有 `created_by>0` 的比赛幂等回填到 `shared_items`；共享分公式中的“题解被点赞 5/赞”尚未实现，本阶段恒为 0。
 - 三个榜单的基础行都使用 Redis 版本缓存 60 秒，key 形如 `kapoj:leaderboard:<kind>:v<version>:<page>:<size>`；Rating 结算、活跃度写入、共享项写入后递增对应 `kapoj:leaderboard:<kind>:version`。缓存只含基础行，装备在读取后批量装饰；Redis/缓存故障时回退数据库，缓存故障本身不会导致 5xx（身份装饰查询失败仍可能返回 5xx）。
-- 学习路线前端页面、社交互动（评论/点赞/关注/题解点赞/通知）以及 Rating 衰减/赛季重置尚未实现，属于后续 M4 阶段。
+- 社交互动（评论/点赞/关注/题解点赞/通知）以及 Rating 衰减/赛季重置尚未实现，属于后续 M4 阶段。
 
-## 学习路线（M4-2A / M4-2B）
+## 学习路线（M4-2A / M4-2B / M4-2C）
+
+**前端页面**
+
+- 侧边栏「学习路线」进入 `/learning-paths`：官方/公开自定义路线卡片，筛选「全部/官方/自定义/我创建的」（游客隐藏“我创建的”），登录用户可「新建路线」；卡片展示标题、作者、`已完成 n / n 节点` 与官方/公开/私有标签，作者或 `learning_path.official.manage` 可看到「编辑」入口。
+- 路线树 `/learning-paths/:id`：`TreeTable` 展示节点层级（`completed` 绿色、`active` 主色、`locked` 灰色锁），节点列含 `solvedCount/requiredCount` 进度条与题目数；点击节点右侧展示描述与题目链接；游客根 `active`、其余 `locked`；私有/下架路线显示「学习路线不存在或无权查看」。
+- 编辑页 `/learning-paths/new`、`/learning-paths/:id/edit`：路线表单（标题/描述/封面/排序/公开；官方开关仅创建时且 `learning_path.official.manage` 可见并强制公开）+ 节点树编辑器（添加根/子节点、编辑、上移/下移、删除叶子；题目 1–50 去重、`requiredCount` 1–题目数）。
+- 官方管理 `/admin/learning-paths`：管理全部路线（含下架）；`learning_path.official.manage` 可新建官方、编辑、下架/恢复；`learning_path.admin.read` 只读。
 
 **接口与规则**
 
@@ -134,7 +141,6 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 - **服务端进度（M4-2B）**：登录用户读取列表/树前服务端重算并写回进度。节点 `solvedCount` = 该节点题目中去重 AC 的题数，`solvedCount >= requiredCount` 时 `status=completed`；根节点默认 `active`，子节点仅父节点完成后 `active`、否则 `locked`。已完成节点锁存：之后改题或提高 `requiredCount` 不回退已完成用户（`solvedCount` 保留完成时的值），未完成/进行中节点按新配置重算。游客根 `active`、其余 `locked`、`solvedCount=0`，不写进度。
 - **AC 事件（M4-2B）**：`submission.accepted` 事件触发该用户进度重算（与 gamification 在同一 Asynq handler 组合，幂等可重试）；读取补算兜底。
 - **题目下线守卫（M4-2B）**：题目被任一活跃学习路线引用时，`PUT /problems/{id}` 将 `isPublic` 改为 false（下线）与 `DELETE /problems/{id}` 均返回 40001「题目被学习路线引用，不能下线/删除」；移除引用节点后允许下线/删除。
-- 学习路线列表/树/编辑/管理前端在 M4-2C 实现，当前尚无学习路线页面。
 
 ## 平台管理后台与 RBAC（RBAC-D）
 
