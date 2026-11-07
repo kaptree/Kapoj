@@ -69,7 +69,7 @@ func (s *Service) Optimize(ctx context.Context, userID int64, in GenerateInput) 
 	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
 		return OptimizeResult{Suggestions: out, Code: in.Code}, nil
 	}
-	return OptimizeResult{Suggestions: parsed.Suggestions, Code: parsed.Code}, nil
+	return OptimizeResult(parsed), nil
 }
 
 type optimizePayload struct {

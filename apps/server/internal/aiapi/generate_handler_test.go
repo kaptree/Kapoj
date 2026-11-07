@@ -81,7 +81,7 @@ func TestAIGenerateAPIFlow(t *testing.T) {
 	assert.EqualValues(t, 40001, resp["code"])
 
 	// Save a config.
-	w, resp = do(t, h, http.MethodPost, "/api/ai/configs", token, `{"provider":"deepseek","apiKey":"sk-test"}`)
+	w, _ = do(t, h, http.MethodPost, "/api/ai/configs", token, `{"provider":"deepseek","apiKey":"sk-test"}`)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 
 	// Complete.
@@ -117,11 +117,11 @@ func TestAIGenerateAPIRateLimit(t *testing.T) {
 	userID := createUser(t, g, "airate")
 	token := tokenFor(t, userID)
 
-	w, resp := do(t, h, http.MethodPost, "/api/ai/configs", token, `{"provider":"deepseek","apiKey":"sk-test"}`)
+	w, _ := do(t, h, http.MethodPost, "/api/ai/configs", token, `{"provider":"deepseek","apiKey":"sk-test"}`)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 
 	// First call succeeds.
-	w, resp = do(t, h, http.MethodPost, "/api/ai/complete", token, `{"code":"int x;","language":"cpp","cursor":3}`)
+	w, resp := do(t, h, http.MethodPost, "/api/ai/complete", token, `{"code":"int x;","language":"cpp","cursor":3}`)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	assert.Equal(t, "}", resp["data"].(map[string]any)["completion"])
 

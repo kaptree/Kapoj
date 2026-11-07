@@ -72,7 +72,7 @@ func TestAIHintAPIFlow(t *testing.T) {
 	assert.EqualValues(t, 40001, resp["code"])
 
 	// Save a config.
-	w, resp = do(t, h, http.MethodPost, "/api/ai/configs", token, `{"provider":"deepseek","apiKey":"sk-test"}`)
+	w, _ = do(t, h, http.MethodPost, "/api/ai/configs", token, `{"provider":"deepseek","apiKey":"sk-test"}`)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 
 	// First hint -> generated and cached=false.
@@ -112,11 +112,11 @@ func TestAIHintAPIHiddenPermission(t *testing.T) {
 	public := createHintProblem(t, g, "公开题", true)
 
 	// Public user has a config but no view_hidden permission.
-	w, resp := do(t, h, http.MethodPost, "/api/ai/configs", publicToken, `{"provider":"deepseek","apiKey":"sk-test"}`)
+	w, _ := do(t, h, http.MethodPost, "/api/ai/configs", publicToken, `{"provider":"deepseek","apiKey":"sk-test"}`)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 
 	// Hidden problem -> 404 (existence not revealed).
-	w, resp = do(t, h, http.MethodPost, "/api/ai/hint", publicToken, fmt.Sprintf(`{"problemId":%d}`, hidden))
+	w, resp := do(t, h, http.MethodPost, "/api/ai/hint", publicToken, fmt.Sprintf(`{"problemId":%d}`, hidden))
 	require.Equal(t, http.StatusNotFound, w.Code, w.Body.String())
 	assert.EqualValues(t, 40400, resp["code"])
 
