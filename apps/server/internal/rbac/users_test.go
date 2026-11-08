@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -426,4 +427,48 @@ func userStatus(t *testing.T, g *gorm.DB, userID int64) user.Status {
 	var u user.User
 	require.NoError(t, g.Select("status").Where("id = ?", userID).First(&u).Error)
 	return u.Status
+}
+
+func TestAdminUpdateAvatarClearsUpload(t *testing.T) {
+	g := testutil.PG(t)
+	ctx := context.Background()
+	require.NoError(t, rbac.Seed(ctx, g))
+	svc := rbac.NewService(g)
+
+	actorID := createSeedUser(t, g, "avatar_actor", user.RoleUser)
+	assignAccessTestRole(t, g, actorID, rbac.RoleCodeSuperAdmin)
+	target := createSeedUser(t, g, "avatar_target", user.RoleUser)
+	actor := rbac.AuditMeta{ActorID: actorID}
+
+	internalURL := "/api/users/" + strconv.FormatInt(target, 10) + "/avatar?v=1"
+
+	// 直接给目标设置一个已上传头像。
+	require.NoError(t, g.Model(&user.User{}).Where("id = ?", target).Updates(map[string]any{
+		"avatar_key":          "avatars/1/abc",
+		"avatar_content_type": "image/png",
+		"avatar_url":          internalURL,
+	}).Error)
+
+	// 非空外链 -> 清空 key/content_type。
+	external := "https://example.com/a.png"
+	require.NoError(t, svc.AdminUpdateUser(ctx, actor, target, rbac.AdminUserUpdateInput{AvatarURL: &external}))
+	var u user.User
+	require.NoError(t, g.Where("id = ?", target).First(&u).Error)
+	assert.Equal(t, external, u.AvatarURL)
+	assert.Empty(t, u.AvatarKey)
+	assert.Empty(t, u.AvatarContentType)
+
+	// 重新设置上传，空外链 + 已有上传 -> 保留 key 与内部 URL。
+	internalURL2 := "/api/users/" + strconv.FormatInt(target, 10) + "/avatar?v=2"
+	require.NoError(t, g.Model(&user.User{}).Where("id = ?", target).Updates(map[string]any{
+		"avatar_key":          "avatars/1/def",
+		"avatar_content_type": "image/gif",
+		"avatar_url":          internalURL2,
+	}).Error)
+	empty := ""
+	require.NoError(t, svc.AdminUpdateUser(ctx, actor, target, rbac.AdminUserUpdateInput{AvatarURL: &empty}))
+	require.NoError(t, g.Where("id = ?", target).First(&u).Error)
+	assert.Equal(t, internalURL2, u.AvatarURL)
+	assert.Equal(t, "avatars/1/def", u.AvatarKey)
+	assert.Equal(t, "image/gif", u.AvatarContentType)
 }

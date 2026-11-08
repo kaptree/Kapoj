@@ -109,6 +109,12 @@ func (r *memoryRepository) UpdateProfile(_ context.Context, id int64, c ProfileC
 	if c.AvatarURL != nil {
 		u.AvatarURL = *c.AvatarURL
 	}
+	if c.AvatarKey != nil {
+		u.AvatarKey = *c.AvatarKey
+	}
+	if c.AvatarContentType != nil {
+		u.AvatarContentType = *c.AvatarContentType
+	}
 	u.UpdatedAt = time.Now()
 	r.users[id] = u
 	return nil

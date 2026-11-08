@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -390,4 +391,50 @@ func TestRouterWiresRBACMe(t *testing.T) {
 	assert.NotEmpty(t, me["roles"])
 	permissions := me["permissions"].([]any)
 	assert.Contains(t, permissions, "problem.view_hidden")
+}
+
+func TestRouterWiresAvatarEndpoints(t *testing.T) {
+	h := newRouter(t)
+
+	// 未登录：上传/移除 401；公开读取 404（非 401，证明公开路由已挂载）。
+	w, _ := call(h, http.MethodPost, "/api/users/me/avatar", "", "")
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	w, _ = call(h, http.MethodDelete, "/api/users/me/avatar", "", "")
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	w, _ = call(h, http.MethodGet, "/api/users/999999/avatar", "", "")
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	// 注册后上传 PNG，公开读取返回原始字节与 contentType。
+	w, resp := call(h, http.MethodPost, "/api/auth/register", "",
+		`{"username":"avatarw","email":"avatarw@example.com","password":"correct-horse"}`)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	data := resp["data"].(map[string]any)
+	token := data["accessToken"].(string)
+	userID := int64(data["user"].(map[string]any)["id"].(float64))
+
+	png := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, err := mw.CreateFormFile("file", "avatar.png")
+	require.NoError(t, err)
+	_, err = fw.Write(png)
+	require.NoError(t, err)
+	require.NoError(t, mw.Close())
+	req := httptest.NewRequest(http.MethodPost, "/api/users/me/avatar", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+token)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	me := resp["data"].(map[string]any)
+	assert.Equal(t, true, me["avatarUploaded"])
+	assert.Contains(t, me["avatarUrl"].(string), "/api/users/")
+
+	req = httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/users/%d/avatar", userID), nil)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, "image/png", w.Header().Get("Content-Type"))
+	assert.Equal(t, png, w.Body.Bytes())
 }

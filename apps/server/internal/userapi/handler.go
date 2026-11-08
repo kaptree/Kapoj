@@ -3,6 +3,8 @@ package userapi
 import (
 	"context"
 	"errors"
+	"mime/multipart"
+	"net/http"
 	"sort"
 	"strconv"
 
@@ -37,6 +39,16 @@ func RegisterRoutes(r gin.IRouter, s *user.Service, opts ...Options) {
 	r.GET("/users/me", middleware.RequireAuth(), h.getMe)
 	r.PUT("/users/me", middleware.RequireAuth(), h.updateMe)
 	r.GET("/users/:id/profile", h.profile)
+}
+
+// RegisterAvatarRoutes mounts avatar upload/delete (authenticated) and the
+// public image endpoint. public is the unauthenticated group; uploads is the
+// authenticated group with a larger body limit.
+func RegisterAvatarRoutes(public, uploads gin.IRouter, s *user.Service) {
+	h := &handler{svc: s}
+	uploads.POST("/users/me/avatar", middleware.RequireAuth(), h.uploadAvatar)
+	uploads.DELETE("/users/me/avatar", middleware.RequireAuth(), h.deleteAvatar)
+	public.GET("/users/:id/avatar", h.avatarImage)
 }
 
 type handler struct {
@@ -117,4 +129,67 @@ func (h *handler) profile(c *gin.Context) {
 		}
 	}
 	httpx.OK(c, profile)
+}
+
+func (h *handler) uploadAvatar(c *gin.Context) {
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		httpx.Fail(c, uploadFormError(err))
+		return
+	}
+	file, err := fileHeader.Open()
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	defer func() { _ = file.Close() }()
+
+	claims, _ := middleware.CurrentClaims(c)
+	u, err := h.svc.UploadAvatar(c.Request.Context(), claims.UserID, file)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, user.ToMe(u))
+}
+
+func (h *handler) deleteAvatar(c *gin.Context) {
+	claims, _ := middleware.CurrentClaims(c)
+	u, err := h.svc.DeleteAvatar(c.Request.Context(), claims.UserID)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, user.ToMe(u))
+}
+
+func (h *handler) avatarImage(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		httpx.Fail(c, httpx.ErrNotFound)
+		return
+	}
+	image, err := h.svc.AvatarImage(c.Request.Context(), id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	c.Header("Cache-Control", "public, max-age=31536000, immutable")
+	c.Data(http.StatusOK, image.ContentType, image.Data)
+}
+
+// uploadFormError 把 multipart 解析错误映射为精确的中文 40001 提示；文件大小
+// 仍由 service 的 2 MiB 校验兜底。
+func uploadFormError(err error) *httpx.AppError {
+	var maxBytesErr *http.MaxBytesError
+	switch {
+	case errors.As(err, &maxBytesErr), errors.Is(err, multipart.ErrMessageTooLarge):
+		return httpx.ErrValidation("上传文件过大")
+	case errors.Is(err, http.ErrMissingBoundary):
+		return httpx.ErrValidation("上传格式错误")
+	case errors.Is(err, http.ErrMissingFile):
+		return httpx.ErrValidation("缺少文件字段 file")
+	default:
+		return httpx.ErrValidation("上传格式错误")
+	}
 }

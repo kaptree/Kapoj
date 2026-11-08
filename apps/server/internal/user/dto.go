@@ -15,20 +15,21 @@ type RoleSummary struct {
 
 // MeDTO is what a user sees about themselves (and what admins see).
 type MeDTO struct {
-	ID           int64         `json:"id"`
-	Username     string        `json:"username"`
-	Nickname     string        `json:"nickname"`
-	Email        string        `json:"email"`
-	AvatarURL    string        `json:"avatarUrl"`
-	Role         Role          `json:"role"`
-	Rating       int           `json:"rating"`
-	Coins        int64         `json:"coins"`
-	Bio          string        `json:"bio"`
-	Status       Status        `json:"status"`
-	Roles        []RoleSummary `json:"roles"`
-	Permissions  []string      `json:"permissions"`
-	IsSuperAdmin bool          `json:"isSuperAdmin"`
-	CreatedAt    time.Time     `json:"createdAt"`
+	ID             int64         `json:"id"`
+	Username       string        `json:"username"`
+	Nickname       string        `json:"nickname"`
+	Email          string        `json:"email"`
+	AvatarURL      string        `json:"avatarUrl"`
+	AvatarUploaded bool          `json:"avatarUploaded"`
+	Role           Role          `json:"role"`
+	Rating         int           `json:"rating"`
+	Coins          int64         `json:"coins"`
+	Bio            string        `json:"bio"`
+	Status         Status        `json:"status"`
+	Roles          []RoleSummary `json:"roles"`
+	Permissions    []string      `json:"permissions"`
+	IsSuperAdmin   bool          `json:"isSuperAdmin"`
+	CreatedAt      time.Time     `json:"createdAt"`
 }
 
 // ProfileDTO is the public view of a user. Equipped badges and title are
@@ -38,6 +39,7 @@ type ProfileDTO struct {
 	Username       string                      `json:"username"`
 	Nickname       string                      `json:"nickname"`
 	AvatarURL      string                      `json:"avatarUrl"`
+	AvatarUploaded bool                        `json:"avatarUploaded"`
 	Bio            string                      `json:"bio"`
 	Rating         int                         `json:"rating"`
 	Coins          int64                       `json:"coins"`
@@ -49,7 +51,8 @@ type ProfileDTO struct {
 func ToMe(u *User) MeDTO {
 	return MeDTO{
 		ID: u.ID, Username: u.Username, Nickname: u.Nickname, Email: u.Email,
-		AvatarURL: u.AvatarURL, Role: u.Role, Rating: u.Rating, Coins: u.Coins,
+		AvatarURL: u.AvatarURL, AvatarUploaded: u.AvatarKey != "",
+		Role: u.Role, Rating: u.Rating, Coins: u.Coins,
 		Bio: u.Bio, Status: u.Status,
 		Roles: []RoleSummary{}, Permissions: []string{}, IsSuperAdmin: false,
 		CreatedAt: u.CreatedAt.UTC(),
@@ -59,7 +62,8 @@ func ToMe(u *User) MeDTO {
 func ToProfile(u *User) ProfileDTO {
 	return ProfileDTO{
 		ID: u.ID, Username: u.Username, Nickname: u.Nickname, AvatarURL: u.AvatarURL,
-		Bio: u.Bio, Rating: u.Rating, Coins: u.Coins,
+		AvatarUploaded: u.AvatarKey != "",
+		Bio:            u.Bio, Rating: u.Rating, Coins: u.Coins,
 		EquippedBadges: []gamification.BadgeSummary{}, EquippedTitle: nil,
 		CreatedAt: u.CreatedAt.UTC(),
 	}

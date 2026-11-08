@@ -97,12 +97,13 @@ func New(d Deps) *gin.Engine {
 	problemJSON := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxProblemJSONBytes))
 	uploads := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxUploadBytes))
 	imports := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxImportBodyBytes))
-	userSvc := user.NewService(users)
+	userSvc := user.NewService(users, user.WithStorage(d.Storage))
 	userOpts := userapi.Options{RBAC: d.RBAC}
 	if d.Game != nil {
 		userOpts.IdentityLookup = d.Game
 	}
 	userapi.RegisterRoutes(api, userSvc, userOpts)
+	userapi.RegisterAvatarRoutes(public, uploads, userSvc)
 	if d.RBAC != nil {
 		adminapi.RegisterRoutes(api, d.RBAC, adminapi.Options{Game: d.Game, Rating: d.Rating, AI: d.AISettings})
 	}

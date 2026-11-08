@@ -122,25 +122,39 @@ func (s *Service) AdminUpdateUser(ctx context.Context, actor AuditMeta, id int64
 		}
 		cols["bio"] = *in.Bio
 	}
+
+	// 头像语义：非空外链替换上传头像（清空 key/content_type）；空外链保留上传、
+	// 仅在无上传时清空外链。是否保留依赖当前上传状态，在事务内读取用户后决定。
+	var avatar *string
 	if in.AvatarURL != nil {
-		avatar := strings.TrimSpace(*in.AvatarURL)
-		if err := user.ValidateAvatarURL(avatar); err != nil {
+		v := strings.TrimSpace(*in.AvatarURL)
+		if err := user.ValidateAvatarURL(v); err != nil {
 			return err
 		}
-		cols["avatar_url"] = avatar
+		avatar = &v
 	}
 
-	if len(cols) == 0 {
+	if len(cols) == 0 && avatar == nil {
 		return invalidUser("未提供任何需要更新的字段")
 	}
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var u user.User
-		if err := tx.Select("id", "username").Where("id = ?", id).First(&u).Error; err != nil {
+		if err := tx.Select("id", "username", "avatar_key").Where("id = ?", id).First(&u).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return httpx.ErrNotFound
 			}
 			return fmt.Errorf("rbac: load user %d: %w", id, err)
+		}
+		if avatar != nil {
+			switch {
+			case *avatar != "":
+				cols["avatar_url"] = *avatar
+				cols["avatar_key"] = ""
+				cols["avatar_content_type"] = ""
+			case u.AvatarKey == "":
+				cols["avatar_url"] = ""
+			}
 		}
 		if len(cols) > 0 {
 			if err := tx.Model(&user.User{}).Where("id = ?", id).Updates(cols).Error; err != nil {

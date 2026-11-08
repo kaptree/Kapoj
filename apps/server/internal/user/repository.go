@@ -29,9 +29,11 @@ type Repository interface {
 
 // ProfileChanges holds the user-editable profile fields; nil means unchanged.
 type ProfileChanges struct {
-	Nickname  *string
-	Bio       *string
-	AvatarURL *string
+	Nickname          *string
+	Bio               *string
+	AvatarURL         *string
+	AvatarKey         *string
+	AvatarContentType *string
 }
 
 func (c ProfileChanges) columns() map[string]any {
@@ -44,6 +46,12 @@ func (c ProfileChanges) columns() map[string]any {
 	}
 	if c.AvatarURL != nil {
 		cols["avatar_url"] = *c.AvatarURL
+	}
+	if c.AvatarKey != nil {
+		cols["avatar_key"] = *c.AvatarKey
+	}
+	if c.AvatarContentType != nil {
+		cols["avatar_content_type"] = *c.AvatarContentType
 	}
 	return cols
 }

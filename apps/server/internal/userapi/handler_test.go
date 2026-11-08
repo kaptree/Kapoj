@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -22,6 +23,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
+	"github.com/kaptree/kapoj/apps/server/internal/storage"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
@@ -49,6 +51,7 @@ func (f *fakeIdentityLookup) Identities(_ context.Context, userIDs []int64) (map
 type fixture struct {
 	engine *gin.Engine
 	repo   user.Repository
+	svc    *user.Service
 	auth   *auth.Service
 	issuer *auth.TokenIssuer
 	db     *gorm.DB
@@ -85,11 +88,15 @@ func setupWithRepository(t *testing.T, repo user.Repository, opts ...Options) *f
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	issuer := auth.NewTokenIssuer(strings.Repeat("s", 32), 15*time.Minute)
 	authSvc := auth.NewService(repo, issuer, auth.NewRefreshStore(rdb, time.Hour), auth.NewLoginLimiter(rdb))
+	store, err := storage.NewLocal(t.TempDir())
+	require.NoError(t, err)
+	svc := user.NewService(repo, user.WithStorage(store))
 
 	r := gin.New()
 	r.Use(middleware.Authenticate(issuer))
-	RegisterRoutes(r.Group("/api"), user.NewService(repo), opts...)
-	return &fixture{engine: r, repo: repo, auth: authSvc, issuer: issuer}
+	RegisterRoutes(r.Group("/api"), svc, opts...)
+	RegisterAvatarRoutes(r.Group("/api"), r.Group("/api"), svc)
+	return &fixture{engine: r, repo: repo, svc: svc, auth: authSvc, issuer: issuer}
 }
 
 func (f *fixture) register(t *testing.T, name string) (*user.User, string) {
@@ -293,4 +300,139 @@ func TestMeWithoutRBACReturnsEmptyPermissions(t *testing.T) {
 	assert.Equal(t, []any{}, data["roles"])
 	assert.Equal(t, []any{}, data["permissions"])
 	assert.Equal(t, false, data["isSuperAdmin"])
+}
+
+func (f *fixture) doMultipart(t *testing.T, method, path, token string, file []byte) *httptest.ResponseRecorder {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, err := mw.CreateFormFile("file", "avatar.png")
+	require.NoError(t, err)
+	_, err = fw.Write(file)
+	require.NoError(t, err)
+	require.NoError(t, mw.Close())
+	req := httptest.NewRequest(method, path, &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	w := httptest.NewRecorder()
+	f.engine.ServeHTTP(w, req)
+	return w
+}
+
+func (f *fixture) doMultipartNoFile(t *testing.T, method, path, token string) *httptest.ResponseRecorder {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	require.NoError(t, mw.WriteField("other", "x"))
+	require.NoError(t, mw.Close())
+	req := httptest.NewRequest(method, path, &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	w := httptest.NewRecorder()
+	f.engine.ServeHTTP(w, req)
+	return w
+}
+
+func TestUploadAvatarHTTP(t *testing.T) {
+	f := setup(t)
+	_, tok := f.register(t, "alice")
+
+	w := f.doMultipart(t, http.MethodPost, "/api/users/me/avatar", tok, pngBytes())
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	data := resp["data"].(map[string]any)
+	assert.Equal(t, true, data["avatarUploaded"])
+	assert.Contains(t, data["avatarUrl"].(string), "/api/users/")
+
+	// 未登录 401。
+	w = f.doMultipart(t, http.MethodPost, "/api/users/me/avatar", "", pngBytes())
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+
+	// 缺 file 字段 40001。
+	w = f.doMultipartNoFile(t, http.MethodPost, "/api/users/me/avatar", tok)
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	// 非法图片 40001。
+	w = f.doMultipart(t, http.MethodPost, "/api/users/me/avatar", tok, []byte("plain text"))
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+}
+
+func TestDeleteAvatarHTTP(t *testing.T) {
+	f := setup(t)
+	_, tok := f.register(t, "alice")
+
+	w := f.doMultipart(t, http.MethodPost, "/api/users/me/avatar", tok, pngBytes())
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	w, resp := f.do(http.MethodDelete, "/api/users/me/avatar", tok, "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, false, resp["data"].(map[string]any)["avatarUploaded"])
+	assert.Equal(t, "", resp["data"].(map[string]any)["avatarUrl"])
+
+	// 幂等。
+	w, _ = f.do(http.MethodDelete, "/api/users/me/avatar", tok, "")
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	// 未登录 401。
+	w, resp = f.do(http.MethodDelete, "/api/users/me/avatar", "", "")
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.EqualValues(t, 40100, resp["code"])
+}
+
+func TestAvatarImageHTTP(t *testing.T) {
+	f := setup(t)
+	u, tok := f.register(t, "alice")
+
+	// 无上传 -> 404，公开（无需登录）。
+	w, resp := f.do(http.MethodGet, fmt.Sprintf("/api/users/%d/avatar", u.ID), "", "")
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.EqualValues(t, 40400, resp["code"])
+
+	// 上传后公开可读，返回原始字节与 contentType。
+	w = f.doMultipart(t, http.MethodPost, "/api/users/me/avatar", tok, pngBytes())
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/users/%d/avatar", u.ID), nil)
+	w = httptest.NewRecorder()
+	f.engine.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, "image/png", w.Header().Get("Content-Type"))
+	assert.Equal(t, pngBytes(), w.Body.Bytes())
+	assert.Contains(t, w.Header().Get("Cache-Control"), "immutable")
+
+	// 缺失用户 404。
+	w, _ = f.do(http.MethodGet, "/api/users/999999/avatar", "", "")
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestMeAndProfileAvatarUploaded(t *testing.T) {
+	f := setup(t)
+	u, tok := f.register(t, "alice")
+
+	// 上传前为 false。
+	_, resp := f.do(http.MethodGet, "/api/users/me", tok, "")
+	assert.Equal(t, false, resp["data"].(map[string]any)["avatarUploaded"])
+	_, resp = f.do(http.MethodGet, fmt.Sprintf("/api/users/%d/profile", u.ID), "", "")
+	assert.Equal(t, false, resp["data"].(map[string]any)["avatarUploaded"])
+
+	// 上传后为 true。
+	w := f.doMultipart(t, http.MethodPost, "/api/users/me/avatar", tok, pngBytes())
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	_, resp = f.do(http.MethodGet, "/api/users/me", tok, "")
+	assert.Equal(t, true, resp["data"].(map[string]any)["avatarUploaded"])
+	_, resp = f.do(http.MethodGet, fmt.Sprintf("/api/users/%d/profile", u.ID), "", "")
+	assert.Equal(t, true, resp["data"].(map[string]any)["avatarUploaded"])
+}
+
+func pngBytes() []byte {
+	return []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
 }

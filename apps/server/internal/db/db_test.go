@@ -20,6 +20,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/rating"
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 	"github.com/kaptree/kapoj/apps/server/internal/social"
+	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
 
 func TestLoggerHidesQueryParameters(t *testing.T) {
@@ -325,4 +326,20 @@ func TestMigrateCreatesActivitySchema(t *testing.T) {
 		UserID: userID, Type: "contest", RefID: refID, LikeCount: 0, CreatedAt: time.Now(),
 	}
 	assert.Error(t, g.Create(duplicateItem).Error, "同一 (type, ref_id) 只能有一条共享记录")
+}
+
+func TestMigrateCreatesAvatarColumns(t *testing.T) {
+	dsn := os.Getenv("KAPOJ_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("KAPOJ_TEST_DATABASE_URL not set; skipping database test")
+	}
+	g, err := open(dsn, io.Discard)
+	require.NoError(t, err)
+	require.NoError(t, Migrate(g))
+	sqlDB, err := g.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	assert.True(t, g.Migrator().HasColumn(&user.User{}, "avatar_key"))
+	assert.True(t, g.Migrator().HasColumn(&user.User{}, "avatar_content_type"))
 }
