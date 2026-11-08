@@ -137,8 +137,8 @@ func (s *Service) chatRequest(ctx context.Context, userID int64) (ChatRequest, e
 
 	apiKey, err := s.keys.Decrypt(cfg.APIKeyEncrypted)
 	if err != nil {
-		// KeyManager.Decrypt returns the 40001 validation AppError only when no
-		// platform key is configured; any other failure is a decrypt error.
+		// KeyManager.Decrypt returns the 40002 AppError only when no platform
+		// key is configured; any other failure is a decrypt error.
 		var appErr *httpx.AppError
 		if errors.As(err, &appErr) {
 			return ChatRequest{}, err

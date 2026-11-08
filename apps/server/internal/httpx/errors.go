@@ -17,6 +17,7 @@ func newErr(status, code int, msg string) *AppError {
 
 var (
 	ErrBadRequest         = newErr(http.StatusBadRequest, 40000, "请求体格式错误")
+	ErrAIKeyNotConfigured = newErr(http.StatusBadRequest, 40002, "AI 加密密钥未配置")
 	ErrUnauthorized       = newErr(http.StatusUnauthorized, 40100, "未登录或登录已过期")
 	ErrInvalidCredentials = newErr(http.StatusUnauthorized, 40101, "账号或密码错误")
 	ErrForbidden          = newErr(http.StatusForbidden, 40300, "没有权限执行此操作")

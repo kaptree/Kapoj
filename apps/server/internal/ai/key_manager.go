@@ -20,9 +20,10 @@ type KeyManager struct {
 	source string
 }
 
-// errNoKey 是未配置 AI 加密密钥时返回的统一 API 错误。
+// errNoKey 是未配置 AI 加密密钥（平台级密钥缺失）时返回的统一 API 错误。
+// 使用独立错误码 40002 与用户未配置 AI 模型的 40001 区分。
 func errNoKey() *httpx.AppError {
-	return httpx.ErrValidation("AI 加密密钥未配置")
+	return httpx.ErrAIKeyNotConfigured
 }
 
 // NewKeyManager 从环境变量（优先）或本地密钥文件加载加密密钥。
@@ -98,7 +99,7 @@ func (km *KeyManager) Fingerprint() string {
 	return hex.EncodeToString(sum[:])
 }
 
-// Encrypt 使用当前密钥加密明文；未配置时返回 40001。
+// Encrypt 使用当前密钥加密明文；未配置时返回 40002。
 func (km *KeyManager) Encrypt(plaintext string) (string, error) {
 	km.mu.RLock()
 	defer km.mu.RUnlock()
@@ -108,7 +109,7 @@ func (km *KeyManager) Encrypt(plaintext string) (string, error) {
 	return km.enc.Encrypt(plaintext)
 }
 
-// Decrypt 使用当前密钥解密密文；未配置时返回 40001。
+// Decrypt 使用当前密钥解密密文；未配置时返回 40002。
 func (km *KeyManager) Decrypt(ciphertext string) (string, error) {
 	km.mu.RLock()
 	defer km.mu.RUnlock()

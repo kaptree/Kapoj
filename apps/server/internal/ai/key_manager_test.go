@@ -23,12 +23,12 @@ import (
 // b64Key encodes a 32-byte ASCII key as base64 for use as an encryption key.
 func b64Key(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
 
-// noKeyCode asserts err is the 40001 "AI 加密密钥未配置" validation error.
+// noKeyCode asserts err is the 40002 "AI 加密密钥未配置" error.
 func noKeyCode(t *testing.T, err error) {
 	t.Helper()
 	var appErr *httpx.AppError
 	require.ErrorAs(t, err, &appErr)
-	assert.Equal(t, 40001, appErr.Code)
+	assert.Equal(t, 40002, appErr.Code)
 }
 
 func TestKeyManagerEnvPrecedenceAndFile(t *testing.T) {
@@ -197,22 +197,22 @@ func TestAIConfigWithoutKey(t *testing.T) {
 	assert.False(t, view.KeyConfigured)
 	assert.Len(t, view.Providers, 4)
 
-	// SaveConfig -> 40001.
+	// SaveConfig -> 40002（平台密钥缺失）。
 	_, err = svc.SaveConfig(ctx, 1, ai.SaveConfigInput{Provider: "deepseek", APIKey: "k"})
-	assertValidationCode(t, err, 40001)
+	assertValidationCode(t, err, 40002)
 
-	// generate -> 40001.
+	// generate -> 40001（用户未配置 AI 模型）。
 	_, err = svc.Complete(ctx, 1, ai.GenerateInput{Code: "x", Language: "cpp", Cursor: intPtr(1)})
 	assertValidationCode(t, err, 40001)
 
 	// With a stored config but no platform key, generate/hint still hit the
-	// no-key decrypt path and return 40001.
+	// no-key decrypt path and return 40002.
 	require.NoError(t, g.Create(&ai.UserConfig{
 		UserID: 2, Provider: "deepseek", ModelName: "deepseek-chat",
 		APIKeyEncrypted: "v1:AAAA", CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}).Error)
 	_, err = svc.Complete(ctx, 2, ai.GenerateInput{Code: "x", Language: "cpp", Cursor: intPtr(1)})
-	assertValidationCode(t, err, 40001)
+	assertValidationCode(t, err, 40002)
 
 	// hint: cached row is still served without a key.
 	cachedPID := createProblem(t, g, "无密钥提示", true)
@@ -224,10 +224,10 @@ func TestAIConfigWithoutKey(t *testing.T) {
 	assert.True(t, h.Cached)
 	assert.Equal(t, "缓存提示", h.Hint)
 
-	// hint: cache miss with no key -> 40001.
+	// hint: cache miss with no key -> 40002.
 	missPID := createProblem(t, g, "无密钥提示2", true)
 	_, err = svc.Hint(ctx, 2, missPID, false)
-	assertValidationCode(t, err, 40001)
+	assertValidationCode(t, err, 40002)
 }
 
 func TestAIServiceUsesCurrentKeyAfterReplace(t *testing.T) {

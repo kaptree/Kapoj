@@ -127,19 +127,19 @@ function byteLength(value: string): number {
 
 function handleAIError(e: unknown) {
   if (e instanceof ApiError) {
-    if (e.code === 40001) {
-      if (e.message === 'AI 加密密钥未配置') {
-        aiConfig.value = {
-          configured: false,
-          keyConfigured: false,
-          provider: '',
-          modelName: '',
-          apiKeyMasked: '',
-          providers: aiConfig.value?.providers ?? [],
-        }
-        toast.add({ severity: 'warn', summary: '管理员尚未配置 AI 密钥', life: 4000 })
-        return
+    if (e.code === 40002) {
+      aiConfig.value = {
+        configured: false,
+        keyConfigured: false,
+        provider: '',
+        modelName: '',
+        apiKeyMasked: '',
+        providers: aiConfig.value?.providers ?? [],
       }
+      toast.add({ severity: 'warn', summary: '管理员尚未配置 AI 密钥', life: 4000 })
+      return
+    }
+    if (e.code === 40001) {
       aiConfig.value = {
         configured: false,
         keyConfigured: true,

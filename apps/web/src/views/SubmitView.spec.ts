@@ -407,11 +407,11 @@ describe('SubmitView', () => {
     wrapper.unmount()
   })
 
-  it('maps the platform-key-missing 40001 to the key banner without a config link', async () => {
+  it('maps the platform-key-missing 40002 to the key banner without a config link', async () => {
     localStorage.setItem('kapoj:code:practice:1:cpp', 'int main() {}')
     const { wrapper } = await mountPage()
 
-    vi.mocked(completeCode).mockRejectedValueOnce(new ApiError(400, 40001, 'AI 加密密钥未配置'))
+    vi.mocked(completeCode).mockRejectedValueOnce(new ApiError(400, 40002, 'AI 加密密钥未配置'))
     await aiButton(wrapper, 'AI 补全')!.trigger('click')
     await flushPromises()
 

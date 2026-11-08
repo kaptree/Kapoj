@@ -97,6 +97,12 @@ func run() error {
 		ai.NewOpenAIClient(cfg.AIRequestTimeout))
 	aiSettings := ai.NewSettingsService(g, keyMgr, cfg.AIKeyFile)
 
+	// 启动时核对密钥文件与数据库指纹，恢复“写文件成功但重加密事务未提交”
+	// 这一崩溃窗口；不一致且无法恢复时拒绝启动。
+	if err := ai.ReconcileKeyFile(context.Background(), g, keyMgr, cfg.AIKeyFile); err != nil {
+		return err
+	}
+
 	gameServer := asynq.NewServer(
 		asynq.RedisClientOpt{Addr: cfg.RedisAddr},
 		asynq.Config{

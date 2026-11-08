@@ -114,14 +114,12 @@ async function requestAIHint() {
     aiHintCached.value = result.cached
   } catch (e) {
     if (problem.value?.id !== pid) return
-    if (e instanceof ApiError && e.code === 40001) {
-      if (e.message === 'AI 加密密钥未配置') {
-        aiHintError.value = '管理员尚未配置 AI 密钥'
-        aiConfigMissing.value = false
-      } else {
-        aiHintError.value = '尚未配置 AI 模型'
-        aiConfigMissing.value = true
-      }
+    if (e instanceof ApiError && e.code === 40002) {
+      aiHintError.value = '管理员尚未配置 AI 密钥'
+      aiConfigMissing.value = false
+    } else if (e instanceof ApiError && e.code === 40001) {
+      aiHintError.value = '尚未配置 AI 模型'
+      aiConfigMissing.value = true
     } else if (e instanceof ApiError && e.code === 42903) {
       toast.add({ severity: 'warn', summary: '操作过于频繁，请稍后再试', life: 3000 })
     } else if (e instanceof ApiError && (e.code === 50200 || e.code === 50300)) {

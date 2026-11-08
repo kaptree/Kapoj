@@ -74,6 +74,9 @@ func (s *SettingsService) SetKey(ctx context.Context, actorID int64, raw string,
 //  4. 写密钥文件（备份旧文件）→ DB 事务（重加密配置 + 指纹 + 审计）→
 //     成功删除备份并切换内存密钥，失败恢复备份/回滚。
 func (s *SettingsService) rotate(ctx context.Context, actorID int64, raw string, audit func(*gorm.DB) error) (*KeyView, error) {
+	s.keyMu.Lock()
+	defer s.keyMu.Unlock()
+
 	if s.keys.Source() == "env" {
 		return nil, httpx.ErrValidation("AI 加密密钥由环境变量管理，只读")
 	}

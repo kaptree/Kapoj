@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -314,4 +315,57 @@ func TestKeyRotationWithoutOldKeyRejects(t *testing.T) {
 	// 不写文件，内存密钥仍为 none。
 	assert.NoFileExists(t, file)
 	assert.Equal(t, "none", svc.KeyView().Source)
+}
+
+func TestKeyRotationConcurrent(t *testing.T) {
+	g := testutil.PG(t)
+	ctx := context.Background()
+	file := filepath.Join(t.TempDir(), "ai.key")
+
+	// 预置旧密钥与一条用户配置，使并发轮换必须串行重加密才保持一致。
+	oldKey := b64Key(strings.Repeat("o", 32))
+	require.NoError(t, os.WriteFile(file, []byte(oldKey+"\n"), 0o600))
+	svc := newKeySettingsService(t, g, "", file)
+	oldEnc, err := ai.NewEncryptor(oldKey)
+	require.NoError(t, err)
+	ct, err := oldEnc.Encrypt("sk-secret")
+	require.NoError(t, err)
+	require.NoError(t, g.Create(&ai.UserConfig{
+		UserID: 1, Provider: "deepseek", ModelName: "deepseek-chat",
+		APIKeyEncrypted: ct, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}).Error)
+
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, err := svc.GenerateKey(ctx, 42, nil)
+			errs[i] = err
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range errs {
+		require.NoErrorf(t, err, "goroutine %d rotation failed", i)
+	}
+
+	// 最终一致性：文件、数据库指纹、内存指纹三者一致。
+	data, err := os.ReadFile(file)
+	require.NoError(t, err)
+	finalKey := strings.TrimSpace(string(data))
+	var s ai.Settings
+	require.NoError(t, g.First(&s).Error)
+	assert.Equal(t, sha256Hex(finalKey), s.KeyFingerprint)
+	assert.Equal(t, sha256Hex(finalKey), svc.KeyView().Fingerprint)
+	assert.NoFileExists(t, file+".bak")
+
+	// 用户配置可用最终密钥解密。
+	finalEnc, err := ai.NewEncryptor(finalKey)
+	require.NoError(t, err)
+	var cfg ai.UserConfig
+	require.NoError(t, g.First(&cfg).Error)
+	plain, err := finalEnc.Decrypt(cfg.APIKeyEncrypted)
+	require.NoError(t, err)
+	assert.Equal(t, "sk-secret", plain)
 }

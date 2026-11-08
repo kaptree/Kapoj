@@ -329,11 +329,11 @@ describe('ProblemDetailView', () => {
     wrapper.unmount()
   })
 
-  it('shows the admin-key-missing message without a config link on 40001', async () => {
+  it('shows the admin-key-missing message without a config link on 40002', async () => {
     auth.isLoggedIn = true
     vi.mocked(getProblem).mockResolvedValue(detail(1))
     vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
-    vi.mocked(getAIHint).mockRejectedValue(new ApiError(400, 40001, 'AI 加密密钥未配置'))
+    vi.mocked(getAIHint).mockRejectedValue(new ApiError(400, 40002, 'AI 加密密钥未配置'))
     const wrapper = mountView()
     await flushPromises()
 
