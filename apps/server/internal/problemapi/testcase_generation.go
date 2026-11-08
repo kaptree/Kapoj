@@ -42,3 +42,57 @@ func (h *handler) getTestcaseGeneration(c *gin.Context) {
 	}
 	httpx.OK(c, view)
 }
+
+func (h *handler) previewTestcaseGeneration(c *gin.Context) {
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	genID, ok := pathID(c, "genId")
+	if !ok {
+		return
+	}
+	caseID, ok := pathID(c, "caseId")
+	if !ok {
+		return
+	}
+	pv, err := h.testcaseGen.Preview(c.Request.Context(), id, genID, caseID, c.Query("kind"))
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, pv)
+}
+
+func (h *handler) confirmTestcaseGeneration(c *gin.Context) {
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	genID, ok := pathID(c, "genId")
+	if !ok {
+		return
+	}
+	result, err := h.testcaseGen.Confirm(c.Request.Context(), id, genID)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, result)
+}
+
+func (h *handler) discardTestcaseGeneration(c *gin.Context) {
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	genID, ok := pathID(c, "genId")
+	if !ok {
+		return
+	}
+	if err := h.testcaseGen.Discard(c.Request.Context(), id, genID); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, nil)
+}

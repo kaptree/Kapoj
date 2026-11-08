@@ -126,6 +126,9 @@ func RegisterRoutes(
 	if h.testcaseGen != nil {
 		api.POST("/problems/:id/testcase-generations", require(string(rbac.PermProblemTestcaseManage)), audit(string(rbac.PermProblemTestcaseManage)), h.createTestcaseGeneration)
 		api.GET("/problems/:id/testcase-generations/:genId", require(string(rbac.PermProblemTestcaseManage)), h.getTestcaseGeneration)
+		api.GET("/problems/:id/testcase-generations/:genId/cases/:caseId/preview", require(string(rbac.PermProblemTestcaseManage)), h.previewTestcaseGeneration)
+		api.POST("/problems/:id/testcase-generations/:genId/confirm", require(string(rbac.PermProblemTestcaseManage)), audit(string(rbac.PermProblemTestcaseManage)), h.confirmTestcaseGeneration)
+		api.DELETE("/problems/:id/testcase-generations/:genId", require(string(rbac.PermProblemTestcaseManage)), audit(string(rbac.PermProblemTestcaseManage)), h.discardTestcaseGeneration)
 	}
 
 	imports.POST("/problems/import/hydro", require(string(rbac.PermProblemCreate)), h.importHydro)

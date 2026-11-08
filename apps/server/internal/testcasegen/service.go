@@ -3,8 +3,12 @@ package testcasegen
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
+	"log/slog"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"gorm.io/gorm"
 
@@ -14,7 +18,10 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
 )
 
-const maxSourceBytes = 64 * 1024 // 64 KiB
+const (
+	maxSourceBytes  = 64 * 1024 // 64 KiB
+	maxPreviewBytes = 64 * 1024 // 64 KiB preview ceiling
+)
 
 // validLanguages is the set of standard-code languages the judge can compile.
 var validLanguages = map[string]bool{
@@ -61,6 +68,18 @@ type View struct {
 	ErrorMessage  string     `json:"errorMessage"`
 	CreatedAt     time.Time  `json:"createdAt"`
 	Cases         []CaseView `json:"cases"`
+}
+
+// Preview is a truncated, sanitized view of one generated input/output file.
+type Preview struct {
+	Kind      string `json:"kind"`
+	Content   string `json:"content"`
+	Truncated bool   `json:"truncated"`
+}
+
+// ConfirmResult reports how many testcases were written into the problem.
+type ConfirmResult struct {
+	Count int `json:"count"`
 }
 
 type Service struct {
@@ -148,6 +167,144 @@ func (s *Service) Get(ctx context.Context, problemID, id int64) (*View, error) {
 		return nil, err
 	}
 	return s.toView(g, cases), nil
+}
+
+// Preview reads one generated file (input or output) up to 64 KiB, replacing
+// invalid UTF-8 with U+FFFD and reporting whether it was truncated.
+func (s *Service) Preview(ctx context.Context, problemID, id, caseID int64, kind string) (*Preview, error) {
+	if kind != "input" && kind != "output" {
+		return nil, httpx.ErrValidation("kind 必须是 input 或 output")
+	}
+	g, err := s.repo.Find(ctx, problemID, id)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, httpx.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	c, err := s.repo.FindCase(ctx, g.ID, caseID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, httpx.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	key := c.InputFile
+	if kind == "output" {
+		key = c.OutputFile
+	}
+	rc, err := s.store.Open(ctx, key)
+	if errors.Is(err, storage.ErrNotFound) {
+		return nil, httpx.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rc.Close() }()
+
+	raw, err := io.ReadAll(io.LimitReader(rc, maxPreviewBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	truncated := len(raw) > maxPreviewBytes
+	content := strings.ToValidUTF8(string(raw), "\uFFFD")
+	// Sanitizing invalid bytes can expand a single byte to a 3-byte U+FFFD, so
+	// enforce the 64 KiB ceiling on the final (valid) text rather than the raw
+	// read, trimming on a rune boundary.
+	if len(content) > maxPreviewBytes {
+		truncated = true
+		content = truncateUTF8(content, maxPreviewBytes)
+	}
+	return &Preview{
+		Kind:      kind,
+		Content:   content,
+		Truncated: truncated,
+	}, nil
+}
+
+// truncateUTF8 shortens s to at most max bytes without splitting a rune.
+func truncateUTF8(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	cut := s[:max]
+	for !utf8.ValidString(cut) {
+		cut = cut[:len(cut)-1]
+	}
+	return cut
+}
+
+// Confirm writes a ready generation's cases into problem_testcases and marks it
+// confirmed. A repeat confirm is idempotent and returns the retained count.
+func (s *Service) Confirm(ctx context.Context, problemID, id int64) (*ConfirmResult, error) {
+	g, err := s.repo.Find(ctx, problemID, id)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, httpx.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	cases, err := s.repo.ListCases(ctx, g.ID)
+	if err != nil {
+		return nil, err
+	}
+	if g.Status == StatusConfirmed {
+		return &ConfirmResult{Count: len(cases)}, nil
+	}
+	count, err := s.repo.Confirm(ctx, problemID, id, cases)
+	if errors.Is(err, ErrNotReady) {
+		return nil, httpx.ErrValidation("生成结果尚未就绪，不能确认入库")
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &ConfirmResult{Count: count}, nil
+}
+
+// Discard deletes a ready or failed generation's cases and generated files,
+// marking it discarded. Confirmed generations are immutable and pending/running
+// generations cannot be discarded yet.
+func (s *Service) Discard(ctx context.Context, problemID, id int64) error {
+	g, err := s.repo.Find(ctx, problemID, id)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return httpx.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	switch g.Status {
+	case StatusConfirmed:
+		return httpx.ErrValidation("已确认入库的生成结果不能丢弃")
+	case StatusPending, StatusRunning:
+		return httpx.ErrValidation("生成尚未完成，不能丢弃")
+	}
+	keys, err := s.repo.Discard(ctx, problemID, id)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrConfirmed):
+			return httpx.ErrValidation("已确认入库的生成结果不能丢弃")
+		case errors.Is(err, ErrNotFinished):
+			return httpx.ErrValidation("生成尚未完成，不能丢弃")
+		}
+		return err
+	}
+	// The judge writes deterministic n.in/n.out keys even when a run failed
+	// partway through, so clean those up as well.
+	for n := 1; n <= g.TestcaseCount; n++ {
+		keys = append(keys, generatedFileKey(problemID, id, n, "in"), generatedFileKey(problemID, id, n, "out"))
+	}
+	for _, key := range keys {
+		if err := s.store.Delete(ctx, key); err != nil {
+			slog.Warn("testcasegen: delete generated file failed", "key", key, "err", err)
+		}
+	}
+	return nil
+}
+
+// generatedFileKey is the deterministic storage key the judge writes each
+// generated input/output pair under.
+func generatedFileKey(problemID, generationID int64, n int, ext string) string {
+	return fmt.Sprintf("problems/%d/generated/%d/%d.%s", problemID, generationID, n, ext)
 }
 
 func validateCreateInput(lang, src string, count int) error {
