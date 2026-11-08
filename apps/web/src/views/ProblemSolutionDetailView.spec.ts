@@ -14,6 +14,7 @@ import {
   updateSolutionReply,
 } from '@/api/discussions'
 import { ApiError } from '@/api/http'
+import { likeSolutionPost, unlikeSolutionPost } from '@/api/social'
 import type { SolutionPostDetail, SolutionReplyItem } from '@/api/types'
 import ProblemSolutionDetailView from './ProblemSolutionDetailView.vue'
 
@@ -53,6 +54,10 @@ vi.mock('@/api/discussions', () => ({
   updateSolutionReply: vi.fn(),
   deleteSolutionReply: vi.fn(),
 }))
+vi.mock('@/api/social', () => ({
+  likeSolutionPost: vi.fn(),
+  unlikeSolutionPost: vi.fn(),
+}))
 
 function reply(overrides: Partial<SolutionReplyItem> = {}): SolutionReplyItem {
   return {
@@ -78,6 +83,8 @@ function detail(overrides: Partial<SolutionPostDetail> = {}): SolutionPostDetail
     excerpt: '先打表找规律……',
     author: { id: 2, username: 'alice', nickname: 'Alice' },
     replyCount: 1,
+    likeCount: 0,
+    likedByMe: false,
     createdAt: '2026-01-02T03:04:05Z',
     updatedAt: '2026-01-02T03:04:05Z',
     canEdit: true,
@@ -114,6 +121,8 @@ beforeEach(() => {
   vi.mocked(deleteSolutionPost).mockReset()
   vi.mocked(updateSolutionReply).mockReset()
   vi.mocked(deleteSolutionReply).mockReset()
+  vi.mocked(likeSolutionPost).mockReset()
+  vi.mocked(unlikeSolutionPost).mockReset()
 })
 
 describe('ProblemSolutionDetailView', () => {
@@ -260,6 +269,67 @@ describe('ProblemSolutionDetailView', () => {
     expect(wrapper.find('.markdown-editor-mock').exists()).toBe(false)
     expect(button(wrapper, '编辑思路')).toBeUndefined()
     expect(button(wrapper, '删除思路')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('shows the like button and count on the post', async () => {
+    vi.mocked(getSolutionPost).mockResolvedValue(detail({ likeCount: 4, likedByMe: true }))
+    const wrapper = mountView()
+    await flushPromises()
+
+    const like = wrapper.find('button.like-button')
+    expect(like.exists()).toBe(true)
+    expect(like.attributes('aria-pressed')).toBe('true')
+    expect(like.text()).toContain('4')
+    wrapper.unmount()
+  })
+
+  it('redirects guests to login when they click like', async () => {
+    auth.isLoggedIn = false
+    vi.mocked(getSolutionPost).mockResolvedValue(detail({ canEdit: false, canDelete: false }))
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.find('button.like-button').trigger('click')
+    await flushPromises()
+
+    expect(routerPush).toHaveBeenCalledWith({
+      name: 'login',
+      query: { redirect: '/problems/1/solutions/5' },
+    })
+    expect(likeSolutionPost).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('likes via the API and applies the returned count', async () => {
+    vi.mocked(getSolutionPost).mockResolvedValue(detail({ likeCount: 2, likedByMe: false }))
+    vi.mocked(likeSolutionPost).mockResolvedValue({ liked: true, likeCount: 3 })
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.find('button.like-button').trigger('click')
+    await flushPromises()
+
+    expect(likeSolutionPost).toHaveBeenCalledWith(1, 5)
+    const like = wrapper.find('button.like-button')
+    expect(like.attributes('aria-pressed')).toBe('true')
+    expect(like.text()).toContain('3')
+    wrapper.unmount()
+  })
+
+  it('rolls back the optimistic like on API failure', async () => {
+    vi.mocked(getSolutionPost).mockResolvedValue(detail({ likeCount: 2, likedByMe: false }))
+    vi.mocked(likeSolutionPost).mockRejectedValue(new ApiError(500, 50000, '点赞失败'))
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.find('button.like-button').trigger('click')
+    await flushPromises()
+
+    const like = wrapper.find('button.like-button')
+    expect(like.attributes('aria-pressed')).toBe('false')
+    expect(like.text()).toContain('2')
+    expect(toast.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }))
     wrapper.unmount()
   })
 })

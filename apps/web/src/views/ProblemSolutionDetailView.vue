@@ -17,6 +17,7 @@ import {
   updateSolutionReply,
 } from '@/api/discussions'
 import { ApiError } from '@/api/http'
+import { likeSolutionPost, unlikeSolutionPost } from '@/api/social'
 import type { SolutionAuthor, SolutionPostDetail, SolutionReplyItem } from '@/api/types'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import MarkdownView from '@/components/MarkdownView.vue'
@@ -78,6 +79,34 @@ function charLen(s: string): number {
 
 function authorName(author: SolutionAuthor): string {
   return author.nickname || author.username
+}
+
+async function toggleLike() {
+  if (problemId.value === null || postId.value === null || !detail.value) return
+  if (!isLoggedIn.value) {
+    void router.push(loginTarget.value)
+    return
+  }
+  const post = detail.value
+  const prevLiked = post.likedByMe
+  const prevCount = post.likeCount
+  post.likedByMe = !prevLiked
+  post.likeCount = Math.max(0, prevCount + (prevLiked ? -1 : 1))
+  try {
+    const result = prevLiked
+      ? await unlikeSolutionPost(problemId.value, postId.value)
+      : await likeSolutionPost(problemId.value, postId.value)
+    post.likedByMe = result.liked
+    post.likeCount = result.likeCount
+  } catch (e) {
+    post.likedByMe = prevLiked
+    post.likeCount = prevCount
+    toast.add({
+      severity: 'error',
+      summary: e instanceof ApiError ? e.message : '操作失败，请稍后再试',
+      life: 3000,
+    })
+  }
 }
 
 const replyCanSubmit = computed(() => {
@@ -302,6 +331,17 @@ async function doDeleteReply(replyId: number) {
         <p class="post-meta">
           {{ authorName(detail.author) }} · {{ formatDateTime(detail.createdAt) }}
         </p>
+        <div class="post-like-row">
+          <Button
+            :icon="detail.likedByMe ? 'pi pi-heart-fill' : 'pi pi-heart'"
+            :label="String(detail.likeCount)"
+            :severity="detail.likedByMe ? 'danger' : 'secondary'"
+            :aria-pressed="detail.likedByMe"
+            :aria-label="detail.likedByMe ? '取消点赞' : '点赞'"
+            class="like-button"
+            @click="toggleLike"
+          />
+        </div>
         <div class="post-body">
           <MarkdownView :source="detail.contentMd" :theme="isDark ? 'dark' : 'light'" />
         </div>
@@ -472,6 +512,11 @@ async function doDeleteReply(replyId: number) {
   margin: 0;
   color: var(--kapoj-text-muted);
   font-size: 12px;
+}
+
+.post-like-row {
+  display: flex;
+  align-items: center;
 }
 
 .post-body {

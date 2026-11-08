@@ -7,9 +7,16 @@ import { nextTick } from 'vue'
 
 import { ApiError } from '@/api/http'
 import { getRatingHistory } from '@/api/leaderboard'
+import { followUser, getUserSocial, unfollowUser } from '@/api/social'
 import { getProfile } from '@/api/users'
 import type { Profile } from '@/api/types'
 import UserProfileView from './UserProfileView.vue'
+
+const auth = vi.hoisted(() => ({ isLoggedIn: true, user: null as { id: number } | null }))
+const toast = vi.hoisted(() => ({ add: vi.fn() }))
+
+vi.mock('@/stores/auth', () => ({ useAuthStore: () => auth }))
+vi.mock('primevue/usetoast', () => ({ useToast: () => toast }))
 
 vi.mock('@/api/users', () => ({
   getProfile: vi.fn(),
@@ -17,6 +24,14 @@ vi.mock('@/api/users', () => ({
 
 vi.mock('@/api/leaderboard', () => ({
   getRatingHistory: vi.fn(),
+}))
+
+vi.mock('@/api/social', () => ({
+  getUserSocial: vi.fn(),
+  followUser: vi.fn(),
+  unfollowUser: vi.fn(),
+  listFollowers: vi.fn(),
+  listFollowing: vi.fn(),
 }))
 
 function profile(overrides: Partial<Profile> = {}): Profile {
@@ -38,22 +53,43 @@ function profile(overrides: Partial<Profile> = {}): Profile {
 const routes = [
   { path: '/users/:id', name: 'user-profile', component: { template: '<div />' } },
   { path: '/contests/:id(\\d+)', name: 'contest-detail', component: { template: '<div />' } },
+  { path: '/login', name: 'login', component: { template: '<div />' } },
 ]
 
 async function mountPage(path = '/users/7') {
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push(path)
   await router.isReady()
-  const wrapper = mount(UserProfileView, { global: { plugins: [router, PrimeVue] } })
+  const wrapper = mount(UserProfileView, {
+    global: {
+      plugins: [router, PrimeVue],
+      stubs: { FollowListDialog: true },
+    },
+  })
   await flushPromises()
   return { wrapper, router }
 }
 
+function button(wrapper: Awaited<ReturnType<typeof mountPage>>['wrapper'], label: string) {
+  return wrapper.findAll('button').find((b) => b.text().trim() === label)
+}
+
 beforeEach(() => {
+  auth.isLoggedIn = true
+  auth.user = null
+  toast.add.mockReset()
   vi.mocked(getProfile).mockReset()
   vi.mocked(getProfile).mockResolvedValue(profile())
   vi.mocked(getRatingHistory).mockReset()
   vi.mocked(getRatingHistory).mockResolvedValue({ total: 0, items: [] })
+  vi.mocked(getUserSocial).mockReset()
+  vi.mocked(getUserSocial).mockResolvedValue({
+    followersCount: 0,
+    followingCount: 0,
+    isFollowing: false,
+  })
+  vi.mocked(followUser).mockReset()
+  vi.mocked(unfollowUser).mockReset()
 })
 
 describe('UserProfileView', () => {
@@ -182,6 +218,69 @@ describe('UserProfileView', () => {
 
     expect(avatar.props('image')).toBeFalsy()
     expect(avatar.props('label')).toBe('A')
+    wrapper.unmount()
+  })
+
+  it('shows social counts and opens the follower dialog', async () => {
+    vi.mocked(getUserSocial).mockResolvedValue({
+      followersCount: 12,
+      followingCount: 5,
+      isFollowing: false,
+    })
+    const { wrapper } = await mountPage('/users/7')
+
+    expect(getUserSocial).toHaveBeenCalledWith('7')
+    expect(wrapper.text()).toContain('12')
+    expect(wrapper.text()).toContain('5')
+
+    await wrapper.find('.social-stat--followers').trigger('click')
+    await flushPromises()
+
+    const dialog = wrapper.findComponent({ name: 'FollowListDialog' })
+    expect(dialog.props('visible')).toBe(true)
+    expect(dialog.props('initialTab')).toBe('followers')
+    wrapper.unmount()
+  })
+
+  it('shows the follow button to a logged-in visitor and follows', async () => {
+    auth.user = { id: 99 }
+    vi.mocked(getUserSocial).mockResolvedValue({
+      followersCount: 12,
+      followingCount: 5,
+      isFollowing: false,
+    })
+    vi.mocked(followUser).mockResolvedValue({ following: true, followersCount: 13 })
+    const { wrapper } = await mountPage('/users/7')
+
+    await button(wrapper, '关注')!.trigger('click')
+    await flushPromises()
+
+    expect(followUser).toHaveBeenCalledWith(7)
+    expect(wrapper.text()).toContain('已关注')
+    expect(wrapper.text()).toContain('13')
+    wrapper.unmount()
+  })
+
+  it('hides the follow button on your own profile', async () => {
+    auth.user = { id: 7 }
+    const { wrapper } = await mountPage('/users/7')
+
+    expect(button(wrapper, '关注')).toBeUndefined()
+    expect(button(wrapper, '已关注')).toBeUndefined()
+    expect(button(wrapper, '登录后关注')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('shows a login button to guests and redirects to login', async () => {
+    auth.isLoggedIn = false
+    auth.user = null
+    const { wrapper, router } = await mountPage('/users/7')
+
+    await button(wrapper, '登录后关注')!.trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.name).toBe('login')
+    expect(router.currentRoute.value.query.redirect).toBe('/users/7')
     wrapper.unmount()
   })
 })

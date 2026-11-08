@@ -8,6 +8,7 @@ import { nextTick, reactive } from 'vue'
 
 import { createSolutionPost, listSolutionPosts } from '@/api/discussions'
 import { ApiError } from '@/api/http'
+import { likeSolutionPost, unlikeSolutionPost } from '@/api/social'
 import type { SolutionPostDetail, SolutionPostItem } from '@/api/types'
 import ProblemSolutionsView from './ProblemSolutionsView.vue'
 
@@ -15,10 +16,11 @@ const route = reactive({ params: { id: '1' }, fullPath: '/problems/1/solutions' 
 
 const toast = vi.hoisted(() => ({ add: vi.fn() }))
 const auth = vi.hoisted(() => ({ isLoggedIn: true }))
+const routerPush = vi.hoisted(() => vi.fn())
 
 vi.mock('vue-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-router')>()
-  return { ...actual, useRoute: () => route }
+  return { ...actual, useRoute: () => route, useRouter: () => ({ push: routerPush }) }
 })
 vi.mock('primevue/usetoast', () => ({ useToast: () => toast }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => auth }))
@@ -34,6 +36,10 @@ vi.mock('@/api/discussions', () => ({
   listSolutionPosts: vi.fn(),
   createSolutionPost: vi.fn(),
 }))
+vi.mock('@/api/social', () => ({
+  likeSolutionPost: vi.fn(),
+  unlikeSolutionPost: vi.fn(),
+}))
 
 function post(overrides: Partial<SolutionPostItem> = {}): SolutionPostItem {
   return {
@@ -44,6 +50,8 @@ function post(overrides: Partial<SolutionPostItem> = {}): SolutionPostItem {
     excerpt: '先打表找规律……',
     author: { id: 2, username: 'alice', nickname: 'Alice' },
     replyCount: 3,
+    likeCount: 0,
+    likedByMe: false,
     createdAt: '2026-01-02T03:04:05Z',
     updatedAt: '2026-01-02T03:04:05Z',
     canEdit: false,
@@ -75,8 +83,11 @@ beforeEach(() => {
   route.params.id = '1'
   auth.isLoggedIn = true
   toast.add.mockReset()
+  routerPush.mockReset()
   vi.mocked(listSolutionPosts).mockReset()
   vi.mocked(createSolutionPost).mockReset()
+  vi.mocked(likeSolutionPost).mockReset()
+  vi.mocked(unlikeSolutionPost).mockReset()
 })
 
 describe('ProblemSolutionsView', () => {
@@ -225,6 +236,76 @@ describe('ProblemSolutionsView', () => {
     expect(wrapper.text()).toContain('如何 AC 这道题')
     expect(wrapper.find('a.login-link').exists()).toBe(true)
     expect(button(wrapper, '发布思路')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('shows the like count and likedByMe state on each post', async () => {
+    vi.mocked(listSolutionPosts).mockResolvedValue({
+      total: 1,
+      items: [post({ likeCount: 5, likedByMe: true })],
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    const like = wrapper.find('button.like-button')
+    expect(like.exists()).toBe(true)
+    expect(like.attributes('aria-pressed')).toBe('true')
+    expect(like.text()).toContain('5')
+    wrapper.unmount()
+  })
+
+  it('redirects guests to login when they click like', async () => {
+    auth.isLoggedIn = false
+    vi.mocked(listSolutionPosts).mockResolvedValue({ total: 1, items: [post()] })
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.find('button.like-button').trigger('click')
+    await flushPromises()
+
+    expect(routerPush).toHaveBeenCalledWith({
+      name: 'login',
+      query: { redirect: '/problems/1/solutions' },
+    })
+    expect(likeSolutionPost).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('likes via the API and applies the returned count', async () => {
+    vi.mocked(listSolutionPosts).mockResolvedValue({
+      total: 1,
+      items: [post({ likeCount: 2, likedByMe: false })],
+    })
+    vi.mocked(likeSolutionPost).mockResolvedValue({ liked: true, likeCount: 3 })
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.find('button.like-button').trigger('click')
+    await flushPromises()
+
+    expect(likeSolutionPost).toHaveBeenCalledWith(1, 1)
+    const like = wrapper.find('button.like-button')
+    expect(like.attributes('aria-pressed')).toBe('true')
+    expect(like.text()).toContain('3')
+    wrapper.unmount()
+  })
+
+  it('rolls back the optimistic like on API failure', async () => {
+    vi.mocked(listSolutionPosts).mockResolvedValue({
+      total: 1,
+      items: [post({ likeCount: 2, likedByMe: false })],
+    })
+    vi.mocked(likeSolutionPost).mockRejectedValue(new ApiError(500, 50000, '点赞失败'))
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.find('button.like-button').trigger('click')
+    await flushPromises()
+
+    const like = wrapper.find('button.like-button')
+    expect(like.attributes('aria-pressed')).toBe('false')
+    expect(like.text()).toContain('2')
+    expect(toast.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }))
     wrapper.unmount()
   })
 })

@@ -5,6 +5,7 @@ import Button from 'primevue/button'
 import Drawer from 'primevue/drawer'
 
 import AppBrand from '@/components/layout/AppBrand.vue'
+import NotificationBell from '@/components/layout/NotificationBell.vue'
 import UserMenu from '@/components/UserMenu.vue'
 import AppThemeToggle from '@/components/ui/AppThemeToggle.vue'
 import { useLayoutDrawer, type LayoutMenuButtonHandle } from '@/composables/useLayoutDrawer'
@@ -71,6 +72,7 @@ const pageTitle = computed(() => route.meta.title ?? props.titleFallback)
         </div>
         <div class="app-header__actions">
           <AppThemeToggle />
+          <NotificationBell v-if="showUserMenu" />
           <UserMenu v-if="showUserMenu" />
         </div>
       </header>

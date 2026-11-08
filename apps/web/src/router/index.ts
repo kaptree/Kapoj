@@ -205,6 +205,12 @@ export const router = createRouter({
           meta: { requiresAuth: true, title: '装扮管理' },
         },
         {
+          path: 'notifications',
+          name: 'notifications',
+          component: () => import('@/views/NotificationsView.vue'),
+          meta: { requiresAuth: true, title: '通知' },
+        },
+        {
           path: 'forbidden',
           name: 'forbidden',
           component: () => import('@/views/ForbiddenView.vue'),

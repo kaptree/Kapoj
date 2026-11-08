@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
@@ -10,6 +10,7 @@ import { useToast } from 'primevue/usetoast'
 
 import { createSolutionPost, listSolutionPosts } from '@/api/discussions'
 import { ApiError } from '@/api/http'
+import { likeSolutionPost, unlikeSolutionPost } from '@/api/social'
 import type { SolutionAuthor, SolutionPostItem } from '@/api/types'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import AppEmptyState from '@/components/ui/AppEmptyState.vue'
@@ -26,6 +27,7 @@ const MAX_TITLE = 100
 const MAX_POST = 50000
 
 const route = useRoute()
+const router = useRouter()
 const auth = useAuthStore()
 const toast = useToast()
 const { isDark } = useTheme()
@@ -74,6 +76,33 @@ const publishCanSubmit = computed(() => {
 
 function authorName(author: SolutionAuthor): string {
   return author.nickname || author.username
+}
+
+async function toggleLike(post: SolutionPostItem) {
+  if (problemId.value === null) return
+  if (!isLoggedIn.value) {
+    void router.push(loginTarget.value)
+    return
+  }
+  const prevLiked = post.likedByMe
+  const prevCount = post.likeCount
+  post.likedByMe = !prevLiked
+  post.likeCount = Math.max(0, prevCount + (prevLiked ? -1 : 1))
+  try {
+    const result = prevLiked
+      ? await unlikeSolutionPost(problemId.value, post.id)
+      : await likeSolutionPost(problemId.value, post.id)
+    post.likedByMe = result.liked
+    post.likeCount = result.likeCount
+  } catch (e) {
+    post.likedByMe = prevLiked
+    post.likeCount = prevCount
+    toast.add({
+      severity: 'error',
+      summary: e instanceof ApiError ? e.message : '操作失败，请稍后再试',
+      life: 3000,
+    })
+  }
 }
 
 let latest = 0
@@ -196,7 +225,20 @@ async function submitPublish() {
             <AppSurface as="article" padding="md" interactive class="post-card">
               <div class="card-head">
                 <h2 class="post-title">{{ post.title }}</h2>
-                <span class="reply-count">{{ post.replyCount }} 回复</span>
+                <div class="card-actions">
+                  <Button
+                    :icon="post.likedByMe ? 'pi pi-heart-fill' : 'pi pi-heart'"
+                    :label="String(post.likeCount)"
+                    :severity="post.likedByMe ? 'danger' : 'secondary'"
+                    text
+                    size="small"
+                    :aria-pressed="post.likedByMe"
+                    :aria-label="post.likedByMe ? '取消点赞' : '点赞'"
+                    class="like-button"
+                    @click.prevent.stop="toggleLike(post)"
+                  />
+                  <span class="reply-count">{{ post.replyCount }} 回复</span>
+                </div>
               </div>
               <p class="post-excerpt">{{ post.excerpt }}</p>
               <p class="card-meta">
@@ -296,6 +338,17 @@ async function submitPublish() {
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--kapoj-space-2);
+}
+
+.card-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--kapoj-space-2);
+}
+
+.like-button {
+  padding: 0 var(--kapoj-space-1);
 }
 
 .post-title {

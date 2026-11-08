@@ -28,7 +28,7 @@ async function mountShell(props: Record<string, unknown> = {}) {
     },
     global: {
       plugins: [router, PrimeVue],
-      stubs: { UserMenu: true, AppThemeToggle: true },
+      stubs: { UserMenu: true, AppThemeToggle: true, NotificationBell: true },
     },
   })
   return { wrapper, router }
@@ -85,5 +85,18 @@ describe('AppShell', () => {
     const { wrapper } = await mountShell({ showUserMenu: false })
 
     expect(wrapper.find('user-menu-stub').exists()).toBe(false)
+    expect(wrapper.find('notification-bell-stub').exists()).toBe(false)
+  })
+
+  it('renders the notification bell before the user menu', async () => {
+    const { wrapper } = await mountShell()
+
+    const bell = wrapper.find('notification-bell-stub')
+    const menu = wrapper.find('user-menu-stub')
+    expect(bell.exists()).toBe(true)
+    expect(menu.exists()).toBe(true)
+    expect(wrapper.html().indexOf('notification-bell-stub')).toBeLessThan(
+      wrapper.html().indexOf('user-menu-stub'),
+    )
   })
 })
