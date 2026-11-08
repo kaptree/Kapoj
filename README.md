@@ -117,9 +117,9 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 - 等级为灰/绿/青/蓝/紫/橙/红/黑红；黑红名 `color=#000000`、`accentColor=#FF0000`，其他等级 `accentColor` 为空字符串。
 - `GET /api/leaderboard/activity?page=&page_size=`：公开活跃度榜，只含 `status=active` 且总活跃度 > 0 的用户，按总分降序、用户 ID 升序；`score` 为活跃度。
 - `GET /api/leaderboard/sharing?page=&page_size=`：公开共享榜，只含 `status=active` 且共享分 > 0 的用户，按共享分降序、用户 ID 升序；`score` 为共享分。
-- 活跃度规则：提交 +2（每日上限 40）、比赛报名 +10（每日上限 50）、每日签到 +5（每天一次）；同一提交/比赛/日期不重复计分，达到每日上限后不再加分，均不影响主流程。
+- 活跃度规则：提交 +2（每日上限 40）、比赛报名 +10（每日上限 50）、每日签到 +5（每天一次）；同一提交/比赛/日期不重复计分，达到每日上限后不再加分，均不影响主流程。M4-3 起论坛回复 +3、点赞 +1、关注 +2，各每日上限 20 分，同一对象去重；取消赞/关注不扣分。
 - 签到金币：`POST /api/activity/signin` 每个本地自然日首次签到额外 +5 金币，签到活跃度、金币流水与余额在同一事务内完成；重复签到返回 `awarded=false`，不重复发币。`GET /api/activity/summary` 返回今日是否签到、今日活跃度与总活跃度。
-- 共享积分：创建或克隆比赛 +20，服务启动时会把已有 `created_by>0` 的比赛幂等回填到 `shared_items`；共享分公式中的“题解被点赞 5/赞”尚未实现，本阶段恒为 0。
+- 共享积分：创建或克隆比赛 +20，服务启动时会把已有 `created_by>0` 的比赛幂等回填到 `shared_items`；题解帖子每获 1 个赞，作者共享分 +5；取消赞扣回；删除帖子清理共享项（见「社交互动（M4-3）」）。
 - 三个榜单的基础行都使用 Redis 版本缓存 60 秒，key 形如 `kapoj:leaderboard:<kind>:v<version>:<page>:<size>`；Rating 结算、活跃度写入、共享项写入后递增对应 `kapoj:leaderboard:<kind>:version`。缓存只含基础行，装备在读取后批量装饰；Redis/缓存故障时回退数据库，缓存故障本身不会导致 5xx（身份装饰查询失败仍可能返回 5xx）。
 - 社交互动（题解点赞/关注/通知）已随 M4-3 完成，见「社交互动（M4-3）」小节。
 
