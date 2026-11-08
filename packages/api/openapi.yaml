@@ -383,6 +383,58 @@ paths:
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
         '500': { $ref: '#/components/responses/Error' }
+  /admin/ai/key:
+    get:
+      summary: 获取 AI 加密密钥状态（ai.settings.manage）
+      description: 返回是否已配置、密钥来源、脱敏值与指纹；绝不包含完整密钥。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 密钥状态
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AIKeyViewResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '500': { $ref: '#/components/responses/Error' }
+    put:
+      summary: 手动填写并保存 AI 加密密钥（ai.settings.manage）
+      description: >-
+        校验 base64 编码的 32 字节密钥；已有密钥时轮换并自动重加密所有用户 AI Key。
+        环境变量来源时返回 40001。密钥只写入服务端本地密钥文件，绝不写入数据库或日志。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AIKeyInput' }
+      responses:
+        '200':
+          description: 保存后的密钥状态
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AIKeyViewResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '500': { $ref: '#/components/responses/Error' }
+  /admin/ai/key/generate:
+    post:
+      summary: 自动生成并保存 AI 加密密钥（ai.settings.manage）
+      description: >-
+        生成 32 字节随机密钥并保存；已有密钥时轮换并自动重加密所有用户 AI Key。
+        完整密钥仅在响应中一次性返回，请立即备份；环境变量来源时返回 40001。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 生成后的密钥状态与一次性完整密钥
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AIKeyGenerateResultResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '500': { $ref: '#/components/responses/Error' }
   /admin/permissions:
     get:
       summary: 权限目录（role.read）
@@ -3706,6 +3758,41 @@ components:
           required: [data]
           properties:
             data: { $ref: '#/components/schemas/AdminAISettingsView' }
+    AIKeyView:
+      type: object
+      description: AI 加密密钥状态视图；绝不包含完整密钥。
+      required: [configured, source, masked, fingerprint]
+      properties:
+        configured: { type: boolean, description: 是否已配置可用密钥 }
+        source: { type: string, description: 密钥来源：env（环境变量）、file（本地密钥文件）或 none（未配置） }
+        masked: { type: string, description: 密钥脱敏值（前 3 字符…后 4 字符，长度不超过 8 时为 ****）；未配置时为空字符串 }
+        fingerprint: { type: string, description: 密钥 SHA-256 hex 指纹；未配置时为空字符串 }
+    AIKeyGenerateResult:
+      allOf:
+        - $ref: '#/components/schemas/AIKeyView'
+        - type: object
+          required: [key]
+          properties:
+            key: { type: string, description: 一次性返回的完整密钥（base64 编码的 32 字节密钥），仅供生成后备份；刷新后不再返回 }
+    AIKeyInput:
+      type: object
+      required: [key]
+      properties:
+        key: { type: string, description: 手动填写的密钥，必须为 base64 编码的 32 字节密钥 }
+    AIKeyViewResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/AIKeyView' }
+    AIKeyGenerateResultResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/AIKeyGenerateResult' }
     RatingSeasonResponse:
       allOf:
         - $ref: '#/components/schemas/Envelope'
@@ -4015,9 +4102,10 @@ components:
     AIConfigView:
       type: object
       description: 用户 AI 配置脱敏视图；apiKeyMasked 绝不包含明文或密文 API key。
-      required: [configured, provider, modelName, apiKeyMasked, providers]
+      required: [configured, keyConfigured, provider, modelName, apiKeyMasked, providers]
       properties:
         configured: { type: boolean, description: 是否已配置；false 时 provider/modelName/apiKeyMasked 均为空字符串 }
+        keyConfigured: { type: boolean, description: 平台是否已配置 AI 加密密钥（与用户自身是否配置无关）；false 时用户无法保存配置或调用 AI }
         provider: { type: string, description: provider code；未配置时为空字符串 }
         modelName: { type: string, description: 模型名；未配置时为空字符串 }
         apiKeyMasked: { type: string, description: 脱敏后的 API key；未配置时为空字符串 }

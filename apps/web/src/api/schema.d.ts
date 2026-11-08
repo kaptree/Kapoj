@@ -1014,6 +1014,122 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/ai/key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 获取 AI 加密密钥状态（ai.settings.manage）
+         * @description 返回是否已配置、密钥来源、脱敏值与指纹；绝不包含完整密钥。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 密钥状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AIKeyViewResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                500: components["responses"]["Error"];
+            };
+        };
+        /**
+         * 手动填写并保存 AI 加密密钥（ai.settings.manage）
+         * @description 校验 base64 编码的 32 字节密钥；已有密钥时轮换并自动重加密所有用户 AI Key。 环境变量来源时返回 40001。密钥只写入服务端本地密钥文件，绝不写入数据库或日志。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AIKeyInput"];
+                };
+            };
+            responses: {
+                /** @description 保存后的密钥状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AIKeyViewResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                500: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/ai/key/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 自动生成并保存 AI 加密密钥（ai.settings.manage）
+         * @description 生成 32 字节随机密钥并保存；已有密钥时轮换并自动重加密所有用户 AI Key。 完整密钥仅在响应中一次性返回，请立即备份；环境变量来源时返回 40001。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 生成后的密钥状态与一次性完整密钥 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AIKeyGenerateResultResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                500: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/permissions": {
         parameters: {
             query?: never;
@@ -6403,6 +6519,31 @@ export interface components {
         AdminAISettingsResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["AdminAISettingsView"];
         };
+        /** @description AI 加密密钥状态视图；绝不包含完整密钥。 */
+        AIKeyView: {
+            /** @description 是否已配置可用密钥 */
+            configured: boolean;
+            /** @description 密钥来源：env（环境变量）、file（本地密钥文件）或 none（未配置） */
+            source: string;
+            /** @description 密钥脱敏值（前 3 字符…后 4 字符，长度不超过 8 时为 ****）；未配置时为空字符串 */
+            masked: string;
+            /** @description 密钥 SHA-256 hex 指纹；未配置时为空字符串 */
+            fingerprint: string;
+        };
+        AIKeyGenerateResult: components["schemas"]["AIKeyView"] & {
+            /** @description 一次性返回的完整密钥（base64 编码的 32 字节密钥），仅供生成后备份；刷新后不再返回 */
+            key: string;
+        };
+        AIKeyInput: {
+            /** @description 手动填写的密钥，必须为 base64 编码的 32 字节密钥 */
+            key: string;
+        };
+        AIKeyViewResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AIKeyView"];
+        };
+        AIKeyGenerateResultResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AIKeyGenerateResult"];
+        };
         RatingSeasonResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["RatingSeasonView"];
         };
@@ -6626,6 +6767,8 @@ export interface components {
         AIConfigView: {
             /** @description 是否已配置；false 时 provider/modelName/apiKeyMasked 均为空字符串 */
             configured: boolean;
+            /** @description 平台是否已配置 AI 加密密钥（与用户自身是否配置无关）；false 时用户无法保存配置或调用 AI */
+            keyConfigured: boolean;
             /** @description provider code；未配置时为空字符串 */
             provider: string;
             /** @description 模型名；未配置时为空字符串 */

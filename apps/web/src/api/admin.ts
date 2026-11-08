@@ -1,5 +1,8 @@
 import { http } from './client'
 import type {
+  AIKeyGenerateResult,
+  AIKeyInput,
+  AIKeyView,
   AdminAISettingsInput,
   AdminAISettingsView,
   AdminAuditItem,
@@ -38,6 +41,15 @@ export const getAdminAISettings = () => http.get<AdminAISettingsView>('/admin/ai
 /** Update the AI feature switch; enabling requires a configured key (ai.settings.manage). */
 export const updateAdminAISettings = (input: AdminAISettingsInput) =>
   http.put<AdminAISettingsView>('/admin/ai/settings', input)
+
+/** Current AI encryption key status: source/masked/fingerprint, never the full key (ai.settings.manage). */
+export const getAdminAIKey = () => http.get<AIKeyView>('/admin/ai/key')
+
+/** Generate and persist a new AI encryption key; the full key is returned once for backup (ai.settings.manage). */
+export const generateAdminAIKey = () => http.post<AIKeyGenerateResult>('/admin/ai/key/generate')
+
+/** Manually set the AI encryption key, rotating (and re-encrypting user keys) if one exists (ai.settings.manage). */
+export const setAdminAIKey = (input: AIKeyInput) => http.put<AIKeyView>('/admin/ai/key', input)
 
 export interface ListAdminUsersQuery {
   keyword?: string
