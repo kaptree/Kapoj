@@ -59,15 +59,15 @@ KAPOJ_AI_ENCRYPTION_KEY 可选，优先级高于文件
   - `Source() string`（`env`/`file`/`none`）
   - `Masked() string`（前 3…后 4，长度≤8 为 `****`）
   - `Fingerprint() string`（SHA-256 hex）
-  - `Encrypt/Decrypt`（无密钥返回 `httpx.ErrValidation("AI 加密密钥未配置")`）
+  - `Encrypt/Decrypt`（无密钥返回专用错误码 40002，文案“AI 加密密钥未配置”）
   - `Replace(enc *Encryptor, source string)`（轮换成功后在内存切换）
 - `ai.Service` 改为持有 `*KeyManager`，不再持有单个 `*Encryptor`；所有 Encrypt/Decrypt 走 KeyManager。
 - `main`：
   - 解析 `AIEncryptionKey`/`AIKeyFile`；构造 KeyManager（env 优先/文件）。
   - **始终构造 AI Service**（不再以密钥是否存在决定是否挂载）；`d.AI` 非 nil。
   - `/api/ai/*` 路由始终挂载，`RequireAIEnabled` 只检查管理开关。
-- `ConfigView` 新增 `keyConfigured bool`；`GetConfig` 返回；`SaveConfig` 无密钥返回 40001。
-- `aiapi` 的 complete/format/optimize/hint 无密钥返回 40001（hint 缓存命中仍可返回）。
+- `ConfigView` 新增 `keyConfigured bool`；`GetConfig` 返回；`SaveConfig` 无密钥返回 40002（与用户未配置模型的 40001 区分）。
+- `aiapi` 的 complete/format/optimize/hint 无密钥返回 40002（hint 缓存命中仍可返回）。
 - `ai_settings.keyConfigured` 改为 `KeyManager.Configured()` 动态判断，不再用 `d.AI==nil`。
 - 管理开关启用时要求 `keyConfigured=true`（保存时检查当前 KeyManager）。
 
@@ -77,6 +77,7 @@ KAPOJ_AI_ENCRYPTION_KEY 可选，优先级高于文件
   - `View() KeyView{configured, source, masked, fingerprint}`。
   - `Generate(ctx, actorID) (*KeyView, generatedKey string, error)`。
   - `SetManual(ctx, actorID, rawKey string) (*KeyView, error)`。
+  - 密钥操作使用 `SettingsService` 内互斥锁（`keyMu`）串行化；多实例部署仍以单管理员操作为前提。
   - `Rotate(ctx, actorID, newEnc) error`：
     1. 若 source=env → 40001。
     2. 若无旧密钥但存在 `user_ai_configs` 行 → 40001“存在无法解密的用户 AI 配置，请先恢复旧密钥”；无旧密钥且无配置 → 直接保存。
@@ -104,7 +105,10 @@ ai_settings (
 ```
 
 - 迁移新增列；密钥本身只在文件。
-- 轮换事务更新 `key_fingerprint`；启动时若文件密钥指纹与 DB 不一致，记录警告（不自动选旧密钥）；后台显示指纹，管理员可恢复备份。
+- 轮换事务更新 `key_fingerprint`；启动时若文件密钥指纹与 DB 不一致：
+  - 若 `ai.key.bak` 存在且其指纹与 DB 一致，自动恢复备份为当前密钥文件并使用旧密钥（记录警告）；
+  - 否则记录醒目错误日志，后台显示指纹，管理员可恢复备份/手动填写旧密钥。
+  - 启动校验在 DB 连接与 settings 行可用后执行，不阻塞其他路由。
 - 不做密钥版本表。
 
 ## 6. 前端
@@ -158,7 +162,8 @@ ai_settings (
 ### 8.2 前端
 
 - 管理页密钥板块：未配置/已配置/env；生成一次性显示/复制；手动；轮换确认；错误；开关与密钥联动。
-- 用户 AI 设置/提交/提示的 keyConfigured 状态与 404 状态区分。
+- 用户 AI 设置/提交/提示的 keyConfigured 状态与 404 状态区分；平台密钥缺失用 40002。
+- 启动指纹/备份恢复测试。
 - 生成类型/lint/build。
 
 ### 8.3 真实冒烟
