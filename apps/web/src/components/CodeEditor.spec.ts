@@ -55,4 +55,49 @@ describe('CodeEditor', () => {
     wrapper.unmount()
     expect(dispose).toHaveBeenCalled()
   })
+
+  it('returns UTF-8 cursor offset and inserts at cursor', async () => {
+    const getValue = vi.fn(() => '中a')
+    const getPosition = vi.fn(() => ({ lineNumber: 1, column: 2 }))
+    const getOffsetAt = vi.fn(() => 1)
+    const executeEdits = vi.fn()
+    const focus = vi.fn()
+    const fakeEditor = {
+      getValue,
+      setValue: vi.fn(),
+      getPosition,
+      getModel: vi.fn(() => ({ getOffsetAt, getValue })),
+      onDidChangeModelContent: vi.fn(),
+      executeEdits,
+      focus,
+      dispose: vi.fn(),
+    }
+    mocks.create.mockReturnValue(fakeEditor)
+
+    const wrapper = mount(CodeEditor, {
+      props: { modelValue: '中a', language: 'cpp' },
+    })
+
+    const vm = wrapper.vm as unknown as {
+      getCursorByteOffset: () => number
+      insertAtCursor: (text: string) => void
+    }
+
+    // offset 1 (UTF-16) slices '中' → 3 UTF-8 bytes
+    expect(vm.getCursorByteOffset()).toBe(3)
+
+    vm.insertAtCursor('x')
+    expect(executeEdits).toHaveBeenCalledWith('ai-insert', [
+      {
+        range: {
+          startLineNumber: 1,
+          startColumn: 2,
+          endLineNumber: 1,
+          endColumn: 2,
+        },
+        text: 'x',
+      },
+    ])
+    expect(focus).toHaveBeenCalled()
+  })
 })

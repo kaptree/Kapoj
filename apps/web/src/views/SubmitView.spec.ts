@@ -5,14 +5,19 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
-import { ApiError } from '@/api/http'
+import { completeCode, formatCode, getAIConfig, optimizeCode } from '@/api/ai'
 import { getContest } from '@/api/contests'
+import { ApiError } from '@/api/http'
 import { getProblem } from '@/api/problems'
 import { createSubmission } from '@/api/submissions'
-import type { ContestDetail, ProblemDetail } from '@/api/types'
+import type { AIConfigView, ContestDetail, ProblemDetail } from '@/api/types'
 import SubmitView from './SubmitView.vue'
 
 const toast = vi.hoisted(() => ({ add: vi.fn() }))
+const editorMock = vi.hoisted(() => ({
+  getCursorByteOffset: vi.fn(),
+  insertAtCursor: vi.fn(),
+}))
 
 vi.mock('primevue/usetoast', () => ({
   useToast: () => toast,
@@ -26,11 +31,47 @@ vi.mock('@/api/contests', () => ({
 vi.mock('@/api/submissions', () => ({
   createSubmission: vi.fn(),
 }))
+vi.mock('@/api/ai', () => ({
+  getAIConfig: vi.fn(),
+  completeCode: vi.fn(),
+  formatCode: vi.fn(),
+  optimizeCode: vi.fn(),
+}))
+vi.mock('@/components/MarkdownView.vue', () => ({
+  default: {
+    name: 'MarkdownView',
+    props: ['source', 'theme'],
+    template: '<div class="md-stub">{{ source }}</div>',
+  },
+}))
 vi.mock('@/components/CodeEditor.vue', () => ({
   default: {
     name: 'CodeEditor',
-    props: ['modelValue', 'language', 'height'],
+    props: {
+      modelValue: { type: String, default: '' },
+      language: { type: String },
+      height: { type: String },
+      readonly: { type: Boolean },
+    },
     emits: ['update:modelValue'],
+    setup(
+      props: { modelValue: string },
+      {
+        emit,
+        expose,
+      }: {
+        emit: (event: 'update:modelValue', value: string) => void
+        expose: (exposed: Record<string, unknown>) => void
+      },
+    ) {
+      expose({
+        getCursorByteOffset: () => editorMock.getCursorByteOffset(),
+        insertAtCursor: (text: string) => {
+          editorMock.insertAtCursor(text)
+          emit('update:modelValue', props.modelValue + text)
+        },
+      })
+    },
     template: '<div class="code-editor-stub">{{ modelValue }}</div>',
   },
 }))
@@ -59,12 +100,24 @@ function detail(id: number): ProblemDetail {
   } as ProblemDetail
 }
 
+function aiConfig(overrides: Partial<AIConfigView> = {}): AIConfigView {
+  return {
+    configured: true,
+    provider: 'deepseek',
+    modelName: 'deepseek-chat',
+    apiKeyMasked: 'sk-***',
+    providers: [{ code: 'deepseek', name: 'DeepSeek', defaultModel: 'deepseek-chat' }],
+    ...overrides,
+  }
+}
+
 const routes = [
   { path: '/problems/:id/submit', name: 'problem-submit', component: { template: '<div />' } },
   { path: '/submissions', name: 'submissions', component: { template: '<div />' } },
   { path: '/problems', name: 'problems', component: { template: '<div />' } },
   { path: '/problems/:id', name: 'problem-detail', component: { template: '<div />' } },
   { path: '/contests/:id', name: 'contest-detail', component: { template: '<div />' } },
+  { path: '/settings/ai', name: 'ai-settings', component: { template: '<div />' } },
 ]
 
 async function mountPage(path = '/problems/1/submit') {
@@ -84,15 +137,34 @@ function submitButton(wrapper: Awaited<ReturnType<typeof mountPage>>['wrapper'])
   return wrapper.findAll('button').find((button) => button.text().includes('提交'))
 }
 
+function aiButton(wrapper: Awaited<ReturnType<typeof mountPage>>['wrapper'], label: string) {
+  return wrapper.findAll('button').find((button) => button.text().includes(label))
+}
+
+function dialogButton(label: string): HTMLButtonElement {
+  const dialog = document.querySelector('.p-dialog')!
+  return [...dialog.querySelectorAll('button')].find((b) =>
+    b.textContent!.includes(label),
+  ) as HTMLButtonElement
+}
+
 beforeEach(() => {
   localStorage.clear()
+  document.body.innerHTML = ''
   toast.add.mockReset()
   vi.mocked(getProblem).mockReset()
   vi.mocked(getContest).mockReset()
   vi.mocked(createSubmission).mockReset()
+  vi.mocked(getAIConfig).mockReset()
+  vi.mocked(completeCode).mockReset()
+  vi.mocked(formatCode).mockReset()
+  vi.mocked(optimizeCode).mockReset()
+  editorMock.getCursorByteOffset.mockReset()
+  editorMock.insertAtCursor.mockReset()
   vi.mocked(getProblem).mockResolvedValue(detail(1))
   vi.mocked(getContest).mockResolvedValue({ title: 'Weekly' } as unknown as ContestDetail)
   vi.mocked(createSubmission).mockResolvedValue({ id: 42, status: 'pending' })
+  vi.mocked(getAIConfig).mockResolvedValue(aiConfig())
 })
 
 describe('SubmitView', () => {
@@ -194,5 +266,130 @@ describe('SubmitView', () => {
     wrapper.unmount()
 
     expect(localStorage.getItem('kapoj:code:practice:1:cpp')).toBe('draft on unmount')
+  })
+
+  it('shows config banner and disables AI buttons when not configured', async () => {
+    vi.mocked(getAIConfig).mockResolvedValue(aiConfig({ configured: false }))
+    const { wrapper } = await mountPage()
+
+    expect(wrapper.text()).toContain('尚未配置 AI 模型')
+    expect(wrapper.find('a[href="/settings/ai"]').exists()).toBe(true)
+    expect((aiButton(wrapper, 'AI 补全')!.element as HTMLButtonElement).disabled).toBe(true)
+    expect((aiButton(wrapper, 'AI 格式化')!.element as HTMLButtonElement).disabled).toBe(true)
+    expect((aiButton(wrapper, 'AI 优化')!.element as HTMLButtonElement).disabled).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('disables AI when GET /ai/configs returns 404', async () => {
+    vi.mocked(getAIConfig).mockRejectedValue(new ApiError(404, 40400, 'not found'))
+    const { wrapper } = await mountPage()
+
+    expect(wrapper.text()).toContain('AI 功能未启用')
+    expect((aiButton(wrapper, 'AI 补全')!.element as HTMLButtonElement).disabled).toBe(true)
+    expect((aiButton(wrapper, 'AI 格式化')!.element as HTMLButtonElement).disabled).toBe(true)
+    expect((aiButton(wrapper, 'AI 优化')!.element as HTMLButtonElement).disabled).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('completes at cursor and inserts returned fragment', async () => {
+    localStorage.setItem('kapoj:code:practice:1:cpp', 'int main() {}')
+    editorMock.getCursorByteOffset.mockReturnValue(7)
+    vi.mocked(completeCode).mockResolvedValue({ completion: ' return 0;' })
+    const { wrapper } = await mountPage()
+
+    await aiButton(wrapper, 'AI 补全')!.trigger('click')
+    await flushPromises()
+
+    expect(completeCode).toHaveBeenCalledWith({
+      code: 'int main() {}',
+      language: 'cpp',
+      cursor: 7,
+    })
+    expect(editorMock.insertAtCursor).toHaveBeenCalledWith(' return 0;')
+    expect(editor(wrapper).props('modelValue')).toBe('int main() {} return 0;')
+    wrapper.unmount()
+  })
+
+  it('previews and applies formatted code only after confirm', async () => {
+    localStorage.setItem('kapoj:code:practice:1:cpp', 'int  main()  {}')
+    vi.mocked(formatCode).mockResolvedValue({ code: 'int main() {}\n' })
+    const { wrapper } = await mountPage()
+
+    await aiButton(wrapper, 'AI 格式化')!.trigger('click')
+    await flushPromises()
+
+    expect(formatCode).toHaveBeenCalledWith({ code: 'int  main()  {}', language: 'cpp' })
+    // Preview only — the draft must not change yet.
+    expect(editor(wrapper).props('modelValue')).toBe('int  main()  {}')
+    expect(document.querySelector('.p-dialog')!.textContent).toContain('int main() {}')
+
+    dialogButton('应用格式化').click()
+    await flushPromises()
+
+    expect(editor(wrapper).props('modelValue')).toBe('int main() {}\n')
+    wrapper.unmount()
+  })
+
+  it('previews and applies optimized code/suggestions', async () => {
+    localStorage.setItem('kapoj:code:practice:1:cpp', 'int main() {}')
+    vi.mocked(optimizeCode).mockResolvedValue({
+      suggestions: '# 优化建议\n- 使用 const',
+      code: 'int main() { return 0; }',
+    })
+    const { wrapper } = await mountPage()
+
+    await aiButton(wrapper, 'AI 优化')!.trigger('click')
+    await flushPromises()
+
+    expect(optimizeCode).toHaveBeenCalledWith({ code: 'int main() {}', language: 'cpp' })
+    expect(document.querySelector('.p-dialog')!.textContent).toContain('使用 const')
+    expect(document.querySelector('.p-dialog')!.textContent).toContain('int main() { return 0; }')
+    expect(editor(wrapper).props('modelValue')).toBe('int main() {}')
+
+    dialogButton('应用优化代码').click()
+    await flushPromises()
+
+    expect(editor(wrapper).props('modelValue')).toBe('int main() { return 0; }')
+    wrapper.unmount()
+  })
+
+  it('blocks >64KiB with Chinese toast', async () => {
+    localStorage.setItem('kapoj:code:practice:1:cpp', 'a'.repeat(65537))
+    const { wrapper } = await mountPage()
+
+    await aiButton(wrapper, 'AI 补全')!.trigger('click')
+    await flushPromises()
+
+    expect(completeCode).not.toHaveBeenCalled()
+    expect(toast.add).toHaveBeenCalledWith(
+      expect.objectContaining({ summary: '代码超过 64 KiB，无法使用 AI' }),
+    )
+    wrapper.unmount()
+  })
+
+  it('maps 42903/50200/40001 to Chinese messages and config link', async () => {
+    localStorage.setItem('kapoj:code:practice:1:cpp', 'int main() {}')
+    const { wrapper } = await mountPage()
+
+    vi.mocked(completeCode).mockRejectedValueOnce(new ApiError(429, 42903, 'rate limited'))
+    await aiButton(wrapper, 'AI 补全')!.trigger('click')
+    await flushPromises()
+    expect(toast.add).toHaveBeenCalledWith(
+      expect.objectContaining({ summary: '操作过于频繁，请稍后再试' }),
+    )
+
+    vi.mocked(completeCode).mockRejectedValueOnce(new ApiError(502, 50200, 'upstream'))
+    await aiButton(wrapper, 'AI 补全')!.trigger('click')
+    await flushPromises()
+    expect(toast.add).toHaveBeenCalledWith(
+      expect.objectContaining({ summary: 'AI 服务暂时不可用' }),
+    )
+
+    vi.mocked(completeCode).mockRejectedValueOnce(new ApiError(400, 40001, 'config not set'))
+    await aiButton(wrapper, 'AI 补全')!.trigger('click')
+    await flushPromises()
+    expect(toast.add).toHaveBeenCalledWith(expect.objectContaining({ summary: '尚未配置 AI 模型' }))
+    expect(wrapper.find('a[href="/settings/ai"]').exists()).toBe(true)
+    wrapper.unmount()
   })
 })

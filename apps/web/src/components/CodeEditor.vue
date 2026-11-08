@@ -52,6 +52,38 @@ onBeforeUnmount(() => {
   editor?.dispose()
   editor = undefined
 })
+
+/** UTF-8 byte offset of the cursor, or the end of the code when unavailable. */
+function getCursorByteOffset(): number {
+  if (!editor) return new TextEncoder().encode(props.modelValue).length
+  const position = editor.getPosition()
+  const model = editor.getModel()
+  if (!position || !model) return new TextEncoder().encode(props.modelValue).length
+  const offset = model.getOffsetAt(position)
+  return new TextEncoder().encode(model.getValue().slice(0, offset)).length
+}
+
+/** Inserts text at the current cursor and focuses the editor. */
+function insertAtCursor(text: string) {
+  if (!editor) return
+  const position = editor.getPosition()
+  const model = editor.getModel()
+  if (!position || !model) return
+  editor.executeEdits('ai-insert', [
+    {
+      range: {
+        startLineNumber: position.lineNumber,
+        startColumn: position.column,
+        endLineNumber: position.lineNumber,
+        endColumn: position.column,
+      },
+      text,
+    },
+  ])
+  editor.focus()
+}
+
+defineExpose({ getCursorByteOffset, insertAtCursor })
 </script>
 
 <template>

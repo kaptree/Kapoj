@@ -120,6 +120,16 @@ export type LearningNodeInput = Schemas['LearningNodeInput']
 export type LearningTree = Schemas['LearningTree']
 export type LearningNodeStatus = Schemas['LearningNodeStatus']
 export type LearningProblemSummary = Schemas['LearningProblemSummary']
+export type AIProviderOption = Schemas['AIProviderOption']
+export type AIConfigView = Schemas['AIConfigView']
+export type AISaveConfigInput = Schemas['AISaveConfigInput']
+export type AICompleteInput = Schemas['AICompleteInput']
+export type AICompleteOutput = Schemas['AICompleteOutput']
+export type AIFormatInput = Schemas['AIFormatInput']
+export type AIFormatOutput = Schemas['AIFormatOutput']
+export type AIOptimizeInput = Schemas['AIOptimizeInput']
+export type AIOptimizeOutput = Schemas['AIOptimizeOutput']
+export type AIHintOutput = Schemas['AIHintOutput']
 
 export interface Page<T> {
   total: number

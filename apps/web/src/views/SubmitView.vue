@@ -2,25 +2,31 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Button from 'primevue/button'
+import Dialog from 'primevue/dialog'
+import Message from 'primevue/message'
 import Select from 'primevue/select'
 import { useToast } from 'primevue/usetoast'
 
+import { completeCode, formatCode, getAIConfig, optimizeCode } from '@/api/ai'
 import { getContest } from '@/api/contests'
 import { ApiError } from '@/api/http'
 import { getProblem } from '@/api/problems'
 import { createSubmission } from '@/api/submissions'
-import type { ProblemDetail, SubmissionLanguage } from '@/api/types'
+import type { AIConfigView, ProblemDetail, SubmissionLanguage } from '@/api/types'
 import CodeEditor from '@/components/CodeEditor.vue'
+import MarkdownView from '@/components/MarkdownView.vue'
 import AppDifficultyTag from '@/components/ui/AppDifficultyTag.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
+import { useTheme } from '@/theme/theme'
 import { languageLabel, monacoLanguage, SUBMISSION_LANGUAGES } from '@/utils/submission'
 
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
+const { isDark } = useTheme()
 
 const problemId = computed(() => Number(route.params.id))
 const contestId = computed(() => {
@@ -70,6 +76,162 @@ const code = computed({
     drafts[language.value] = value
   },
 })
+
+const MAX_CODE_BYTES = 65536
+
+const editorRef = ref<InstanceType<typeof CodeEditor>>()
+
+const aiConfig = ref<AIConfigView | null>(null)
+const aiAvailable = ref(true)
+const aiLoadFailed = ref(false)
+const aiBusy = ref<'complete' | 'format' | 'optimize' | null>(null)
+
+const formatDialogVisible = ref(false)
+const formatPreview = ref('')
+const optimizeDialogVisible = ref(false)
+const optimizePreview = ref('')
+const optimizeSuggestions = ref('')
+
+const aiConfigured = computed(() => aiConfig.value?.configured === true)
+const aiButtonsDisabled = computed(
+  () => aiBusy.value !== null || !aiAvailable.value || aiLoadFailed.value || !aiConfigured.value,
+)
+const showConfigBanner = computed(
+  () =>
+    aiAvailable.value &&
+    !aiLoadFailed.value &&
+    aiConfig.value !== null &&
+    !aiConfig.value.configured,
+)
+const optimizeCanApply = computed(
+  () => optimizePreview.value !== '' && optimizePreview.value !== code.value,
+)
+
+function byteLength(value: string): number {
+  return new TextEncoder().encode(value).length
+}
+
+function handleAIError(e: unknown) {
+  if (e instanceof ApiError) {
+    if (e.code === 40001) {
+      aiConfig.value = {
+        configured: false,
+        provider: '',
+        modelName: '',
+        apiKeyMasked: '',
+        providers: aiConfig.value?.providers ?? [],
+      }
+      toast.add({
+        severity: 'warn',
+        summary: '尚未配置 AI 模型',
+        detail: '请先在 AI 设置中配置后使用',
+        life: 4000,
+      })
+      return
+    }
+    if (e.code === 42903) {
+      toast.add({ severity: 'warn', summary: '操作过于频繁，请稍后再试', life: 4000 })
+      return
+    }
+    if (e.code === 50200 || e.code === 50300) {
+      toast.add({ severity: 'error', summary: 'AI 服务暂时不可用', life: 4000 })
+      return
+    }
+    if (e.status === 404) {
+      toast.add({ severity: 'warn', summary: 'AI 功能未启用', life: 4000 })
+      return
+    }
+  }
+  toast.add({ severity: 'error', summary: 'AI 请求失败，请稍后再试', life: 4000 })
+}
+
+function guardCodeTooLarge(): boolean {
+  if (byteLength(code.value) <= MAX_CODE_BYTES) return false
+  toast.add({ severity: 'warn', summary: '代码超过 64 KiB，无法使用 AI', life: 4000 })
+  return true
+}
+
+async function loadAIConfig() {
+  try {
+    aiConfig.value = await getAIConfig()
+    aiAvailable.value = true
+    aiLoadFailed.value = false
+  } catch (e) {
+    aiConfig.value = null
+    if (e instanceof ApiError && e.status === 404) {
+      aiAvailable.value = false
+      aiLoadFailed.value = false
+    } else {
+      aiAvailable.value = true
+      aiLoadFailed.value = true
+    }
+  }
+}
+
+async function runComplete() {
+  if (guardCodeTooLarge()) return
+  const source = code.value
+  const cursor = editorRef.value?.getCursorByteOffset() ?? byteLength(source)
+  aiBusy.value = 'complete'
+  try {
+    const result = await completeCode({ code: source, language: language.value, cursor })
+    const completion = result.completion
+    if (!completion || !completion.trim()) {
+      toast.add({ severity: 'info', summary: '没有可插入的补全', life: 3000 })
+      return
+    }
+    editorRef.value?.insertAtCursor(completion)
+  } catch (e) {
+    handleAIError(e)
+  } finally {
+    aiBusy.value = null
+  }
+}
+
+async function runFormat() {
+  if (guardCodeTooLarge()) return
+  const source = code.value
+  aiBusy.value = 'format'
+  try {
+    const result = await formatCode({ code: source, language: language.value })
+    if (result.code === source) {
+      toast.add({ severity: 'info', summary: '代码已是格式化状态', life: 3000 })
+      return
+    }
+    formatPreview.value = result.code
+    formatDialogVisible.value = true
+  } catch (e) {
+    handleAIError(e)
+  } finally {
+    aiBusy.value = null
+  }
+}
+
+function applyFormat() {
+  code.value = formatPreview.value
+  formatDialogVisible.value = false
+}
+
+async function runOptimize() {
+  if (guardCodeTooLarge()) return
+  const source = code.value
+  aiBusy.value = 'optimize'
+  try {
+    const result = await optimizeCode({ code: source, language: language.value })
+    optimizeSuggestions.value = result.suggestions
+    optimizePreview.value = result.code
+    optimizeDialogVisible.value = true
+  } catch (e) {
+    handleAIError(e)
+  } finally {
+    aiBusy.value = null
+  }
+}
+
+function applyOptimize() {
+  code.value = optimizePreview.value
+  optimizeDialogVisible.value = false
+}
 
 function storageKey(lang: SubmissionLanguage): string {
   const scope = draftContestId > 0 ? `contest:${draftContestId}` : 'practice'
@@ -124,6 +286,8 @@ async function loadProblem() {
 
 onMounted(async () => {
   for (const lang of SUBMISSION_LANGUAGES) loadDraft(lang.value)
+
+  void loadAIConfig()
 
   if (route.query.contestId && contestId.value === 0) {
     toast.add({
@@ -247,6 +411,38 @@ async function submit() {
               class="language-select"
             />
           </div>
+          <div class="ai-toolbar">
+            <Button
+              type="button"
+              label="AI 补全"
+              icon="pi pi-sparkles"
+              size="small"
+              text
+              :loading="aiBusy === 'complete'"
+              :disabled="aiButtonsDisabled"
+              @click="runComplete"
+            />
+            <Button
+              type="button"
+              label="AI 格式化"
+              icon="pi pi-sparkles"
+              size="small"
+              text
+              :loading="aiBusy === 'format'"
+              :disabled="aiButtonsDisabled"
+              @click="runFormat"
+            />
+            <Button
+              type="button"
+              label="AI 优化"
+              icon="pi pi-sparkles"
+              size="small"
+              text
+              :loading="aiBusy === 'optimize'"
+              :disabled="aiButtonsDisabled"
+              @click="runOptimize"
+            />
+          </div>
           <Button
             type="button"
             :label="`提交 ${languageLabel(language)} 代码`"
@@ -257,12 +453,57 @@ async function submit() {
           />
         </div>
 
+        <Message v-if="!aiAvailable" severity="warn" :closable="false">AI 功能未启用</Message>
+        <Message v-else-if="showConfigBanner" severity="info" :closable="false">
+          尚未配置 AI 模型，配置后可使用补全/格式化/优化
+          <RouterLink to="/settings/ai" class="ai-config-link">去配置</RouterLink>
+        </Message>
+
         <p class="hint">代码保存于本机浏览器；提交后可在测评记录中查看结果。</p>
 
         <div class="editor-wrap">
-          <CodeEditor v-model="code" :language="monacoLanguage(language)" height="520px" />
+          <CodeEditor
+            ref="editorRef"
+            v-model="code"
+            :language="monacoLanguage(language)"
+            height="520px"
+          />
         </div>
       </AppSurface>
+
+      <Dialog
+        v-model:visible="formatDialogVisible"
+        header="格式化预览"
+        modal
+        :draggable="false"
+        :style="{ width: 'min(92vw, 720px)' }"
+      >
+        <pre class="ai-preview">{{ formatPreview }}</pre>
+        <template #footer>
+          <Button label="取消" severity="secondary" text @click="formatDialogVisible = false" />
+          <Button label="应用格式化" icon="pi pi-check" @click="applyFormat" />
+        </template>
+      </Dialog>
+
+      <Dialog
+        v-model:visible="optimizeDialogVisible"
+        header="优化建议"
+        modal
+        :draggable="false"
+        :style="{ width: 'min(92vw, 720px)' }"
+      >
+        <MarkdownView :source="optimizeSuggestions" :theme="isDark ? 'dark' : 'light'" />
+        <pre class="ai-preview">{{ optimizePreview }}</pre>
+        <template #footer>
+          <Button label="取消" severity="secondary" text @click="optimizeDialogVisible = false" />
+          <Button
+            label="应用优化代码"
+            icon="pi pi-check"
+            :disabled="!optimizeCanApply"
+            @click="applyOptimize"
+          />
+        </template>
+      </Dialog>
     </div>
   </div>
 </template>
@@ -365,6 +606,36 @@ async function submit() {
 
 .submit-button {
   min-width: 180px;
+}
+
+.ai-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--kapoj-space-2);
+}
+
+.ai-config-link {
+  margin-left: var(--kapoj-space-2);
+  color: var(--kapoj-info);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.ai-config-link:hover {
+  text-decoration: underline;
+}
+
+.ai-preview {
+  margin: 0;
+  padding: var(--kapoj-space-3);
+  overflow: auto;
+  font-family: var(--kapoj-font-mono);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre;
+  border: 1px solid var(--kapoj-border);
+  border-radius: var(--kapoj-radius-sm);
 }
 
 .hint {
