@@ -14,6 +14,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
+	"github.com/kaptree/kapoj/apps/server/internal/social"
 )
 
 const (
@@ -40,6 +41,8 @@ type Options struct {
 	RBAC        *rbac.Service
 	Solutions   *problem.OfficialSolutionService
 	Discussions *problem.DiscussionService
+	// Social 是社交服务，供点赞/回复/删除钩子使用（Task 2 接入）。
+	Social *social.Service
 	// MaxImportFileBytes overrides the uploaded HydroOJ package file limit.
 	// Zero means problem.MaxHydroZipBytes. Tests may set a small value.
 	MaxImportFileBytes int64

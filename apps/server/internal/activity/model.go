@@ -12,12 +12,21 @@ const (
 	ActionContestJoin Action = "contest_join"
 	// ActionSignIn is awarded once per local day.
 	ActionSignIn Action = "signin"
+	// ActionSolutionReply is awarded once per forum reply.
+	ActionSolutionReply Action = "solution_reply"
+	// ActionSolutionLike is awarded once per solution post like.
+	ActionSolutionLike Action = "solution_like"
+	// ActionFollow is awarded once per user follow.
+	ActionFollow Action = "follow"
 )
 
 const (
-	refTypeSubmission = "submission"
-	refTypeContest    = "contest"
-	refTypeDay        = "day"
+	refTypeSubmission    = "submission"
+	refTypeContest       = "contest"
+	refTypeDay           = "day"
+	refTypeSolutionReply = "solution_reply"
+	refTypeSolutionPost  = "solution_post"
+	refTypeUser          = "user"
 )
 
 // ActivityLog is one immutable activity award. The unique index on

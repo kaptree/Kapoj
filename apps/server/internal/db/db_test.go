@@ -19,6 +19,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/rating"
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
+	"github.com/kaptree/kapoj/apps/server/internal/social"
 )
 
 func TestLoggerHidesQueryParameters(t *testing.T) {
@@ -205,6 +206,29 @@ func TestMigrateCreatesRBACSchema(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, g.Where("key = ?", key).Delete(&rbac.Meta{}).Error) })
 	require.NoError(t, g.Create(&rbac.Meta{Key: key, Value: "1"}).Error)
 	assert.Error(t, g.Create(&rbac.Meta{Key: key, Value: "2"}).Error, "rbac_meta.key 必须唯一")
+}
+
+func TestMigrateCreatesSocialSchema(t *testing.T) {
+	dsn := os.Getenv("KAPOJ_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("KAPOJ_TEST_DATABASE_URL not set; skipping database test")
+	}
+	g, err := open(dsn, io.Discard)
+	require.NoError(t, err)
+	require.NoError(t, Migrate(g))
+	sqlDB, err := g.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	for _, table := range []string{"user_follows", "notifications"} {
+		assert.True(t, g.Migrator().HasTable(table), "缺少表 %s", table)
+	}
+	assert.True(t, g.Migrator().HasIndex(&social.Follow{}, "uniq_user_follows"))
+	assert.True(t, g.Migrator().HasIndex(&social.Follow{}, "idx_user_follows_followee"))
+	assert.True(t, g.Migrator().HasConstraint(&social.Follow{}, "chk_user_follows_no_self"))
+	assert.True(t, g.Migrator().HasIndex(&social.Notification{}, "uniq_notifications_dedupe"))
+	assert.True(t, g.Migrator().HasIndex(&social.Notification{}, "idx_notifications_user_created"))
+	assert.True(t, g.Migrator().HasIndex(&social.Notification{}, "idx_notifications_user_read"))
 }
 
 func TestMigrateCreatesAITables(t *testing.T) {

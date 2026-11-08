@@ -30,6 +30,8 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/rating"
 	"github.com/kaptree/kapoj/apps/server/internal/ratingapi"
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
+	"github.com/kaptree/kapoj/apps/server/internal/social"
+	"github.com/kaptree/kapoj/apps/server/internal/socialapi"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
 	"github.com/kaptree/kapoj/apps/server/internal/submission"
 	"github.com/kaptree/kapoj/apps/server/internal/submissionapi"
@@ -139,12 +141,15 @@ func New(d Deps) *gin.Engine {
 	} else {
 		problemSvc = problem.NewService(problemRepo, d.Storage)
 	}
+	socialSvc := social.NewService(d.DB, d.Activity)
+	socialapi.RegisterRoutes(api, socialSvc)
 	problemapi.RegisterRoutes(api, problemJSON, uploads, imports,
 		problemSvc, submissionRepo, contestRepo,
 		problemapi.Options{
 			RBAC:        d.RBAC,
 			Solutions:   problem.NewOfficialSolutionService(d.DB, problemRepo),
 			Discussions: problem.NewDiscussionService(d.DB, problemRepo),
+			Social:      socialSvc,
 		})
 	submissionSvc := submission.NewService(
 		submissionRepo,

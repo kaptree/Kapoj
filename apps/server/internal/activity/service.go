@@ -29,6 +29,13 @@ const (
 	submissionDailyCap    = 40
 	contestJoinPointValue = 10
 	contestJoinDailyCap   = 50
+
+	solutionReplyPointValue = 3
+	solutionReplyDailyCap   = 20
+	solutionLikePointValue  = 1
+	solutionLikeDailyCap    = 20
+	followPointValue        = 2
+	followDailyCap          = 20
 )
 
 // SignInResult is the outcome of a sign-in attempt.
@@ -72,6 +79,36 @@ func (s *Service) RecordContestJoin(ctx context.Context, userID, contestID int64
 	_, err := s.recordActivity(ctx, userID, ActionContestJoin, refTypeContest, contestID,
 		contestJoinPointValue, contestJoinDailyCap)
 	return err
+}
+
+// RecordSolutionReply awards 3 activity points for a forum reply, capped at 20
+// per local day. Duplicate reply IDs are a no-op.
+func (s *Service) RecordSolutionReply(ctx context.Context, userID, replyID int64) error {
+	_, err := s.recordActivity(ctx, userID, ActionSolutionReply, refTypeSolutionReply, replyID,
+		solutionReplyPointValue, solutionReplyDailyCap)
+	return err
+}
+
+// RecordSolutionLike awards 1 activity point for a solution post like, capped
+// at 20 per local day. Duplicate post IDs are a no-op.
+func (s *Service) RecordSolutionLike(ctx context.Context, userID, postID int64) error {
+	_, err := s.recordActivity(ctx, userID, ActionSolutionLike, refTypeSolutionPost, postID,
+		solutionLikePointValue, solutionLikeDailyCap)
+	return err
+}
+
+// RecordFollow awards 2 activity points for following a user, capped at 20 per
+// local day. Duplicate followee IDs are a no-op.
+func (s *Service) RecordFollow(ctx context.Context, userID, followeeID int64) error {
+	_, err := s.recordActivity(ctx, userID, ActionFollow, refTypeUser, followeeID,
+		followPointValue, followDailyCap)
+	return err
+}
+
+// BumpSharingVersion increments the sharing leaderboard cache version after a
+// committed shared-item write. Redis is optional and best-effort.
+func (s *Service) BumpSharingVersion(ctx context.Context) {
+	s.bumpVersion(ctx, SharingLeaderboardVersionKey)
 }
 
 // SignIn awards 5 activity points and 5 coins on the first call of the local
