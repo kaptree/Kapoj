@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
 import InputNumber from 'primevue/inputnumber'
 import InputText from 'primevue/inputtext'
+import Message from 'primevue/message'
 import Paginator from 'primevue/paginator'
 import Select from 'primevue/select'
 import Textarea from 'primevue/textarea'
@@ -186,6 +187,44 @@ describe('AdminCertificatesView', () => {
 
     wrapper.unmount()
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:mock')
+  })
+
+  it('does not create an object URL when the dialog closes while the image loads', async () => {
+    vi.mocked(listAdminCertificates).mockResolvedValue({ total: 1, items: [certView({ id: 7 })] })
+
+    let resolveImage!: (blob: Blob) => void
+    vi.mocked(getCertificateImage).mockImplementation(
+      () => new Promise<Blob>((resolve) => (resolveImage = resolve)),
+    )
+
+    const wrapper = await mountPage()
+    await button(wrapper, '审核').trigger('click')
+    await flushPromises()
+    expect(getCertificateImage).toHaveBeenCalledWith(7)
+
+    await dialogButton('取消').click()
+    await flushPromises()
+
+    resolveImage(new Blob(['x'], { type: 'image/png' }))
+    await flushPromises()
+
+    expect(createObjectURL).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('renders the reject reason banner for an already-rejected certificate', async () => {
+    vi.mocked(listAdminCertificates).mockResolvedValue({
+      total: 1,
+      items: [certView({ status: 'rejected', rejectReason: '图片不清晰' })],
+    })
+    const wrapper = await mountPage()
+
+    await button(wrapper, '审核').trigger('click')
+    await flushPromises()
+
+    expect(dialog().textContent).toContain('驳回原因：图片不清晰')
+    expect(wrapper.findComponent(Message).exists()).toBe(true)
+    wrapper.unmount()
   })
 
   it('approves a certificate, toasts, and reloads', async () => {

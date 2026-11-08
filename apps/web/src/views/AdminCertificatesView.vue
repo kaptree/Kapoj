@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Button from 'primevue/button'
 import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
 import Dialog from 'primevue/dialog'
 import InputNumber from 'primevue/inputnumber'
 import InputText from 'primevue/inputtext'
+import Message from 'primevue/message'
 import Paginator from 'primevue/paginator'
 import Select from 'primevue/select'
 import Tab from 'primevue/tab'
@@ -129,6 +130,9 @@ function revokeReviewImage() {
   }
 }
 
+/** Invalidates in-flight image loads whenever the dialog is closed/reopened. */
+let imageToken = 0
+
 function openReview(item: AdminCertificateView) {
   reviewing.value = item
   rejectReason.value = ''
@@ -138,20 +142,36 @@ function openReview(item: AdminCertificateView) {
 }
 
 async function loadReviewImage(id: number) {
+  const token = ++imageToken
   reviewImageLoading.value = true
   reviewImageError.value = ''
   revokeReviewImage()
   try {
     const blob = await getCertificateImage(id)
-    if (reviewing.value?.id !== id) return
+    if (token !== imageToken) return
     reviewImageUrl.value = URL.createObjectURL(blob)
   } catch {
-    if (reviewing.value?.id !== id) return
+    if (token !== imageToken) return
     reviewImageError.value = '图片加载失败'
   } finally {
-    if (reviewing.value?.id === id) reviewImageLoading.value = false
+    if (token === imageToken) reviewImageLoading.value = false
   }
 }
+
+/** Cleans up image state when the review dialog closes (including mid-load). */
+function onReviewHide() {
+  imageToken += 1
+  revokeReviewImage()
+  reviewImageLoading.value = false
+  reviewImageError.value = ''
+  reviewing.value = null
+  rejectReason.value = ''
+  rejectError.value = ''
+}
+
+watch(reviewDialogVisible, (visible) => {
+  if (!visible) onReviewHide()
+})
 
 async function approve() {
   if (!reviewing.value || reviewingAction.value) return
@@ -533,7 +553,6 @@ onBeforeUnmount(() => {
       modal
       :draggable="false"
       :style="{ width: 'min(94vw, 560px)' }"
-      @hide="revokeReviewImage"
     >
       <div v-if="reviewing" class="review-dialog">
         <div class="review-image-wrap">
