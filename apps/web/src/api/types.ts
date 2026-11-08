@@ -141,6 +141,13 @@ export type TestcaseGenerationCase = Schemas['TestcaseGenerationCase']
 export type TestcaseGenerationView = Schemas['TestcaseGenerationView']
 export type TestcaseGenerationPreview = Schemas['TestcaseGenerationPreview']
 export type TestcaseGenerationConfirm = Schemas['TestcaseGenerationConfirm']
+export type CertificateTypeView = Schemas['CertificateTypeView']
+export type CertificateTypeInput = Schemas['CertificateTypeInput']
+export type CertificateStatus = Schemas['CertificateStatus']
+export type CertificateView = Schemas['CertificateView']
+export type AdminCertificateView = Schemas['AdminCertificateView']
+export type PublicCertificateView = Schemas['PublicCertificateView']
+export type CertificateReviewInput = Schemas['CertificateReviewInput']
 
 export interface Page<T> {
   total: number

@@ -1,5 +1,6 @@
 import { http } from './client'
 import type {
+  AdminCertificateView,
   AIKeyGenerateResult,
   AIKeyInput,
   AIKeyView,
@@ -19,6 +20,10 @@ import type {
   AdminUserItem,
   AdminUserRolesInput,
   AdminUserUpdateInput,
+  CertificateReviewInput,
+  CertificateTypeInput,
+  CertificateTypeView,
+  CertificateView,
   Page,
   RatingSettingsInput,
   RatingSettingsView,
@@ -139,3 +144,42 @@ export const listAdminAudit = (q: ListAdminAuditQuery) =>
       page_size: q.pageSize,
     },
   })
+
+export interface ListAdminCertificatesQuery {
+  /** pending/approved/rejected/all; empty or pending both mean pending. */
+  status?: 'pending' | 'approved' | 'rejected' | 'all' | ''
+  page?: number
+  pageSize?: number
+}
+
+/** Certificate review list (certificate.manage); defaults to pending. */
+export const listAdminCertificates = (q: ListAdminCertificatesQuery = {}) =>
+  http.get<Page<AdminCertificateView>>('/admin/certificates', {
+    params: {
+      status: q.status || undefined,
+      page: q.page,
+      page_size: q.pageSize,
+    },
+  })
+
+/** Approve or reject a pending certificate (certificate.manage). */
+export const reviewCertificate = (id: number | string, input: CertificateReviewInput) =>
+  http.post<CertificateView>(`/admin/certificates/${id}/review`, input)
+
+/** All certificate types, optionally including inactive (certificate.manage). */
+export const listAdminCertificateTypes = (includeInactive = false) =>
+  http.get<CertificateTypeView[]>('/admin/certificate-types', {
+    params: { includeInactive: includeInactive ? 'true' : undefined },
+  })
+
+/** Create a certificate type (certificate.manage). */
+export const createAdminCertificateType = (input: CertificateTypeInput) =>
+  http.post<CertificateTypeView>('/admin/certificate-types', input)
+
+/** Update a certificate type (certificate.manage). */
+export const updateAdminCertificateType = (id: number | string, input: CertificateTypeInput) =>
+  http.put<CertificateTypeView>(`/admin/certificate-types/${id}`, input)
+
+/** Delete an unreferenced certificate type (certificate.manage). */
+export const deleteAdminCertificateType = (id: number | string) =>
+  http.delete<null>(`/admin/certificate-types/${id}`)

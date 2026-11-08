@@ -1,4 +1,9 @@
-import axios, { AxiosError, type AxiosAdapter, type AxiosRequestConfig } from 'axios'
+import axios, {
+  AxiosError,
+  type AxiosAdapter,
+  type AxiosRequestConfig,
+  type AxiosResponse,
+} from 'axios'
 
 import type { TokenPair } from './types'
 
@@ -27,6 +32,11 @@ export interface Http {
   delete<T>(url: string, config?: AxiosRequestConfig): Promise<T>
   /** Posts multipart/form-data; the browser sets the boundary header itself. */
   postForm<T>(url: string, form: FormData, config?: AxiosRequestConfig): Promise<T>
+  /**
+   * Fetches a raw binary resource (Bearer + refresh on 401) without parsing the
+   * `{code,message,data}` envelope. The caller owns the returned Blob's lifetime.
+   */
+  getBlob(url: string, config?: AxiosRequestConfig): Promise<Blob>
 }
 
 interface Envelope<T> {
@@ -70,7 +80,7 @@ export function createHttp(hooks: AuthHooks, options: { adapter?: AxiosAdapter }
     }
   }
 
-  async function send<T>(config: AxiosRequestConfig, retried = false): Promise<T> {
+  async function request(config: AxiosRequestConfig, retried = false): Promise<AxiosResponse> {
     const isAuthEndpoint = config.url?.startsWith('/auth/') ?? false
     const token = hooks.getAccessToken()
     const headers = { ...(config.headers ?? {}) } as Record<string, string>
@@ -79,19 +89,28 @@ export function createHttp(hooks: AuthHooks, options: { adapter?: AxiosAdapter }
     if (token && !isAuthEndpoint) headers.Authorization = `Bearer ${token}`
 
     try {
-      const res = await instance.request<Envelope<T>>({ ...config, headers })
-      return res.data.data
+      return await instance.request({ ...config, headers })
     } catch (e) {
       const err = toApiError(e)
       if (err.status === 401 && !retried && !isAuthEndpoint) {
         refreshing ??= refresh().finally(() => {
           refreshing = null
         })
-        if (await refreshing) return send<T>(config, true)
+        if (await refreshing) return request(config, true)
         hooks.onAuthFailure()
       }
       throw err
     }
+  }
+
+  async function send<T>(config: AxiosRequestConfig): Promise<T> {
+    const res = await request(config)
+    return (res.data as Envelope<T>).data
+  }
+
+  async function sendBlob(config: AxiosRequestConfig): Promise<Blob> {
+    const res = await request({ ...config, responseType: 'blob' })
+    return res.data as Blob
   }
 
   return {
@@ -100,5 +119,6 @@ export function createHttp(hooks: AuthHooks, options: { adapter?: AxiosAdapter }
     put: (url, body, config) => send({ ...config, method: 'PUT', url, data: body }),
     delete: (url, config) => send({ ...config, method: 'DELETE', url }),
     postForm: (url, form, config) => send({ ...config, method: 'POST', url, data: form }),
+    getBlob: (url, config) => sendBlob({ ...config, method: 'GET', url }),
   }
 }

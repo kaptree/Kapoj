@@ -49,6 +49,18 @@ export const router = createRouter({
           meta: { requiresAuth: true, title: 'AI 设置' },
         },
         {
+          path: 'settings/certificates',
+          name: 'certificate-settings',
+          component: () => import('@/views/CertificateSettingsView.vue'),
+          meta: { requiresAuth: true, title: '我的证书' },
+        },
+        {
+          path: 'verify',
+          name: 'certificate-verify',
+          component: () => import('@/views/CertificateVerifyView.vue'),
+          meta: { title: '证书核验' },
+        },
+        {
           path: 'users/:id',
           name: 'user-profile',
           component: () => import('@/views/UserProfileView.vue'),

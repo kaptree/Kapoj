@@ -206,4 +206,62 @@ describe('createHttp', () => {
     await expect(http.delete('/problems/1')).resolves.toEqual({ offlined: false })
     expect(method).toBe('delete')
   })
+
+  it('getBlob returns the raw body with a bearer token and blob responseType', async () => {
+    const blob = new Blob(['png-bytes'], { type: 'image/png' })
+    let seenAuth: unknown
+    let seenType: unknown
+    const http = createHttp(hooks(), {
+      adapter: (c) => {
+        seenAuth = c.headers.Authorization
+        seenType = c.responseType
+        return respond(c, 200, blob)
+      },
+    })
+
+    await expect(http.getBlob('/certificates/1/image')).resolves.toBe(blob)
+    expect(seenAuth).toBe('Bearer old-access')
+    expect(seenType).toBe('blob')
+  })
+
+  it('getBlob does not unwrap an envelope-shaped body', async () => {
+    const blob = new Blob(['x'])
+    const http = createHttp(hooks(), {
+      adapter: (c) => respond(c, 200, { code: 0, message: 'ok', data: blob }),
+    })
+
+    await expect(http.getBlob('/certificates/1/image')).resolves.toEqual({
+      code: 0,
+      message: 'ok',
+      data: blob,
+    })
+  })
+
+  it('getBlob refreshes once and retries on 401', async () => {
+    const h = hooks()
+    const calls: string[] = []
+    const http = createHttp(h, {
+      adapter: (c) => {
+        calls.push(`${c.url} ${c.headers.Authorization ?? ''}`.trim())
+        if (c.url === '/auth/refresh') {
+          return respond(c, 200, {
+            code: 0,
+            message: 'ok',
+            data: { accessToken: 'new-access', refreshToken: 'new-refresh' },
+          })
+        }
+        if (c.headers.Authorization === 'Bearer new-access') {
+          return respond(c, 200, new Blob(['img']))
+        }
+        return respond(c, 401, { code: 40100, message: 'expired', data: null })
+      },
+    })
+
+    await expect(http.getBlob('/certificates/1/image')).resolves.toBeInstanceOf(Blob)
+    expect(calls).toEqual([
+      '/certificates/1/image Bearer old-access',
+      '/auth/refresh',
+      '/certificates/1/image Bearer new-access',
+    ])
+  })
 })

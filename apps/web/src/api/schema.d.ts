@@ -5586,6 +5586,474 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/certificate-types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 启用的证书类型列表（公开）
+         * @description 按 sort_order、id 排序；只返回启用的类型。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 证书类型列表 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CertificateTypeListResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/certificates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 提交证书认证（登录）
+         * @description multipart 上传 typeId、level、file（≤5 MiB，PNG/JPEG/WebP）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "multipart/form-data": {
+                        /**
+                         * Format: int64
+                         * @description 证书类型 id
+                         */
+                        typeId: number;
+                        /** @description 等级，trim 后 1–50 字符 */
+                        level: string;
+                        /**
+                         * Format: binary
+                         * @description 证书图片，≤5 MiB，PNG/JPEG/WebP
+                         */
+                        file: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 已提交 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CertificateResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/certificates/my": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 我的证书分页（登录） */
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    page_size?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 我的证书分页列表 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CertificatePageResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/certificates/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 公开核验证书
+         * @description 用验证码核验；未知/pending/rejected 返回 valid=false（200），不提供存在性 oracle。
+         */
+        get: {
+            parameters: {
+                query: {
+                    code: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 核验结果 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PublicCertificateResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/certificates/{id}/image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * 证书图片（登录；仅本人或 certificate.manage 管理员）
+         * @description 返回原始证书图片二进制；非 owner/admin 返回 404（不暴露存在性）。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 证书图片 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "image/png": string;
+                        "image/jpeg": string;
+                        "image/webp": string;
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/certificates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 证书审核列表（certificate.manage）
+         * @description 默认 pending；status 传 all/approved/rejected 筛选。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    status?: components["schemas"]["CertificateAdminStatusFilter"];
+                    page?: number;
+                    page_size?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 证书分页列表 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminCertificatePageResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/certificates/{id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 审核证书（certificate.manage）
+         * @description action 为 approve/reject；reject 必填 reason（1–500）；仅 pending 可审核。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CertificateReviewInput"];
+                };
+            };
+            responses: {
+                /** @description 审核后的证书 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CertificateResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/certificate-types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 证书类型列表（certificate.manage，可含停用） */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 为 true 时包含停用类型 */
+                    includeInactive?: boolean;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 证书类型列表 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CertificateTypeListResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        /** 创建证书类型（certificate.manage） */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CertificateTypeInput"];
+                };
+            };
+            responses: {
+                /** @description 已创建 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CertificateTypeResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/certificate-types/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** 更新证书类型（certificate.manage） */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CertificateTypeInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的类型 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CertificateTypeResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        /**
+         * 删除证书类型（certificate.manage）
+         * @description 被证书引用时返回 40001；无引用可删除。
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已删除 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -7330,6 +7798,100 @@ export interface components {
         };
         TestcaseGenerationConfirmResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["TestcaseGenerationConfirm"];
+        };
+        CertificateTypeView: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            description: string;
+            isActive: boolean;
+            sortOrder: number;
+        };
+        CertificateTypeInput: {
+            name: string;
+            description: string;
+            isActive: boolean;
+            sortOrder: number;
+        };
+        /** @enum {string} */
+        CertificateStatus: "pending" | "approved" | "rejected";
+        /** @enum {string} */
+        CertificateAdminStatusFilter: "pending" | "approved" | "rejected" | "all";
+        CertificateUserView: {
+            /** Format: int64 */
+            id: number;
+            username: string;
+            nickname: string;
+        };
+        CertificateView: {
+            /** Format: int64 */
+            id: number;
+            /** @description 提交时的证书类型名快照 */
+            type: string;
+            level: string;
+            status: components["schemas"]["CertificateStatus"];
+            /** @description 鉴权图片地址 /api/certificates/<id>/image */
+            imageUrl: string;
+            /** @description 驳回原因；仅 rejected 非空 */
+            rejectReason: string;
+            /** @description 验证码；仅 approved 非空 */
+            verifyCode: string;
+            /** Format: date-time */
+            submittedAt: string;
+            /** Format: date-time */
+            reviewedAt: string | null;
+        };
+        AdminCertificateView: components["schemas"]["CertificateView"] & {
+            user: components["schemas"]["CertificateUserView"];
+        };
+        CertificatePage: {
+            /** Format: int64 */
+            total: number;
+            items: components["schemas"]["CertificateView"][];
+        };
+        AdminCertificatePage: {
+            /** Format: int64 */
+            total: number;
+            items: components["schemas"]["AdminCertificateView"][];
+        };
+        /** @description 公开核验结果；不返回图片、邮箱、用户 ID、驳回原因等敏感字段。 */
+        PublicCertificateView: {
+            valid: boolean;
+            /** @description 证书类型名快照；仅 valid=true 时返回 */
+            type?: string;
+            /** @description 等级；仅 valid=true 时返回 */
+            level?: string;
+            /** @description 持有者昵称；仅 valid=true 时返回 */
+            nickname?: string;
+            /**
+             * Format: date-time
+             * @description 通过时间；仅 valid=true 时返回
+             */
+            approvedAt?: string;
+        };
+        CertificateReviewInput: {
+            /** @enum {string} */
+            action: "approve" | "reject";
+            /** @description reject 时必填，1–500 字符 */
+            reason?: string;
+        };
+        CertificateTypeListResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["CertificateTypeView"][];
+        };
+        CertificateTypeResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["CertificateTypeView"];
+        };
+        CertificateResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["CertificateView"];
+        };
+        CertificatePageResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["CertificatePage"];
+        };
+        AdminCertificatePageResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AdminCertificatePage"];
+        };
+        PublicCertificateResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["PublicCertificateView"];
         };
     };
     responses: {

@@ -46,6 +46,13 @@ const menuItems = computed<MenuItem[]>(() => {
       },
     },
     {
+      label: '我的证书',
+      icon: 'pi pi-id-card',
+      command: () => {
+        void router.push({ name: 'certificate-settings' })
+      },
+    },
+    {
       label: 'AI 设置',
       icon: 'pi pi-sparkles',
       command: () => {

@@ -37,6 +37,11 @@ const routes = [
   { path: '/appearance', name: 'appearance', component: { template: '<div />' } },
   { path: '/settings/profile', name: 'profile-edit', component: { template: '<div />' } },
   { path: '/settings/ai', name: 'ai-settings', component: { template: '<div />' } },
+  {
+    path: '/settings/certificates',
+    name: 'certificate-settings',
+    component: { template: '<div />' },
+  },
   { path: '/admin', name: 'admin-dashboard', component: { template: '<div />' } },
 ]
 
@@ -132,5 +137,29 @@ describe('UserMenu', () => {
 
     expect(wrapper.findComponent(Menu).exists()).toBe(false)
     expect(wrapper.text()).not.toContain('AI 设置')
+  })
+
+  it('shows the 我的证书 menu item for logged-in users and navigates to it', async () => {
+    auth.isLoggedIn = true
+    auth.user = loggedInUser()
+    const { wrapper, router } = await mountMenu()
+
+    const model = wrapper.findComponent(Menu).props('model') as MenuItem[]
+    const certItem = model.find((item) => item.label === '我的证书')
+    expect(certItem).toBeDefined()
+    expect(certItem?.icon).toBe('pi pi-id-card')
+
+    certItem?.command?.({} as never)
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe('certificate-settings')
+  })
+
+  it('does not show the 我的证书 entry to guests', async () => {
+    auth.isLoggedIn = false
+    auth.user = null
+    const { wrapper } = await mountMenu()
+
+    expect(wrapper.findComponent(Menu).exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('我的证书')
   })
 })

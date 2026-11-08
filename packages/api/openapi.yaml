@@ -2390,6 +2390,191 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/EmptyResponse' }
         '401': { $ref: '#/components/responses/Error' }
+  /certificate-types:
+    get:
+      summary: 启用的证书类型列表（公开）
+      description: 按 sort_order、id 排序；只返回启用的类型。
+      security: [{}, { bearer: [] }]
+      responses:
+        '200':
+          description: 证书类型列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CertificateTypeListResponse' }
+  /certificates:
+    post:
+      summary: 提交证书认证（登录）
+      description: multipart 上传 typeId、level、file（≤5 MiB，PNG/JPEG/WebP）。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [typeId, level, file]
+              properties:
+                typeId: { type: integer, format: int64, minimum: 1, description: 证书类型 id }
+                level: { type: string, minLength: 1, maxLength: 50, description: 等级，trim 后 1–50 字符 }
+                file: { type: string, format: binary, description: 证书图片，≤5 MiB，PNG/JPEG/WebP }
+      responses:
+        '201':
+          description: 已提交
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CertificateResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+  /certificates/my:
+    get:
+      summary: 我的证书分页（登录）
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: 我的证书分页列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CertificatePageResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+  /certificates/verify:
+    get:
+      summary: 公开核验证书
+      description: 用验证码核验；未知/pending/rejected 返回 valid=false（200），不提供存在性 oracle。
+      security: [{}, { bearer: [] }]
+      parameters:
+        - { name: code, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: 核验结果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicCertificateResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+  /certificates/{id}/image:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    get:
+      summary: 证书图片（登录；仅本人或 certificate.manage 管理员）
+      description: 返回原始证书图片二进制；非 owner/admin 返回 404（不暴露存在性）。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 证书图片
+          content:
+            image/png: { schema: { type: string, format: binary } }
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/webp: { schema: { type: string, format: binary } }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /admin/certificates:
+    get:
+      summary: 证书审核列表（certificate.manage）
+      description: 默认 pending；status 传 all/approved/rejected 筛选。
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/CertificateAdminStatusFilter' } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: 证书分页列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminCertificatePageResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /admin/certificates/{id}/review:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    post:
+      summary: 审核证书（certificate.manage）
+      description: action 为 approve/reject；reject 必填 reason（1–500）；仅 pending 可审核。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CertificateReviewInput' }
+      responses:
+        '200':
+          description: 审核后的证书
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CertificateResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /admin/certificate-types:
+    get:
+      summary: 证书类型列表（certificate.manage，可含停用）
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: includeInactive, in: query, schema: { type: boolean }, description: 为 true 时包含停用类型 }
+      responses:
+        '200':
+          description: 证书类型列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CertificateTypeListResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+    post:
+      summary: 创建证书类型（certificate.manage）
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CertificateTypeInput' }
+      responses:
+        '201':
+          description: 已创建
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CertificateTypeResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /admin/certificate-types/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    put:
+      summary: 更新证书类型（certificate.manage）
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CertificateTypeInput' }
+      responses:
+        '200':
+          description: 更新后的类型
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CertificateTypeResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+    delete:
+      summary: 删除证书类型（certificate.manage）
+      description: 被证书引用时返回 40001；无引用可删除。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 已删除
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
 components:
   securitySchemes:
     bearer:
@@ -4601,3 +4786,129 @@ components:
           required: [data]
           properties:
             data: { $ref: '#/components/schemas/TestcaseGenerationConfirm' }
+    CertificateTypeView:
+      type: object
+      required: [id, name, description, isActive, sortOrder]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        description: { type: string }
+        isActive: { type: boolean }
+        sortOrder: { type: integer }
+    CertificateTypeInput:
+      type: object
+      required: [name, description, isActive, sortOrder]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 50 }
+        description: { type: string, maxLength: 200 }
+        isActive: { type: boolean }
+        sortOrder: { type: integer }
+    CertificateStatus:
+      type: string
+      enum: [pending, approved, rejected]
+    CertificateAdminStatusFilter:
+      type: string
+      enum: [pending, approved, rejected, all]
+    CertificateUserView:
+      type: object
+      required: [id, username, nickname]
+      properties:
+        id: { type: integer, format: int64 }
+        username: { type: string }
+        nickname: { type: string }
+    CertificateView:
+      type: object
+      required: [id, type, level, status, imageUrl, rejectReason, verifyCode, submittedAt, reviewedAt]
+      properties:
+        id: { type: integer, format: int64 }
+        type: { type: string, description: 提交时的证书类型名快照 }
+        level: { type: string }
+        status: { $ref: '#/components/schemas/CertificateStatus' }
+        imageUrl: { type: string, description: 鉴权图片地址 /api/certificates/<id>/image }
+        rejectReason: { type: string, description: 驳回原因；仅 rejected 非空 }
+        verifyCode: { type: string, description: 验证码；仅 approved 非空 }
+        submittedAt: { type: string, format: date-time }
+        reviewedAt: { type: string, format: date-time, nullable: true }
+    AdminCertificateView:
+      allOf:
+        - $ref: '#/components/schemas/CertificateView'
+        - type: object
+          required: [user]
+          properties:
+            user: { $ref: '#/components/schemas/CertificateUserView' }
+    CertificatePage:
+      type: object
+      required: [total, items]
+      properties:
+        total: { type: integer, format: int64 }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/CertificateView' }
+    AdminCertificatePage:
+      type: object
+      required: [total, items]
+      properties:
+        total: { type: integer, format: int64 }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AdminCertificateView' }
+    PublicCertificateView:
+      type: object
+      description: 公开核验结果；不返回图片、邮箱、用户 ID、驳回原因等敏感字段。
+      required: [valid]
+      properties:
+        valid: { type: boolean }
+        type: { type: string, description: 证书类型名快照；仅 valid=true 时返回 }
+        level: { type: string, description: 等级；仅 valid=true 时返回 }
+        nickname: { type: string, description: 持有者昵称；仅 valid=true 时返回 }
+        approvedAt: { type: string, format: date-time, description: 通过时间；仅 valid=true 时返回 }
+    CertificateReviewInput:
+      type: object
+      required: [action]
+      properties:
+        action: { type: string, enum: [approve, reject] }
+        reason: { type: string, maxLength: 500, description: reject 时必填，1–500 字符 }
+    CertificateTypeListResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items: { $ref: '#/components/schemas/CertificateTypeView' }
+    CertificateTypeResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/CertificateTypeView' }
+    CertificateResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/CertificateView' }
+    CertificatePageResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/CertificatePage' }
+    AdminCertificatePageResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/AdminCertificatePage' }
+    PublicCertificateResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/PublicCertificateView' }
