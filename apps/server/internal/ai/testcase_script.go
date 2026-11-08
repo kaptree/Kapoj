@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 )
@@ -105,10 +106,14 @@ func testcaseScriptMessages(in TestcaseScriptInput) []ChatMessage {
 }
 
 func truncatePrompt(s string) string {
-	if len(s) > maxPromptFieldBytes {
-		return s[:maxPromptFieldBytes]
+	if len(s) <= maxPromptFieldBytes {
+		return s
 	}
-	return s
+	cut := s[:maxPromptFieldBytes]
+	for len(cut) > 0 && !utf8.ValidString(cut) {
+		cut = cut[:len(cut)-1]
+	}
+	return cut
 }
 
 func formatScriptSamples(samples []TestcaseScriptSample) string {

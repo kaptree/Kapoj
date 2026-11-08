@@ -58,18 +58,25 @@ func (p *Pipeline) Run(ctx context.Context, generationID int64) error {
 	if err != nil {
 		return fmt.Errorf("claim generation: %w", err)
 	}
-	if !gen.Language.Valid() {
-		return fmt.Errorf("unsupported language %q", gen.Language)
-	}
 
 	genKey := generatedKey(gen.ProblemID, gen.ID)
 
-	// Clear any defensive leftovers from a previous attempt.
+	// Data errors that must not leave the generation stuck in "running".
+	if !gen.Language.Valid() {
+		return p.fail(ctx, gen, genKey, "不支持的语言："+string(gen.Language))
+	}
+	if gen.TestcaseCount < 1 || gen.TestcaseCount > 10 {
+		return p.fail(ctx, gen, genKey, "生成组数无效")
+	}
+
+	// Clear any defensive leftovers from a previous attempt. These are
+	// infrastructure failures: mark the generation terminal so a MaxRetry(0)
+	// task can never strand it in "running".
 	if err := p.repo.ResetGenerationCases(ctx, gen.ID); err != nil {
-		return err
+		return p.failInfra(ctx, gen, genKey, err)
 	}
 	if err := storage.RemoveAll(p.storageRoot, genKey); err != nil {
-		return err
+		return p.failInfra(ctx, gen, genKey, err)
 	}
 
 	// Compile the Python generator.
@@ -222,7 +229,7 @@ func (p *Pipeline) failInfra(ctx context.Context, gen *model.Generation, genKey 
 	_ = storage.RemoveAll(p.storageRoot, genKey)
 	message := "系统错误"
 	if cause != nil {
-		message = "系统错误：" + truncate(cause.Error(), maxErrorMessage)
+		message = truncate("系统错误："+cause.Error(), maxErrorMessage)
 	}
 	_ = p.repo.FinishGeneration(ctx, gen.ID, model.GenerationFailed, message)
 	return cause

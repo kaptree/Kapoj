@@ -88,6 +88,11 @@ func (r *gormRepository) Confirm(ctx context.Context, problemID, id int64, cases
 		if g.Status != StatusReady {
 			return ErrNotReady
 		}
+		// A ready generation with no recorded cases is not confirmable; guard
+		// against writing zero testcases into the problem.
+		if len(cases) == 0 {
+			return ErrNotReady
+		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Select("id").First(&problem.Problem{}, problemID).Error; err != nil {
 			return err

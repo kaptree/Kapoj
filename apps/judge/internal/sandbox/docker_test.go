@@ -124,6 +124,22 @@ int main(){for(int i=0;i<2*1024*1024;i++) putchar('a');}`,
 	assertNoJudgeContainers(t)
 }
 
+// TestDockerSandboxOutputLimitLarge proves the sandbox honors a >4 MiB output
+// limit. A producer that prints 7 MiB with OutputLimitBytes=6<<20 must return
+// exactly 6 MiB and flag truncation. The old code capped the real output at
+// ~4 MiB via `ulimit -f 4096` and an 8 MiB /out tmpfs, so the run would have
+// died before ever reaching the requested 6 MiB.
+func TestDockerSandboxOutputLimitLarge(t *testing.T) {
+	d := newTestDocker(t)
+	run, _ := compileAndRun(t, d, "cpp",
+		`#include <cstdio>
+int main(){for(int i=0;i<7*1024*1024;i++) putchar('a');}`,
+		"", 10000, 256, 6<<20)
+	assert.True(t, run.OutputTruncated)
+	assert.Equal(t, 6<<20, len(run.Output))
+	assertNoJudgeContainers(t)
+}
+
 func assertNoJudgeContainers(t *testing.T) {
 	t.Helper()
 	out, err := exec.Command("docker", "ps", "-a", "--filter", "label=kapoj.judge=1", "--format", "{{.Names}}").Output()

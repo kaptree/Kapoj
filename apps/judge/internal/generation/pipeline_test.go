@@ -309,6 +309,55 @@ func TestGenerationClaimSkip(t *testing.T) {
 	assert.Equal(t, model.GenerationReady, status)
 }
 
+func TestGenerationInvalidLanguageFails(t *testing.T) {
+	e := newGenEnv(t)
+	id := e.insert(t, "rust", "int main(){}", "print(1)", 2, "pending")
+
+	require.NoError(t, e.pipe.Run(context.Background(), id))
+
+	status, message := genStatus(t, e.pool, id)
+	assert.Equal(t, model.GenerationFailed, status)
+	assert.Contains(t, message, "不支持的语言")
+	assert.Empty(t, e.sb.compiles, "invalid language must not run the sandbox")
+	assert.Empty(t, e.sb.runs)
+	assert.Zero(t, caseCount(t, e.pool, id))
+}
+
+func TestGenerationInvalidCountFails(t *testing.T) {
+	for _, count := range []int{0, 11} {
+		e := newGenEnv(t)
+		id := e.insert(t, "cpp", "int main(){}", "print(1)", count, "pending")
+
+		require.NoError(t, e.pipe.Run(context.Background(), id))
+
+		status, message := genStatus(t, e.pool, id)
+		assert.Equal(t, model.GenerationFailed, status, "count=%d", count)
+		assert.Contains(t, message, "生成组数无效")
+		assert.Empty(t, e.sb.runs)
+		assert.Zero(t, caseCount(t, e.pool, id))
+	}
+}
+
+func TestGenerationEarlyCleanupFailureIsTerminal(t *testing.T) {
+	e := newGenEnv(t)
+	id := e.insert(t, "cpp", "int main(){}", "print(1)", 2, "pending")
+	// Point storage at a regular file so the early RemoveAll fails, exercising
+	// the terminal cleanup path for a MaxRetry(0) task.
+	badRoot := filepath.Join(t.TempDir(), "not-a-dir")
+	require.NoError(t, os.WriteFile(badRoot, []byte("x"), 0o644))
+	pipe := generation.New(e.repo, badRoot, e.sb)
+
+	err := pipe.Run(context.Background(), id)
+	require.Error(t, err)
+
+	status, message := genStatus(t, e.pool, id)
+	assert.Equal(t, model.GenerationFailed, status)
+	assert.Contains(t, message, "系统错误")
+	assert.Empty(t, e.sb.compiles)
+	assert.Empty(t, e.sb.runs)
+	assert.Zero(t, caseCount(t, e.pool, id))
+}
+
 // infraFail runs the pipeline and asserts that an infrastructure error leaves
 // the generation terminal (failed) with no cases and no files, and that the
 // original error is surfaced.

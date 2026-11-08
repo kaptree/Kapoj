@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -154,6 +155,20 @@ func TestCreateRequiresTraditionalProblem(t *testing.T) {
 		assertCode(t, err, 40001)
 	}
 	assert.Empty(t, scripts.calls, "AI must not be called for non-traditional problems")
+	assert.Empty(t, enq.ids)
+}
+
+func TestCreateProblemNotFound(t *testing.T) {
+	g := testutil.PG(t)
+	ctx := context.Background()
+	probs := &fakeProblems{byID: map[int64]*problem.Problem{}}
+	scripts := &fakeScripts{script: "print(1)"}
+	enq := &fakeEnqueuer{}
+	svc := newService(t, g, probs, scripts, enq)
+
+	_, err := svc.Create(ctx, 999999, 1, testcasegen.CreateInput{Language: "cpp", SourceCode: "int main(){}", TestcaseCount: 3})
+	assertCode(t, err, 40400)
+	assert.Empty(t, scripts.calls, "AI must not be called for a missing problem")
 	assert.Empty(t, enq.ids)
 }
 
@@ -399,6 +414,68 @@ func TestConfirmRejectsNotReady(t *testing.T) {
 		_, err := svc.Confirm(ctx, p.ID, genID)
 		assertCode(t, err, 40001)
 	}
+}
+
+func TestConfirmRejectsReadyWithNoCases(t *testing.T) {
+	g := testutil.PG(t)
+	ctx := context.Background()
+	probs := &fakeProblems{}
+	svc, _ := newServiceStore(t, g, probs, &fakeScripts{}, &fakeEnqueuer{})
+
+	p := &problem.Problem{Title: "Sum", Slug: "sum-no-cases"}
+	require.NoError(t, g.Create(p).Error)
+
+	genID := insertGeneration(t, g, p.ID, testcasegen.StatusReady, 1)
+	// No cases inserted; a ready generation with zero cases must not confirm.
+	_, err := svc.Confirm(ctx, p.ID, genID)
+	assertCode(t, err, 40001)
+
+	var n int64
+	require.NoError(t, g.Model(&problem.Testcase{}).Where("problem_id = ?", p.ID).Count(&n).Error)
+	assert.Zero(t, n, "no testcases may be written for an empty generation")
+}
+
+func TestConfirmConcurrentNoDuplicates(t *testing.T) {
+	g := testutil.PG(t)
+	ctx := context.Background()
+	probs := &fakeProblems{}
+	svc, _ := newServiceStore(t, g, probs, &fakeScripts{}, &fakeEnqueuer{})
+
+	p := &problem.Problem{Title: "Sum", Slug: "sum-concurrent"}
+	require.NoError(t, g.Create(p).Error)
+
+	genID := insertGeneration(t, g, p.ID, testcasegen.StatusReady, 3)
+	insertCases(t, g, p.ID, genID, 3)
+
+	const workers = 2
+	var wg sync.WaitGroup
+	results := make([]int, workers)
+	errs := make([]error, workers)
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			res, err := svc.Confirm(ctx, p.ID, genID)
+			if err == nil {
+				results[i] = res.Count
+			}
+			errs[i] = err
+		}(i)
+	}
+	wg.Wait()
+
+	for i := 0; i < workers; i++ {
+		require.NoError(t, errs[i])
+		assert.Equal(t, 3, results[i], "each confirm must report the retained case count")
+	}
+
+	var n int64
+	require.NoError(t, g.Model(&problem.Testcase{}).Where("problem_id = ?", p.ID).Count(&n).Error)
+	assert.Equal(t, int64(3), n, "concurrent confirms must not duplicate testcases")
+
+	var gen testcasegen.Generation
+	require.NoError(t, g.First(&gen, genID).Error)
+	assert.Equal(t, testcasegen.StatusConfirmed, gen.Status)
 }
 
 func TestDiscardReadyDeletesCasesAndFiles(t *testing.T) {

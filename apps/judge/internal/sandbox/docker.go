@@ -22,6 +22,10 @@ const (
 	compileTimeout = 30 * time.Second
 	containerGrace = 3 * time.Second
 	runMemoryFloor = 16
+
+	defaultOutputLimit = 1 << 20 // 1 MiB default when no output limit is requested
+	outputOverhead     = 4 << 20 // /out headroom for stderr and measurement files
+	minOutTmpfs        = 8 << 20 // floor so submission/checker runs keep ample room
 )
 
 type Docker struct {
@@ -154,8 +158,9 @@ func (d *Docker) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if err != nil {
 		return RunResult{}, err
 	}
+	limit := effectiveOutputLimit(req.OutputLimitBytes)
 	name := containerName()
-	if err := d.start(ctx, name, image, d.runFlags(req.MemoryLimitMB)); err != nil {
+	if err := d.start(ctx, name, image, d.runFlags(req.MemoryLimitMB, limit)); err != nil {
 		d.remove(name)
 		return RunResult{}, err
 	}
@@ -175,7 +180,7 @@ func (d *Docker) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 			return RunResult{}, err
 		}
 	}
-	script := runScript(spec.run)
+	script := runScript(spec.run, limit)
 	if err := d.writeFile(ctx, name, "/work/run.sh", []byte(script), 0o644); err != nil {
 		return RunResult{}, err
 	}
@@ -203,10 +208,6 @@ func (d *Docker) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		exitCode = exitErr.ExitCode()
 	}
 
-	limit := req.OutputLimitBytes
-	if limit <= 0 {
-		limit = 1 << 20
-	}
 	output, truncated, err := d.readOut(ctx, name, "/out/stdout", limit)
 	if err != nil {
 		return RunResult{}, err
@@ -415,7 +416,7 @@ func (d *Docker) compileFlags() []string {
 	}
 }
 
-func (d *Docker) runFlags(memoryMB int) []string {
+func (d *Docker) runFlags(memoryMB, outputLimit int) []string {
 	if memoryMB < runMemoryFloor {
 		memoryMB = runMemoryFloor
 	}
@@ -435,14 +436,15 @@ func (d *Docker) runFlags(memoryMB int) []string {
 		"--read-only",
 		"--tmpfs", "/work:rw,exec,nosuid,size=64m,mode=0755",
 		"--tmpfs", "/tmp:rw,exec,nosuid,size=64m,mode=1777",
-		"--tmpfs", "/out:rw,noexec,nosuid,size=8m,mode=0755",
+		"--tmpfs", "/out:rw,noexec,nosuid," + outTmpfsSize(outputLimit) + ",mode=0755",
 		"--workdir", "/work",
 	}
 }
 
-func runScript(command []string) string {
+func runScript(command []string, outputLimit int) string {
+	fileLimit := outputFileBlocks(outputLimit)
 	return `#!/bin/sh
-ulimit -f 4096
+ulimit -f ` + strconv.Itoa(fileLimit) + `
 cd /tmp
 oom_before=0
 if [ -r /sys/fs/cgroup/memory.events ]; then
@@ -473,6 +475,40 @@ exit $status
 }
 
 func containerName() string { return "kapoj-judge-" + randomHex(6) }
+
+// effectiveOutputLimit normalizes a per-run output limit to at least 1 MiB.
+func effectiveOutputLimit(limit int) int {
+	if limit <= 0 {
+		return defaultOutputLimit
+	}
+	return limit
+}
+
+// outputFileLimit returns how many bytes /out must be able to hold for a run:
+// the requested output limit plus headroom for stderr and measurement files,
+// never below the tmpfs floor.
+func outputFileLimit(limit int) int {
+	size := effectiveOutputLimit(limit) + outputOverhead
+	if size < minOutTmpfs {
+		size = minOutTmpfs
+	}
+	return size
+}
+
+// outTmpfsSize returns the size= argument for the /out tmpfs mount, rounded up
+// to whole MiB.
+func outTmpfsSize(limit int) string {
+	size := outputFileLimit(limit)
+	return "size=" + strconv.Itoa((size+(1<<20)-1)/(1<<20)) + "m"
+}
+
+// outputFileBlocks returns the ulimit -f argument for a run. It expresses the
+// /out capacity in 512-byte blocks, the smallest unit a shell may use, so a
+// shell interpreting blocks as 1024 bytes still ends up with at least the
+// requested headroom.
+func outputFileBlocks(limit int) int {
+	return (outputFileLimit(limit) + 511) / 512
+}
 
 func randomHex(n int) string {
 	b := make([]byte, n)

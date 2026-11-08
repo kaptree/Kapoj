@@ -96,7 +96,7 @@ function byteLength(value: string): number {
 }
 
 /** Substrings that mark a 40001 as a missing user AI configuration (worth a settings link). */
-const AI_CONFIG_KEYWORDS = ['AI 模型', 'AI 设置', 'API Key', '服务商', '模型']
+const AI_CONFIG_KEYWORDS = ['AI 模型', 'AI 设置', 'API Key', '服务商']
 
 function isAIConfigMissing(message: string): boolean {
   return AI_CONFIG_KEYWORDS.some((k) => message.includes(k))
