@@ -135,6 +135,12 @@ export type AIFormatOutput = Schemas['AIFormatOutput']
 export type AIOptimizeInput = Schemas['AIOptimizeInput']
 export type AIOptimizeOutput = Schemas['AIOptimizeOutput']
 export type AIHintOutput = Schemas['AIHintOutput']
+export type TestcaseGenerationStatus = Schemas['TestcaseGenerationStatus']
+export type TestcaseGenerationInput = Schemas['TestcaseGenerationCreateInput']
+export type TestcaseGenerationCase = Schemas['TestcaseGenerationCase']
+export type TestcaseGenerationView = Schemas['TestcaseGenerationView']
+export type TestcaseGenerationPreview = Schemas['TestcaseGenerationPreview']
+export type TestcaseGenerationConfirm = Schemas['TestcaseGenerationConfirm']
 
 export interface Page<T> {
   total: number

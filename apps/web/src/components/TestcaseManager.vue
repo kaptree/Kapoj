@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, shallowRef, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useRouter } from 'vue-router'
 
 import { ApiError } from '@/api/http'
 import {
@@ -16,6 +17,8 @@ import { formatBytes } from '@/utils/format'
 
 const props = defineProps<{ problemId: number; type: ProblemType; checkerUploaded: boolean }>()
 const emit = defineEmits<{ (e: 'changed'): void }>()
+
+const router = useRouter()
 
 const cases = ref<Testcase[]>([])
 const loading = ref(false)
@@ -165,11 +168,26 @@ async function sendChecker() {
     emit('changed')
   }
 }
+
+function goAiGenerate() {
+  void router.push({ name: 'problem-testcase-generator', params: { id: props.problemId } })
+}
 </script>
 
 <template>
   <div>
-    <h3>测试点</h3>
+    <div class="tc-header">
+      <h3>测试点</h3>
+      <el-button
+        v-if="type === 'traditional'"
+        text
+        type="primary"
+        :disabled="busy"
+        @click="goAiGenerate"
+      >
+        AI 造数据
+      </el-button>
+    </div>
     <el-table v-loading="loading" :data="cases" empty-text="还没有测试点" size="small">
       <el-table-column prop="sortOrder" label="序号" width="60" />
       <el-table-column label="大小（输入 / 输出）" min-width="140">
@@ -258,6 +276,12 @@ async function sendChecker() {
 </template>
 
 <style scoped>
+.tc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
 .ops {
   display: flex;
   white-space: nowrap;

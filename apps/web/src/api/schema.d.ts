@@ -3198,6 +3198,227 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/problems/{id}/testcase-generations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 创建 AI 测试数据生成任务（problem.testcase.manage；仅传统题） */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["TestcaseGenerationCreateInput"];
+                };
+            };
+            responses: {
+                /** @description 已创建（pending） */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TestcaseGenerationResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+                429: components["responses"]["Error"];
+                502: components["responses"]["Error"];
+                503: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/problems/{id}/testcase-generations/{genId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                genId: number;
+            };
+            cookie?: never;
+        };
+        /** 查询 AI 测试数据生成状态（problem.testcase.manage） */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                    genId: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 生成状态视图 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TestcaseGenerationResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        /** 丢弃并清理生成结果（problem.testcase.manage；仅 ready/failed） */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                    genId: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已丢弃 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/problems/{id}/testcase-generations/{genId}/cases/{caseId}/preview": {
+        parameters: {
+            query: {
+                kind: components["schemas"]["TestcaseGenerationPreviewKind"];
+            };
+            header?: never;
+            path: {
+                id: number;
+                genId: number;
+                caseId: number;
+            };
+            cookie?: never;
+        };
+        /** 预览生成测试点输入/输出（problem.testcase.manage；最多返回 64 KiB，truncated 标记截断） */
+        get: {
+            parameters: {
+                query: {
+                    kind: components["schemas"]["TestcaseGenerationPreviewKind"];
+                };
+                header?: never;
+                path: {
+                    id: number;
+                    genId: number;
+                    caseId: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 截断预览 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TestcaseGenerationPreviewResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/problems/{id}/testcase-generations/{genId}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                genId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 确认入库（problem.testcase.manage；仅 ready） */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                    genId: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已入库数量 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TestcaseGenerationConfirmResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/submissions": {
         parameters: {
             query?: never;
@@ -7061,6 +7282,54 @@ export interface components {
         };
         UnreadCountResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["UnreadCount"];
+        };
+        /** @enum {string} */
+        TestcaseGenerationStatus: "pending" | "running" | "ready" | "failed" | "confirmed" | "discarded";
+        /** @enum {string} */
+        TestcaseGenerationPreviewKind: "input" | "output";
+        TestcaseGenerationCreateInput: {
+            language: components["schemas"]["SubmissionLanguage"];
+            /** @description 标程源码，按 UTF-8 字节数不超过 64 KiB */
+            sourceCode: string;
+            testcaseCount: number;
+        };
+        TestcaseGenerationCase: {
+            /** Format: int64 */
+            id: number;
+            sortOrder: number;
+            /** Format: int64 */
+            inputSize: number;
+            /** Format: int64 */
+            outputSize: number;
+        };
+        TestcaseGenerationView: {
+            /** Format: int64 */
+            id: number;
+            status: components["schemas"]["TestcaseGenerationStatus"];
+            language: string;
+            testcaseCount: number;
+            generatorCode: string;
+            errorMessage: string;
+            /** Format: date-time */
+            createdAt: string;
+            cases: components["schemas"]["TestcaseGenerationCase"][];
+        };
+        TestcaseGenerationPreview: {
+            kind: components["schemas"]["TestcaseGenerationPreviewKind"];
+            content: string;
+            truncated: boolean;
+        };
+        TestcaseGenerationConfirm: {
+            count: number;
+        };
+        TestcaseGenerationResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["TestcaseGenerationView"];
+        };
+        TestcaseGenerationPreviewResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["TestcaseGenerationPreview"];
+        };
+        TestcaseGenerationConfirmResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["TestcaseGenerationConfirm"];
         };
     };
     responses: {

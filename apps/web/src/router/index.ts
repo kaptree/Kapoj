@@ -175,6 +175,16 @@ export const router = createRouter({
           meta: { requiresAuth: true, permission: PERM.problem.update, title: '编辑题目' },
         },
         {
+          path: 'problems/:id(\\d+)/testcase-generator',
+          name: 'problem-testcase-generator',
+          component: () => import('@/views/TestcaseGeneratorView.vue'),
+          meta: {
+            requiresAuth: true,
+            permission: PERM.problem.testcase.manage,
+            title: 'AI 造数据',
+          },
+        },
+        {
           path: 'leaderboard',
           name: 'leaderboard',
           component: () => import('@/views/LeaderboardView.vue'),

@@ -54,6 +54,7 @@ M4-C 排行榜、签到与 Rating 历史（UI-30）、M4-7 学习路线（UI-31�
 | UI-35 | 新功能 | 题目导入 | P3 | done | UI-00 | 直接使用 PrimeVue；HydroOJ 导入 | 2026-11-08 完成。`ProblemImportView`（`/problems/import`）复用 AppPageHeader/AppSurface/DataTable/Message/Button；题目列表「导入题包」入口与详情创建者链接；不新增 UI 依赖 |
 | UI-37 | 新功能 | M4-4 Rating 设置页：`AdminRatingView` | P3 | done | UI-00、UI-36 | 直接使用 PrimeVue；衰减/赛季设置与只读当前赛季 | 2026-11-08 完成。`AdminRatingView`（`/admin/rating`）复用 AppPageHeader/AppSurface/AppFormField/ToggleSwitch/InputNumber/InputText/Toast；`AdminNav` 增加「Rating」入口；不新增 UI 依赖 |
 | UI-38 | 新功能 | AI 管理开关 + 加密密钥：`AdminAiView` | P3 | done | UI-00、UI-36 | 直接使用 PrimeVue；状态 Tag/ToggleSwitch/密钥缺失禁用 | 2026-11-08 完成。`AdminAiView`（`/admin/ai`）复用 AppPageHeader/AppSurface/AppFormField/ToggleSwitch/Message/Tag/Toast，并新增「加密密钥」板块（状态 Tag 未配置/文件/env、自动生成一次性显示 + 复制、手动填写、轮换二次确认、env 只读）；`AdminNav` 增加「AI 设置」入口（`ai.settings.manage`）；不新增 UI 依赖 |
+| UI-39 | 新功能 | AI 造数据：`TestcaseGeneratorView` | P3 | done | UI-00 | 直接使用 PrimeVue；生成/轮询/预览/确认/丢弃 | 2026-11-08 完成。`TestcaseGeneratorView`（`/problems/:id/testcase-generator`）复用 AppPageHeader/AppSurface/AppFormField/Select/InputNumber/Button/Tag/Message/DataTable/Dialog/Toast/Confirm；`CodeEditor`（Monaco）保留；`TestcaseManager` 的「AI 造数据」入口仍属 UI-19 legacy（Element Plus），不加额外依赖 |
 
 ## Legacy allowlist
 

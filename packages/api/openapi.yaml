@@ -1349,6 +1349,95 @@ paths:
         '403': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
         '413': { $ref: '#/components/responses/Error' }
+  /problems/{id}/testcase-generations:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      summary: 创建 AI 测试数据生成任务（problem.testcase.manage；仅传统题）
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TestcaseGenerationCreateInput' }
+      responses:
+        '201':
+          description: 已创建（pending）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestcaseGenerationResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+        '502': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /problems/{id}/testcase-generations/{genId}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      - { name: genId, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      summary: 查询 AI 测试数据生成状态（problem.testcase.manage）
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 生成状态视图
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestcaseGenerationResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+    delete:
+      summary: 丢弃并清理生成结果（problem.testcase.manage；仅 ready/failed）
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 已丢弃
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /problems/{id}/testcase-generations/{genId}/cases/{caseId}/preview:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      - { name: genId, in: path, required: true, schema: { type: integer, format: int64 } }
+      - { name: caseId, in: path, required: true, schema: { type: integer, format: int64 } }
+      - { name: kind, in: query, required: true, schema: { $ref: '#/components/schemas/TestcaseGenerationPreviewKind' } }
+    get:
+      summary: 预览生成测试点输入/输出（problem.testcase.manage；最多返回 64 KiB，truncated 标记截断）
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 截断预览
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestcaseGenerationPreviewResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /problems/{id}/testcase-generations/{genId}/confirm:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      - { name: genId, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      summary: 确认入库（problem.testcase.manage；仅 ready）
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 已入库数量
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestcaseGenerationConfirmResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
   /submissions:
     get:
       summary: 测评记录列表（游客可访问）；隐藏题的提交需要 problem.view_hidden 才能看到他人记录
@@ -4444,3 +4533,71 @@ components:
           required: [data]
           properties:
             data: { $ref: '#/components/schemas/UnreadCount' }
+    TestcaseGenerationStatus:
+      type: string
+      enum: [pending, running, ready, failed, confirmed, discarded]
+    TestcaseGenerationPreviewKind:
+      type: string
+      enum: [input, output]
+    TestcaseGenerationCreateInput:
+      type: object
+      required: [language, sourceCode, testcaseCount]
+      properties:
+        language: { $ref: '#/components/schemas/SubmissionLanguage' }
+        sourceCode: { type: string, minLength: 1, maxLength: 65536, description: 标程源码，按 UTF-8 字节数不超过 64 KiB }
+        testcaseCount: { type: integer, minimum: 1, maximum: 10 }
+    TestcaseGenerationCase:
+      type: object
+      required: [id, sortOrder, inputSize, outputSize]
+      properties:
+        id: { type: integer, format: int64 }
+        sortOrder: { type: integer }
+        inputSize: { type: integer, format: int64 }
+        outputSize: { type: integer, format: int64 }
+    TestcaseGenerationView:
+      type: object
+      required: [id, status, language, testcaseCount, generatorCode, errorMessage, createdAt, cases]
+      properties:
+        id: { type: integer, format: int64 }
+        status: { $ref: '#/components/schemas/TestcaseGenerationStatus' }
+        language: { type: string }
+        testcaseCount: { type: integer }
+        generatorCode: { type: string }
+        errorMessage: { type: string }
+        createdAt: { type: string, format: date-time }
+        cases:
+          type: array
+          items: { $ref: '#/components/schemas/TestcaseGenerationCase' }
+    TestcaseGenerationPreview:
+      type: object
+      required: [kind, content, truncated]
+      properties:
+        kind: { $ref: '#/components/schemas/TestcaseGenerationPreviewKind' }
+        content: { type: string }
+        truncated: { type: boolean }
+    TestcaseGenerationConfirm:
+      type: object
+      required: [count]
+      properties:
+        count: { type: integer }
+    TestcaseGenerationResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/TestcaseGenerationView' }
+    TestcaseGenerationPreviewResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/TestcaseGenerationPreview' }
+    TestcaseGenerationConfirmResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/TestcaseGenerationConfirm' }

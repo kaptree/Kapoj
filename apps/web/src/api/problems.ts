@@ -10,6 +10,10 @@ import type {
   ProblemStats,
   ProblemUpdateInput,
   Testcase,
+  TestcaseGenerationConfirm,
+  TestcaseGenerationInput,
+  TestcaseGenerationPreview,
+  TestcaseGenerationView,
 } from './types'
 
 export interface ListProblemsQuery {
@@ -97,3 +101,26 @@ export function importHydroProblems(file: File) {
   form.append('file', file)
   return http.postForm<HydroImportResult>('/problems/import/hydro', form)
 }
+
+export const createTestcaseGeneration = (id: number | string, input: TestcaseGenerationInput) =>
+  http.post<TestcaseGenerationView>(`/problems/${id}/testcase-generations`, input)
+
+export const getTestcaseGeneration = (id: number | string, genId: number | string) =>
+  http.get<TestcaseGenerationView>(`/problems/${id}/testcase-generations/${genId}`)
+
+export const previewTestcaseGeneration = (
+  id: number | string,
+  genId: number | string,
+  caseId: number | string,
+  kind: 'input' | 'output',
+) =>
+  http.get<TestcaseGenerationPreview>(
+    `/problems/${id}/testcase-generations/${genId}/cases/${caseId}/preview`,
+    { params: { kind } },
+  )
+
+export const confirmTestcaseGeneration = (id: number | string, genId: number | string) =>
+  http.post<TestcaseGenerationConfirm>(`/problems/${id}/testcase-generations/${genId}/confirm`)
+
+export const discardTestcaseGeneration = (id: number | string, genId: number | string) =>
+  http.delete<null>(`/problems/${id}/testcase-generations/${genId}`)
