@@ -36,6 +36,9 @@ describe('SampleEditor', () => {
     const wrapper = mountEditor([{ input: '', output: '' }])
 
     const textareas = wrapper.findAll('textarea')
+    expect(textareas).toHaveLength(2)
+    for (const textarea of textareas) expect(textarea.classes()).toContain('mono')
+
     await textareas[0]!.setValue('1 2')
     await textareas[1]!.setValue('3')
 

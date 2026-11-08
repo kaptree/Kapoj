@@ -114,13 +114,9 @@ function update(index: number, field: 'input' | 'output', value: string) {
   letter-spacing: 0.02em;
 }
 
-.mono :deep(textarea),
-.mono :deep(.p-textarea) {
-  font-family: var(--kapoj-font-mono);
-}
-
-.mono :deep(.p-textarea) {
+.mono {
   width: 100%;
+  font-family: var(--kapoj-font-mono);
   background: var(--kapoj-bg);
   border-color: var(--kapoj-border-strong);
   border-radius: var(--kapoj-radius-sm);
