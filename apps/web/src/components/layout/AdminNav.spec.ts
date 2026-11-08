@@ -31,6 +31,7 @@ const routes = [
   { path: '/problems', component: { template: '<div />' } },
   { path: '/contests', component: { template: '<div />' } },
   { path: '/admin/learning-paths', component: { template: '<div />' } },
+  { path: '/admin/certificates', component: { template: '<div />' } },
 ]
 
 async function mountNav(path = '/admin') {
@@ -163,6 +164,18 @@ describe('AdminNav', () => {
     wrapper = await mountNav()
     expect(wrapper.find('a[href="/admin/learning-paths"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('学习路线')
+    wrapper.unmount()
+  })
+
+  it('shows the certificate review entry only with certificate.manage', async () => {
+    let wrapper = await mountNav()
+    expect(wrapper.text()).not.toContain('证书审核')
+
+    auth.can.mockImplementation((code) => code === PERM.certificate.manage)
+    wrapper = await mountNav()
+    expect(auth.can).toHaveBeenCalledWith(PERM.certificate.manage)
+    expect(wrapper.find('a[href="/admin/certificates"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('证书审核')
     wrapper.unmount()
   })
 })

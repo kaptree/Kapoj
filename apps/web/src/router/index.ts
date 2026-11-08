@@ -325,6 +325,16 @@ export const router = createRouter({
             title: '学习路线管理',
           },
         },
+        {
+          path: 'certificates',
+          name: 'admin-certificates',
+          component: () => import('@/views/AdminCertificatesView.vue'),
+          meta: {
+            requiresAuth: true,
+            permission: PERM.certificate.manage,
+            title: '证书审核',
+          },
+        },
       ],
     },
   ],

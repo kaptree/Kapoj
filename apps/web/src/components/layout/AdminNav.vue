@@ -99,6 +99,14 @@ const groups = computed<AdminNavGroup[]>(() => {
   if (auth.canAny([PERM.learningPath.official.manage, PERM.learningPath.admin.read])) {
     contentItems.push(learningPathsItem)
   }
+  if (auth.can(PERM.certificate.manage)) {
+    contentItems.push({
+      key: 'certificates',
+      path: '/admin/certificates',
+      label: '证书审核',
+      icon: 'pi pi-id-card',
+    })
+  }
 
   const items: AdminNavGroup[] = [{ key: 'overview', label: '概览', items: [overviewItem] }]
   const userPermissionItems: AdminNavItem[] = []
