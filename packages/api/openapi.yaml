@@ -130,6 +130,83 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/RatingHistoryPageResponse' }
         '404': { $ref: '#/components/responses/Error' }
+  /users/{id}/follow:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    post:
+      summary: 关注用户（登录）
+      description: 重复关注幂等；关注自己返回 40001，目标不存在返回 40400，目标非 active 返回 40001。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 关注结果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FollowResultResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+    delete:
+      summary: 取消关注用户（登录）
+      description: 未关注时幂等；取消关注自己返回 40001。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 取消关注结果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FollowResultResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /users/{id}/social:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    get:
+      summary: 用户社交统计（可选登录）
+      description: 返回粉丝数/关注数与查看者是否已关注；游客 isFollowing=false；用户不存在返回 40400。
+      security: [{}, { bearer: [] }]
+      responses:
+        '200':
+          description: 社交统计
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SocialViewResponse' }
+        '404': { $ref: '#/components/responses/Error' }
+  /users/{id}/followers:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    get:
+      summary: 粉丝分页列表（可选登录）
+      description: 按关注时间倒序、id 倒序；返回公开用户摘要（不含邮箱）；用户不存在返回 40400。
+      security: [{}, { bearer: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: 粉丝分页列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SocialUserPageResponse' }
+        '404': { $ref: '#/components/responses/Error' }
+  /users/{id}/following:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    get:
+      summary: 关注分页列表（可选登录）
+      description: 按关注时间倒序、id 倒序；返回公开用户摘要（不含邮箱）；用户不存在返回 40400。
+      security: [{}, { bearer: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: 关注分页列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SocialUserPageResponse' }
+        '404': { $ref: '#/components/responses/Error' }
   /rating/season/current:
     get:
       summary: 当前赛季（公开）
@@ -974,6 +1051,36 @@ paths:
               schema: { $ref: '#/components/schemas/EmptyResponse' }
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /problems/{id}/solutions/{postId}/like:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      - { name: postId, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      summary: 点赞解题思路帖子（登录）
+      description: 重复点赞幂等；不能赞自己的帖子（40001）；隐藏题或帖子不存在返回 40400。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 点赞结果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LikeResultResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+    delete:
+      summary: 取消点赞解题思路帖子（登录）
+      description: 未点赞时幂等；隐藏题或帖子不存在返回 40400。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 取消点赞结果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LikeResultResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
   /problems/{id}/solutions/{postId}/replies:
     parameters:
@@ -2055,6 +2162,59 @@ paths:
         '429': { $ref: '#/components/responses/Error' }
         '502': { $ref: '#/components/responses/Error' }
         '503': { $ref: '#/components/responses/Error' }
+  /notifications:
+    get:
+      summary: 我的通知分页列表（登录）
+      description: 按 created_at DESC, id DESC 分页；只读自己的通知。
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: 通知分页列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationPageResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+  /notifications/unread-count:
+    get:
+      summary: 未读通知数（登录）
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 未读数
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UnreadCountResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+  /notifications/{id}/read:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    post:
+      summary: 标记单条通知已读（登录）
+      description: 重复标记幂等；非本人通知返回 40400。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 已标记
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /notifications/read-all:
+    post:
+      summary: 全部标记已读（登录）
+      description: 幂等；只标记自己的未读通知。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 已全部标记
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '401': { $ref: '#/components/responses/Error' }
 components:
   securitySchemes:
     bearer:
@@ -3953,7 +4113,7 @@ components:
     SolutionPostItem:
       type: object
       description: 帖子列表项；正文不返回，只返回摘要（前 200 字符）。
-      required: [id, problemId, userId, title, excerpt, author, replyCount, createdAt, updatedAt, canEdit, canDelete]
+      required: [id, problemId, userId, title, excerpt, author, replyCount, likeCount, likedByMe, createdAt, updatedAt, canEdit, canDelete]
       properties:
         id: { type: integer, format: int64 }
         problemId: { type: integer, format: int64 }
@@ -3962,6 +4122,8 @@ components:
         excerpt: { type: string, description: 正文摘要（按 rune 截取前 200 字符） }
         author: { $ref: '#/components/schemas/SolutionAuthor' }
         replyCount: { type: integer, format: int64 }
+        likeCount: { type: integer, format: int64, description: 帖子点赞数 }
+        likedByMe: { type: boolean, description: 当前登录用户是否已点赞；游客恒为 false }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         canEdit: { type: boolean, description: 当前用户是否为作者 }
@@ -4022,3 +4184,122 @@ components:
           required: [data]
           properties:
             data: { $ref: '#/components/schemas/SolutionReplyItem' }
+    LikeResult:
+      type: object
+      description: 点赞/取消点赞的返回。
+      required: [liked, likeCount]
+      properties:
+        liked: { type: boolean, description: 操作后是否已点赞 }
+        likeCount: { type: integer, format: int64, description: 当前点赞数 }
+    FollowResult:
+      type: object
+      description: 关注/取消关注的返回。
+      required: [following, followersCount]
+      properties:
+        following: { type: boolean, description: 操作后是否已关注 }
+        followersCount: { type: integer, format: int64, description: 目标用户当前粉丝数 }
+    SocialView:
+      type: object
+      description: 用户主页的社交统计。
+      required: [followersCount, followingCount, isFollowing]
+      properties:
+        followersCount: { type: integer, format: int64 }
+        followingCount: { type: integer, format: int64 }
+        isFollowing: { type: boolean, description: 当前查看者是否已关注目标用户；游客恒为 false }
+    SocialUserSummary:
+      type: object
+      description: 粉丝/关注列表与通知触发者的公开摘要；不含邮箱。
+      required: [id, username, nickname, avatarUrl, rating]
+      properties:
+        id: { type: integer, format: int64 }
+        username: { type: string }
+        nickname: { type: string }
+        avatarUrl: { type: string }
+        rating: { type: integer }
+    SocialUserPage:
+      type: object
+      required: [total, items]
+      properties:
+        total: { type: integer, format: int64 }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/SocialUserSummary' }
+    NotificationType:
+      type: string
+      enum: [solution_reply, solution_like, follow]
+    NotificationTargetType:
+      type: string
+      enum: [solution_post, user]
+    NotificationItem:
+      type: object
+      description: 一条站内通知；标题由前端按 type 生成，后端只返回 link。
+      required: [id, type, actor, targetType, targetId, link, readAt, createdAt]
+      properties:
+        id: { type: integer, format: int64 }
+        type: { $ref: '#/components/schemas/NotificationType' }
+        actor:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/SocialUserSummary'
+          description: 触发者公开摘要；触发者已删除时为 null
+        targetType: { $ref: '#/components/schemas/NotificationTargetType' }
+        targetId: { type: integer, format: int64 }
+        link: { type: string, description: 站内相对路径，如 /problems/1/solutions/9、/users/3 }
+        readAt: { type: string, format: date-time, nullable: true, description: 已读时间；未读为 null }
+        createdAt: { type: string, format: date-time }
+    NotificationPage:
+      type: object
+      required: [total, items]
+      properties:
+        total: { type: integer, format: int64 }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/NotificationItem' }
+    UnreadCount:
+      type: object
+      required: [count]
+      properties:
+        count: { type: integer, format: int64 }
+    LikeResultResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/LikeResult' }
+    FollowResultResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/FollowResult' }
+    SocialViewResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/SocialView' }
+    SocialUserPageResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/SocialUserPage' }
+    NotificationPageResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/NotificationPage' }
+    UnreadCountResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/UnreadCount' }

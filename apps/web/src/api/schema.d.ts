@@ -320,6 +320,218 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/{id}/follow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 关注用户（登录）
+         * @description 重复关注幂等；关注自己返回 40001，目标不存在返回 40400，目标非 active 返回 40001。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 关注结果 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["FollowResultResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        /**
+         * 取消关注用户（登录）
+         * @description 未关注时幂等；取消关注自己返回 40001。
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 取消关注结果 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["FollowResultResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{id}/social": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * 用户社交统计（可选登录）
+         * @description 返回粉丝数/关注数与查看者是否已关注；游客 isFollowing=false；用户不存在返回 40400。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 社交统计 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SocialViewResponse"];
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{id}/followers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * 粉丝分页列表（可选登录）
+         * @description 按关注时间倒序、id 倒序；返回公开用户摘要（不含邮箱）；用户不存在返回 40400。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    page_size?: number;
+                };
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 粉丝分页列表 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SocialUserPageResponse"];
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{id}/following": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * 关注分页列表（可选登录）
+         * @description 按关注时间倒序、id 倒序；返回公开用户摘要（不含邮箱）；用户不存在返回 40400。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    page_size?: number;
+                };
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 关注分页列表 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SocialUserPageResponse"];
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/rating/season/current": {
         parameters: {
             query?: never;
@@ -2315,6 +2527,83 @@ export interface paths {
                 };
                 401: components["responses"]["Error"];
                 403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/problems/{id}/solutions/{postId}/like": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                postId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 点赞解题思路帖子（登录）
+         * @description 重复点赞幂等；不能赞自己的帖子（40001）；隐藏题或帖子不存在返回 40400。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                    postId: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 点赞结果 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LikeResultResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        /**
+         * 取消点赞解题思路帖子（登录）
+         * @description 未点赞时幂等；隐藏题或帖子不存在返回 40400。
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                    postId: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 取消点赞结果 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LikeResultResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
                 404: components["responses"]["Error"];
             };
         };
@@ -4722,6 +5011,171 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 我的通知分页列表（登录）
+         * @description 按 created_at DESC, id DESC 分页；只读自己的通知。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    page_size?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 通知分页列表 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotificationPageResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/unread-count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 未读通知数（登录） */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 未读数 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnreadCountResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/{id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 标记单条通知已读（登录）
+         * @description 重复标记幂等；非本人通知返回 40400。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已标记 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/read-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 全部标记已读（登录）
+         * @description 幂等；只标记自己的未读通知。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已全部标记 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -6227,6 +6681,13 @@ export interface components {
             author: components["schemas"]["SolutionAuthor"];
             /** Format: int64 */
             replyCount: number;
+            /**
+             * Format: int64
+             * @description 帖子点赞数
+             */
+            likeCount: number;
+            /** @description 当前登录用户是否已点赞；游客恒为 false */
+            likedByMe: boolean;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -6276,6 +6737,100 @@ export interface components {
         };
         SolutionReplyItemResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["SolutionReplyItem"];
+        };
+        /** @description 点赞/取消点赞的返回。 */
+        LikeResult: {
+            /** @description 操作后是否已点赞 */
+            liked: boolean;
+            /**
+             * Format: int64
+             * @description 当前点赞数
+             */
+            likeCount: number;
+        };
+        /** @description 关注/取消关注的返回。 */
+        FollowResult: {
+            /** @description 操作后是否已关注 */
+            following: boolean;
+            /**
+             * Format: int64
+             * @description 目标用户当前粉丝数
+             */
+            followersCount: number;
+        };
+        /** @description 用户主页的社交统计。 */
+        SocialView: {
+            /** Format: int64 */
+            followersCount: number;
+            /** Format: int64 */
+            followingCount: number;
+            /** @description 当前查看者是否已关注目标用户；游客恒为 false */
+            isFollowing: boolean;
+        };
+        /** @description 粉丝/关注列表与通知触发者的公开摘要；不含邮箱。 */
+        SocialUserSummary: {
+            /** Format: int64 */
+            id: number;
+            username: string;
+            nickname: string;
+            avatarUrl: string;
+            rating: number;
+        };
+        SocialUserPage: {
+            /** Format: int64 */
+            total: number;
+            items: components["schemas"]["SocialUserSummary"][];
+        };
+        /** @enum {string} */
+        NotificationType: "solution_reply" | "solution_like" | "follow";
+        /** @enum {string} */
+        NotificationTargetType: "solution_post" | "user";
+        /** @description 一条站内通知；标题由前端按 type 生成，后端只返回 link。 */
+        NotificationItem: {
+            /** Format: int64 */
+            id: number;
+            type: components["schemas"]["NotificationType"];
+            /** @description 触发者公开摘要；触发者已删除时为 null */
+            actor: components["schemas"]["SocialUserSummary"] | null;
+            targetType: components["schemas"]["NotificationTargetType"];
+            /** Format: int64 */
+            targetId: number;
+            /** @description 站内相对路径，如 /problems/1/solutions/9、/users/3 */
+            link: string;
+            /**
+             * Format: date-time
+             * @description 已读时间；未读为 null
+             */
+            readAt: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        NotificationPage: {
+            /** Format: int64 */
+            total: number;
+            items: components["schemas"]["NotificationItem"][];
+        };
+        UnreadCount: {
+            /** Format: int64 */
+            count: number;
+        };
+        LikeResultResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["LikeResult"];
+        };
+        FollowResultResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["FollowResult"];
+        };
+        SocialViewResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["SocialView"];
+        };
+        SocialUserPageResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["SocialUserPage"];
+        };
+        NotificationPageResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["NotificationPage"];
+        };
+        UnreadCountResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["UnreadCount"];
         };
     };
     responses: {
