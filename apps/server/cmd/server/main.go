@@ -17,6 +17,7 @@ import (
 
 	"github.com/kaptree/kapoj/apps/server/internal/activity"
 	"github.com/kaptree/kapoj/apps/server/internal/ai"
+	"github.com/kaptree/kapoj/apps/server/internal/certificate"
 	"github.com/kaptree/kapoj/apps/server/internal/config"
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/db"
@@ -61,6 +62,9 @@ func run() error {
 	if err := ai.SeedProviders(context.Background(), g); err != nil {
 		return err
 	}
+	if err := certificate.SeedTypes(context.Background(), g); err != nil {
+		return err
+	}
 	store, err := storage.NewLocal(cfg.StorageDir)
 	if err != nil {
 		return err
@@ -86,6 +90,7 @@ func run() error {
 	})
 	learningSvc := learning.NewService(learning.NewRepository(g))
 	rbacSvc := rbac.NewService(g)
+	certSvc := certificate.NewService(certificate.NewGormRepository(g), store)
 
 	// KeyManager loads the AI encryption key from the environment (priority) or
 	// a local file. An invalid env key fails startup; a missing/invalid file
@@ -141,7 +146,7 @@ func run() error {
 		Handler: router.New(router.Deps{
 			DB: g, Redis: rdb, Storage: store, Config: cfg, Enqueuer: queue, Game: gameSvc,
 			Rating: ratingSvc, Activity: activitySvc, Learning: learningSvc, RBAC: rbacSvc,
-			AI: aiSvc, AISettings: aiSettings, TestcaseGen: testcaseGenSvc,
+			AI: aiSvc, AISettings: aiSettings, TestcaseGen: testcaseGenSvc, Certificate: certSvc,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}

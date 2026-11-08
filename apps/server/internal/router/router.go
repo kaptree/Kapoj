@@ -15,6 +15,8 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/ai"
 	"github.com/kaptree/kapoj/apps/server/internal/aiapi"
 	"github.com/kaptree/kapoj/apps/server/internal/auth"
+	"github.com/kaptree/kapoj/apps/server/internal/certificate"
+	"github.com/kaptree/kapoj/apps/server/internal/certificateapi"
 	"github.com/kaptree/kapoj/apps/server/internal/config"
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/contestapi"
@@ -62,6 +64,7 @@ type Deps struct {
 	AI          *ai.Service
 	AISettings  *ai.SettingsService
 	TestcaseGen *testcasegen.Service
+	Certificate *certificate.Service
 }
 
 func New(d Deps) *gin.Engine {
@@ -89,6 +92,7 @@ func New(d Deps) *gin.Engine {
 	// token, so an expired access token must not block logout or refresh.
 	auth.RegisterRoutes(r.Group("/api", middleware.MaxBody(maxBodyBytes)), authSvc, loginHooks...)
 
+	public := r.Group("/api", middleware.MaxBody(maxBodyBytes))
 	api := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxBodyBytes))
 	problemJSON := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxProblemJSONBytes))
 	uploads := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxUploadBytes))
@@ -121,6 +125,9 @@ func New(d Deps) *gin.Engine {
 	}
 	if d.Learning != nil {
 		learningapi.RegisterRoutes(api, d.Learning, learningapi.Options{RBAC: d.RBAC})
+	}
+	if d.Certificate != nil {
+		certificateapi.RegisterRoutes(public, api, uploads, d.Certificate, certificateapi.Options{RBAC: d.RBAC})
 	}
 	if d.AI != nil {
 		aiapi.RegisterRoutes(api, d.AI, aiapi.Options{RBAC: d.RBAC, Settings: d.AISettings})
