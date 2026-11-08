@@ -273,6 +273,16 @@ export const router = createRouter({
           },
         },
         {
+          path: 'ai',
+          name: 'admin-ai',
+          component: () => import('@/views/AdminAiView.vue'),
+          meta: {
+            requiresAuth: true,
+            permission: PERM.ai.settings.manage,
+            title: 'AI 设置',
+          },
+        },
+        {
           path: 'gamification',
           name: 'gamification-admin',
           component: () => import('@/views/GamificationAdminView.vue'),

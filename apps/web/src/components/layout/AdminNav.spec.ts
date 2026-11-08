@@ -27,6 +27,7 @@ const routes = [
   { path: '/admin/roles', component: { template: '<div />' } },
   { path: '/admin/audit', component: { template: '<div />' } },
   { path: '/admin/rating', component: { template: '<div />' } },
+  { path: '/admin/ai', component: { template: '<div />' } },
   { path: '/problems', component: { template: '<div />' } },
   { path: '/contests', component: { template: '<div />' } },
   { path: '/admin/learning-paths', component: { template: '<div />' } },
@@ -109,6 +110,17 @@ describe('AdminNav', () => {
     expect(auth.can).toHaveBeenCalledWith(PERM.rating.settings.manage)
     expect(wrapper.find('a[href="/admin/rating"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('Rating 设置')
+  })
+
+  it('shows the AI settings entry only with ai.settings.manage', async () => {
+    let wrapper = await mountNav()
+    expect(wrapper.text()).not.toContain('AI 设置')
+
+    auth.can.mockImplementation((code) => code === PERM.ai.settings.manage)
+    wrapper = await mountNav()
+    expect(auth.can).toHaveBeenCalledWith(PERM.ai.settings.manage)
+    expect(wrapper.find('a[href="/admin/ai"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('AI 设置')
   })
 
   it('shows the content links by problem/contest permission', async () => {

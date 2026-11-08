@@ -117,7 +117,7 @@ test.describe.serial('admin RBAC browser acceptance', () => {
     await expect(page.getByText('超级管理员')).toBeVisible()
     const contentAdminRow = page.locator('tr').filter({ hasText: 'content_admin' }).first()
     await contentAdminRow.getByRole('button', { name: '权限' }).click()
-    await expect(page.locator('.p-dialog:visible input[type=checkbox]')).toHaveCount(35)
+    await expect(page.locator('.p-dialog:visible input[type=checkbox]')).toHaveCount(36)
     await page.locator('.p-dialog:visible').getByRole('button', { name: '取消' }).click()
 
     await page.goto('/admin/audit')

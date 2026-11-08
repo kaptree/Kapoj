@@ -62,6 +62,9 @@ export const PERM = {
   rating: {
     settings: { manage: 'rating.settings.manage' },
   },
+  ai: {
+    settings: { manage: 'ai.settings.manage' },
+  },
 } as const
 
 /** The four gamification domain manage permissions shown as admin tabs. */
@@ -120,4 +123,5 @@ export const ADMIN_ACCESS_PERMISSIONS: string[] = [
   PERM.learningPath.official.manage,
   PERM.learningPath.admin.read,
   PERM.rating.settings.manage,
+  PERM.ai.settings.manage,
 ]

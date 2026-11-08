@@ -76,6 +76,13 @@ const ratingItem: AdminNavItem = {
   icon: 'pi pi-chart-line',
 }
 
+const aiItem: AdminNavItem = {
+  key: 'ai',
+  path: '/admin/ai',
+  label: 'AI 设置',
+  icon: 'pi pi-sparkles',
+}
+
 const groups = computed<AdminNavGroup[]>(() => {
   const contentItems: AdminNavItem[] = []
   if (auth.canAny(PROBLEM_MANAGE_PERMISSIONS)) {
@@ -105,6 +112,9 @@ const groups = computed<AdminNavGroup[]>(() => {
   }
   if (auth.can(PERM.rating.settings.manage)) {
     items.push({ key: 'rating', label: 'Rating', items: [ratingItem] })
+  }
+  if (auth.can(PERM.ai.settings.manage)) {
+    items.push({ key: 'ai', label: 'AI', items: [aiItem] })
   }
   if (auth.canAny(GAMIFICATION_MANAGE_PERMISSIONS)) {
     items.push({ key: 'gamification', label: '游戏化', items: [gamificationItem] })
