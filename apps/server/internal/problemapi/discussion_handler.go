@@ -122,6 +122,10 @@ func (h *handler) likePost(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
+	if h.social == nil {
+		httpx.Fail(c, httpx.ErrInternal)
+		return
+	}
 	result, err := h.social.LikeSolutionPost(c.Request.Context(), actorID, postID)
 	if err != nil {
 		httpx.Fail(c, err)
@@ -142,6 +146,10 @@ func (h *handler) unlikePost(c *gin.Context) {
 	actorID := currentUserID(c)
 	if _, err := h.discussions.GetPost(c.Request.Context(), actorID, id, postID, viewer(c), currentIsSuper(c), isModerator(c)); err != nil {
 		httpx.Fail(c, err)
+		return
+	}
+	if h.social == nil {
+		httpx.Fail(c, httpx.ErrInternal)
 		return
 	}
 	result, err := h.social.UnlikeSolutionPost(c.Request.Context(), actorID, postID)
