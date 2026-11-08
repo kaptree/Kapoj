@@ -350,6 +350,39 @@ paths:
         '400': { $ref: '#/components/responses/Error' }
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
+  /admin/ai/settings:
+    get:
+      summary: 获取 AI 功能开关与密钥配置状态（ai.settings.manage）
+      description: 返回是否启用 AI、是否已配置加密密钥与最近更新时间；首次读取时懒创建默认设置。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: AI 设置
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminAISettingsResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '500': { $ref: '#/components/responses/Error' }
+    put:
+      summary: 更新 AI 功能开关（ai.settings.manage）
+      description: 启用需要已配置加密密钥，否则返回 40001；关闭始终允许。修改写审计 ai.settings.manage / target ai_settings。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminAISettingsInput' }
+      responses:
+        '200':
+          description: 更新后的 AI 设置
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminAISettingsResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '500': { $ref: '#/components/responses/Error' }
   /admin/permissions:
     get:
       summary: 权限目录（role.read）
@@ -3654,6 +3687,25 @@ components:
           required: [data]
           properties:
             data: { $ref: '#/components/schemas/RatingSettingsView' }
+    AdminAISettingsView:
+      type: object
+      required: [enabled, keyConfigured, updatedAt]
+      properties:
+        enabled: { type: boolean, description: 是否启用 AI 功能 }
+        keyConfigured: { type: boolean, description: 进程启动时是否已配置合法 AI 加密密钥（只读） }
+        updatedAt: { type: string, format: date-time }
+    AdminAISettingsInput:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+    AdminAISettingsResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/AdminAISettingsView' }
     RatingSeasonResponse:
       allOf:
         - $ref: '#/components/schemas/Envelope'

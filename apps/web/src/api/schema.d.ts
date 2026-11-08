@@ -941,6 +941,79 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/ai/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 获取 AI 功能开关与密钥配置状态（ai.settings.manage）
+         * @description 返回是否启用 AI、是否已配置加密密钥与最近更新时间；首次读取时懒创建默认设置。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description AI 设置 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminAISettingsResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                500: components["responses"]["Error"];
+            };
+        };
+        /**
+         * 更新 AI 功能开关（ai.settings.manage）
+         * @description 启用需要已配置加密密钥，否则返回 40001；关闭始终允许。修改写审计 ai.settings.manage / target ai_settings。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AdminAISettingsInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的 AI 设置 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminAISettingsResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                500: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/permissions": {
         parameters: {
             query?: never;
@@ -6315,6 +6388,20 @@ export interface components {
         };
         RatingSettingsResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["RatingSettingsView"];
+        };
+        AdminAISettingsView: {
+            /** @description 是否启用 AI 功能 */
+            enabled: boolean;
+            /** @description 进程启动时是否已配置合法 AI 加密密钥（只读） */
+            keyConfigured: boolean;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        AdminAISettingsInput: {
+            enabled: boolean;
+        };
+        AdminAISettingsResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AdminAISettingsView"];
         };
         RatingSeasonResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["RatingSeasonView"];

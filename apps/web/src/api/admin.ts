@@ -1,5 +1,7 @@
 import { http } from './client'
 import type {
+  AdminAISettingsInput,
+  AdminAISettingsView,
   AdminAuditItem,
   AdminCoinAdjustInput,
   AdminCoinAdjustResult,
@@ -29,6 +31,13 @@ export const getAdminRatingSettings = () => http.get<RatingSettingsView>('/admin
 /** Replace rating settings; returns the updated view with the new season (rating.settings.manage). */
 export const updateAdminRatingSettings = (input: RatingSettingsInput) =>
   http.put<RatingSettingsView>('/admin/rating/settings', input)
+
+/** Current AI feature switch and encryption key status (ai.settings.manage). */
+export const getAdminAISettings = () => http.get<AdminAISettingsView>('/admin/ai/settings')
+
+/** Update the AI feature switch; enabling requires a configured key (ai.settings.manage). */
+export const updateAdminAISettings = (input: AdminAISettingsInput) =>
+  http.put<AdminAISettingsView>('/admin/ai/settings', input)
 
 export interface ListAdminUsersQuery {
   keyword?: string
