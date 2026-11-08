@@ -972,7 +972,7 @@ user_ai_configs (
 - 统一 `/admin` 管理后台：仪表盘、用户管理、角色权限、审计日志；现有题目/比赛/游戏化页面先迁移权限判断并沿用入口。
 - 兼容迁移现有 `super_admin` / `problem_admin` / `contest_admin` 账号；`users.role` 与 JWT role 保留为 legacy/展示字段，自 RBAC-C 起不再参与任何管理授权，只用于展示。
 
-**权限目录（35 个权限码，稳定不可改名）**
+**权限目录（36 个权限码，稳定不可改名）**
 
 | 分组 | 权限码 |
 |------|--------|
@@ -984,8 +984,11 @@ user_ai_configs (
 | 游戏化 | `gamification.achievement.manage`、`gamification.task.manage`、`gamification.badge.manage`、`gamification.title.manage`、`gamification.config.manage` |
 | 学习路线 | `learning_path.official.manage`、`learning_path.admin.read` |
 | Rating | `rating.settings.manage` |
+| AI | `ai.settings.manage` |
 
 > `rating.settings.manage`（第 35 个权限码，M4-4 新增，分组「Rating」）用于管理 Rating 衰减与赛季重置设置；默认只授予 `super_admin`（super 绕过），不自动授予 `content_admin`。修改设置写审计 action=`rating.settings.manage`、target=`rating_settings`。
+>
+> `ai.settings.manage`（第 36 个权限码，AI 管理开关新增，分组「AI」）用于启用/关闭平台 AI 功能；默认只授予 `super_admin`（super 绕过），不自动授予 `content_admin`。修改设置写审计 action=`ai.settings.manage`、target=`ai_settings`。开关语义见 §6.6。
 
 **内置角色（7 个，均由首次 Seed 创建，`is_system=true`）**
 
@@ -1042,6 +1045,8 @@ user_ai_configs (
 | POST | `/api/admin/users/:id/unban` | `user.ban` | 解封 |
 | GET | `/api/admin/rating/settings` | `rating.settings.manage` | Rating 衰减/赛季设置 + 当前赛季与下次重置（M4-4） |
 | PUT | `/api/admin/rating/settings` | `rating.settings.manage` | 整体更新 Rating 设置；校验范围；写审计（M4-4） |
+| GET | `/api/admin/ai/settings` | `ai.settings.manage` | AI 开关与密钥配置状态 `{enabled,keyConfigured,updatedAt}`（AI 管理开关） |
+| PUT | `/api/admin/ai/settings` | `ai.settings.manage` | 启用/关闭 AI；无密钥时启用返回 40001；与审计同事务（AI 管理开关） |
 
 - **保护规则**：系统角色不可删除、code/name 不可改；`super_admin` 权限不可修改；只有 super 能授予/移除/封禁/解封 super；禁止封禁自己（40001）；禁止移除/封禁最后一个 active super（40001）。角色/权限变更、用户角色分配、封禁/解封、管理员编辑用户在同一事务内写审计，失败回滚。
 - 自定义角色 code 创建后不可修改（`^[a-z][a-z0-9_]{2,63}$`），权限用 code 整体替换、重复去重、非法 code 返回 40001。
@@ -1459,7 +1464,7 @@ user_ai_configs (
 
 **实现状态（M5-A ✅；M5-1～M5-3、M5-5 已完成；M5-4、M5-7、M5-8 待办）**
 
-- **启用/关闭语义**：AI 路由（`/api/ai/configs` GET/POST、`/api/ai/complete`、`/api/ai/format`、`/api/ai/optimize`、`/api/ai/hint`）仅在配置了合法的 `KAPOJ_AI_ENCRYPTION_KEY`（base64 编码的 32 字节，`openssl rand -base64 32` 生成）时挂载；未配置时后端正常启动，只是这些路由不存在（404）。非法 base64 或长度不对时启动直接报错。
+- **启用/关闭语义**：AI 路由（`/api/ai/configs` GET/POST、`/api/ai/complete`、`/api/ai/format`、`/api/ai/optimize`、`/api/ai/hint`）仅在配置了合法的 `KAPOJ_AI_ENCRYPTION_KEY`（base64 编码的 32 字节，`openssl rand -base64 32` 生成）时挂载；未配置时后端正常启动，只是这些路由不存在（404）。非法 base64 或长度不对时启动直接报错。此外还有运行时开关：管理员在 `/admin/ai` 关闭 AI 后，即使配置了密钥，所有 `/api/ai/*` 也统一返回 404（见 §6.6）。
 - **provider**：启动时幂等 seed 四个内置 provider（`deepseek`/`openai`/`qwen`/`glm`，见 3.9）；只有 `is_active=true` 的 provider 可用，未知/停用 provider 被拒绝。
 - **加密**：用户 API key 使用 AES-256-GCM 加密存储（随机 nonce，`v1:` 前缀），接口只返回脱敏值，不写日志/审计；平台 provider 的密钥不写入数据库。
 - **OpenAI 客户端**：`POST {base_url}/chat/completions`，Bearer key，解析 `choices[0].message.content`；非 2xx / 空 choices / 畸形 JSON / 超时统一映射为 `50200 AI 服务调用失败`（`KAPOJ_AI_REQUEST_TIMEOUT` 控制超时，默认 45s），不泄露 key 与上游响应体敏感内容。
@@ -1539,6 +1544,16 @@ user_ai_configs (
 - **API 客户端**：`apps/web/src/api/ai.ts` 提供 `getAIConfig`/`saveAIConfig`/`completeCode`/`formatCode`/`optimizeCode`/`getAIHint`；类型别名在 `api/types.ts`（复用 `schema.d.ts` 的 AI schema，不新增 OpenAPI 改动）。
 - **CodeEditor**：`CodeEditor.vue` 暴露 `getCursorByteOffset()`（Monaco UTF-16 offset → UTF-8 字节）与 `insertAtCursor(text)`。
 - **错误映射**：40001「尚未配置 AI 模型」、42903「操作过于频繁，请稍后再试」、50200/50300「AI 服务暂时不可用」、404「AI 功能未启用/题目不存在」、代码 >64KiB「代码超过 64 KiB，无法使用 AI」、空补全「没有可插入的补全」、格式化无变化「代码已是格式化状态」。
+
+### 6.6 AI 管理开关（`/admin/ai`）
+
+管理员可在管理后台 `/admin/ai`（路由 `admin-ai`，`requiresAuth` + `ai.settings.manage` 权限，super 绕过）查看并切换 AI 功能开关：
+
+- **设置 API**：`GET/PUT /api/admin/ai/settings`（需 `ai.settings.manage`）返回/更新 `{enabled, keyConfigured, updatedAt}`。设置存单例 `ai_settings`（`id=1`，首次读取懒创建、默认 `enabled=true`，`ON CONFLICT DO NOTHING`），更新与审计在同一事务内（action=`ai.settings.manage`、target=`ai_settings`、summary「启用/关闭 AI 功能」），审计失败回滚。
+- **关闭语义**：关闭后所有 `/api/ai/*` 接口立即返回 404（与未配置密钥一致，不暴露「AI 已关闭」），用户侧 AI 设置/提交页工具栏/题目提示自动降级为「AI 功能未启用」；重新开启立即恢复，无需重启。关闭**不删除**用户的 `user_ai_configs`/`ai_hints`，重新开启后用户配置与提示缓存仍在。
+- **密钥缺失语义**：`keyConfigured` 为只读，表示进程启动时是否配置了合法 `KAPOJ_AI_ENCRYPTION_KEY`（即 `d.AI != nil`）；未配置时管理页显示「未配置 AI 加密密钥，无法启用」，开关禁用，启用请求返回 40001，关闭仍可保存（此时 AI 路由本就不挂载，404）。
+- **管理页**：`AdminAiView` 展示当前状态 Tag（已启用/已关闭/不可用）、`ToggleSwitch`、密钥缺失 `Message` 警告、保存按钮与 Toast；仅 `ai.settings.manage` 可见保存按钮，`AdminNav`「AI 设置」入口按权限显隐。管理 API 不受 AI 开关影响，始终可访问（有权限时）。
+- **权限**：`ai.settings.manage` 默认只授予 `super_admin`，不自动授予 `content_admin`；需要时用 RBAC-B 给自定义角色分配该权限。普通用户/无权限账号访问管理接口返回 403，不影响其正常 AI 使用。
 
 **Codex 提示词（历史参考，已实现）**
 
