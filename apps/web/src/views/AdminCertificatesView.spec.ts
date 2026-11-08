@@ -1,5 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
+import DataTable from 'primevue/datatable'
 import InputNumber from 'primevue/inputnumber'
 import InputText from 'primevue/inputtext'
 import Message from 'primevue/message'
@@ -169,6 +170,27 @@ describe('AdminCertificatesView', () => {
     vi.mocked(listAdminCertificates).mockRejectedValue(new ApiError(403, -1, '没有权限'))
     wrapper = await mountPage()
     expect(wrapper.text()).toContain('没有权限')
+    wrapper.unmount()
+  })
+
+  it('surfaces a reload error inline while keeping stale rows', async () => {
+    vi.mocked(listAdminCertificates)
+      .mockResolvedValueOnce({ total: 1, items: [certView()] })
+      .mockRejectedValue(new ApiError(500, -1, '加载失败'))
+    const wrapper = await mountPage()
+
+    expect(wrapper.text()).toContain('Alice')
+
+    // 切换状态触发重载：第二次请求失败，保留上一次成功的行并内联提示错误。
+    await wrapper.findComponent(Select).vm.$emit('update:modelValue', 'approved')
+    await flushPromises()
+
+    expect(listAdminCertificates).toHaveBeenCalledTimes(2)
+    // 保留上一次成功的行（DataTable 仍渲染旧行）。
+    expect(wrapper.findComponent(DataTable).exists()).toBe(true)
+    expect(wrapper.findComponent(DataTable).props('value')).toHaveLength(1)
+    expect(wrapper.findComponent(Message).exists()).toBe(true)
+    expect(wrapper.text()).toContain('加载失败')
     wrapper.unmount()
   })
 

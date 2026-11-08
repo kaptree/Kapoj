@@ -1500,7 +1500,7 @@ user_ai_configs (
 - **审核**：`GET /api/admin/certificates?status=&page=&page_size=`（默认 pending）与 `POST /api/admin/certificates/:id/review`（`{action:"approve"|"reject", reason?}`）；仅 pending 可审，approve 生成唯一验证码，reject 需 1–500 字原因；终态/重复审核 40001。
 - **公开核验**：`GET /api/certificates/verify?code=`（大小写/去空格/去连字符/省略 `KAPOJ` 前缀容错）仅 approved 返回 `{valid:true,type,level,nickname,approvedAt}`；未知/pending/rejected 返回 `{valid:false}` 200，绝不返回图片/邮箱/用户 ID/审核人/驳回原因。
 - **类型 CRUD**：`GET /api/admin/certificate-types?includeInactive=true`、`POST/PUT/DELETE /api/admin/certificate-types[/:id]`；改名不回溯历史（快照），停用后公开列表不返回，被引用删除 40001。
-- **审计**：审核写审计 action=`certificate.manage`、target=`certificate`、targetID=证书 ID、summary「通过证书/驳回证书」（驳回原因不写审计）；类型 CRUD 经 `AuditAdminAction` 写审计 target=`certificate_type`。
+- **审计**：审核写审计 action=`certificate.manage`、target=`certificate`、targetID=证书 ID、summary「通过证书/驳回证书」（驳回原因不写审计）；类型写操作（POST/PUT/DELETE）经 `AuditAdminAction` 写审计 target=`certificate_type`（GET 列表为只读不写审计）。
 
 **关键接口**
 

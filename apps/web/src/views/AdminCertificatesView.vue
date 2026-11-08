@@ -401,8 +401,18 @@ onBeforeUnmount(() => {
 
               <AppLoadingState v-if="certLoading && certs.length === 0" label="正在加载证书" />
 
+              <Message
+                v-if="certError && certs.length > 0"
+                severity="warn"
+                :closable="false"
+                role="status"
+                class="cert-stale-error"
+              >
+                {{ certError }} 已展示上一次成功加载的结果。
+              </Message>
+
               <DataTable
-                v-else-if="!certError || certs.length > 0"
+                v-if="!certError || certs.length > 0"
                 :value="certs"
                 :loading="certLoading"
                 data-key="id"
@@ -767,6 +777,10 @@ onBeforeUnmount(() => {
   overflow: hidden;
   border: 1px solid var(--kapoj-border);
   border-radius: var(--kapoj-radius-md);
+}
+
+.cert-stale-error {
+  margin: 0;
 }
 
 .review-table :deep(.p-datatable-table) {

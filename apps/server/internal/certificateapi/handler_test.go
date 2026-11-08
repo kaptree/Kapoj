@@ -284,6 +284,25 @@ func TestAdminCertificateTypeValidationAndAudit(t *testing.T) {
 	assert.NotZero(t, audit.ActorID)
 }
 
+func TestAdminCertificateTypesListWritesNoAudit(t *testing.T) {
+	f := newFx(t)
+	adminToken := f.certManageToken()
+
+	var before int64
+	require.NoError(t, f.db.Model(&rbac.AdminAuditLog{}).
+		Where("target_type = ?", "certificate_type").Count(&before).Error)
+
+	// GET 列表是只读操作，不应写审计（POST/PUT/DELETE 才写）。
+	w, resp := f.do(http.MethodGet, "/api/admin/certificate-types", adminToken, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.Len(t, itemsOf(t, resp), 7)
+
+	var after int64
+	require.NoError(t, f.db.Model(&rbac.AdminAuditLog{}).
+		Where("target_type = ?", "certificate_type").Count(&after).Error)
+	assert.Equal(t, before, after, "GET 类型列表不应写审计")
+}
+
 func TestDeleteTypeInUseHTTP(t *testing.T) {
 	f := newFx(t)
 	adminToken := f.certManageToken()
@@ -631,4 +650,17 @@ func TestReviewAudit(t *testing.T) {
 		"certificate.manage", "certificate", certID2).Order("id DESC").First(&audit2).Error)
 	assert.Equal(t, "驳回证书", audit2.Summary)
 	assert.NotContains(t, audit2.Summary, "证书信息不符")
+
+	// 带空格的 " reject " 被 service trim 后接受，但审计摘要仍按结果状态记为驳回
+	// （而非按未 trim 的原始 action 误记为通过）。
+	certID3 := submit()
+	w, resp = f.do(http.MethodPost, fmt.Sprintf("/api/admin/certificates/%d/review", certID3), adminToken, map[string]any{"action": " reject ", "reason": "材料不足"})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, "rejected", resp["data"].(map[string]any)["status"])
+
+	var audit3 rbac.AdminAuditLog
+	require.NoError(t, f.db.Where("action = ? AND target_type = ? AND target_id = ?",
+		"certificate.manage", "certificate", certID3).Order("id DESC").First(&audit3).Error)
+	assert.Equal(t, "驳回证书", audit3.Summary)
+	assert.NotContains(t, audit3.Summary, "材料不足")
 }

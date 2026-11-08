@@ -261,6 +261,8 @@ func (s *Service) ListMine(ctx context.Context, userID int64, page, size int) (*
 
 // ListAdmin 返回管理员审核列表，按提交时间倒序。status 为空表示不筛选（全部），
 // 其余合法状态按状态筛选；非法状态返回 40001。
+// 注意：这里「空」语义为不筛选，而 HTTP 层的默认待审核由 handler 负责——handler
+// 把空 query 与显式 pending 归一为 StatusPending、把 all 归一为空后再传入。
 func (s *Service) ListAdmin(ctx context.Context, status Status, page, size int) (*httpx.Page[AdminCertificateView], error) {
 	if page < 1 {
 		page = 1
@@ -277,7 +279,7 @@ func (s *Service) ListAdmin(ctx context.Context, status Status, page, size int) 
 		return nil, httpx.ErrValidation("未知的证书状态")
 	}
 	offset := (page - 1) * size
-	rows, total, err := s.repo.ListAdmin(ctx, AdminFilter{Status: status, Page: page, Size: size}, offset, size)
+	rows, total, err := s.repo.ListAdmin(ctx, AdminFilter{Status: status}, offset, size)
 	if err != nil {
 		return nil, err
 	}

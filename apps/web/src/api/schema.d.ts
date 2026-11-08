@@ -7809,8 +7809,9 @@ export interface components {
         };
         CertificateTypeInput: {
             name: string;
-            description: string;
-            isActive: boolean;
+            description?: string;
+            /** @description 缺省创建为 true、更新保留原值 */
+            isActive?: boolean;
             sortOrder: number;
         };
         /** @enum {string} */

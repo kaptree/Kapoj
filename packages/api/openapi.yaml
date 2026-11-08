@@ -4797,11 +4797,11 @@ components:
         sortOrder: { type: integer }
     CertificateTypeInput:
       type: object
-      required: [name, description, isActive, sortOrder]
+      required: [name, sortOrder]
       properties:
         name: { type: string, minLength: 1, maxLength: 50 }
         description: { type: string, maxLength: 200 }
-        isActive: { type: boolean }
+        isActive: { type: boolean, description: 缺省创建为 true、更新保留原值 }
         sortOrder: { type: integer }
     CertificateStatus:
       type: string

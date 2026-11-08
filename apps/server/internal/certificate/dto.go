@@ -82,11 +82,9 @@ func toCertificateView(c Certificate) CertificateView {
 }
 
 // AdminFilter 是管理员审核列表的筛选条件。Status 为空表示不筛选（返回全部状态）；
-// Page/Size 为分页参数（偏移由仓储层接收）。
+// 分页的 offset/limit 由仓储层独立接收，不并入筛选结构体。
 type AdminFilter struct {
 	Status Status
-	Page   int
-	Size   int
 }
 
 // CertificateUserView 是管理员列表中证书持有者的摘要，仅包含非敏感字段。

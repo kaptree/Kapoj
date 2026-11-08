@@ -13,6 +13,8 @@ import (
 
 // adminCertificates 处理 GET /api/admin/certificates。status 为空或 pending 时
 // 默认待审核，all 返回全部状态，其余合法状态按状态筛选。
+// 服务层 ListAdmin 把空 status 解释为「不筛选」（返回全部），因此这里在进入服务前
+// 把空/pending 归一为 StatusPending、把 all 归一为空，以兑现「默认待审核」的契约。
 func (h *handler) adminCertificates(c *gin.Context) {
 	status, ok := parseStatus(c.Query("status"))
 	if !ok {
@@ -48,14 +50,15 @@ func (h *handler) reviewCertificate(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
-	h.recordReviewAudit(c, id, in.Action)
+	h.recordReviewAudit(c, id, view.Status)
 	httpx.OK(c, view)
 }
 
 // recordReviewAudit 审核成功后 best-effort 写审计：action=certificate.manage、
-// target=certificate、summary「通过证书/驳回证书」。不记录驳回原因与验证码，
-// 失败仅记录 warning 不阻断响应。
-func (h *handler) recordReviewAudit(c *gin.Context, id int64, action string) {
+// target=certificate、summary「通过证书/驳回证书」。summary 由审核结果状态派生，
+// 避免用未 trim 的原始 action 判断（" reject " 会被 service 接受却误记为通过）。
+// 不记录驳回原因与验证码，失败仅记录 warning 不阻断响应。
+func (h *handler) recordReviewAudit(c *gin.Context, id int64, status certificate.Status) {
 	if h.rbac == nil {
 		return
 	}
@@ -64,7 +67,7 @@ func (h *handler) recordReviewAudit(c *gin.Context, id int64, action string) {
 		return
 	}
 	summary := "通过证书"
-	if action == "reject" {
+	if status == certificate.StatusRejected {
 		summary = "驳回证书"
 	}
 	actor := rbac.AuditMeta{
