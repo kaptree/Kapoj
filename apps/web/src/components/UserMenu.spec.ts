@@ -36,6 +36,7 @@ const routes = [
   { path: '/users/:id', name: 'user-profile', component: { template: '<div />' } },
   { path: '/appearance', name: 'appearance', component: { template: '<div />' } },
   { path: '/settings/profile', name: 'profile-edit', component: { template: '<div />' } },
+  { path: '/settings/ai', name: 'ai-settings', component: { template: '<div />' } },
   { path: '/admin', name: 'admin-dashboard', component: { template: '<div />' } },
 ]
 
@@ -43,7 +44,19 @@ async function mountMenu() {
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push('/')
   await router.isReady()
-  return mount(UserMenu, { global: { plugins: [router, PrimeVue] } })
+  const wrapper = mount(UserMenu, { global: { plugins: [router, PrimeVue] } })
+  return { wrapper, router }
+}
+
+function loggedInUser(): TestUser {
+  return {
+    id: 7,
+    nickname: 'Alice',
+    username: 'alice',
+    avatarUrl: '',
+    coins: 1234,
+    role: 'user',
+  }
 }
 
 beforeEach(() => {
@@ -57,7 +70,7 @@ beforeEach(() => {
 
 describe('UserMenu', () => {
   it('shows login and register links to guests', async () => {
-    const wrapper = await mountMenu()
+    const { wrapper } = await mountMenu()
 
     expect(wrapper.text()).toContain('登录')
     expect(wrapper.text()).toContain('注册')
@@ -67,15 +80,8 @@ describe('UserMenu', () => {
 
   it('shows the nickname and an accessible menu trigger for logged-in users', async () => {
     auth.isLoggedIn = true
-    auth.user = {
-      id: 7,
-      nickname: 'Alice',
-      username: 'alice',
-      avatarUrl: '',
-      coins: 1234,
-      role: 'user',
-    }
-    const wrapper = await mountMenu()
+    auth.user = loggedInUser()
+    const { wrapper } = await mountMenu()
     const trigger = wrapper.find('.user-menu__trigger')
 
     expect(trigger.exists()).toBe(true)
@@ -86,16 +92,9 @@ describe('UserMenu', () => {
 
   it('shows 管理后台 menu item for admins', async () => {
     auth.isLoggedIn = true
-    auth.user = {
-      id: 7,
-      nickname: 'Alice',
-      username: 'alice',
-      avatarUrl: '',
-      coins: 1234,
-      role: 'user',
-    }
+    auth.user = loggedInUser()
     auth.canAny.mockReturnValue(true)
-    const wrapper = await mountMenu()
+    const { wrapper } = await mountMenu()
 
     expect(auth.canAny).toHaveBeenCalledWith(ADMIN_ACCESS_PERMISSIONS)
     const model = wrapper.findComponent(Menu).props('model') as MenuItem[]
@@ -104,17 +103,33 @@ describe('UserMenu', () => {
 
   it('does not show the admin entry for normal users', async () => {
     auth.isLoggedIn = true
-    auth.user = {
-      id: 7,
-      nickname: 'Alice',
-      username: 'alice',
-      avatarUrl: '',
-      coins: 1234,
-      role: 'user',
-    }
-    const wrapper = await mountMenu()
+    auth.user = loggedInUser()
+    const { wrapper } = await mountMenu()
 
     const model = wrapper.findComponent(Menu).props('model') as MenuItem[]
     expect(model.map((item) => item.label)).not.toContain('管理后台')
+  })
+
+  it('shows the AI 设置 menu item for logged-in users and navigates to it', async () => {
+    auth.isLoggedIn = true
+    auth.user = loggedInUser()
+    const { wrapper, router } = await mountMenu()
+
+    const model = wrapper.findComponent(Menu).props('model') as MenuItem[]
+    const aiItem = model.find((item) => item.label === 'AI 设置')
+    expect(aiItem).toBeDefined()
+    expect(aiItem?.icon).toBe('pi pi-sparkles')
+
+    await aiItem?.command?.({} as never)
+    expect(router.currentRoute.value.name).toBe('ai-settings')
+  })
+
+  it('does not show the AI 设置 entry to guests', async () => {
+    auth.isLoggedIn = false
+    auth.user = null
+    const { wrapper } = await mountMenu()
+
+    expect(wrapper.findComponent(Menu).exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('AI 设置')
   })
 })

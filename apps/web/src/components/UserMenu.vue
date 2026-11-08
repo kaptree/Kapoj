@@ -45,6 +45,11 @@ const menuItems = computed<MenuItem[]>(() => {
         void router.push({ name: 'profile-edit' })
       },
     },
+    {
+      label: 'AI 设置',
+      icon: 'pi pi-sparkles',
+      command: () => router.push({ name: 'ai-settings' }),
+    },
   ]
 
   if (auth.canAny(ADMIN_ACCESS_PERMISSIONS)) {
