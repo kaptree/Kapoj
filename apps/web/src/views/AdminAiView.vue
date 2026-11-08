@@ -30,6 +30,20 @@ const enabled = ref(false)
 
 const keyConfigured = computed(() => settings.value?.keyConfigured ?? false)
 
+/** Effective status: without a configured key AI is unavailable regardless of the flag. */
+const statusLabel = computed(() => {
+  if (!keyConfigured.value) return '不可用'
+  return enabled.value ? '已启用' : '已关闭'
+})
+
+const statusSeverity = computed<'secondary' | 'success' | 'danger'>(() => {
+  if (!keyConfigured.value) return 'secondary'
+  return enabled.value ? 'success' : 'danger'
+})
+
+/** Saving is only blocked when the toggle is on while no key is configured (enabling is impossible). */
+const disableSave = computed(() => (!keyConfigured.value && enabled.value) || saving.value)
+
 function applyView(view: AdminAISettingsView) {
   settings.value = view
   enabled.value = view.enabled
@@ -84,17 +98,17 @@ onMounted(() => {
     <AppSurface v-else padding="lg" class="admin-ai__surface">
       <div class="status-row" aria-label="AI 当前状态">
         <span class="status-row__label">当前状态</span>
-        <Tag :value="enabled ? '已启用' : '已关闭'" :severity="enabled ? 'success' : 'danger'" />
+        <Tag :value="statusLabel" :severity="statusSeverity" />
       </div>
 
       <Message v-if="!keyConfigured" severity="warn" :closable="false" role="status">
-        未配置 AI 加密密钥，无法启用
+        未配置 AI 加密密钥，无法启用；关闭仍可保存。
       </Message>
 
       <form class="admin-ai__form" @submit.prevent="save">
         <AppFormField label="启用 AI">
           <div class="toggle-row">
-            <ToggleSwitch v-model="enabled" input-id="ai-enabled" :disabled="!keyConfigured" />
+            <ToggleSwitch v-model="enabled" input-id="ai-enabled" />
             <label for="ai-enabled">{{ enabled ? '已启用' : '已关闭' }}</label>
           </div>
         </AppFormField>
@@ -105,7 +119,7 @@ onMounted(() => {
             label="保存设置"
             icon="pi pi-check"
             :loading="saving"
-            :disabled="!keyConfigured"
+            :disabled="disableSave"
           />
         </div>
       </form>

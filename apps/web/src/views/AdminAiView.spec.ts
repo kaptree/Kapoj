@@ -1,5 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
+import Tag from 'primevue/tag'
 import ToggleSwitch from 'primevue/toggleswitch'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -78,14 +79,60 @@ describe('AdminAiView', () => {
     wrapper.unmount()
   })
 
-  it('disables enable when keyConfigured is false', async () => {
+  it('renders unavailable status when key is not configured', async () => {
+    auth.can.mockImplementation((code) => code === PERM.ai.settings.manage)
     vi.mocked(getAdminAISettings).mockResolvedValue(
-      settingsView({ enabled: false, keyConfigured: false }),
+      settingsView({ enabled: true, keyConfigured: false }),
     )
     const wrapper = await mountPage()
 
     expect(wrapper.text()).toContain('未配置 AI 加密密钥，无法启用')
-    expect(wrapper.findComponent(ToggleSwitch).props('disabled')).toBe(true)
+    expect(wrapper.text()).toContain('关闭仍可保存')
+
+    // Effective status is "unavailable" while the toggle stays interactive.
+    expect(wrapper.findComponent(Tag).props('value')).toBe('不可用')
+    expect(wrapper.findComponent(Tag).props('severity')).toBe('secondary')
+    expect(wrapper.findComponent(ToggleSwitch).props('disabled')).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('allows disabling and saving without a configured key', async () => {
+    auth.can.mockImplementation((code) => code === PERM.ai.settings.manage)
+    vi.mocked(getAdminAISettings).mockResolvedValue(
+      settingsView({ enabled: true, keyConfigured: false }),
+    )
+    vi.mocked(updateAdminAISettings).mockResolvedValue(
+      settingsView({ enabled: false, keyConfigured: false }),
+    )
+    const wrapper = await mountPage()
+
+    wrapper.findAllComponents(ToggleSwitch)[0]!.vm.$emit('update:modelValue', false)
+    await flushPromises()
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(updateAdminAISettings).toHaveBeenCalledWith({ enabled: false })
+    expect(toast.add).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'success', summary: '设置已保存' }),
+    )
+    wrapper.unmount()
+  })
+
+  it('disables save when enabling without a configured key', async () => {
+    auth.can.mockImplementation((code) => code === PERM.ai.settings.manage)
+    vi.mocked(getAdminAISettings).mockResolvedValue(
+      settingsView({ enabled: true, keyConfigured: false }),
+    )
+    const wrapper = await mountPage()
+
+    // enabled=true without a key → save blocked (cannot enable).
+    expect((buttons(wrapper, '保存设置')[0]!.element as HTMLButtonElement).disabled).toBe(true)
+
+    // Flip to false → closing is allowed and save re-enables.
+    wrapper.findAllComponents(ToggleSwitch)[0]!.vm.$emit('update:modelValue', false)
+    await flushPromises()
+    expect((buttons(wrapper, '保存设置')[0]!.element as HTMLButtonElement).disabled).toBe(false)
     wrapper.unmount()
   })
 
