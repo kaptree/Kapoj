@@ -115,7 +115,7 @@ async function markAll() {
     <AppSurface padding="lg" class="notifications-surface">
       <AppErrorState v-if="error && !items.length" :description="error" @retry="load" />
 
-      <AppLoadingState v-if="loading && !items.length" label="正在加载通知" />
+      <AppLoadingState v-else-if="loading && !items.length" label="正在加载通知" />
 
       <AppEmptyState
         v-else-if="!error && !items.length"

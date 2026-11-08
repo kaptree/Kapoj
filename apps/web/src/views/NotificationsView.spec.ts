@@ -155,12 +155,16 @@ describe('NotificationsView', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('加载通知失败')
+    // The empty-list toolbar must not co-render with the error state.
+    expect(wrapper.text()).not.toContain('共 0 条')
+    expect(wrapper.text()).not.toContain('暂无通知')
     const retry = button(wrapper, '重试')
     expect(retry).toBeTruthy()
     await retry!.trigger('click')
     await flushPromises()
 
     expect(listNotifications).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('暂无通知')
     wrapper.unmount()
   })
 
