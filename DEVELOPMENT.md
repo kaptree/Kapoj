@@ -3,7 +3,7 @@
 > 本文档基于 `plan.md` 细化，是 kapOJ（Kap Online Judge）平台的详细开发规格说明书。
 > 目标：**打造出最有趣味的 Online Judge 平台**。
 > 文档包含完整的架构设计、数据库设计、模块需求，并为每个模块提供了可直接交给 Codex 的**开发提示词（Prompt）**。
-> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)，前端 UI 迁移见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。当前进度：**M4-2A、M4-2B、M4-2C、M4-3、M4-4、RBAC-D、M5-A、M5-4、M5-5 与 M5-6 已完成**（M0–M3 已完成；M4 已完成；M5 部分完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页、签到、Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线模型、权限、路线/节点 CRUD 与树结构；M4-2B 交付服务端进度计算（AC 事件补算 + 读取补算、完成锁存）与题目下线/删除守卫；M4-2C 交付学习路线前端（列表/树详情/编辑/官方管理页，PrimeVue TreeTable/DataTable，UI-31）；M4-3 交付轻量社交互动（题解点赞、用户关注、站内通知，回复/点赞/关注接入活跃度与共享分，前端点赞按钮/关注 Dialog/通知铃铛/通知页，UI-32，见 4.8）；M4-4 交付 Rating 衰减与赛季重置（`rating.settings.manage` 权限与 Rating 分组、管理设置 API、`/admin/rating` 设置页、月度高分段衰减、赛季软重置、`decay`/`season_reset` 历史与公开赛季接口）；RBAC-A 交付权限目录、内置角色、首次 Seed/旧角色映射、实时 Access 解析、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/`canAny`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化，以及文档、HTTP 冒烟与浏览器 E2E；M5-A 交付 AI 后端基础（多 provider 配置、用户 API key AES-GCM 加密存储、OpenAI 兼容补全/格式化/优化与题目 AI 提示缓存/限流，AI 路由始终挂载、未配置密钥时返回 40002）；M5-5 交付 AI 前端（提交页 AI 补全/格式化/优化工具栏、题目详情 AI 提示、`/settings/ai` AI 配置页与用户菜单入口，见 §6.5）；M5-6 交付 HydroOJ 题包导入（`POST /api/problems/import/hydro`、大小限制/防路径穿越、slug 冲突不覆盖、默认下线、逐题部分成功与整包回滚，见 §7）与题目详情公开创建者摘要（`author{id,username,nickname}`），前端新增 `/problems/import` 导入页、题目列表「导入题包」入口与详情创建者链接。AI 出题造数据（M5-4）已交付：标程 → AI 纯 Python 3 造数据脚本 → judge 沙盒生成输入/输出 → 预览确认入库，见 §6.4；证书/头像（M5-7、M5-8）尚未实现）。前端 UI 已完成 UI-00～UI-20 的 PrimeVue 4 迁移（含 UI-19 题库编辑与 UI-20 异常页）、UI-30（M4-C 排行榜/历史）、UI-31（M4-7 学习路线）、UI-32（M4-3 社交互动）与 RBAC-D 管理后台页面直接实现，Element Plus 依赖与过渡样式已移除；该迁移已提交。题目详情页已改造为「题面 + 提示卡片 + 右侧四资源卡片」，并交付官方题解（创建者编辑 + 金币解锁）、解题思路论坛（帖子/回复/软删除）、提交统计页与关联比赛页，详见 4.3；题目主更新不再写入题解字段，官方题解专用接口是唯一写入口。
+> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)，前端 UI 迁移见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。当前进度：**M4-2A、M4-2B、M4-2C、M4-3、M4-4、RBAC-D、M5-A、M5-4、M5-5、M5-6 与 M5-7 已完成**（M0–M3 已完成；M4 已完成；M5 部分完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页、签到、Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线模型、权限、路线/节点 CRUD 与树结构；M4-2B 交付服务端进度计算（AC 事件补算 + 读取补算、完成锁存）与题目下线/删除守卫；M4-2C 交付学习路线前端（列表/树详情/编辑/官方管理页，PrimeVue TreeTable/DataTable，UI-31）；M4-3 交付轻量社交互动（题解点赞、用户关注、站内通知，回复/点赞/关注接入活跃度与共享分，前端点赞按钮/关注 Dialog/通知铃铛/通知页，UI-32，见 4.8）；M4-4 交付 Rating 衰减与赛季重置（`rating.settings.manage` 权限与 Rating 分组、管理设置 API、`/admin/rating` 设置页、月度高分段衰减、赛季软重置、`decay`/`season_reset` 历史与公开赛季接口）；RBAC-A 交付权限目录、内置角色、首次 Seed/旧角色映射、实时 Access 解析、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/`canAny`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化，以及文档、HTTP 冒烟与浏览器 E2E；M5-A 交付 AI 后端基础（多 provider 配置、用户 API key AES-GCM 加密存储、OpenAI 兼容补全/格式化/优化与题目 AI 提示缓存/限流，AI 路由始终挂载、未配置密钥时返回 40002）；M5-5 交付 AI 前端（提交页 AI 补全/格式化/优化工具栏、题目详情 AI 提示、`/settings/ai` AI 配置页与用户菜单入口，见 §6.5）；M5-6 交付 HydroOJ 题包导入（`POST /api/problems/import/hydro`、大小限制/防路径穿越、slug 冲突不覆盖、默认下线、逐题部分成功与整包回滚，见 §7）与题目详情公开创建者摘要（`author{id,username,nickname}`），前端新增 `/problems/import` 导入页、题目列表「导入题包」入口与详情创建者链接。AI 出题造数据（M5-4）已交付：标程 → AI 纯 Python 3 造数据脚本 → judge 沙盒生成输入/输出 → 预览确认入库，见 §6.4；M5-7 证书认证已交付（证书类型/提交/审核/公开验证码核验，见 §5.6）；头像上传（M5-8）尚未实现）。前端 UI 已完成 UI-00～UI-20 的 PrimeVue 4 迁移（含 UI-19 题库编辑与 UI-20 异常页）、UI-30（M4-C 排行榜/历史）、UI-31（M4-7 学习路线）、UI-32（M4-3 社交互动）与 RBAC-D 管理后台页面直接实现，Element Plus 依赖与过渡样式已移除；该迁移已提交。题目详情页已改造为「题面 + 提示卡片 + 右侧四资源卡片」，并交付官方题解（创建者编辑 + 金币解锁）、解题思路论坛（帖子/回复/软删除）、提交统计页与关联比赛页，详见 4.3；题目主更新不再写入题解字段，官方题解专用接口是唯一写入口。
 
 ---
 
@@ -477,17 +477,44 @@ notifications (
 ### 3.7 证书认证
 
 ```sql
-certificates (
-  id, user_id, contest_name,      -- 蓝桥杯 / ACM-ICPC / CCPC ...
-  level, certificate_image_url,   -- 证书图片
-  status,                          -- pending / approved / rejected
-  reject_reason, verify_code,            -- verify_code：通过后生成，全局唯一，用于公开核验
-  submitted_at, reviewed_at, reviewed_by
-)
 certificate_types (
-  id, name, description, is_active, sort_order
+  id bigserial primary key,
+  name varchar(50) not null unique,     -- 唯一索引 uniq_certificate_types_name
+  description varchar(200) not null default '',
+  is_active boolean not null,           -- 无数据库默认值，创建时由服务显式赋值
+  sort_order int not null default 0,
+  created_at timestamptz not null,
+  updated_at timestamptz not null
 )
+certificates (
+  id bigserial primary key,
+  user_id bigint not null,
+  certificate_type_id bigint not null,
+  certificate_type_name varchar(50) not null,  -- 提交时快照，类型改名/停用不回溯
+  level varchar(50) not null,
+  image_key varchar(255) not null,             -- 仅服务端使用，不通过 DTO 返回
+  image_content_type varchar(100) not null,
+  status varchar(20) not null default 'pending',  -- pending / approved / rejected
+  reject_reason varchar(500) not null default '',
+  verify_code varchar(32) null,                -- approved 后生成，唯一索引 uniq_certificates_verify_code
+  submitted_at timestamptz not null,
+  reviewed_at timestamptz null,
+  reviewed_by bigint null,
+  created_at timestamptz not null,
+  updated_at timestamptz not null
+)
+-- 索引：idx_certificates_user_submitted(user_id, submitted_at)、idx_certificates_status_submitted(status, submitted_at)、
+--       idx_certificates_type(certificate_type_id)、uniq_certificates_verify_code(verify_code)
 ```
+
+**实现状态（M5-7 ✅，2026-11-08）**
+
+- 已建表 `certificate_types`、`certificates`，字段与索引如上；首次启动且表为空时 seed 7 个内置类型（蓝桥杯、ACM-ICPC、CCCC 天梯赛、CCPC、NOI、NOIP、USACO，sort_order 1..7），已有数据不覆盖。
+- `certificate_type_name` 为提交时快照，类型改名/停用/删除不回溯历史证书与公开核验；类型删除仅当无证书引用，被引用删除返回 40001「已有证书使用该类型，请先停用」。
+- `verify_code` 为 `*string`，pending/rejected 为 NULL（Postgres 唯一索引允许多个 NULL）；通过审核生成 `KAPOJ-XXXX-XXXX`（crypto/rand，去 I/L/O/U/0/1 的无歧义大写字母/数字），唯一冲突重试。
+- 图片仅本地 `storage.Storage` 保存（key `certificates/<id>`），≤5 MiB、magic bytes 校验仅 PNG/JPEG/WebP；`image_key`/`image_content_type` 仅存数据库，不通过 DTO 返回。
+- 权限：新增第 37 个权限码 `certificate.manage`（分组「证书」，默认仅 `super_admin`），见 4.7。
+- 实现文件：`apps/server/internal/{certificate,certificateapi}`；提交/我的证书/图片/公开核验/管理员审核/类型 CRUD 接口见 5.6。
 
 ### 3.8 学习路线
 
@@ -972,7 +999,7 @@ user_ai_configs (
 - 统一 `/admin` 管理后台：仪表盘、用户管理、角色权限、审计日志；现有题目/比赛/游戏化页面先迁移权限判断并沿用入口。
 - 兼容迁移现有 `super_admin` / `problem_admin` / `contest_admin` 账号；`users.role` 与 JWT role 保留为 legacy/展示字段，自 RBAC-C 起不再参与任何管理授权，只用于展示。
 
-**权限目录（36 个权限码，稳定不可改名）**
+**权限目录（37 个权限码，稳定不可改名）**
 
 | 分组 | 权限码 |
 |------|--------|
@@ -985,10 +1012,13 @@ user_ai_configs (
 | 学习路线 | `learning_path.official.manage`、`learning_path.admin.read` |
 | Rating | `rating.settings.manage` |
 | AI | `ai.settings.manage` |
+| 证书 | `certificate.manage` |
 
 > `rating.settings.manage`（第 35 个权限码，M4-4 新增，分组「Rating」）用于管理 Rating 衰减与赛季重置设置；默认只授予 `super_admin`（super 绕过），不自动授予 `content_admin`。修改设置写审计 action=`rating.settings.manage`、target=`rating_settings`。
 >
 > `ai.settings.manage`（第 36 个权限码，AI 管理开关新增，分组「AI」）用于启用/关闭平台 AI 功能；默认只授予 `super_admin`（super 绕过），不自动授予 `content_admin`。修改设置写审计 action=`ai.settings.manage`、target=`ai_settings`。开关语义见 §6.6。
+>
+> `certificate.manage`（第 37 个权限码，M5-7 证书认证新增，分组「证书」）用于审核证书认证与维护证书类型；默认只授予 `super_admin`（super 绕过），不自动授予 `content_admin`。审核写审计 action=`certificate.manage`、target=`certificate`，类型 CRUD 写审计 target=`certificate_type`。语义见 §5.6。
 
 **内置角色（7 个，均由首次 Seed 创建，`is_system=true`）**
 
@@ -1461,11 +1491,43 @@ user_ai_configs (
 请输出完整代码与类型定义。
 ```
 
+**实现状态（M5-7 ✅，2026-11-08）与 API**
+
+- **数据模型**：`certificate_types`（name 唯一、`is_active`、`sort_order`）与 `certificates`（`certificate_type_name` 快照、`status`、`reject_reason`、`verify_code`、`image_key`/`image_content_type`、`reviewed_by`），字段与索引见 3.7；`db.Migrate` 建表，首次启动空表 seed 7 个类型。
+- **权限**：新增第 37 个权限码 `certificate.manage`（分组「证书」，默认仅 `super_admin`，super 绕过），用户提交/我的证书/图片只需登录；公开类型列表/公开核验无需登录。
+- **图片**：≤5 MiB，magic bytes 校验仅 PNG/JPEG/WebP（`http.DetectContentType`），本地 `storage.Storage` 保存 `certificates/<id>`；`GET /api/certificates/:id/image` 仅本人或 `certificate.manage`（他人/不存在统一 404，未登录 401），不暴露 storage key。
+- **提交**：`POST /api/certificates`（multipart `typeId`/`level`/`file`）→ pending；类型不存在/停用、level 空/超 50、空图/超 5 MiB/非图片均 40001；上传或回填失败删除行与对象。
+- **审核**：`GET /api/admin/certificates?status=&page=&page_size=`（默认 pending）与 `POST /api/admin/certificates/:id/review`（`{action:"approve"|"reject", reason?}`）；仅 pending 可审，approve 生成唯一验证码，reject 需 1–500 字原因；终态/重复审核 40001。
+- **公开核验**：`GET /api/certificates/verify?code=`（大小写/去空格/去连字符/省略 `KAPOJ` 前缀容错）仅 approved 返回 `{valid:true,type,level,nickname,approvedAt}`；未知/pending/rejected 返回 `{valid:false}` 200，绝不返回图片/邮箱/用户 ID/审核人/驳回原因。
+- **类型 CRUD**：`GET /api/admin/certificate-types?includeInactive=true`、`POST/PUT/DELETE /api/admin/certificate-types[/:id]`；改名不回溯历史（快照），停用后公开列表不返回，被引用删除 40001。
+- **审计**：审核写审计 action=`certificate.manage`、target=`certificate`、targetID=证书 ID、summary「通过证书/驳回证书」（驳回原因不写审计）；类型 CRUD 经 `AuditAdminAction` 写审计 target=`certificate_type`。
+
+**关键接口**
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | `/api/certificate-types` | 公开 | 启用的证书类型 |
+| POST | `/api/certificates` | 登录 | multipart 提交（`typeId`/`level`/`file`，≤5 MiB PNG/JPEG/WebP） |
+| GET | `/api/certificates/my` | 登录 | 我的证书分页 |
+| GET | `/api/certificates/:id/image` | 登录（本人/管理员） | 证书图片；他人/不存在 404，未登录 401 |
+| GET | `/api/certificates/verify?code=` | 公开 | 公开核验，仅 approved 返回 valid=true |
+| GET | `/api/admin/certificates?status=&page=&page_size=` | `certificate.manage` | 审核列表（默认 pending） |
+| POST | `/api/admin/certificates/:id/review` | `certificate.manage` | 审核通过/驳回 |
+| GET | `/api/admin/certificate-types?includeInactive=` | `certificate.manage` | 全部类型（含停用） |
+| POST/PUT/DELETE | `/api/admin/certificate-types[/:id]` | `certificate.manage` | 类型 CRUD |
+
+**前端页面与路由**
+
+- `/settings/certificates`（路由 `certificate-settings`，`requiresAuth`）：我的证书列表（状态 Tag/驳回原因/验证码复制链接）+「申请认证」提交 Dialog（类型/等级/图片 blob 预览），图片通过鉴权 blob 加载。
+- `/verify`（路由 `certificate-verify`，公开，支持 `?code=` 自动核验）：输入验证码核验，展示类型/等级/持有者昵称/通过日期，不展示图片。
+- `/admin/certificates`（路由 `admin-certificates`，`permission: certificate.manage`）：证书审核 Tab（状态筛选/分页/图片预览/通过/驳回，驳回必填原因）+ 证书类型 Tab（CRUD）。
+- 入口：`UserMenu`「我的证书」；`AdminNav` 内容组「证书审核」（`certificate.manage`）。
+
 ---
 
 ## 6. AI 辅助功能模块
 
-**实现状态（M5-A ✅；M5-1～M5-3、M5-4、M5-5 已完成；M5-7、M5-8 待办）**
+**实现状态（M5-A ✅；M5-1～M5-3、M5-4、M5-5 已完成；M5-7 证书认证已完成；M5-8 头像上传待办）**
 
 - **路由挂载**：AI 路由（`/api/ai/configs` GET/POST、`/api/ai/complete`、`/api/ai/format`、`/api/ai/optimize`、`/api/ai/hint`）**始终挂载**（`ai.Service` 恒非 nil）；管理员在 `/admin/ai` 关闭 AI 后，`RequireAIEnabled` 中间件让所有 `/api/ai/*` 统一返回 404（见 §6.6）。未配置密钥时后端也正常启动，AI 路由仍可访问（`GET /api/ai/configs` 返回 200 + `keyConfigured=false`），保存配置/AI 调用返回 40001（见 §6.7 无密钥语义）。
 - **密钥来源**：加密密钥来自环境变量 `KAPOJ_AI_ENCRYPTION_KEY`（优先）或本地密钥文件 `KAPOJ_AI_KEY_FILE`（默认 `data/ai.key`）；env 非法 base64/长度在启动时报错，文件缺失/非法则视为未配置（后台可生成/覆盖）。详见 §6.7。
@@ -1474,7 +1536,7 @@ user_ai_configs (
 - **OpenAI 客户端**：`POST {base_url}/chat/completions`，Bearer key，解析 `choices[0].message.content`；非 2xx / 空 choices / 畸形 JSON / 超时统一映射为 `50200 AI 服务调用失败`（`KAPOJ_AI_REQUEST_TIMEOUT` 控制超时，默认 45s），不泄露 key 与上游响应体敏感内容。
 - **限流**：补全/格式化/优化/首次生成提示按用户 Redis 冷却（`kapoj:ai:cool:<userID>`，`SetNX`，`KAPOJ_AI_COOLDOWN` 默认 2s），超限返回 `42903`；Redis 故障返回 `50300`；缓存命中的提示不消耗冷却。
 - **提示缓存**：`POST /api/ai/hint` 登录 + `LoadAccess`；缓存命中直接返回 `cached=true`，未命中要求用户配置并调用模型后 `INSERT ... ON CONFLICT (problem_id) DO NOTHING` 写入缓存；非公开题对无 `problem.view_hidden` 的用户返回 40400。
-- **范围外**：M5-7（证书）、M5-8（头像上传）尚未实现（M5-4 出题造数据见 §6.4，M5-5 AI 前端见 §6.5，M5-6 HydroOJ 导入见 §7）；M5-A 不新增管理员权限码。
+- **范围外**：M5-8（头像上传）尚未实现（M5-4 出题造数据见 §6.4，M5-5 AI 前端见 §6.5，M5-6 HydroOJ 导入见 §7，M5-7 证书认证见 §5.6）；M5-A 不新增管理员权限码。
 
 ### 6.1 功能清单
 
@@ -1717,7 +1779,7 @@ problem/
 
 状态图例：✅ 已完成　🚧 进行中　⬜ 未开始。只有模块的验收标准全部满足后才标记 ✅。
 
-M5 进度：M5-A（AI 后端基础：多 provider 配置、用户 API key 加密存储、补全/格式化/优化与题目提示缓存/限流）、M5-4（AI 出题造数据：标程 → AI 纯 Python 3 造数据脚本 → judge 沙盒生成输入/输出 → 预览确认入库，见 §6.4）、M5-5（AI 前端：提交页 AI 工具栏、题目详情 AI 提示、AI 配置页，见 §6.5）与 M5-6（HydroOJ 题包导入 + 题目详情公开创建者摘要，见 §7）已完成；M5-7（证书认证）、M5-8（头像上传）仍未完成，因此 M5 整体保持 🚧。
+M5 进度：M5-A（AI 后端基础：多 provider 配置、用户 API key 加密存储、补全/格式化/优化与题目提示缓存/限流）、M5-4（AI 出题造数据：标程 → AI 纯 Python 3 造数据脚本 → judge 沙盒生成输入/输出 → 预览确认入库，见 §6.4）、M5-5（AI 前端：提交页 AI 工具栏、题目详情 AI 提示、AI 配置页，见 §6.5）、M5-6（HydroOJ 题包导入 + 题目详情公开创建者摘要，见 §7）与 M5-7（证书认证：证书类型、用户提交/我的证书、鉴权图片、管理员审核、公开验证码核验，见 §3.7/§5.6）已完成；M5-8（头像上传）仍未完成，因此 M5 整体保持 🚧。
 
 M3 进度：M3-A（金币、事件、成就、任务后端）、M3-B（徽章、称号、公开身份后端）与 M3-C（成就页、任务大厅、徽章商城、称号商店、装扮管理、游戏化管理、公开身份接入与真实浏览器验收）均已完成，M3 标记为 ✅。
 

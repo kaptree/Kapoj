@@ -2,7 +2,7 @@
 
 打造最有趣味的 Online Judge 平台。规格见 [`DEVELOPMENT.md`](DEVELOPMENT.md)，进度见 [`docs/任务清单.md`](docs/任务清单.md) 与 [`docs/开发日志.md`](docs/开发日志.md)。
 
-当前进度：**M4-2A、M4-2B、M4-2C、M4-3、M4-4、RBAC-D、M5-A、M5-4、M5-5 与 M5-6 已完成**（M0–M3 已完成；M4 已完成；M5 部分完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页（Rating/活跃度/共享三 Tab、等级颜色、签到）、用户主页 Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线后端模型、官方/自定义权限、路线/节点 CRUD 与树结构，路线 API 已可用；M4-2B 交付服务端进度计算（AC 事件补算 + 读取补算、完成锁存）与题目下线/删除守卫；M4-2C 交付学习路线前端列表/树详情/编辑/官方管理页；M4-3 交付轻量社交互动（题解点赞、关注、站内通知，回复/点赞/关注接入活跃度与共享分，前端点赞按钮/关注 Dialog/通知铃铛/通知页，见下）；M4-4 交付 Rating 衰减与赛季重置（`rating.settings.manage` 权限与 Rating 分组、管理设置 API、`/admin/rating` 设置页、月度高分段衰减、赛季软重置、`decay`/`season_reset` 历史与公开赛季接口）；RBAC-A 交付权限模型、权限目录、首次 Seed/旧角色映射、实时 Access、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化；M5-A 交付 AI 后端基础：多 provider 配置、用户 API key 加密存储、补全/格式化/优化与题目提示缓存/限流；M5-5 交付 AI 前端：提交页 AI 补全/格式化/优化工具栏、题目详情 AI 提示、`/settings/ai` AI 配置页与用户菜单入口（见下）；另交付 AI 管理开关：`ai.settings.manage` 权限（第 36 个，分组「AI」）、`GET/PUT /api/admin/ai/settings` 与 `/admin/ai` 开关页，关闭后 `/api/ai/*` 统一 404（见下）；M5-6 交付 HydroOJ 题包导入（`POST /api/problems/import/hydro`、大小限制/防路径穿越、slug 冲突不覆盖、默认下线、部分成功与回滚）与题目详情公开创建者摘要（`author{id,username,nickname}`），前端新增 `/problems/import` 导入页与详情创建者链接（见下）；M5-4 交付 AI 出题造数据（标程 → AI 纯 Python 3 造数据脚本 → judge 沙盒生成输入/输出 → 预览确认入库，见下）；证书/头像（M5-7、M5-8）尚未实现）。前端并行进行 PrimeVue 4 迁移，**UI-00～UI-20（含 UI-19 题库编辑与 UI-20 异常页）、UI-30（M4-C 排行榜/历史）、UI-31（M4-7 学习路线）、UI-32（M4-3 社交互动）、UI-34（M5-5 AI 面板）、UI-35（M5-6 题目导入）、UI-39（M5-4 AI 造数据）与 RBAC-D 管理后台页面已完成并提交**，Element Plus 依赖与过渡样式已彻底移除，详见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。题目详情资源区、官方题解与解题思路论坛已完成（见下）。
+当前进度：**M4-2A、M4-2B、M4-2C、M4-3、M4-4、RBAC-D、M5-A、M5-4、M5-5、M5-6 与 M5-7 已完成**（M0–M3 已完成；M4 已完成；M5 部分完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页（Rating/活跃度/共享三 Tab、等级颜色、签到）、用户主页 Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线后端模型、官方/自定义权限、路线/节点 CRUD 与树结构，路线 API 已可用；M4-2B 交付服务端进度计算（AC 事件补算 + 读取补算、完成锁存）与题目下线/删除守卫；M4-2C 交付学习路线前端列表/树详情/编辑/官方管理页；M4-3 交付轻量社交互动（题解点赞、关注、站内通知，回复/点赞/关注接入活跃度与共享分，前端点赞按钮/关注 Dialog/通知铃铛/通知页，见下）；M4-4 交付 Rating 衰减与赛季重置（`rating.settings.manage` 权限与 Rating 分组、管理设置 API、`/admin/rating` 设置页、月度高分段衰减、赛季软重置、`decay`/`season_reset` 历史与公开赛季接口）；RBAC-A 交付权限模型、权限目录、首次 Seed/旧角色映射、实时 Access、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化；M5-A 交付 AI 后端基础：多 provider 配置、用户 API key 加密存储、补全/格式化/优化与题目提示缓存/限流；M5-5 交付 AI 前端：提交页 AI 补全/格式化/优化工具栏、题目详情 AI 提示、`/settings/ai` AI 配置页与用户菜单入口（见下）；另交付 AI 管理开关：`ai.settings.manage` 权限（第 36 个，分组「AI」）、`GET/PUT /api/admin/ai/settings` 与 `/admin/ai` 开关页，关闭后 `/api/ai/*` 统一 404（见下）；M5-6 交付 HydroOJ 题包导入（`POST /api/problems/import/hydro`、大小限制/防路径穿越、slug 冲突不覆盖、默认下线、部分成功与回滚）与题目详情公开创建者摘要（`author{id,username,nickname}`），前端新增 `/problems/import` 导入页与详情创建者链接（见下）；M5-4 交付 AI 出题造数据（标程 → AI 纯 Python 3 造数据脚本 → judge 沙盒生成输入/输出 → 预览确认入库，见下）；M5-7 交付证书认证（证书类型、用户提交/我的证书、鉴权图片、管理员审核、公开验证码核验，见下）；头像上传（M5-8）尚未实现）。前端并行进行 PrimeVue 4 迁移，**UI-00～UI-20（含 UI-19 题库编辑与 UI-20 异常页）、UI-30（M4-C 排行榜/历史）、UI-31（M4-7 学习路线）、UI-32（M4-3 社交互动）、UI-33（M5-7 证书认证）、UI-34（M5-5 AI 面板）、UI-35（M5-6 题目导入）、UI-39（M5-4 AI 造数据）与 RBAC-D 管理后台页面已完成并提交**，Element Plus 依赖与过渡样式已彻底移除，详见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。题目详情资源区、官方题解与解题思路论坛已完成（见下）。
 
 ## 目录结构
 
@@ -181,7 +181,7 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 **权限模型**
 
 - RBAC 权限来源为 `users → user_roles → roles → role_permissions → permissions` 的实时并集；`users.role` 与 JWT `role` 是 legacy 兼容字段，**自 RBAC-C 起不再参与任何管理授权，仅用于展示/兼容**。
-- 权限码格式为 `domain.action`，共 36 个，按管理后台、用户与角色、题库、测评记录、比赛、游戏化、学习路线、Rating、AI 分组；完整列表见 [`DEVELOPMENT.md`](DEVELOPMENT.md) 4.7。常用码：`admin.dashboard.view`、`user.read`、`role.read`、`problem.create`、`problem.view_hidden`、`contest.create`、`gamification.achievement.manage`、`learning_path.official.manage`、`learning_path.admin.read`、`rating.settings.manage`、`ai.settings.manage`。
+- 权限码格式为 `domain.action`，共 37 个，按管理后台、用户与角色、题库、测评记录、比赛、游戏化、学习路线、Rating、AI、证书分组；完整列表见 [`DEVELOPMENT.md`](DEVELOPMENT.md) 4.7。常用码：`admin.dashboard.view`、`user.read`、`role.read`、`problem.create`、`problem.view_hidden`、`contest.create`、`gamification.achievement.manage`、`learning_path.official.manage`、`learning_path.admin.read`、`rating.settings.manage`、`ai.settings.manage`、`certificate.manage`。
 - 内置角色 7 个：`super_admin`（绕过所有权限检查）、`content_admin`（全部 `problem.*` + `learning_path.official.manage`/`learning_path.admin.read`）、`contest_admin`（全部 `contest.*` + `submission.view_live_contest`）、`gamification_admin`（全部 `gamification.*`）、`user_admin`、`security_admin`、`auditor`。系统角色不可删除、code/name 不可改；`super_admin` 权限不可修改；除 `super_admin` 外，内置角色权限可由 `role.permissions.update` 调整。
 - `GET /api/users/me` 返回 `roles`、`permissions`、`isSuperAdmin`；超级管理员的 `permissions` 可能为空，前端应以 `isSuperAdmin=true` 表示拥有全部权限。登录/注册响应中的这三个字段默认为空数组/false，登录后请再调用 `/users/me`。
 
@@ -315,6 +315,25 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 - 导入题目默认下线（`is_public=false`），创建者为上传者，`source=HydroOJ`，难度 1、1000ms/256MB；slug 为 `hydro-<净化后的文件夹名>`，与已有题目冲突时不覆盖，单题失败进入 `failed`，不影响其他题。
 - 限制与安全：题包 ≤200 MiB（body 210 MiB）、解压 ≤1 GiB、条目 ≤5000、题数 ≤100、单题测试点 ≤500、单文件 ≤16 MiB；拒绝绝对路径/`..`/符号链接/加密条目/非常规文件，忽略 `__MACOSX` 与隐藏文件，不执行题包内脚本。
 - 题目详情页对所有人展示「创建者」并链接 `/users/:id`（`author{id,username,nickname}`，无创建者时不显示）；发布后即可正常提交评测。
+
+## 证书认证（M5-7）
+
+用户上传比赛证书图片申请认证，管理员审核通过/驳回；通过后生成唯一验证码，任何人可用验证码公开核验证书类型、等级、持有者昵称与通过日期；证书图片仅本人与管理员可见。规格见 [`DEVELOPMENT.md`](DEVELOPMENT.md) §5.6。
+
+**前端页面**
+
+- 用户菜单「我的证书」进入 `/settings/certificates`（登录）：查看自己的证书列表（状态待审核/已通过/已驳回、驳回原因、验证码与「复制验证链接」、图片预览），「申请认证」提交证书图片（选择类型、填写等级、上传 ≤5 MiB PNG/JPEG/WebP）。
+- `/verify`（公开）：输入验证码核验，有效时展示证书类型、等级、持有者昵称与通过日期；无效时中性提示。支持 `?code=` 自动核验；不展示证书图片、邮箱、用户 ID 等敏感信息。
+- 管理后台「证书审核」`/admin/certificates`（需 `certificate.manage`）：证书审核 Tab（默认待审核、状态筛选/分页、图片预览、通过/驳回，驳回必填原因）+ 证书类型 Tab（新增/编辑/停用/删除，被引用删除报错）。
+
+**接口与规则**
+
+- `GET /api/certificate-types`：公开启用的证书类型；`POST /api/certificates`（multipart `typeId`/`level`/`file`）、`GET /api/certificates/my`、`GET /api/certificates/:id/image`（本人或管理员）、`GET /api/certificates/verify?code=`（公开）。
+- `GET /api/admin/certificates?status=&page=&page_size=`、`POST /api/admin/certificates/:id/review`、`GET/POST/PUT/DELETE /api/admin/certificate-types`（均需 `certificate.manage`）。
+- 证书图片 ≤5 MiB、magic bytes 校验仅 PNG/JPEG/WebP，本地 `storage.Storage` 保存 `certificates/<id>`，仅本人或 `certificate.manage` 可读（他人/不存在 404，未登录 401）。
+- 验证码格式 `KAPOJ-XXXX-XXXX`，大小写/空格/连字符不敏感；通过后生成，公开核验只返回类型/等级/昵称/通过日期，不返回图片/邮箱/userId/驳回原因/审核人。
+- 证书类型：内置蓝桥杯、ACM-ICPC、CCCC 天梯赛、CCPC、NOI、NOIP、USACO；管理员可新增/编辑/启用停用/删除未被引用的类型；改名后历史证书与公开核验仍使用提交时快照的类型名。
+- 审核与类型 CRUD 写审计（action=`certificate.manage`，target=`certificate`/`certificate_type`），驳回原因不写审计。
 
 ## 测试与检查
 
