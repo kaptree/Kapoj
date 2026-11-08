@@ -3,7 +3,7 @@
 > 本文档基于 `plan.md` 细化，是 kapOJ（Kap Online Judge）平台的详细开发规格说明书。
 > 目标：**打造出最有趣味的 Online Judge 平台**。
 > 文档包含完整的架构设计、数据库设计、模块需求，并为每个模块提供了可直接交给 Codex 的**开发提示词（Prompt）**。
-> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)，前端 UI 迁移见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。当前进度：**M4-2A、M4-2B、M4-2C、M4-3、M4-4、RBAC-D、M5-A、M5-4、M5-5 与 M5-6 已完成**（M0–M3 已完成；M4 已完成；M5 部分完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页、签到、Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线模型、权限、路线/节点 CRUD 与树结构；M4-2B 交付服务端进度计算（AC 事件补算 + 读取补算、完成锁存）与题目下线/删除守卫；M4-2C 交付学习路线前端（列表/树详情/编辑/官方管理页，PrimeVue TreeTable/DataTable，UI-31）；M4-3 交付轻量社交互动（题解点赞、用户关注、站内通知，回复/点赞/关注接入活跃度与共享分，前端点赞按钮/关注 Dialog/通知铃铛/通知页，UI-32，见 4.8）；M4-4 交付 Rating 衰减与赛季重置（`rating.settings.manage` 权限与 Rating 分组、管理设置 API、`/admin/rating` 设置页、月度高分段衰减、赛季软重置、`decay`/`season_reset` 历史与公开赛季接口）；RBAC-A 交付权限目录、内置角色、首次 Seed/旧角色映射、实时 Access 解析、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/`canAny`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化，以及文档、HTTP 冒烟与浏览器 E2E；M5-A 交付 AI 后端基础（多 provider 配置、用户 API key AES-GCM 加密存储、OpenAI 兼容补全/格式化/优化与题目 AI 提示缓存/限流，AI 路由始终挂载、未配置密钥时返回 40002）；M5-5 交付 AI 前端（提交页 AI 补全/格式化/优化工具栏、题目详情 AI 提示、`/settings/ai` AI 配置页与用户菜单入口，见 §6.5）；M5-6 交付 HydroOJ 题包导入（`POST /api/problems/import/hydro`、大小限制/防路径穿越、slug 冲突不覆盖、默认下线、逐题部分成功与整包回滚，见 §7）与题目详情公开创建者摘要（`author{id,username,nickname}`），前端新增 `/problems/import` 导入页、题目列表「导入题包」入口与详情创建者链接。AI 出题造数据（M5-4）已交付：标程 → AI 纯 Python 3 造数据脚本 → judge 沙盒生成输入/输出 → 预览确认入库，见 §6.4；证书/头像（M5-7、M5-8）尚未实现）。前端 UI 已完成 UI-00～UI-18 的 PrimeVue 4 迁移、UI-30（M4-C 排行榜/历史）、UI-31（M4-7 学习路线）、UI-32（M4-3 社交互动）与 RBAC-D 管理后台页面直接实现，剩余 UI-19 题库编辑与 UI-20 异常页；该迁移已提交。题目详情页已改造为「题面 + 提示卡片 + 右侧四资源卡片」，并交付官方题解（创建者编辑 + 金币解锁）、解题思路论坛（帖子/回复/软删除）、提交统计页与关联比赛页，详见 4.3；题目主更新不再写入题解字段，官方题解专用接口是唯一写入口。
+> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)，前端 UI 迁移见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。当前进度：**M4-2A、M4-2B、M4-2C、M4-3、M4-4、RBAC-D、M5-A、M5-4、M5-5 与 M5-6 已完成**（M0–M3 已完成；M4 已完成；M5 部分完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页、签到、Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线模型、权限、路线/节点 CRUD 与树结构；M4-2B 交付服务端进度计算（AC 事件补算 + 读取补算、完成锁存）与题目下线/删除守卫；M4-2C 交付学习路线前端（列表/树详情/编辑/官方管理页，PrimeVue TreeTable/DataTable，UI-31）；M4-3 交付轻量社交互动（题解点赞、用户关注、站内通知，回复/点赞/关注接入活跃度与共享分，前端点赞按钮/关注 Dialog/通知铃铛/通知页，UI-32，见 4.8）；M4-4 交付 Rating 衰减与赛季重置（`rating.settings.manage` 权限与 Rating 分组、管理设置 API、`/admin/rating` 设置页、月度高分段衰减、赛季软重置、`decay`/`season_reset` 历史与公开赛季接口）；RBAC-A 交付权限目录、内置角色、首次 Seed/旧角色映射、实时 Access 解析、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/`canAny`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化，以及文档、HTTP 冒烟与浏览器 E2E；M5-A 交付 AI 后端基础（多 provider 配置、用户 API key AES-GCM 加密存储、OpenAI 兼容补全/格式化/优化与题目 AI 提示缓存/限流，AI 路由始终挂载、未配置密钥时返回 40002）；M5-5 交付 AI 前端（提交页 AI 补全/格式化/优化工具栏、题目详情 AI 提示、`/settings/ai` AI 配置页与用户菜单入口，见 §6.5）；M5-6 交付 HydroOJ 题包导入（`POST /api/problems/import/hydro`、大小限制/防路径穿越、slug 冲突不覆盖、默认下线、逐题部分成功与整包回滚，见 §7）与题目详情公开创建者摘要（`author{id,username,nickname}`），前端新增 `/problems/import` 导入页、题目列表「导入题包」入口与详情创建者链接。AI 出题造数据（M5-4）已交付：标程 → AI 纯 Python 3 造数据脚本 → judge 沙盒生成输入/输出 → 预览确认入库，见 §6.4；证书/头像（M5-7、M5-8）尚未实现）。前端 UI 已完成 UI-00～UI-20 的 PrimeVue 4 迁移（含 UI-19 题库编辑与 UI-20 异常页）、UI-30（M4-C 排行榜/历史）、UI-31（M4-7 学习路线）、UI-32（M4-3 社交互动）与 RBAC-D 管理后台页面直接实现，Element Plus 依赖与过渡样式已移除；该迁移已提交。题目详情页已改造为「题面 + 提示卡片 + 右侧四资源卡片」，并交付官方题解（创建者编辑 + 金币解锁）、解题思路论坛（帖子/回复/软删除）、提交统计页与关联比赛页，详见 4.3；题目主更新不再写入题解字段，官方题解专用接口是唯一写入口。
 
 ---
 
@@ -70,7 +70,7 @@ kapOJ 是一个融合 **竞技评测 + 游戏化成长体系 + AI 辅助** 的�
 
 | 层次     | 技术选型                                                   | 说明                                                                             |
 | -------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| 前端     | Vue 3 + TypeScript + Vite + Pinia + PrimeVue 4 + ECharts | SPA，响应式，榜单/统计用 ECharts；Element Plus 仅保留在未迁移页面 |
+| 前端     | Vue 3 + TypeScript + Vite + Pinia + PrimeVue 4 + ECharts | SPA，响应式，榜单/统计用 ECharts；Element Plus 已完全移除 |
 | 编辑器   | md-editor-v3（题面 Markdown）、Monaco Editor（代码）       | 统一题面与代码编辑方案；替代早期的 mavon-editor（维护不活跃，对 Vue 3 支持有限） |
 | 后端     | Go 1.22+ + Gin + GORM                                      | 高性能、高并发、编译为单一二进制部署（既定方案，不随文档调整而变更）             |
 | 数据库   | PostgreSQL 17                                              | 主存储                                                                           |
@@ -83,7 +83,7 @@ kapOJ 是一个融合 **竞技评测 + 游戏化成长体系 + AI 辅助** 的�
 
 **实现差异（M0）**：`apps/server/go.mod` 要求 Go 1.26，因为最新版 go-redis 与 golang.org/x/* 依赖需要它；仍符合「Go 1.22+」。前端 TypeScript 固定为 5.9，因为 TypeScript 7 不再提供 vue-tsc 与 openapi-typescript 依赖的编译器 API。
 
-**前端 UI 栈（2026-11-05，迁移进行中）**：默认 UI 组件库已切换为 PrimeVue `4.5.5`（`@primeuix/themes 1.2.5`、`primeicons 7.0.0`），并落地暗色优先的科技风 tokens、`AppPageHeader` / `AppSurface` / `AppFormField` 等共享组件、框架无关的 `validation.ts` 与局部中文 PrimeVue locale。现有 UI 任务 UI-00～UI-18 已完成迁移，M4-C 新增的排行榜页、`RatingLevelName`、`RatingHistoryCard` 与签到卡片直接使用 PrimeVue 4（UI-30）；Element Plus 仅作为过渡依赖保留在 UI-19（题库编辑/测试点/样例）与 UI-20（异常页）以及 `main.ts`，allowlist 清零后移除。详细 backlog、设计决策与逐项验证见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。下文历史提示词中的 Element Plus 为初始方案草案，当前实现以本段与迁移文档为准。
+**前端 UI 栈（2026-11-08，迁移已完成）**：默认 UI 组件库已切换为 PrimeVue `4.5.5`（`@primeuix/themes 1.2.5`、`primeicons 7.0.0`），并落地暗色优先的科技风 tokens、`AppPageHeader` / `AppSurface` / `AppFormField` 等共享组件、框架无关的 `validation.ts` 与局部中文 PrimeVue locale。现有 UI 任务 UI-00～UI-20 已全部完成迁移，M4-C 新增的排行榜页、`RatingLevelName`、`RatingHistoryCard` 与签到卡片直接使用 PrimeVue 4（UI-30）；Element Plus 依赖、`main.ts` 引导与过渡样式已彻底移除，legacy allowlist 清空。详细 backlog、设计决策与逐项验证见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。下文历史提示词中的 Element Plus 为初始方案草案，当前实现以本段与迁移文档为准。
 
 ### 2.2 系统架构图
 
@@ -1543,7 +1543,7 @@ user_ai_configs (
 | POST | `.../confirm` | 同上 | 确认入库 |
 | DELETE | `/api/problems/:id/testcase-generations/:genId` | 同上 | 丢弃/清理 |
 
-**前端（M5-4 ✅）**：新页面 `/problems/:id/testcase-generator`（路由 `problem-testcase-generator`，PrimeVue UI-39）；`ProblemEditView` 测试点区域（`TestcaseManager`，仍为 Element Plus legacy UI-19）增加「AI 造数据」入口。表单：语言 Select（c/cpp/python3/java/go）、标程 CodeEditor（Monaco）、生成组数 InputNumber 1–10；生成中轮询（2s，最长 10 分钟）并展示 AI 脚本预览；完成后 cases 表格 + 输入/输出预览 Dialog + 确认/丢弃；失败显示错误并可返回修改标程重新生成；AI 未配置/密钥缺失提示 40001/40002 与 `/settings/ai` 链接。
+**前端（M5-4 ✅）**：新页面 `/problems/:id/testcase-generator`（路由 `problem-testcase-generator`，PrimeVue UI-39）；`ProblemEditView` 测试点区域（`TestcaseManager`，已随 UI-19 迁移为 PrimeVue）增加「AI 造数据」入口。表单：语言 Select（c/cpp/python3/java/go）、标程 CodeEditor（Monaco）、生成组数 InputNumber 1–10；生成中轮询（2s，最长 10 分钟）并展示 AI 脚本预览；完成后 cases 表格 + 输入/输出预览 Dialog + 确认/丢弃；失败显示错误并可返回修改标程重新生成；AI 未配置/密钥缺失提示 40001/40002 与 `/settings/ai` 链接。
 
 ### 6.5 AI 辅助前端（M5-5 ✅）
 

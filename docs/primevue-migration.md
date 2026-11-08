@@ -3,7 +3,7 @@
 > 本文档是美化工程的唯一进度来源。每次会话开始先读这里，结束时更新状态、验证结果和设计决策。
 >
 > - 最后更新：2026-11-08
-> - 当前阶段：P2 页面（UI-19 待开始）；M4-C 新功能 UI-30、M4-7 学习路线 UI-31、M4-3 社交互动 UI-32、RBAC-D 管理后台 UI-36、M4-4 Rating 设置 UI-37、M5-6 题目导入 UI-35、M5-5 AI 面板 UI-34、AI 管理开关/加密密钥 UI-38 与 M5-4 AI 造数据 UI-39 已完成
+> - 当前阶段：全部现有页面迁移完成，Element Plus 依赖与过渡样式已移除；M4-C 新功能 UI-30、M4-7 学习路线 UI-31、M4-3 社交互动 UI-32、RBAC-D 管理后台 UI-36、M4-4 Rating 设置 UI-37、M5-6 题目导入 UI-35、M5-5 AI 面板 UI-34、AI 管理开关/加密密钥 UI-38 与 M5-4 AI 造数据 UI-39 已完成
 > - 工作分支：`feat/m1-problems-judge`（RBAC-D 管理后台在 `feat/rbac-d-admin-ui` 完成，M4-3 社交互动在 `feat/m4-3-social` 完成）
 > - 本次基线：`0f2d62d feat(web): rating history card`
 
@@ -11,14 +11,14 @@
 
 | 状态 | 数量 |
 | --- | ---: |
-| done | 27 |
+| done | 29 |
 | in-progress | 0 |
 | blocked | 0 |
-| todo | 3 |
+| todo | 1 |
 
-其中现有 UI 迁移任务 `UI-00～UI-18` 已完成，M4-C 新功能 `UI-30`（排行榜、签到与 Rating 历史卡片）、M4-7 新功能 `UI-31`（学习路线）、M4-3 新功能 `UI-32`（社交互动：题解点赞、关注/粉丝 Dialog、通知铃铛与通知页）、RBAC-D 管理后台 `UI-36`（管理壳/仪表盘/用户/角色/审计页面）、M5-6 题目导入 `UI-35`（导入页）、M5-5 AI 面板 `UI-34`（提交页工具栏/详情 AI 提示/配置页）、AI 管理开关/加密密钥 `UI-38`（`/admin/ai` 设置页）与 M5-4 AI 造数据 `UI-39`（`TestcaseGeneratorView` 生成/轮询/预览/确认/丢弃）已直接使用 PrimeVue 4 完成；剩余 `UI-19` 题库编辑与 `UI-20` 异常页；`UI-33` 为尚未实现的新功能，不计入现有页面迁移完成度。
+其中现有 UI 迁移任务 `UI-00～UI-20` 已全部完成（`UI-19` 题库编辑与 `UI-20` 异常页于 2026-11-08 完成），M4-C 新功能 `UI-30`（排行榜、签到与 Rating 历史卡片）、M4-7 新功能 `UI-31`（学习路线）、M4-3 新功能 `UI-32`（社交互动：题解点赞、关注/粉丝 Dialog、通知铃铛与通知页）、RBAC-D 管理后台 `UI-36`（管理壳/仪表盘/用户/角色/审计页面）、M5-6 题目导入 `UI-35`（导入页）、M5-5 AI 面板 `UI-34`（提交页工具栏/详情 AI 提示/配置页）、AI 管理开关/加密密钥 `UI-38`（`/admin/ai` 设置页）与 M5-4 AI 造数据 `UI-39`（`TestcaseGeneratorView` 生成/轮询/预览/确认/丢弃）已直接使用 PrimeVue 4 完成；Element Plus 依赖、`main.ts` 引导与过渡样式已移除，legacy allowlist 已清空。`UI-33` 为尚未实现的新功能，不计入现有页面迁移完成度。
 
-M4-C 排行榜、签到与 Rating 历史（UI-30）、M4-7 学习路线（UI-31）、M4-3 社交互动（UI-32）、RBAC-D 管理后台（UI-36）、M4-4 Rating 设置页（UI-37）、M5-6 题目导入页（UI-35）、M5-5 AI 面板（UI-34）、AI 管理开关/加密密钥页（UI-38）与 M5-4 AI 造数据页（UI-39）已直接使用 PrimeVue 4 完成；现有页面迁移剩余 UI-19 → UI-20。若后续某页面进入功能开发，先标记 `blocked` 并跳过。
+M4-C 排行榜、签到与 Rating 历史（UI-30）、M4-7 学习路线（UI-31）、M4-3 社交互动（UI-32）、RBAC-D 管理后台（UI-36）、M4-4 Rating 设置页（UI-37）、M5-6 题目导入页（UI-35）、M5-5 AI 面板（UI-34）、AI 管理开关/加密密钥页（UI-38）与 M5-4 AI 造数据页（UI-39）已直接使用 PrimeVue 4 完成；现有页面迁移 `UI-19` → `UI-20` 也已全部完成，Element Plus 已从代码、依赖与样式彻底移除。若后续某页面进入功能开发，先标记 `blocked` 并跳过。
 
 ## 进度表
 
@@ -43,8 +43,8 @@ M4-C 排行榜、签到与 Rating 历史（UI-30）、M4-7 学习路线（UI-31�
 | UI-16 | 游戏化 | `TitleShopView` + spec | P2 | done | UI-00 | 解锁进度、购买/装备 | 2026-11-05 完成。PrimeVue ProgressBar/Tag/ConfirmDialog；称号颜色与装备替换保留 |
 | UI-17 | 游戏化 | `AppearanceView` + spec | P2 | done | UI-00 | 装备/卸下、金币流水、分页 | 2026-11-05 完成。DataTable/Paginator/IdentityShowcase；分页与金额样式保留 |
 | UI-18 | 管理 | `GamificationAdminView` + 4 个 admin panel + spec | P2 | done | UI-00 | 四个 Tab、CRUD、图片上传、题目远程搜索 | 2026-11-05 完成。PrimeVue Tabs/DataTable/Dialog/MultiSelect/ColorPicker；上传与冻结语义保留 |
-| UI-19 | 题库管理 | `ProblemEditView` + `TestcaseManager` + `SampleEditor` + spec | P2 | todo | UI-00 | Markdown、测试点上传/排序、样例编辑 | 建议下一项 |
-| UI-20 | 异常页 | `ForbiddenView`、`NotFoundView` | P2 | todo | UI-00 | 空态/结果页视觉统一 | 最简单，适合收尾 |
+| UI-19 | 题库管理 | `ProblemEditView` + `TestcaseManager` + `SampleEditor` + spec | P2 | done | UI-00 | Markdown、测试点上传/排序、样例编辑 | 2026-11-08 完成。`ProblemEditView` 用 `AppPageHeader`/`AppSurface`/`AppFormField`/`Tabs`/`MarkdownEditor`/`SelectButton`/`InputChips`/`InputNumber`/`ToggleSwitch`/`Message` + `SampleEditor`/`TestcaseManager`；`TestcaseManager` 用 `DataTable`/`InputNumber`/`ToggleSwitch`/`Confirm`/Toast + 原生隐藏文件输入；`SampleEditor` 用 `Textarea`/`Button`；保留 AI 造数据入口 |
+| UI-20 | 异常页 | `ForbiddenView`、`NotFoundView` | P2 | done | UI-00 | 空态/结果页视觉统一 | 2026-11-08 完成。`AppSurface` + `AppEmptyState`（403/404 大号 code + `pi-lock`/`pi-compass` + 返回首页）；`not-found` 路由补 `meta.title` |
 | UI-30 | 新功能 | M4-C 排行榜前端（含签到与 Rating 历史卡片） | P3 | done | UI-00、UI-10 | 直接使用 PrimeVue；Rating 榜/历史 | 2026-11-05 完成。`LeaderboardView` 三 Tab/签到、`RatingLevelName`、`RatingHistoryCard`；复用 Tabs/DataTable/Paginator/Toast |
 | UI-36 | 新功能 | RBAC-D 管理后台壳：`AdminLayout`/`AdminNav` + 仪表盘/用户/角色/审计页面 | P3 | done | UI-00、UI-18 | 直接使用 PrimeVue；权限驱动菜单/按钮 | 2026-11-07 完成。`AdminLayout`/`AdminNav`（桌面侧栏 + 移动 Drawer）、`AdminDashboardView`/`AdminUsersView`/`AdminRolesView`/`AdminAuditView`；复用 AppPageHeader/AppSurface/DataTable/Dialog/MultiSelect/Toast；`auth.can/canAny` 驱动菜单与动作 |
 | UI-31 | 新功能 | 学习路线 | P3 | done | UI-00 | 直接使用 PrimeVue；树形/解锁进度 | 2026-11-07 完成。`LearningPathListView`/`LearningPathDetailView`/`LearningPathEditView`/`AdminLearningPathsView` + `LearningNodeDialog`；复用 TreeTable/DataTable/Dialog/Select/InputNumber/ProgressBar/Tag |
@@ -54,7 +54,7 @@ M4-C 排行榜、签到与 Rating 历史（UI-30）、M4-7 学习路线（UI-31�
 | UI-35 | 新功能 | 题目导入 | P3 | done | UI-00 | 直接使用 PrimeVue；HydroOJ 导入 | 2026-11-08 完成。`ProblemImportView`（`/problems/import`）复用 AppPageHeader/AppSurface/DataTable/Message/Button；题目列表「导入题包」入口与详情创建者链接；不新增 UI 依赖 |
 | UI-37 | 新功能 | M4-4 Rating 设置页：`AdminRatingView` | P3 | done | UI-00、UI-36 | 直接使用 PrimeVue；衰减/赛季设置与只读当前赛季 | 2026-11-08 完成。`AdminRatingView`（`/admin/rating`）复用 AppPageHeader/AppSurface/AppFormField/ToggleSwitch/InputNumber/InputText/Toast；`AdminNav` 增加「Rating」入口；不新增 UI 依赖 |
 | UI-38 | 新功能 | AI 管理开关 + 加密密钥：`AdminAiView` | P3 | done | UI-00、UI-36 | 直接使用 PrimeVue；状态 Tag/ToggleSwitch/密钥缺失禁用 | 2026-11-08 完成。`AdminAiView`（`/admin/ai`）复用 AppPageHeader/AppSurface/AppFormField/ToggleSwitch/Message/Tag/Toast，并新增「加密密钥」板块（状态 Tag 未配置/文件/env、自动生成一次性显示 + 复制、手动填写、轮换二次确认、env 只读）；`AdminNav` 增加「AI 设置」入口（`ai.settings.manage`）；不新增 UI 依赖 |
-| UI-39 | 新功能 | AI 造数据：`TestcaseGeneratorView` | P3 | done | UI-00 | 直接使用 PrimeVue；生成/轮询/预览/确认/丢弃 | 2026-11-08 完成。`TestcaseGeneratorView`（`/problems/:id/testcase-generator`）复用 AppPageHeader/AppSurface/AppFormField/Select/InputNumber/Button/Tag/Message/DataTable/Dialog/Toast/Confirm；`CodeEditor`（Monaco）保留；`TestcaseManager` 的「AI 造数据」入口仍属 UI-19 legacy（Element Plus），不加额外依赖 |
+| UI-39 | 新功能 | AI 造数据：`TestcaseGeneratorView` | P3 | done | UI-00 | 直接使用 PrimeVue；生成/轮询/预览/确认/丢弃 | 2026-11-08 完成。`TestcaseGeneratorView`（`/problems/:id/testcase-generator`）复用 AppPageHeader/AppSurface/AppFormField/Select/InputNumber/Button/Tag/Message/DataTable/Dialog/Toast/Confirm；`CodeEditor`（Monaco）保留；`TestcaseManager` 的「AI 造数据」入口随 UI-19 已迁移为 PrimeVue，不加额外依赖 |
 
 ## Legacy allowlist
 
@@ -62,11 +62,8 @@ M4-C 排行榜、签到与 Rating 历史（UI-30）、M4-7 学习路线（UI-31�
 
 | 归属任务 | 文件 |
 | --- | --- |
-| UI-19 | `src/views/ProblemEditView.vue`、`src/components/TestcaseManager.vue`、`src/components/TestcaseManager.spec.ts`、`src/components/SampleEditor.vue` |
-| UI-20 | `src/views/ForbiddenView.vue`、`src/views/NotFoundView.vue` |
-| 最终清理 | `src/main.ts`（迁移期间保留 Element Plus 引导；所有页面完成后移除依赖） |
 
-当前 allowlist：7 个文件（含 3 个测试文件与 `main.ts`）。
+**allowlist 已清空**：所有页面已完成 PrimeVue 迁移，`main.ts` 的 Element Plus 引导、`package.json` 的 `element-plus`/`@element-plus/icons-vue` 依赖、`styles.css` 的 `.el-result` 过渡覆盖与 `base.css` 的 `--el-color-primary` 回退均已移除（2026-11-08）。仓库中不再有任何 Element Plus import、组件、指令或 CSS 变量。
 
 ## 设计决策
 
@@ -530,12 +527,22 @@ M4-C 排行榜、签到与 Rating 历史（UI-30）、M4-7 学习路线（UI-31�
 - Element Plus 残留检查：`AiSettingsView.vue` 与 `SubmitView`/`ProblemDetailView` 新增 AI 区域无 `element-plus`、`<el-`、`ElMessage`、`v-loading`；legacy allowlist 保持 7 个文件不变（UI-19/UI-20/`main.ts`）。
 - 真实 fake-provider 冒烟（临时 server `127.0.0.1:18081` + 假 OpenAI 服务 `127.0.0.1:18082`，临时把 `deepseek.base_url` 指向假服务）：补全/格式化/优化/提示首次生成/缓存命中/未配置 40001/限流 42903/隐藏题 404 均通过 API 验证；浏览器验收因会话无桌面浏览器连接而延后（前端单测已覆盖工具栏/预览/配置页/提示与移动端布局规则）。
 
+### 2026-11-08 / UI-19 + UI-20（最终清理）
+
+- `corepack pnpm test:web`：81 个测试文件 / 584 个测试通过。UI-19 新增/重写 `ProblemEditView`（11）、`TestcaseManager`（重写 PrimeVue 测试）、`SampleEditor` 测试；UI-20 新增 `ForbiddenView`/`NotFoundView`（5）测试。
+- `corepack pnpm lint:web`：ESLint 与 Prettier 通过。
+- `corepack pnpm build:web`：通过；仅有既有的 >500 kB chunk 提示（Monaco/编辑器相关），无新增错误。
+- Element Plus 残留检查：`grep -RIn "element-plus|ElMessage|<el-|v-loading|--el-" apps/web/src`（`*.vue`/`*.ts`/`*.css`）已无任何实际使用命中；仅 `ForbiddenView.spec.ts`/`NotFoundView.spec.ts` 两条「断言源码不含 Element Plus」的负向测试（`.not.toMatch(/element-plus|<el-/)`）匹配到字面量，属守卫断言而非使用。`main.ts` 的 Element Plus 引导、`package.json` 的 `element-plus`/`@element-plus/icons-vue`、`styles.css` 的 `.el-result` 过渡覆盖与 `base.css` 的 `--el-color-primary` 回退均已移除，`pnpm-lock.yaml` 已同步更新（无 element-plus 引用）。
+- `git diff --check`：通过。
+- 构建产物检查：`apps/web/dist` 中无 `element-plus`/`el-result`/`ElMessage`/`v-loading` 引用（Monaco CSS 语言服务中的 `searchfield-cancel-button` 等 token 为 CSS 语法词，非 Element Plus）。
+- 浏览器/手工检查：本会话无桌面浏览器连接（in-app browser 未连接），无法执行真实浏览器验收；`/problems/new`、`/problems/:id/edit`、`/forbidden` 与不存在路径的暗/亮主题、390px 单列、标签/样例/测试点上传/AI 入口由 `ProblemEditView`/`TestcaseManager`/`SampleEditor`/`ForbiddenView`/`NotFoundView` 的组件测试与 `build:web` 覆盖。
+
 ## 已知问题与风险
 
 1. **亮色主题首屏闪烁**：`index.html` 默认 `app-dark`，已保存亮色偏好的用户在 JS 执行前可能短暂看到暗色。可后续在 `index.html` 增加极小的启动脚本，或接受该闪烁。
 2. **PrimeVue locale**：已在 `src/theme/primevue-locale.ts` 补局部中文（DatePicker、Select 空态等）；未覆盖的组件默认文案仍可能为英文，首次使用需确认或显式传中文。
 3. **包体增长**：PrimeVue 主题与 primeicons 增加首屏 CSS/字体体积；Monaco 的既有大 chunk 警告仍在，非本次引入。
-4. **未迁移页面视觉仍为浅色卡片**：暗色 AppShell 已上线，但 Element Plus 卡片仍是浅色内容面板。UI-02 起逐页替换；异常页文字已做临时兼容覆盖。
+4. **已全部迁移完成**：暗色 AppShell 与所有页面（UI-00～UI-20 及 UI-30～UI-39）均已切到 PrimeVue；Element Plus 卡片/异常页文字的临时兼容覆盖已随最终清理移除，无遗留浅色 Element Plus 卡片。
 5. **浏览器验收限制**：in-app browser 窗口固定为 816px 宽，375px 通过 headless Chrome/CDP 覆盖；桌面 1200px 与手机 390px 布局也通过同源 iframe 验证结构与媒体查询，未做真实设备截图。
 6. **开发期 HMR 警告**：编辑 `DefaultLayout.vue` 时 Vite 可能打印一次 `Cannot access 'DefaultLayout' before initialization` 并提示 HMR 失败；完整刷新后页面正常，生产构建与测试不受影响。根因是根布局被 `router/index.ts` 静态导入；如后续要消除，可评估将根布局改为动态 import（会改变首屏加载方式）。
 7. **客户端校验需同步服务端**：`validation.ts` 是客户端规则的唯一来源，已用 `validation.spec.ts` 覆盖主要边界；服务端规则变更时必须同步更新，服务端仍是最终权威。
@@ -544,10 +551,4 @@ M4-C 排行榜、签到与 Rating 历史（UI-30）、M4-7 学习路线（UI-31�
 
 ## 下一个建议任务
 
-**UI-19 — ProblemEditView + TestcaseManager + SampleEditor 题库管理**
-
-- 迁移 `ProblemEditView.vue`、`TestcaseManager.vue`、`SampleEditor.vue` 与对应 spec 到 PrimeVue。
-- 保留题目字段、MarkdownEditor、样例增删、测试点上传/排序/删除/下载、输入输出校验与保存跳转。
-- 使用 `AppPageHeader`、`AppSurface`、`DataTable`、`Dialog`、`InputNumber`、`FileUpload` 或原生文件输入与共享状态组件；不改变上传表单字段与 API。
-- 测试点操作期间保持 loading/禁用与错误提示；390px 下表格容器内滚动、亮/暗主题正常。
-- 完成后从 allowlist 移除 4 个文件并更新验证记录。
+**全部现有页面迁移已完成**（UI-00～UI-20 与 UI-30～UI-39），Element Plus 依赖与过渡样式已彻底移除。剩余 `UI-33`（证书认证）为尚未实现的新功能，不计入现有页面迁移完成度；后续实现时直接使用 PrimeVue 4 与共享组件即可，无需改动迁移记录。
