@@ -3,7 +3,7 @@
 > 本文档基于 `plan.md` 细化，是 kapOJ（Kap Online Judge）平台的详细开发规格说明书。
 > 目标：**打造出最有趣味的 Online Judge 平台**。
 > 文档包含完整的架构设计、数据库设计、模块需求，并为每个模块提供了可直接交给 Codex 的**开发提示词（Prompt）**。
-> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)，前端 UI 迁移见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。当前进度：**M4-2A、M4-2B、M4-2C、M4-4、RBAC-D、M5-A 与 M5-6 已完成**（M0–M3 已完成；M4 进行中；M5 部分完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页、签到、Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线模型、权限、路线/节点 CRUD 与树结构；M4-2B 交付服务端进度计算（AC 事件补算 + 读取补算、完成锁存）与题目下线/删除守卫；M4-2C 交付学习路线前端（列表/树详情/编辑/官方管理页，PrimeVue TreeTable/DataTable，UI-31）；M4-4 交付 Rating 衰减与赛季重置（`rating.settings.manage` 权限与 Rating 分组、管理设置 API、`/admin/rating` 设置页、月度高分段衰减、赛季软重置、`decay`/`season_reset` 历史与公开赛季接口）；RBAC-A 交付权限目录、内置角色、首次 Seed/旧角色映射、实时 Access 解析、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/`canAny`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化，以及文档、HTTP 冒烟与浏览器 E2E；M5-A 交付 AI 后端基础（多 provider 配置、用户 API key AES-GCM 加密存储、OpenAI 兼容补全/格式化/优化与题目 AI 提示缓存/限流，AI 路由仅在配置 `KAPOJ_AI_ENCRYPTION_KEY` 时挂载）；M5-6 交付 HydroOJ 题包导入（`POST /api/problems/import/hydro`、大小限制/防路径穿越、slug 冲突不覆盖、默认下线、逐题部分成功与整包回滚，见 §7）与题目详情公开创建者摘要（`author{id,username,nickname}`），前端新增 `/problems/import` 导入页、题目列表「导入题包」入口与详情创建者链接。社交互动，以及 AI 出题造数据/前端/证书/头像（M5-4、M5-5、M5-7、M5-8）尚未实现）。前端 UI 已完成 UI-00～UI-18 的 PrimeVue 4 迁移、UI-30（M4-C 排行榜/历史）、UI-31（M4-7 学习路线）与 RBAC-D 管理后台页面直接实现，剩余 UI-19 题库编辑与 UI-20 异常页；该迁移已提交。题目详情页已改造为「题面 + 提示卡片 + 右侧四资源卡片」，并交付官方题解（创建者编辑 + 金币解锁）、解题思路论坛（帖子/回复/软删除）、提交统计页与关联比赛页，详见 4.3；题目主更新不再写入题解字段，官方题解专用接口是唯一写入口。
+> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)，前端 UI 迁移见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。当前进度：**M4-2A、M4-2B、M4-2C、M4-3、M4-4、RBAC-D、M5-A 与 M5-6 已完成**（M0–M3 已完成；M4 已完成；M5 部分完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页、签到、Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线模型、权限、路线/节点 CRUD 与树结构；M4-2B 交付服务端进度计算（AC 事件补算 + 读取补算、完成锁存）与题目下线/删除守卫；M4-2C 交付学习路线前端（列表/树详情/编辑/官方管理页，PrimeVue TreeTable/DataTable，UI-31）；M4-3 交付轻量社交互动（题解点赞、用户关注、站内通知，回复/点赞/关注接入活跃度与共享分，前端点赞按钮/关注 Dialog/通知铃铛/通知页，UI-32，见 4.8）；M4-4 交付 Rating 衰减与赛季重置（`rating.settings.manage` 权限与 Rating 分组、管理设置 API、`/admin/rating` 设置页、月度高分段衰减、赛季软重置、`decay`/`season_reset` 历史与公开赛季接口）；RBAC-A 交付权限目录、内置角色、首次 Seed/旧角色映射、实时 Access 解析、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/`canAny`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化，以及文档、HTTP 冒烟与浏览器 E2E；M5-A 交付 AI 后端基础（多 provider 配置、用户 API key AES-GCM 加密存储、OpenAI 兼容补全/格式化/优化与题目 AI 提示缓存/限流，AI 路由仅在配置 `KAPOJ_AI_ENCRYPTION_KEY` 时挂载）；M5-6 交付 HydroOJ 题包导入（`POST /api/problems/import/hydro`、大小限制/防路径穿越、slug 冲突不覆盖、默认下线、逐题部分成功与整包回滚，见 §7）与题目详情公开创建者摘要（`author{id,username,nickname}`），前端新增 `/problems/import` 导入页、题目列表「导入题包」入口与详情创建者链接。AI 出题造数据/前端/证书/头像（M5-4、M5-5、M5-7、M5-8）尚未实现）。前端 UI 已完成 UI-00～UI-18 的 PrimeVue 4 迁移、UI-30（M4-C 排行榜/历史）、UI-31（M4-7 学习路线）、UI-32（M4-3 社交互动）与 RBAC-D 管理后台页面直接实现，剩余 UI-19 题库编辑与 UI-20 异常页；该迁移已提交。题目详情页已改造为「题面 + 提示卡片 + 右侧四资源卡片」，并交付官方题解（创建者编辑 + 金币解锁）、解题思路论坛（帖子/回复/软删除）、提交统计页与关联比赛页，详见 4.3；题目主更新不再写入题解字段，官方题解专用接口是唯一写入口。
 
 ---
 
@@ -20,6 +20,7 @@
    - 4.5 学习路线模块
    - 4.6 测评记录模块
    - 4.7 平台管理后台与 RBAC
+   - 4.8 社交互动模块
 5. [核心趣味功能模块](#5-核心趣味功能模块)
    - 5.1 成就模块
    - 5.2 任务模块
@@ -125,7 +126,7 @@ kapoj/
 └── docs/               # 文档
 ```
 
-**当前状态（M4-C）**：已建立 `apps/web`、`apps/server`、`apps/judge`、`packages/api`、`docker`、`docs`。后端按领域分包，位于 `apps/server/internal/`：`config`、`httpx`（统一响应与错误码）、`health`、`db`、`dbtypes`（jsonb 列表类型）、`storage`（文件存储抽象与本地实现）、`user`（模型、仓储、校验、资料服务）、`auth`（令牌与认证服务）、`middleware`、`userapi`（用户 HTTP 接口）、`problem`（题目模型、仓储、校验、服务）、`problemapi`（题目 HTTP 接口）、`submission`（提交模型、仓储、服务、限流）、`submissionapi`（提交 HTTP 接口）、`submissionevents`（Redis→SSE）、`gamification`（金币、成就、任务、徽章、称号与公开身份）、`gamificationapi`（游戏化 HTTP 接口）、`gamequeue`（游戏事件契约与 worker）、`judgequeue`（Asynq 队列契约）、`rating`（Rating 模型、等级、Elo 结算、扫描器、榜单与历史）、`ratingapi`（Rating HTTP 接口）、`activity`（活跃度、签到金币、共享积分与活跃度/共享榜）、`activityapi`（活跃度/共享榜与签到 HTTP 接口）、`router`。`apps/judge` 是独立 Go 模块与进程，包含 `config`、`db`、`model`、`queue`、`events`、`gamequeue`、`reconcile`、`storage`、`verdict`、`sandbox`、`pipeline`、`worker`。本地开发时，docker compose 中的 PostgreSQL 映射到宿主机 5433 端口，Redis 映射到 6380 端口，启动方式见 `README.md`。
+**当前状态（M4-3）**：已建立 `apps/web`、`apps/server`、`apps/judge`、`packages/api`、`docker`、`docs`。后端按领域分包，位于 `apps/server/internal/`：`config`、`httpx`（统一响应与错误码）、`health`、`db`、`dbtypes`（jsonb 列表类型）、`storage`（文件存储抽象与本地实现）、`user`（模型、仓储、校验、资料服务）、`auth`（令牌与认证服务）、`middleware`、`userapi`（用户 HTTP 接口）、`problem`（题目模型、仓储、校验、服务）、`problemapi`（题目 HTTP 接口）、`submission`（提交模型、仓储、服务、限流）、`submissionapi`（提交 HTTP 接口）、`submissionevents`（Redis→SSE）、`gamification`（金币、成就、任务、徽章、称号与公开身份）、`gamificationapi`（游戏化 HTTP 接口）、`gamequeue`（游戏事件契约与 worker）、`judgequeue`（Asynq 队列契约）、`rating`（Rating 模型、等级、Elo 结算、扫描器、榜单与历史）、`ratingapi`（Rating HTTP 接口）、`activity`（活跃度、签到金币、共享积分与活跃度/共享榜）、`activityapi`（活跃度/共享榜与签到 HTTP 接口）、`social`（关注、通知、点赞服务）、`socialapi`（关注/通知 HTTP 接口）、`router`。`apps/judge` 是独立 Go 模块与进程，包含 `config`、`db`、`model`、`queue`、`events`、`gamequeue`、`reconcile`、`storage`、`verdict`、`sandbox`、`pipeline`、`worker`。本地开发时，docker compose 中的 PostgreSQL 映射到宿主机 5433 端口，Redis 映射到 6380 端口，启动方式见 `README.md`。
 
 ---
 
@@ -439,23 +440,39 @@ coin_transactions (
 activity_logs (
   id, user_id, action, points, ref_type, ref_id, created_at
 )
+-- action: submission / contest_join / signin / solution_reply / solution_like / follow
 -- 每类行为的每日积分上限与去重规则见 5.5
 -- 共享内容（用户创建比赛/题解）
 shared_items (
   id, user_id, type,              -- contest / solution
   ref_id, like_count, created_at
 )
-comments ( id, user_id, target_type, target_id, content, created_at )
-likes    ( id, user_id, target_type, target_id, created_at )
-follows  ( id, follower_id, followee_id, created_at )
+
+-- 社交互动（M4-3，2026-11-08）
+problem_solution_post_likes (
+  id, user_id, post_id, created_at
+)
+-- unique(user_id, post_id)、index(post_id)；帖子软删除时清理
+
+user_follows (
+  id, follower_id, followee_id, created_at
+)
+-- unique(follower_id, followee_id)、index(followee_id)、check follower_id <> followee_id
+
+notifications (
+  id, user_id, actor_id, type, dedupe_key UNIQUE,
+  target_type, target_id, link, read_at, created_at
+)
+-- type: solution_reply / solution_like / follow
+-- index(user_id, created_at DESC)、index(user_id, read_at)
 ```
 
-**实现状态（M4-B）**
+**实现状态（M4-B + M4-3）**
 
 - 已建表：`activity_logs`、`shared_items`；唯一约束分别为 `(user_id, action, ref_type, ref_id)` 与 `(type, ref_id)`，索引为 `(user_id, created_at)` 与 `(created_at)`。
-- `activity_logs.action` 当前只写 `submission`、`contest_join`、`signin`；`shared_items.type` 当前只写 `contest`，`like_count` 固定为 0，为后续题解点赞预留。
-- `comments`、`likes`、`follows` 仍是设计占位，M4-B 未建表或实现接口；评论、点赞、关注、题解点赞与通知属于后续 M4 阶段。
-- 共享项在比赛创建/克隆成功后写入；服务启动时把已有 `contests.created_by>0` 幂等回填到 `shared_items`。
+- `activity_logs.action` 支持 `submission`、`contest_join`、`signin`（M4-B）与 `solution_reply`、`solution_like`、`follow`（M4-3）；`shared_items.type` 支持 `contest`（创建/克隆比赛 +20）与 `solution`（题解每赞 +5，`like_count` 累计）。
+- 评论复用论坛回复 `problem_solution_replies`（见 4.3），不新增通用 `comments` 表；点赞/关注/通知分别使用 `problem_solution_post_likes`、`user_follows`、`notifications` 三张新表（M4-3）。
+- 共享项在比赛创建/克隆成功后写入，服务启动时把已有 `contests.created_by>0` 幂等回填到 `shared_items`；题解被赞时 `shared_items(type=solution)` upsert `like_count`，取消赞扣回，帖子删除移除。
 
 ### 3.7 证书认证
 
@@ -707,6 +724,7 @@ user_ai_configs (
 | POST   | /problems/:id/solutions                  | 发布帖子（登录） |
 | GET    | /problems/:id/solutions/:postId          | 帖子详情 + 回复 |
 | PUT/DELETE | /problems/:id/solutions/:postId       | 编辑/删除帖子（作者或管理员） |
+| POST/DELETE | /problems/:id/solutions/:postId/like | 点赞/取消赞（登录；自赞 40001） |
 | POST   | /problems/:id/solutions/:postId/replies  | 回复帖子（登录） |
 | PUT/DELETE | /problems/:id/solutions/:postId/replies/:replyId | 编辑/删除回复（作者或管理员） |
 
@@ -731,7 +749,7 @@ user_ai_configs (
   - 编辑仅创建者或 super；价格 0–1,000,000，说明 ≤50,000 字符，代码 ≤65,536 字节。
   - 购买：价格 0/已通过/创建者/super/已解锁不扣费；否则事务内写 `problem_solution_unlocks` + `gamification.SpendCoinsTx` 扣金币与流水，余额不足（40001）整体回滚；重复购买幂等不重复扣费。解锁永久有效，改价不影响已解锁用户。
   - 隐藏题：无 `problem.view_hidden`/super 返回 404，不沿用比赛参与者题面 fallback。
-- 解题思路论坛：帖子列表（`created_at DESC, id DESC`，分页 20）/详情/回复（`created_at ASC`，上限 500）；游客可读，写操作要求登录。标题 1–100 字、帖子正文 1–50,000 字、回复 1–10,000 字；作者可编辑/删除自己的内容，题目创建者或 `problem.update` 管理员可删除他人帖子/回复（`canEdit`/`canDelete` 由后端按 viewer 计算）；删除为软删除，删除帖子后其回复整体不可见。
+- 解题思路论坛：帖子列表（`created_at DESC, id DESC`，分页 20）/详情/回复（`created_at ASC`，上限 500）；游客可读，写操作要求登录。标题 1–100 字、帖子正文 1–50,000 字、回复 1–10,000 字；作者可编辑/删除自己的内容，题目创建者或 `problem.update` 管理员可删除他人帖子/回复（`canEdit`/`canDelete` 由后端按 viewer 计算）；删除为软删除，删除帖子后其回复整体不可见。M4-3 起帖子列表/详情返回 `likeCount`/`likedByMe`，登录用户可点赞/取消赞（自赞 40001、隐藏题 404），删除帖子会清理点赞与共享项，详见 4.8。
 - 关联比赛：`GET /api/contests?problemId=<正整数>` 返回包含该题且当前用户可见的比赛（公开 OR 本人已报名 OR `contest.view_hidden`/super 联合可见性，不复用 `mine=true` 的互斥语义）；无参数保持原行为。
 - 提交统计页复用 `GET /problems/:id/statistics`。
 
@@ -1073,6 +1091,37 @@ user_ai_configs (
 
 ---
 
+### 4.8 社交互动模块
+
+**实现状态（M4-3 ✅，2026-11-08）**
+
+在解题思路论坛之上交付题解帖子点赞、用户关注、站内通知，并把论坛回复（评论）、点赞、关注接入活跃度与共享分。数据模型见 3.6（`problem_solution_post_likes`、`user_follows`、`notifications`），设计见 [`docs/superpowers/specs/2026-11-08-m4-3-social-design.md`](docs/superpowers/specs/2026-11-08-m4-3-social-design.md)。
+
+**关键接口**
+
+| 方法 | 路径 | 认证 | 说明 |
+| ---- | ---- | ---- | ---- |
+| POST/DELETE | /problems/:id/solutions/:postId/like | 登录 | 点赞/取消赞；返回 `{liked, likeCount}`；重复幂等；自赞 40001；隐藏题/不存在帖子 404 |
+| POST/DELETE | /users/:id/follow | 登录 | 关注/取消关注；返回 `{following, followersCount}`；重复幂等；自己/不存在/非 active → 40001/404/40001 |
+| GET | /users/:id/social | 可选 | `{followersCount, followingCount, isFollowing}`；游客 `isFollowing=false` |
+| GET | /users/:id/followers?page=&page_size= | 可选 | 粉丝分页（公开用户摘要，按关注时间倒序、id 倒序） |
+| GET | /users/:id/following?page=&page_size= | 可选 | 关注分页（同上） |
+| GET | /notifications?page=&page_size= | 登录 | 自己的通知，`created_at DESC, id DESC` |
+| GET | /notifications/unread-count | 登录 | `{count}` |
+| POST | /notifications/:id/read | 登录 | 标记单条已读；非本人 404 |
+| POST | /notifications/read-all | 登录 | 全部标记已读（幂等） |
+
+**语义与规则**
+
+- **点赞**：先复用讨论服务校验题目/帖子可见性（隐藏题/不存在 404），再点赞；自己赞自己的帖子返回 40001「不能点赞自己的帖子」且不产生点赞/通知/活跃度/共享分。事务内 `INSERT problem_solution_post_likes ... ON CONFLICT DO NOTHING` 判定是否新插入：插入成功则 `shared_items(type=solution)` upsert +1、给帖子作者写 `like:<actor>:<post>` 通知（作者 ≠ 点赞者）；提交后 best-effort 记点赞活跃度 +1 与共享榜版本递增。取消赞删除 like 并 `GREATEST(0, like_count-1)`，不写活跃度/通知。帖子列表/详情返回 `likeCount`/`likedByMe`（游客 false）。帖子软删除后清理该帖点赞与共享项（活动日志/通知保留）。
+- **关注**：只能关注 active 用户、不能关注自己；首次关注事务内写 `follow:<actor>:<followee>` 通知 + best-effort 记活跃度 +2；取消关注删除关系，不扣活跃度/不删通知。公开 `social`/`followers`/`following` GET 对已存在但封禁/非 active 的用户仍返回计数/列表（与 `/users/:id/profile` 一致），只有写关注要求 active。用户摘要仅 `id/username/nickname/avatarUrl/rating`，不含 email。
+- **通知**：类型 `solution_reply`（回复我的帖子）、`solution_like`（赞我的帖子）、`follow`（关注我）；`dedupe_key` 全局唯一分别为 `reply:<replyId>`、`like:<actor>:<post>`、`follow:<actor>:<followee>`，保证重复赞/关注/同一回复不重复通知。自己触发自己的动作不生成通知（自回复不通知，但回复活跃度仍计分）。回复通知在论坛回复创建成功后 best-effort 写入；点赞/关注通知在事务内写入。`link` 为站内相对路径（如 `/problems/1/solutions/9`、`/users/3`），通知标题由前端按 type 生成。通知只读自己；标记已读幂等；帖子软删除后通知保留。
+- **活跃度**：回复 +3（`ref_type=solution_reply`/`ref_id=replyID`）、点赞 +1（`solution_post`/`postID`）、关注 +2（`user`/`followeeID`），每类每日上限 20；`activity_logs` 唯一约束 `(user_id, action, ref_type, ref_id)` 去重，取消赞/取消关注不扣分；写活跃度 best-effort，失败只日志不阻断主操作，成功写活跃度后递增活跃度榜缓存版本。
+- **共享分**：题解帖子每获得 1 个赞，作者共享分 +5（`shared_items(type=solution)` upsert `like_count`）；取消赞扣回；帖子删除移除共享项并递增共享榜缓存版本。共享分公式 `20 * 比赛共享数 + 5 * 题解点赞数` 的第二项自此生效。
+- **前端**：题解列表/详情点赞按钮（已赞高亮、乐观更新失败回滚 + Toast、游客跳登录）；用户主页关注按钮与粉丝/关注 Dialog（两个 Tab、分页、非本人且登录才显示关注）；`NotificationBell` 仅登录显示未读数 badge、60 秒轮询、卸载清理、点击进 `/notifications`；`/notifications` 页分页列表、点击标记已读并跳转 link、全部已读、空/错/载入态；路由 `notifications` 需登录，游客跳登录。不新增 UI 依赖（PrimeVue UI-32）。
+
+---
+
 ## 5. 核心趣味功能模块
 
 ### 5.1 成就模块
@@ -1309,7 +1358,7 @@ user_ai_configs (
 
 积分防刷规则：每类行为设每日积分上限（如评论、点赞各 20 分），签到每天只计一次；同一对象的重复点赞、重复关注不重复计分。
 
-> M4-B 实现范围只有提交 +2（每日上限 40）、参赛 +10（每日上限 50）与签到 +5；评论、点赞、关注尚未实现，后续阶段接入。
+> M4-B 实现提交 +2（每日上限 40）、参赛 +10（每日上限 50）与签到 +5；M4-3 接入论坛回复 +3、点赞 +1、关注 +2（每类每日上限 20，唯一 ref 去重）。
 
 **共享积分（示例）**
 
@@ -1318,7 +1367,7 @@ user_ai_configs (
 | 创建比赛         | 20   |
 | 提供的题解被点赞 | 5/赞 |
 
-> M4-B 实现创建/克隆比赛 +20；题解点赞与 `like_count` 累计尚未实现，当前恒为 0。
+> M4-B 实现创建/克隆比赛 +20；M4-3 实现题解每赞 +5（`shared_items(type=solution)` 的 `like_count` 累计），取消赞扣回。
 
 **实现状态（M4-A/B 后端与 M4-C 前端已完成）**
 
@@ -1329,9 +1378,9 @@ user_ai_configs (
 - **等级**：8 档灰/绿/青/蓝/紫/橙/红/黑红，阈值与颜色见上表；接口返回 `level: {key,name,color,accentColor}`。黑红名 `color=#000000`、`accentColor=#FF0000`，其他等级 `accentColor` 为空字符串。
 - **Rating 榜**：`GET /api/leaderboard/rating?page=&page_size=`，公开；只含 `status=active` 用户，按 Rating 倒序、用户 ID 升序，`score` 为 Rating，行内附带 `equippedBadges`/`equippedTitle`。基础行 Redis 缓存 60 秒，key 为 `kapoj:leaderboard:rating:v<version>:<page>:<size>`；结算成功后递增 `kapoj:leaderboard:rating:version`；Redis/缓存故障时回退数据库；缓存故障本身不会导致 5xx（身份装饰查询失败仍可能返回 5xx）。
 - **Rating 历史**：`GET /api/users/:id/rating-history?page=&page_size=`，公开；按 `created_at DESC, id DESC` 返回所有 kind（`contest`/`decay`/`season_reset`），字段为 `kind`、`contestId`、`contestTitle`、`rank`、`periodKey`、`ratingBefore`、`ratingAfter`、`delta`、`createdAt`；用户不存在返回 40400。非比赛行 `contestId=0`、`rank=0`、标题分别为「Rating 衰减」「赛季重置」，`periodKey` 为 `YYYY-MM`（衰减）或赛季开始日（重置）；比赛行 `periodKey=''`，私密比赛仍脱敏为「私密比赛」且 `contestId=0`。分页 total 包含所有 kind。
-- **活跃度（M4-B）**：提交创建成功 +2（每日上限 40）、比赛报名成功 +10（每日上限 50）、每日签到 +5（每天一次）；`activity_logs` 唯一约束 `(user_id, action, ref_type, ref_id)` 保证同一提交/比赛/日期不重复计分。去重、每日上限与用户行锁在同一事务内完成；达到上限返回 no-op，不影响提交/报名主流程。
+- **活跃度（M4-B + M4-3）**：提交创建成功 +2（每日上限 40）、比赛报名成功 +10（每日上限 50）、每日签到 +5（每天一次）、论坛回复 +3、题解点赞 +1、关注 +2（后三类每日上限均 20）；`activity_logs` 唯一约束 `(user_id, action, ref_type, ref_id)` 保证同一提交/比赛/日期/回复/点赞对象/关注对象不重复计分。去重、每日上限与用户行锁在同一事务内完成；达到上限返回 no-op，不影响主流程；取消赞/取消关注不扣分。
 - **签到金币（M4-B）**：每个本地自然日首次 `POST /api/activity/signin` 同时奖励 5 活跃度与 5 金币，签到日志、`coin_transactions`（`reason=signin`、`ref_type=day`、`ref_id=YYYYMMDD`）与 `users.coins` 在同一事务内提交；重复签到返回 `awarded=false`、`activityPoints=0`、`coins=0`，不重复发币。`GET /api/activity/summary` 返回 `signedInToday`、`todayPoints`、`totalPoints`。
-- **共享积分（M4-B）**：创建或克隆比赛成功后写入 `shared_items(type=contest)`，每场 20 分；启动时幂等回填已有 `created_by>0` 的比赛。共享分公式为 `20 * 比赛共享数 + 5 * 题解点赞数`，本阶段题解点赞未实现，第二项恒为 0。
+- **共享积分（M4-B + M4-3）**：创建或克隆比赛成功后写入 `shared_items(type=contest)`，每场 20 分；启动时幂等回填已有 `created_by>0` 的比赛。题解帖子被赞时 `shared_items(type=solution)` upsert `like_count` +1（取消赞 -1 不删除行），作者共享分 +5/赞；帖子删除移除共享项。共享分公式 `20 * 比赛共享数 + 5 * 题解点赞数` 两项均已生效。
 - **活跃度/共享榜（M4-B）**：`GET /api/leaderboard/activity`、`GET /api/leaderboard/sharing`，公开；只含 `status=active` 且分数 > 0 的用户，按分数倒序、用户 ID 升序，分页上限 100。行内 `score` 为积分，并返回 `equippedBadges`/`equippedTitle`；这两个榜不返回 Rating `level`。
 - **榜单缓存（M4-B）**：活跃度/共享榜基础行 Redis 缓存 60 秒，key 为 `kapoj:leaderboard:activity:v<version>:<page>:<size>` 与 `kapoj:leaderboard:sharing:v<version>:<page>:<size>`；活跃度写入后递增 `kapoj:leaderboard:activity:version`，共享项写入/回填后递增 `kapoj:leaderboard:sharing:version`。只缓存基础行，装备变更无需失效；Redis/缓存故障时回退数据库，缓存故障本身不返回 5xx（身份装饰查询失败仍可能返回 5xx）。
 - **排行榜页（M4-C）**：`/leaderboard` 提供 Rating（默认）、活跃度、共享三个 Tab；每个 Tab 独立维护页码、加载、错误与空态，切换不串数据，分页每页 20 条。Rating Tab 展示服务端等级颜色，黑红名首字符黑、其余红；用户列链接个人主页并展示装备称号/徽章；活跃度/共享榜分数使用千分位。导航“排行榜”已启用，首页提供快捷入口。
@@ -1341,7 +1390,7 @@ user_ai_configs (
   - **衰减**：仅 `status=active` 且 `rating > decayThreshold`、最近一次 `kind=contest` 历史距今 ≥ `decayInactiveDays` 的用户；每月最多执行一次（运行键 `decay:YYYY-MM`，UTC）。单次 `above=rating-threshold`、`raw=round(above*percent/100)`、`decay=min(max,max(1,raw))`、`new=max(threshold,rating-decay)`，取整统一 `math.Round`；`rating>threshold` 时至少扣 1。写入 `kind=decay`、`periodKey=YYYY-MM`、`rank=0`；仅插入历史成功（`ON CONFLICT DO NOTHING`）才更新 `users.rating`。跨月停机只处理当前月，不回补。
   - **赛季重置**：赛季 `[anchor + n*months, anchor + (n+1)*months)`（anchor 必须是某月 1 日，UTC）；赛季结束后首次扫描处理「刚结束的上一赛季」（运行键 `season:<上一赛季开始日>`），跨多赛季只处理最近结束的上一赛季。所有 `rating != 1500` 用户 `new=max(0, round(1500+(rating-1500)*(100-resetPercent)/100))`（默认 30%：2600→2270、1200→1290）；`new==rating`（含 1500、0%、四舍五入不变）不写历史、不更新 Rating，但该赛季运行仍标记已处理。写入 `kind=season_reset`、`periodKey=赛季开始日`、`rank=0`。首次创建默认设置与修改 `seasonAnchor`/`seasonMonths` 时，预标记新周期「上一赛季」运行键为已跳过，不立即触发重置。
   - **幂等与缓存**：`rating_runs` 唯一键 + 认领与处理同事务（失败回滚）；成功修改 Rating 后 best-effort 递增 `kapoj:leaderboard:rating:version`，Redis 故障只记日志。公开赛季接口 `GET /api/rating/season/current`（游客可读）返回 `{key,name,startsAt,endsAt,nextResetAt}`；排行榜页顶部展示当前赛季与下次重置（失败静默降级）。
-- **尚未实现**：学习路线前端（模型/权限/CRUD/树结构已在 M4-2A 完成，服务端进度/事件/守卫已在 M4-2B 完成）、社交互动（评论/点赞/关注/题解点赞/通知）属于后续 M4 阶段。`shared_items.like_count` 已为题解点赞预留。
+- **尚未实现**：学习路线前端已随 M4-2C 完成；社交互动（题解点赞/关注/通知）已随 M4-3 完成（见 4.8）。排行榜与社交后续无剩余 M4 子任务。
 
 **Codex 提示词（排行榜）**
 
@@ -1606,7 +1655,7 @@ problem/
 | M1     | 题库/题目 + 沙盒评测 + 测评记录        | 可提交并判题的 MVP | ✅   |
 | M2     | 比赛系统（三种赛制 + 榜单 + 公告）     | 可办比赛的平台     | ✅   |
 | M3     | 游戏化模块（成就/任务/徽章/称号/金币） | 有趣味的成长体系   | ✅   |
-| M4     | 排行榜 + Rating + 学习路线             | 社区与成长闭环     | 🚧   |
+| M4     | 排行榜 + Rating + 学习路线 + 社交互动  | 社区与成长闭环     | ✅   |
 | M5     | AI 辅助 + 题目导入 + 证书认证          | 完整版 kapOJ       | 🚧   |
 
 状态图例：✅ 已完成　🚧 进行中　⬜ 未开始。只有模块的验收标准全部满足后才标记 ✅。
@@ -1615,7 +1664,7 @@ M5 进度：M5-A（AI 后端基础：多 provider 配置、用户 API key 加密
 
 M3 进度：M3-A（金币、事件、成就、任务后端）、M3-B（徽章、称号、公开身份后端）与 M3-C（成就页、任务大厅、徽章商城、称号商店、装扮管理、游戏化管理、公开身份接入与真实浏览器验收）均已完成，M3 标记为 ✅。
 
-M4 进度：M4-A（Rating 结算、8 级等级、Rating 历史与 Rating 榜后端）、M4-B（活跃度、签到金币、共享分、活跃度/共享榜与三榜缓存）、M4-C（排行榜页、每日签到入口、用户主页 Rating 历史卡片、导航与首页入口）、M4-2A（学习路线模型、权限、路线/节点 CRUD 与树结构）、M4-2B（服务端进度计算、AC 事件补算、完成锁存与题目下线守卫）、M4-2C（学习路线前端列表/树/编辑/官方管理页）与 M4-4（Rating 衰减与赛季重置：`rating.settings.manage` 权限、管理设置 API 与 `/admin/rating` 设置页、月度高分段衰减、赛季软重置、`decay`/`season_reset` 历史与公开赛季接口）已完成；社交互动尚未完成，因此 M4 整体保持 🚧。
+M4 进度：M4-A（Rating 结算、8 级等级、Rating 历史与 Rating 榜后端）、M4-B（活跃度、签到金币、共享分、活跃度/共享榜与三榜缓存）、M4-C（排行榜页、每日签到入口、用户主页 Rating 历史卡片、导航与首页入口）、M4-2A（学习路线模型、权限、路线/节点 CRUD 与树结构）、M4-2B（服务端进度计算、AC 事件补算、完成锁存与题目下线守卫）、M4-2C（学习路线前端列表/树/编辑/官方管理页）、M4-3（轻量社交互动：题解点赞、关注、通知，接入活跃度与共享分，见 4.8）与 M4-4（Rating 衰减与赛季重置：`rating.settings.manage` 权限、管理设置 API 与 `/admin/rating` 设置页、月度高分段衰减、赛季软重置、`decay`/`season_reset` 历史与公开赛季接口）均已完成，M4 整体标记为 ✅。
 
 平台管理后台/RBAC 进度：RBAC-A（权限模型、权限目录、首次 Seed/旧角色映射、实时 Access、权限中间件、`/users/me` 权限字段）与 RBAC-B（角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志、仪表盘统计 API）已完成；RBAC-C（现有管理接口迁移）与 RBAC-D（管理后台前端与 E2E）尚未开始。设计与拆分见 [`docs/superpowers/specs/2026-11-06-admin-rbac-design.md`](docs/superpowers/specs/2026-11-06-admin-rbac-design.md)。
 

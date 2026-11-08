@@ -3,22 +3,22 @@
 > 本文档是美化工程的唯一进度来源。每次会话开始先读这里，结束时更新状态、验证结果和设计决策。
 >
 > - 最后更新：2026-11-08
-> - 当前阶段：P2 页面（UI-19 待开始）；M4-C 新功能 UI-30、M4-7 学习路线 UI-31、RBAC-D 管理后台 UI-36、M4-4 Rating 设置 UI-37 与 M5-6 题目导入 UI-35 已完成
-> - 工作分支：`feat/m1-problems-judge`（RBAC-D 管理后台在 `feat/rbac-d-admin-ui` 完成）
+> - 当前阶段：P2 页面（UI-19 待开始）；M4-C 新功能 UI-30、M4-7 学习路线 UI-31、M4-3 社交互动 UI-32、RBAC-D 管理后台 UI-36、M4-4 Rating 设置 UI-37 与 M5-6 题目导入 UI-35 已完成
+> - 工作分支：`feat/m1-problems-judge`（RBAC-D 管理后台在 `feat/rbac-d-admin-ui` 完成，M4-3 社交互动在 `feat/m4-3-social` 完成）
 > - 本次基线：`0f2d62d feat(web): rating history card`
 
 ## 状态汇总
 
 | 状态 | 数量 |
 | --- | ---: |
-| done | 24 |
+| done | 25 |
 | in-progress | 0 |
 | blocked | 0 |
-| todo | 5 |
+| todo | 4 |
 
-其中现有 UI 迁移任务 `UI-00～UI-18` 已完成，M4-C 新功能 `UI-30`（排行榜、签到与 Rating 历史卡片）、M4-7 新功能 `UI-31`（学习路线）、RBAC-D 管理后台 `UI-36`（管理壳/仪表盘/用户/角色/审计页面）与 M5-6 题目导入 `UI-35`（导入页）已直接使用 PrimeVue 4 完成；剩余 `UI-19` 题库编辑与 `UI-20` 异常页；`UI-32～UI-34` 为尚未实现的新功能，不计入现有页面迁移完成度。
+其中现有 UI 迁移任务 `UI-00～UI-18` 已完成，M4-C 新功能 `UI-30`（排行榜、签到与 Rating 历史卡片）、M4-7 新功能 `UI-31`（学习路线）、M4-3 新功能 `UI-32`（社交互动：题解点赞、关注/粉丝 Dialog、通知铃铛与通知页）、RBAC-D 管理后台 `UI-36`（管理壳/仪表盘/用户/角色/审计页面）与 M5-6 题目导入 `UI-35`（导入页）已直接使用 PrimeVue 4 完成；剩余 `UI-19` 题库编辑与 `UI-20` 异常页；`UI-33～UI-34` 为尚未实现的新功能，不计入现有页面迁移完成度。
 
-M4-C 排行榜、签到与 Rating 历史（UI-30）、M4-7 学习路线（UI-31）、RBAC-D 管理后台（UI-36）、M4-4 Rating 设置页（UI-37）与 M5-6 题目导入页（UI-35）已直接使用 PrimeVue 4 完成；现有页面迁移剩余 UI-19 → UI-20。若后续某页面进入功能开发，先标记 `blocked` 并跳过。
+M4-C 排行榜、签到与 Rating 历史（UI-30）、M4-7 学习路线（UI-31）、M4-3 社交互动（UI-32）、RBAC-D 管理后台（UI-36）、M4-4 Rating 设置页（UI-37）与 M5-6 题目导入页（UI-35）已直接使用 PrimeVue 4 完成；现有页面迁移剩余 UI-19 → UI-20。若后续某页面进入功能开发，先标记 `blocked` 并跳过。
 
 ## 进度表
 
@@ -48,7 +48,7 @@ M4-C 排行榜、签到与 Rating 历史（UI-30）、M4-7 学习路线（UI-31�
 | UI-30 | 新功能 | M4-C 排行榜前端（含签到与 Rating 历史卡片） | P3 | done | UI-00、UI-10 | 直接使用 PrimeVue；Rating 榜/历史 | 2026-11-05 完成。`LeaderboardView` 三 Tab/签到、`RatingLevelName`、`RatingHistoryCard`；复用 Tabs/DataTable/Paginator/Toast |
 | UI-36 | 新功能 | RBAC-D 管理后台壳：`AdminLayout`/`AdminNav` + 仪表盘/用户/角色/审计页面 | P3 | done | UI-00、UI-18 | 直接使用 PrimeVue；权限驱动菜单/按钮 | 2026-11-07 完成。`AdminLayout`/`AdminNav`（桌面侧栏 + 移动 Drawer）、`AdminDashboardView`/`AdminUsersView`/`AdminRolesView`/`AdminAuditView`；复用 AppPageHeader/AppSurface/DataTable/Dialog/MultiSelect/Toast；`auth.can/canAny` 驱动菜单与动作 |
 | UI-31 | 新功能 | 学习路线 | P3 | done | UI-00 | 直接使用 PrimeVue；树形/解锁进度 | 2026-11-07 完成。`LearningPathListView`/`LearningPathDetailView`/`LearningPathEditView`/`AdminLearningPathsView` + `LearningNodeDialog`；复用 TreeTable/DataTable/Dialog/Select/InputNumber/ProgressBar/Tag |
-| UI-32 | 新功能 | 社交互动 | P3 | todo | UI-00 | 直接使用 PrimeVue；评论/点赞/关注 | 尚未实现 |
+| UI-32 | 新功能 | 社交互动 | P3 | done | UI-00 | 直接使用 PrimeVue；点赞/关注/通知 | 2026-11-08 完成。题解列表/详情点赞按钮、`UserProfileView` 关注按钮 + `FollowListDialog`（粉丝/关注 Tab）、`NotificationBell`（未读 badge/60s 轮询）、`NotificationsView`；复用 AppPageHeader/AppSurface/DataTable/Dialog/TabView/Paginator/Toast/Button；不新增 UI 依赖 |
 | UI-33 | 新功能 | 证书认证 | P3 | todo | UI-00 | 直接使用 PrimeVue；提交/审核/核验 | 尚未实现 |
 | UI-34 | 新功能 | AI 辅助面板 | P3 | todo | UI-00、UI-06 | 直接使用 PrimeVue；API key 配置/提示 | 尚未实现 |
 | UI-35 | 新功能 | 题目导入 | P3 | done | UI-00 | 直接使用 PrimeVue；HydroOJ 导入 | 2026-11-08 完成。`ProblemImportView`（`/problems/import`）复用 AppPageHeader/AppSurface/DataTable/Message/Button；题目列表「导入题包」入口与详情创建者链接；不新增 UI 依赖 |
@@ -511,6 +511,14 @@ M4-C 排行榜、签到与 Rating 历史（UI-30）、M4-7 学习路线（UI-31�
 - `corepack pnpm --filter web build`：通过；仅有既有的 >500 kB chunk 提示（Monaco/编辑器相关），无新增错误。
 - Element Plus 残留检查：`ProblemImportView.vue` 与 spec 无 `element-plus`、`<el-`、`ElMessage`、`v-loading`；legacy allowlist 保持 7 个文件不变（UI-19/UI-20/`main.ts`）。
 - 真实导入冒烟（后端 `127.0.0.1:18080` + 前端 5173 代理 18080）：API 上传根目录 `Export.zip` 返回 `imported=[hydro-6760 求和 / 循环、DAI / 10]`、`failed=[]`，重复上传进入 `failed`（题目标识已存在）不覆盖；数据库确认 `is_public=false`、`created_by`=上传者、`source=HydroOJ`、10 组测试点 `score=10`/`sort_order` 1..10、Markdown 题面；`GET /problems/:id` 游客/管理员返回 `author{id,username,nickname}`。真实浏览器（in-app browser，816px 视口）：`m2badmin` 登录 → `/problems/import` 页头/文件选择（`.zip` accept、200MB 提示）/「开始导入」禁用态 → 选择 `Export.zip` 后按钮启用 → 上传显示「导入成功 1 道」结果表（求和/hydro-6760/10/编辑链接）→ 详情页「创建者 m2badmin」链接 `/users/1`，控制台无错误。375px 窄屏视觉检查因 in-app browser 固定 816px 视口延后至最终评审（前端单测已覆盖移动端布局规则）。
+
+### 2026-11-08 / UI-32
+
+- `corepack pnpm --filter web test`：74 个测试文件 / 493 个测试通过。新增/更新 `ProblemSolutionsView`、`ProblemSolutionDetailView`、`UserProfileView`、`NotificationBell`、`NotificationsView`、`FollowListDialog` 与 `api/social` 断言（点赞按钮/计数/乐观回滚、游客跳登录、关注/粉丝 Dialog、铃铛未读/轮询/卸载、通知页已读/全部已读/跳转/空态）。
+- `corepack pnpm --filter web lint`：ESLint 与 Prettier 通过。
+- `corepack pnpm --filter web build`：通过；仅有既有的 >500 kB chunk 提示（Monaco/编辑器相关），无新增错误。
+- Element Plus 残留检查：新增/修改的社交视图、`NotificationBell`、`FollowListDialog` 与全部 spec 无 `element-plus`、`<el-`、`ElMessage`、`v-loading`；legacy allowlist 保持 7 个文件不变（UI-19/UI-20/`main.ts`）。
+- 真实浏览器 E2E 因会话无桌面浏览器连接而延后（in-app browser 未连接）；后端真实 API 冒烟（`127.0.0.1:18080`）已覆盖点赞/关注/通知三类交互、未读/已读、权限与清理，前端行为由上述单测覆盖。
 
 ## 已知问题与风险
 

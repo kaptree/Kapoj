@@ -2,7 +2,7 @@
 
 打造最有趣味的 Online Judge 平台。规格见 [`DEVELOPMENT.md`](DEVELOPMENT.md)，进度见 [`docs/任务清单.md`](docs/任务清单.md) 与 [`docs/开发日志.md`](docs/开发日志.md)。
 
-当前进度：**M4-2A、M4-2B、M4-2C、M4-4、RBAC-D、M5-A 与 M5-6 已完成**（M0–M3 已完成；M4 进行中；M5 部分完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页（Rating/活跃度/共享三 Tab、等级颜色、签到）、用户主页 Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线后端模型、官方/自定义权限、路线/节点 CRUD 与树结构，路线 API 已可用；M4-2B 交付服务端进度计算（AC 事件补算 + 读取补算、完成锁存）与题目下线/删除守卫；M4-2C 交付学习路线前端列表/树详情/编辑/官方管理页；M4-4 交付 Rating 衰减与赛季重置（`rating.settings.manage` 权限与 Rating 分组、管理设置 API、`/admin/rating` 设置页、月度高分段衰减、赛季软重置、`decay`/`season_reset` 历史与公开赛季接口）；RBAC-A 交付权限模型、权限目录、首次 Seed/旧角色映射、实时 Access、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化；M5-A 交付 AI 后端基础：多 provider 配置、用户 API key 加密存储、补全/格式化/优化与题目提示缓存/限流；M5-6 交付 HydroOJ 题包导入（`POST /api/problems/import/hydro`、大小限制/防路径穿越、slug 冲突不覆盖、默认下线、部分成功与回滚）与题目详情公开创建者摘要（`author{id,username,nickname}`），前端新增 `/problems/import` 导入页与详情创建者链接（见下）；社交，以及 AI 出题造数据/前端/证书/头像（M5-4、M5-5、M5-7、M5-8）尚未实现）。前端并行进行 PrimeVue 4 迁移，**UI-00～UI-18、UI-30（M4-C 排行榜/历史）、UI-31（M4-7 学习路线）、UI-35（M5-6 题目导入）与 RBAC-D 管理后台页面已完成并提交**，剩余题库编辑（UI-19）与异常页（UI-20），详见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。题目详情资源区、官方题解与解题思路论坛已完成（见下）。
+当前进度：**M4-2A、M4-2B、M4-2C、M4-3、M4-4、RBAC-D、M5-A 与 M5-6 已完成**（M0–M3 已完成；M4 已完成；M5 部分完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页（Rating/活跃度/共享三 Tab、等级颜色、签到）、用户主页 Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线后端模型、官方/自定义权限、路线/节点 CRUD 与树结构，路线 API 已可用；M4-2B 交付服务端进度计算（AC 事件补算 + 读取补算、完成锁存）与题目下线/删除守卫；M4-2C 交付学习路线前端列表/树详情/编辑/官方管理页；M4-3 交付轻量社交互动（题解点赞、关注、站内通知，回复/点赞/关注接入活跃度与共享分，前端点赞按钮/关注 Dialog/通知铃铛/通知页，见下）；M4-4 交付 Rating 衰减与赛季重置（`rating.settings.manage` 权限与 Rating 分组、管理设置 API、`/admin/rating` 设置页、月度高分段衰减、赛季软重置、`decay`/`season_reset` 历史与公开赛季接口）；RBAC-A 交付权限模型、权限目录、首次 Seed/旧角色映射、实时 Access、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化；M5-A 交付 AI 后端基础：多 provider 配置、用户 API key 加密存储、补全/格式化/优化与题目提示缓存/限流；M5-6 交付 HydroOJ 题包导入（`POST /api/problems/import/hydro`、大小限制/防路径穿越、slug 冲突不覆盖、默认下线、部分成功与回滚）与题目详情公开创建者摘要（`author{id,username,nickname}`），前端新增 `/problems/import` 导入页与详情创建者链接（见下）；AI 出题造数据/前端/证书/头像（M5-4、M5-5、M5-7、M5-8）尚未实现）。前端并行进行 PrimeVue 4 迁移，**UI-00～UI-18、UI-30（M4-C 排行榜/历史）、UI-31（M4-7 学习路线）、UI-32（M4-3 社交互动）、UI-35（M5-6 题目导入）与 RBAC-D 管理后台页面已完成并提交**，剩余题库编辑（UI-19）与异常页（UI-20），详见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。题目详情资源区、官方题解与解题思路论坛已完成（见下）。
 
 ## 目录结构
 
@@ -121,7 +121,7 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 - 签到金币：`POST /api/activity/signin` 每个本地自然日首次签到额外 +5 金币，签到活跃度、金币流水与余额在同一事务内完成；重复签到返回 `awarded=false`，不重复发币。`GET /api/activity/summary` 返回今日是否签到、今日活跃度与总活跃度。
 - 共享积分：创建或克隆比赛 +20，服务启动时会把已有 `created_by>0` 的比赛幂等回填到 `shared_items`；共享分公式中的“题解被点赞 5/赞”尚未实现，本阶段恒为 0。
 - 三个榜单的基础行都使用 Redis 版本缓存 60 秒，key 形如 `kapoj:leaderboard:<kind>:v<version>:<page>:<size>`；Rating 结算、活跃度写入、共享项写入后递增对应 `kapoj:leaderboard:<kind>:version`。缓存只含基础行，装备在读取后批量装饰；Redis/缓存故障时回退数据库，缓存故障本身不会导致 5xx（身份装饰查询失败仍可能返回 5xx）。
-- 社交互动（评论/点赞/关注/题解点赞/通知）尚未实现，属于后续 M4 阶段。
+- 社交互动（题解点赞/关注/通知）已随 M4-3 完成，见「社交互动（M4-3）」小节。
 
 ## Rating 衰减与赛季重置（M4-4）
 
@@ -158,6 +158,23 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 - **服务端进度（M4-2B）**：登录用户读取列表/树前服务端重算并写回进度。节点 `solvedCount` = 该节点题目中去重 AC 的题数，`solvedCount >= requiredCount` 时 `status=completed`；根节点默认 `active`，子节点仅父节点完成后 `active`、否则 `locked`。已完成节点锁存：之后改题或提高 `requiredCount` 不回退已完成用户（`solvedCount` 保留完成时的值），未完成/进行中节点按新配置重算。游客根 `active`、其余 `locked`、`solvedCount=0`，不写进度。
 - **AC 事件（M4-2B）**：`submission.accepted` 事件触发该用户进度重算（与 gamification 在同一 Asynq handler 组合，幂等可重试）；读取补算兜底。
 - **题目下线守卫（M4-2B）**：题目被任一活跃学习路线引用时，`PUT /problems/{id}` 将 `isPublic` 改为 false（下线）与 `DELETE /problems/{id}` 均返回 40001「题目被学习路线引用，不能下线/删除」；移除引用节点后允许下线/删除。
+
+## 社交互动（M4-3）
+
+**前端页面**
+
+- 题解列表 `/problems/:id/solutions` 与详情 `/problems/:id/solutions/:postId` 的帖子卡片显示点赞数与点赞按钮：登录用户可点赞/取消赞（已赞高亮，乐观更新失败回滚并 Toast），游客点击跳登录。
+- 用户主页 `/users/:id` 资料头部显示粉丝数/关注数，点击数字打开粉丝/关注 Dialog（两个 Tab、分页）；登录且非本人显示「关注/已关注」按钮，游客点击跳登录。
+- 顶部栏用户菜单旁新增通知铃铛（仅登录显示），未读数 badge，60 秒轮询、卸载清理，点击进入 `/notifications`。
+- `/notifications` 通知页：分页列表（类型标题、actor、时间、已读/未读样式）、点击标记已读并跳转站内 `link`、「全部已读」按钮、空/错/载入态；游客跳登录。
+
+**接口与规则**
+
+- 点赞：`POST/DELETE /api/problems/:id/solutions/:postId/like`，登录；返回 `{liked, likeCount}`；重复点赞/取消幂等；自赞 40001「不能点赞自己的帖子」，隐藏题/不存在帖子 404。帖子列表/详情返回 `likeCount`/`likedByMe`（游客 false）。
+- 关注：`POST/DELETE /api/users/:id/follow`，登录；返回 `{following, followersCount}`；自己/不存在/非 active 分别 40001/404/40001。公开 `GET /api/users/:id/social`（`followersCount`/`followingCount`/`isFollowing`，游客 `isFollowing=false`）、`GET /api/users/:id/followers|following`（分页，摘要不含 email）。封禁/非 active 用户仍可读计数/列表，只有写关注要求 active。
+- 通知：`GET /api/notifications`（分页）、`GET /api/notifications/unread-count`、`POST /api/notifications/:id/read`（非本人 404）、`POST /api/notifications/read-all`，均需登录；类型 `solution_reply`/`solution_like`/`follow`，`dedupe_key` 去重（重复赞/关注/同一回复不重复通知），自己触发自己不生成通知。
+- 活跃度：论坛回复 +3、点赞 +1、关注 +2，每类每日上限 20；唯一 ref 去重，取消赞/关注不扣分。
+- 共享分：题解帖子每获 1 赞作者 +5（`shared_items(type=solution)` 的 `like_count`），取消赞扣回，删除帖子清理点赞与共享项；共享榜公式第二项自此生效。
 
 ## 平台管理后台与 RBAC（RBAC-D）
 
@@ -227,7 +244,7 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 题目详情页右侧的 Tabs 已改为四个可点击资源卡片（官方题解、解题思路、提交统计、关联比赛），提示单独放在题面下方；五个子页面路由为 `/problems/:id/official-solution`、`/problems/:id/solutions`、`/problems/:id/solutions/:postId`、`/problems/:id/statistics`、`/problems/:id/contests`。规格见 [`DEVELOPMENT.md`](DEVELOPMENT.md) 4.3，设计见 [`docs/superpowers/specs/2026-11-07-problem-detail-resources-design.md`](docs/superpowers/specs/2026-11-07-problem-detail-resources-design.md)。
 
 - **官方题解**：由题目创建者（或超级管理员）编辑说明/代码与价格；创建者、超级管理员、已通过该题的用户免费查看，价格 0 时所有人免费，其他用户支付金币永久解锁（改价不影响已解锁用户）。`GET/PUT /api/problems/:id/official-solution`、`POST /api/problems/:id/official-solution/purchase`；`ProblemDetail.solutionPriceCoins` 用于卡片显示「免费 / 金币 N」。
-- **解题思路**：每个登录用户可发布帖子（标题 + Markdown 正文），其他用户可回复；作者可编辑/删除自己的内容，题目创建者或 `problem.update` 管理员可删除他人内容。`GET/POST /api/problems/:id/solutions`、`GET/PUT/DELETE /api/problems/:id/solutions/:postId`、`POST/PUT/DELETE /api/problems/:id/solutions/:postId/replies...`。
+- **解题思路**：每个登录用户可发布帖子（标题 + Markdown 正文），其他用户可回复、点赞；作者可编辑/删除自己的内容，题目创建者或 `problem.update` 管理员可删除他人内容。`GET/POST /api/problems/:id/solutions`、`GET/PUT/DELETE /api/problems/:id/solutions/:postId`、`POST/DELETE /api/problems/:id/solutions/:postId/like`、`POST/PUT/DELETE /api/problems/:id/solutions/:postId/replies...`。
 - **关联比赛**：`GET /api/contests?problemId=<id>` 返回包含该题且当前用户可见的比赛（公开 OR 本人已报名 OR 拥有 `contest.view_hidden`）。
 - 隐藏题的官方题解与讨论对无 `problem.view_hidden` 的用户返回 404；详情页对无权限用户隐藏官方题解/解题思路卡片。
 
