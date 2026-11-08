@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { ref, shallowRef, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
+import Button from 'primevue/button'
+import Column from 'primevue/column'
+import DataTable from 'primevue/datatable'
+import InputNumber from 'primevue/inputnumber'
+import Message from 'primevue/message'
+import Tag from 'primevue/tag'
+import ToggleSwitch from 'primevue/toggleswitch'
+import { useConfirm } from 'primevue/useconfirm'
+import { useToast } from 'primevue/usetoast'
 
 import { ApiError } from '@/api/http'
 import {
@@ -19,10 +27,13 @@ const props = defineProps<{ problemId: number; type: ProblemType; checkerUploade
 const emit = defineEmits<{ (e: 'changed'): void }>()
 
 const router = useRouter()
+const toast = useToast()
+const confirm = useConfirm()
 
 const cases = ref<Testcase[]>([])
 const loading = ref(false)
 const busy = ref(false)
+const loadError = ref('')
 
 const inputFile = shallowRef<File | null>(null)
 const outputFile = shallowRef<File | null>(null)
@@ -34,7 +45,11 @@ const outputEl = ref<HTMLInputElement>()
 const checkerEl = ref<HTMLInputElement>()
 
 function fail(e: unknown, fallback: string) {
-  ElMessage.error(e instanceof ApiError ? e.message : fallback)
+  toast.add({
+    severity: 'error',
+    summary: e instanceof ApiError ? e.message : fallback,
+    life: 4000,
+  })
 }
 
 // Only the newest request may update the table; switching problems quickly
@@ -45,11 +60,12 @@ async function load() {
   const seq = ++latest
   loading.value = true
   cases.value = []
+  loadError.value = ''
   try {
     const list = await listTestcases(props.problemId)
     if (seq === latest) cases.value = list
   } catch (e) {
-    if (seq === latest) fail(e, '加载测试点失败')
+    if (seq === latest) loadError.value = e instanceof ApiError ? e.message : '加载测试点失败'
   } finally {
     if (seq === latest) loading.value = false
   }
@@ -80,7 +96,7 @@ async function run(action: () => Promise<unknown>, failure: string): Promise<boo
 
 async function upload() {
   if (!inputFile.value || !outputFile.value) {
-    ElMessage.warning('请同时选择输入文件和输出文件')
+    toast.add({ severity: 'warn', summary: '请同时选择输入文件和输出文件', life: 3000 })
     return
   }
   const ok = await run(
@@ -96,13 +112,13 @@ async function upload() {
   if (!ok) return
   inputFile.value = outputFile.value = null
   for (const el of [inputEl.value, outputEl.value]) if (el) el.value = ''
-  ElMessage.success('测试点已上传')
+  toast.add({ severity: 'success', summary: '测试点已上传', life: 3000 })
   await load()
   emit('changed')
 }
 
-async function changeScore(tc: Testcase, value: number | undefined) {
-  if (value === undefined || value === tc.score) return
+async function changeScore(tc: Testcase, value: number | null | undefined) {
+  if (value == null || value === tc.score) return
   if (await run(() => updateTestcase(props.problemId, tc.id, { score: value }), '修改分数失败')) {
     tc.score = value
   } else {
@@ -142,27 +158,28 @@ async function move(index: number, delta: -1 | 1) {
 }
 
 async function remove(tc: Testcase) {
-  try {
-    await ElMessageBox.confirm(`确定删除第 ${tc.sortOrder} 个测试点吗？`, '删除测试点', {
-      type: 'warning',
-    })
-  } catch {
-    return
-  }
-  if (await run(() => deleteTestcase(props.problemId, tc.id), '删除失败')) {
-    ElMessage.success('已删除')
-    await load()
-    emit('changed')
-  }
+  confirm.require({
+    header: '删除测试点',
+    message: `确定删除第 ${tc.sortOrder} 个测试点吗？`,
+    acceptLabel: '删除',
+    rejectLabel: '取消',
+    accept: async () => {
+      if (await run(() => deleteTestcase(props.problemId, tc.id), '删除失败')) {
+        toast.add({ severity: 'success', summary: '已删除', life: 3000 })
+        await load()
+        emit('changed')
+      }
+    },
+  })
 }
 
 async function sendChecker() {
   if (!checkerFile.value) {
-    ElMessage.warning('请先选择 checker 源码文件')
+    toast.add({ severity: 'warn', summary: '请先选择 checker 源码文件', life: 3000 })
     return
   }
   if (await run(() => uploadChecker(props.problemId, checkerFile.value!), 'checker 上传失败')) {
-    ElMessage.success('checker 已上传')
+    toast.add({ severity: 'success', summary: 'checker 已上传', life: 3000 })
     checkerFile.value = null
     if (checkerEl.value) checkerEl.value.value = ''
     emit('changed')
@@ -175,128 +192,283 @@ function goAiGenerate() {
 </script>
 
 <template>
-  <div>
+  <div class="tc">
     <div class="tc-header">
-      <h3>测试点</h3>
-      <el-button
+      <h2>测试点</h2>
+      <Button
         v-if="type === 'traditional'"
+        label="AI 造数据"
         text
-        type="primary"
         :disabled="busy"
         @click="goAiGenerate"
-      >
-        AI 造数据
-      </el-button>
+      />
     </div>
-    <el-table v-loading="loading" :data="cases" empty-text="还没有测试点" size="small">
-      <el-table-column prop="sortOrder" label="序号" width="60" />
-      <el-table-column label="大小（输入 / 输出）" min-width="140">
-        <template #default="{ row }">
-          {{ formatBytes(row.inputSize) }} / {{ formatBytes(row.outputSize) }}
+
+    <Message v-if="loadError" severity="error" :closable="false">
+      <div class="load-error">
+        <span>{{ loadError }}</span>
+        <Button label="重试" text size="small" @click="load" />
+      </div>
+    </Message>
+
+    <DataTable
+      :value="cases"
+      :loading="loading"
+      data-key="id"
+      size="small"
+      responsive-layout="scroll"
+      class="tc-table"
+    >
+      <Column header="序号" style="width: 60px">
+        <template #body="{ data }">{{ data.sortOrder }}</template>
+      </Column>
+      <Column header="大小（输入 / 输出）" style="min-width: 140px">
+        <template #body="{ data }">
+          {{ formatBytes(data.inputSize) }} / {{ formatBytes(data.outputSize) }}
         </template>
-      </el-table-column>
-      <el-table-column label="分数" width="140">
-        <template #default="{ row }">
-          <el-input-number
-            :model-value="row.score"
+      </Column>
+      <Column header="分数" style="width: 140px">
+        <template #body="{ data }">
+          <InputNumber
+            :model-value="data.score"
             :min="0"
             :max="1000"
             size="small"
             :disabled="busy"
-            @change="(v: number | undefined) => changeScore(row, v)"
+            @value-change="(v) => changeScore(data, v)"
           />
         </template>
-      </el-table-column>
-      <el-table-column label="样例" width="70">
-        <template #default="{ row }">
-          <el-switch
-            :model-value="row.isSample"
+      </Column>
+      <Column header="样例" style="width: 80px">
+        <template #body="{ data }">
+          <ToggleSwitch
+            :model-value="data.isSample"
             :disabled="busy"
-            @change="(v: boolean | string | number) => changeSample(row, Boolean(v))"
+            @update:model-value="(v: boolean) => changeSample(data, v)"
           />
         </template>
-      </el-table-column>
-      <el-table-column label="操作" min-width="170">
-        <template #default="{ row, $index }">
+      </Column>
+      <Column header="操作" style="min-width: 170px">
+        <template #body="{ data, index }">
           <div class="ops">
-            <el-button text size="small" :disabled="busy || $index === 0" @click="move($index, -1)"
-              >上移</el-button
-            >
-            <el-button
+            <Button
+              label="上移"
               text
               size="small"
-              :disabled="busy || $index === cases.length - 1"
-              @click="move($index, 1)"
-              >下移</el-button
-            >
-            <el-button text size="small" type="danger" :disabled="busy" @click="remove(row)"
-              >删除</el-button
-            >
+              :disabled="busy || index === 0"
+              @click="move(index, -1)"
+            />
+            <Button
+              label="下移"
+              text
+              size="small"
+              :disabled="busy || index === cases.length - 1"
+              @click="move(index, 1)"
+            />
+            <Button
+              label="删除"
+              text
+              size="small"
+              severity="danger"
+              :disabled="busy"
+              @click="remove(data)"
+            />
           </div>
         </template>
-      </el-table-column>
-    </el-table>
+      </Column>
+      <template #empty>还没有测试点</template>
+    </DataTable>
 
-    <h4>上传新测试点</h4>
-    <div class="upload">
-      <label
-        >输入文件 <input ref="inputEl" type="file" @change="inputFile = fileOf($event)"
-      /></label>
-      <label
-        >输出文件 <input ref="outputEl" type="file" @change="outputFile = fileOf($event)"
-      /></label>
-      <label>分数 <el-input-number v-model="score" :min="0" :max="1000" size="small" /></label>
-      <el-checkbox v-model="isSample">作为样例</el-checkbox>
-      <el-button type="primary" :loading="busy" @click="upload">上传测试点</el-button>
-    </div>
-    <p class="hint">输入、输出文件各不超过 16 MiB。</p>
+    <section class="uploader">
+      <h3>上传新测试点</h3>
+      <div class="upload">
+        <input ref="inputEl" type="file" class="file-input" @change="inputFile = fileOf($event)" />
+        <Button label="选择输入文件" text size="small" @click="inputEl?.click()" />
+        <span class="file-name">{{ inputFile?.name || '未选择' }}</span>
+
+        <input
+          ref="outputEl"
+          type="file"
+          class="file-input"
+          @change="outputFile = fileOf($event)"
+        />
+        <Button label="选择输出文件" text size="small" @click="outputEl?.click()" />
+        <span class="file-name">{{ outputFile?.name || '未选择' }}</span>
+
+        <label class="score-field">
+          分数
+          <InputNumber v-model="score" :min="0" :max="1000" size="small" />
+        </label>
+
+        <div class="sample-field">
+          <ToggleSwitch v-model="isSample" :disabled="busy" input-id="tc-sample" />
+          <label for="tc-sample">作为样例</label>
+        </div>
+
+        <Button
+          label="上传测试点"
+          :loading="busy"
+          :disabled="!inputFile || !outputFile"
+          @click="upload"
+        />
+      </div>
+      <p class="hint">输入、输出文件各不超过 16 MiB。</p>
+    </section>
 
     <template v-if="type === 'special'">
-      <h3>特判 checker</h3>
-      <p>
-        状态：
-        <el-tag :type="checkerUploaded ? 'success' : 'warning'">
-          {{ checkerUploaded ? '已上传' : '未上传' }}
-        </el-tag>
-      </p>
-      <div class="upload">
-        <label
-          >checker 源码（C++，不超过 256 KiB）
+      <section class="checker">
+        <h3>特判 checker</h3>
+        <div class="checker-status">
+          <span>状态：</span>
+          <Tag
+            :value="checkerUploaded ? '已上传' : '未上传'"
+            :severity="checkerUploaded ? 'success' : 'warn'"
+          />
+        </div>
+        <div class="upload">
           <input
             ref="checkerEl"
             type="file"
+            class="file-input"
             accept=".cpp,.cc,.cxx,.txt"
             @change="checkerFile = fileOf($event)"
           />
-        </label>
-        <el-button :loading="busy" @click="sendChecker">上传 checker</el-button>
-      </div>
+          <Button label="选择 checker" text size="small" @click="checkerEl?.click()" />
+          <span class="file-name">{{ checkerFile?.name || '未选择' }}</span>
+          <Button label="上传 checker" :loading="busy" @click="sendChecker" />
+        </div>
+        <p class="hint">checker 源码（C++，不超过 256 KiB）。</p>
+      </section>
     </template>
   </div>
 </template>
 
 <style scoped>
+.tc {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kapoj-space-3);
+}
+
 .tc-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
+
+.tc-header h2 {
+  margin: 0;
+  color: var(--kapoj-text);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.load-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kapoj-space-2);
+}
+
+.tc-table {
+  overflow: hidden;
+  border: 1px solid var(--kapoj-border);
+  border-radius: var(--kapoj-radius-md);
+}
+
+.tc-table :deep(.p-datatable-thead > tr > th) {
+  padding: 8px var(--kapoj-space-3);
+  color: var(--kapoj-text-muted);
+  font-family: var(--kapoj-font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: var(--kapoj-bg-elevated);
+  border-color: var(--kapoj-border);
+}
+
+.tc-table :deep(.p-datatable-tbody > tr > td) {
+  padding: 8px var(--kapoj-space-3);
+  color: var(--kapoj-text-secondary);
+  border-color: var(--kapoj-border);
+}
+
 .ops {
   display: flex;
-  white-space: nowrap;
+  flex-wrap: wrap;
+  gap: 2px;
 }
-.ops .el-button + .el-button {
-  margin-left: 0;
+
+.uploader,
+.checker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kapoj-space-2);
 }
+
+.uploader h3,
+.checker h3 {
+  margin: 0;
+  color: var(--kapoj-text);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
 .upload {
   display: flex;
   flex-wrap: wrap;
   gap: 12px 20px;
   align-items: center;
 }
+
+.file-input {
+  display: none;
+}
+
+.file-name {
+  min-width: 8ch;
+  color: var(--kapoj-text-secondary);
+  font-family: var(--kapoj-font-mono);
+  font-size: 12px;
+}
+
+.score-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--kapoj-space-2);
+  color: var(--kapoj-text-secondary);
+  font-size: 13px;
+}
+
+.score-field :deep(.p-inputnumber) {
+  width: 7rem;
+}
+
+.sample-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--kapoj-space-2);
+}
+
+.sample-field label {
+  color: var(--kapoj-text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.checker-status {
+  display: flex;
+  align-items: center;
+  gap: var(--kapoj-space-2);
+  color: var(--kapoj-text-secondary);
+  font-size: 13px;
+}
+
 .hint {
-  color: var(--el-text-color-secondary);
+  margin: 0;
+  color: var(--kapoj-text-muted);
   font-size: 13px;
 }
 </style>
