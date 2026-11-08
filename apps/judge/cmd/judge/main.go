@@ -15,6 +15,7 @@ import (
 	"github.com/kaptree/kapoj/apps/judge/internal/db"
 	"github.com/kaptree/kapoj/apps/judge/internal/events"
 	"github.com/kaptree/kapoj/apps/judge/internal/gamequeue"
+	"github.com/kaptree/kapoj/apps/judge/internal/generation"
 	"github.com/kaptree/kapoj/apps/judge/internal/pipeline"
 	"github.com/kaptree/kapoj/apps/judge/internal/queue"
 	"github.com/kaptree/kapoj/apps/judge/internal/reconcile"
@@ -56,6 +57,7 @@ func run() error {
 	defer func() { _ = gamePublisher.Close() }()
 	pipe := pipeline.New(repo, cfg.StorageDir, sb, publisher, gamePublisher)
 	judgeWorker := worker.New(pipe)
+	gen := generation.New(repo, cfg.StorageDir, sb)
 	queueClient := queue.NewClient(cfg.RedisAddr)
 	defer func() { _ = queueClient.Close() }()
 
@@ -73,6 +75,7 @@ func run() error {
 	)
 	mux := asynq.NewServeMux()
 	mux.HandleFunc(queue.TypeSubmission, judgeWorker.Handle)
+	mux.HandleFunc(queue.TypeTestcaseGeneration, gen.Handle)
 	if err := server.Start(mux); err != nil {
 		return err
 	}

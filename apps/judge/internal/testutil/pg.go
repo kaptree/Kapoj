@@ -82,7 +82,34 @@ CREATE TABLE IF NOT EXISTS submissions (
   created_at timestamptz NOT NULL DEFAULT now(),
   judged_at timestamptz
 )`)
-	mustExec(t, pool, `TRUNCATE submissions, problem_testcases, problems, users RESTART IDENTITY CASCADE`)
+	mustExec(t, pool, `
+CREATE TABLE IF NOT EXISTS testcase_generations (
+  id bigserial PRIMARY KEY,
+  problem_id bigint NOT NULL,
+  user_id bigint NOT NULL,
+  status varchar(20) NOT NULL,
+  language varchar(20) NOT NULL,
+  standard_code text NOT NULL,
+  generator_code text NOT NULL,
+  testcase_count int NOT NULL,
+  time_limit_ms int NOT NULL,
+  memory_limit_mb int NOT NULL,
+  error_message text NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+)`)
+	mustExec(t, pool, `
+CREATE TABLE IF NOT EXISTS testcase_generation_cases (
+  id bigserial PRIMARY KEY,
+  generation_id bigint NOT NULL,
+  sort_order int NOT NULL,
+  input_file varchar(255) NOT NULL,
+  output_file varchar(255) NOT NULL,
+  input_size bigint NOT NULL DEFAULT 0,
+  output_size bigint NOT NULL DEFAULT 0,
+  CONSTRAINT uniq_generation_cases_order UNIQUE (generation_id, sort_order)
+)`)
+	mustExec(t, pool, `TRUNCATE testcase_generation_cases, testcase_generations, submissions, problem_testcases, problems, users RESTART IDENTITY CASCADE`)
 	return pool
 }
 
@@ -139,6 +166,18 @@ func InsertSubmissionAt(t *testing.T, pool *pgxpool.Pool, userID, problemID int6
 		`INSERT INTO submissions (user_id, problem_id, language, code, status, created_at)
 		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
 		userID, problemID, language, code, status, created,
+	).Scan(&id)
+	require.NoError(t, err)
+	return id
+}
+
+func InsertGeneration(t *testing.T, pool *pgxpool.Pool, userID, problemID int64, language, standard, generator string, count, timeLimitMS, memoryMB int, status string) int64 {
+	t.Helper()
+	var id int64
+	err := pool.QueryRow(context.Background(),
+		`INSERT INTO testcase_generations (problem_id, user_id, status, language, standard_code, generator_code, testcase_count, time_limit_ms, memory_limit_mb, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), now()) RETURNING id`,
+		problemID, userID, status, language, standard, generator, count, timeLimitMS, memoryMB,
 	).Scan(&id)
 	require.NoError(t, err)
 	return id
