@@ -35,8 +35,10 @@ type SettingsView struct {
 }
 
 // SettingsInput is the admin request body for updating the AI switch.
+// Enabled is a pointer so an omitted field is distinguishable from an explicit
+// false; the handler rejects a nil value rather than silently disabling AI.
 type SettingsInput struct {
-	Enabled bool `json:"enabled"`
+	Enabled *bool `json:"enabled"`
 }
 
 // SettingsService reads and updates the AI feature switch. keyConfigured records

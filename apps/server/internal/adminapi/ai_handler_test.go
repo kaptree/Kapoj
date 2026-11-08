@@ -102,6 +102,34 @@ func TestAdminAISettingsUpdateAndAudit(t *testing.T) {
 		assert.Contains(t, logs[1].Summary, "启用 AI 功能")
 	})
 
+	t.Run("缺省 enabled 字段", func(t *testing.T) {
+		f := newAISettingsFixture(t, true)
+		_, tok := f.user(t, "ai_omit_super", rbac.RoleCodeSuperAdmin)
+
+		// 空 body：40001，状态保持不变（不写审计、不改变 enabled）。
+		w, resp := f.do(http.MethodPut, "/api/admin/ai/settings", tok, `{}`)
+		requireStatus(t, w, resp, http.StatusBadRequest)
+		assert.EqualValues(t, 40001, resp["code"])
+
+		w, resp = f.do(http.MethodGet, "/api/admin/ai/settings", tok, "")
+		requireStatus(t, w, resp, http.StatusOK)
+		assert.Equal(t, true, dataMap(t, resp)["enabled"])
+
+		var count int64
+		require.NoError(t, f.db.Model(&rbac.AdminAuditLog{}).
+			Where("action = ?", rbac.AuditActionAISettingsManage).Count(&count).Error)
+		assert.Equal(t, int64(0), count, "缺省 enabled 不写审计")
+
+		// 显式 true/false 仍可用。
+		w, resp = f.do(http.MethodPut, "/api/admin/ai/settings", tok, `{"enabled":false}`)
+		requireStatus(t, w, resp, http.StatusOK)
+		assert.Equal(t, false, dataMap(t, resp)["enabled"])
+
+		w, resp = f.do(http.MethodPut, "/api/admin/ai/settings", tok, `{"enabled":true}`)
+		requireStatus(t, w, resp, http.StatusOK)
+		assert.Equal(t, true, dataMap(t, resp)["enabled"])
+	})
+
 	t.Run("未配置密钥", func(t *testing.T) {
 		f := newAISettingsFixture(t, false)
 		_, tok := f.user(t, "ai_nokey_super", rbac.RoleCodeSuperAdmin)

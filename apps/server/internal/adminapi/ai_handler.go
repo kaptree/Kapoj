@@ -26,10 +26,15 @@ func (h *handler) updateAISettings(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if in.Enabled == nil {
+		httpx.Fail(c, httpx.ErrValidation("enabled 字段必填"))
+		return
+	}
+	enabled := *in.Enabled
 	actor := auditActor(c)
-	view, err := h.ai.Update(c.Request.Context(), actor.ActorID, in.Enabled, func(tx *gorm.DB) error {
+	view, err := h.ai.Update(c.Request.Context(), actor.ActorID, enabled, func(tx *gorm.DB) error {
 		summary := "关闭 AI 功能"
-		if in.Enabled {
+		if enabled {
 			summary = "启用 AI 功能"
 		}
 		return rbac.WriteAuditTx(
