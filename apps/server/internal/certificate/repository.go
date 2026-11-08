@@ -3,6 +3,7 @@ package certificate
 import (
 	"context"
 	"errors"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -25,6 +26,8 @@ type Repository interface {
 	UpdateCertificateImage(ctx context.Context, id int64, key, contentType string) error
 	DeleteCertificate(ctx context.Context, id int64) error
 	ListMine(ctx context.Context, userID int64, offset, limit int) ([]Certificate, int64, error)
+	ListAdmin(ctx context.Context, filter AdminFilter, offset, limit int) ([]adminCertificateRow, int64, error)
+	Review(ctx context.Context, id int64, status Status, reason string, verifyCode *string, reviewedBy int64, now time.Time) (bool, error)
 	FindByVerifyCode(ctx context.Context, code string) (*Certificate, string, error)
 }
 
@@ -138,6 +141,51 @@ func (r *GormRepository) ListMine(ctx context.Context, userID int64, offset, lim
 		return nil, 0, err
 	}
 	return certs, total, nil
+}
+
+// adminCertificateRow 是管理员列表 join users 的查询结果：证书 + 用户摘要字段。
+type adminCertificateRow struct {
+	Certificate
+	Username string `gorm:"column:username"`
+	Nickname string `gorm:"column:nickname"`
+}
+
+// ListAdmin 返回管理员审核列表，join users 取用户名/昵称。filter.Status 为空时
+// 不按状态筛选；按 submitted_at 倒序、id 倒序排列，并返回总数。
+func (r *GormRepository) ListAdmin(ctx context.Context, filter AdminFilter, offset, limit int) ([]adminCertificateRow, int64, error) {
+	base := r.db.WithContext(ctx).Table("certificates AS c").
+		Joins("JOIN users AS u ON u.id = c.user_id")
+	if filter.Status != "" {
+		base = base.Where("c.status = ?", filter.Status)
+	}
+	var total int64
+	if err := base.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var rows []adminCertificateRow
+	if err := base.Select("c.*, u.username, u.nickname").
+		Order("c.submitted_at DESC, c.id DESC").
+		Offset(offset).Limit(limit).
+		Scan(&rows).Error; err != nil {
+		return nil, 0, err
+	}
+	return rows, total, nil
+}
+
+// Review 原子地把 pending 证书转换为 approved/rejected：单条 UPDATE 带
+// status='pending' 守卫，避免把已审核的证书再次覆盖。返回是否真正更新了行
+// （false 表示证书已不存在或已不是 pending）。verifyCode 传 nil 时写入 NULL。
+func (r *GormRepository) Review(ctx context.Context, id int64, status Status, reason string, verifyCode *string, reviewedBy int64, now time.Time) (bool, error) {
+	res := r.db.WithContext(ctx).Exec(
+		`UPDATE certificates
+		    SET status = ?, reject_reason = ?, verify_code = ?, reviewed_at = ?, reviewed_by = ?, updated_at = ?
+		  WHERE id = ? AND status = ?`,
+		status, reason, verifyCode, now, reviewedBy, now, id, StatusPending,
+	)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected > 0, nil
 }
 
 // verifyRow 是证书 join 用户昵称的查询结果。

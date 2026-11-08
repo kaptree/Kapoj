@@ -45,6 +45,16 @@ func RegisterRoutes(public, api, uploads gin.IRouter, s *certificate.Service, op
 			fn,
 		}
 	}
+	// admin 是证书审核路由的中间件链：要求登录 + certificate.manage 权限。审核写
+	// 审计由 handler 在成功后 best-effort 完成（target 为 certificate），列表不写
+	// 审计，因此不复用带 certificate_type 审计的 manage。
+	admin := func(fn gin.HandlerFunc) []gin.HandlerFunc {
+		return []gin.HandlerFunc{
+			middleware.RequireAuth(),
+			require(string(rbac.PermCertificateManage)),
+			fn,
+		}
+	}
 
 	public.GET("/certificate-types", h.listActiveTypes)
 	public.GET("/certificates/verify", h.publicVerify)
@@ -52,6 +62,9 @@ func RegisterRoutes(public, api, uploads gin.IRouter, s *certificate.Service, op
 	uploads.POST("/certificates", middleware.RequireAuth(), h.submitCertificate)
 	api.GET("/certificates/my", middleware.RequireAuth(), h.myCertificates)
 	api.GET("/certificates/:id/image", middleware.RequireAuth(), load, h.certificateImage)
+
+	api.GET("/admin/certificates", admin(h.adminCertificates)...)
+	api.POST("/admin/certificates/:id/review", admin(h.reviewCertificate)...)
 
 	api.GET("/admin/certificate-types", manage(h.listAllTypes)...)
 	api.POST("/admin/certificate-types", manage(h.createType)...)

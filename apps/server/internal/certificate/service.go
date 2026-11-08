@@ -3,9 +3,11 @@ package certificate
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"strings"
 	"time"
@@ -25,17 +27,25 @@ const (
 
 	maxLevelLength = 50
 	maxImageBytes  = 5 << 20 // 证书图片上限 5 MiB
+
+	// verifyCodeAlphabet 是验证码随机字符集：去掉易混淆的 I/L/O/U/0/1。
+	verifyCodeAlphabet    = "ABCDEFGHJKMNPQRSTVWXYZ23456789"
+	verifyCodeRandLen     = 8
+	maxVerifyCodeAttempts = 5
+	maxRejectReasonLength = 500
 )
 
-// Service 是证书领域服务。store 用于保存证书图片。
+// Service 是证书领域服务。store 用于保存证书图片；genCode 为验证码生成器，
+// 可注入以便测试唯一冲突重试。
 type Service struct {
-	repo  Repository
-	store storage.Storage
+	repo    Repository
+	store   storage.Storage
+	genCode func() (string, error)
 }
 
 // NewService 创建证书服务。
 func NewService(repo Repository, store storage.Storage) *Service {
-	return &Service{repo: repo, store: store}
+	return &Service{repo: repo, store: store, genCode: generateVerifyCode}
 }
 
 // ListActiveTypes 返回启用中的类型，按 sort_order 升序。
@@ -247,6 +257,141 @@ func (s *Service) ListMine(ctx context.Context, userID int64, page, size int) (*
 		items = append(items, toCertificateView(c))
 	}
 	return &httpx.Page[CertificateView]{Total: total, Items: items}, nil
+}
+
+// ListAdmin 返回管理员审核列表，按提交时间倒序。status 为空表示不筛选（全部），
+// 其余合法状态按状态筛选；非法状态返回 40001。
+func (s *Service) ListAdmin(ctx context.Context, status Status, page, size int) (*httpx.Page[AdminCertificateView], error) {
+	if page < 1 {
+		page = 1
+	}
+	if size < 1 {
+		size = 20
+	}
+	if size > 100 {
+		size = 100
+	}
+	switch status {
+	case "", StatusPending, StatusApproved, StatusRejected:
+	default:
+		return nil, httpx.ErrValidation("未知的证书状态")
+	}
+	offset := (page - 1) * size
+	rows, total, err := s.repo.ListAdmin(ctx, AdminFilter{Status: status, Page: page, Size: size}, offset, size)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]AdminCertificateView, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, AdminCertificateView{
+			CertificateView: toCertificateView(row.Certificate),
+			User: CertificateUserView{
+				ID:       row.UserID,
+				Username: row.Username,
+				Nickname: row.Nickname,
+			},
+		})
+	}
+	return &httpx.Page[AdminCertificateView]{Total: total, Items: items}, nil
+}
+
+// Review 审核证书：仅 pending 可审核；approve 生成唯一验证码并置 approved，
+// reject 要求 1–500 字原因并置 rejected（验证码清空）。终态返回 40001，不存在
+// 返回 404。验证码唯一冲突时重试生成，最多 5 次。
+func (s *Service) Review(ctx context.Context, actorID, id int64, in ReviewInput) (*CertificateView, error) {
+	action := strings.TrimSpace(in.Action)
+	switch action {
+	case "approve", "reject":
+	default:
+		return nil, httpx.ErrValidation("未知的审核操作")
+	}
+
+	cert, err := s.findCertificate(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if cert.Status != StatusPending {
+		return nil, httpx.ErrValidation("只有待审核的证书可以审核")
+	}
+
+	now := time.Now()
+	if action == "approve" {
+		for attempt := 0; attempt < maxVerifyCodeAttempts; attempt++ {
+			code, genErr := s.genCode()
+			if genErr != nil {
+				return nil, httpx.ErrInternal
+			}
+			updated, rerr := s.repo.Review(ctx, id, StatusApproved, "", &code, actorID, now)
+			if rerr != nil {
+				if isVerifyCodeConflict(rerr) {
+					continue
+				}
+				return nil, rerr
+			}
+			if !updated {
+				return nil, s.reviewLost(ctx, id)
+			}
+			return s.reviewedView(cert, StatusApproved, "", &code, now), nil
+		}
+		return nil, httpx.ErrInternal
+	}
+
+	reason := strings.TrimSpace(in.Reason)
+	if n := utf8.RuneCountInString(reason); n < 1 || n > maxRejectReasonLength {
+		return nil, httpx.ErrValidation("驳回原因需为 1–500 字")
+	}
+	updated, err := s.repo.Review(ctx, id, StatusRejected, reason, nil, actorID, now)
+	if err != nil {
+		return nil, err
+	}
+	if !updated {
+		return nil, s.reviewLost(ctx, id)
+	}
+	return s.reviewedView(cert, StatusRejected, reason, nil, now), nil
+}
+
+// reviewLost 处理审核时行已不是 pending 的竞争：重新读取以区分 404 与终态 40001。
+func (s *Service) reviewLost(ctx context.Context, id int64) error {
+	if _, err := s.findCertificate(ctx, id); err != nil {
+		return err
+	}
+	return httpx.ErrValidation("只有待审核的证书可以审核")
+}
+
+// reviewedView 用审核前读取的证书字段 + 审核结果构造返回视图。
+func (s *Service) reviewedView(cert *Certificate, status Status, reason string, code *string, now time.Time) *CertificateView {
+	v := toCertificateView(Certificate{
+		ID:                  cert.ID,
+		CertificateTypeName: cert.CertificateTypeName,
+		Level:               cert.Level,
+		Status:              status,
+		RejectReason:        reason,
+		VerifyCode:          code,
+		SubmittedAt:         cert.SubmittedAt,
+		ReviewedAt:          &now,
+	})
+	return &v
+}
+
+// generateVerifyCode 生成 `KAPOJ-XXXX-XXXX` 验证码：crypto/rand 从无歧义大写
+// 字母/数字（去 I/L/O/U/0/1）采样 8 位。
+func generateVerifyCode() (string, error) {
+	var b [verifyCodeRandLen]byte
+	for i := range b {
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(verifyCodeAlphabet))))
+		if err != nil {
+			return "", err
+		}
+		b[i] = verifyCodeAlphabet[n.Int64()]
+	}
+	return "KAPOJ-" + string(b[:4]) + "-" + string(b[4:]), nil
+}
+
+// isVerifyCodeConflict 判断错误是否为验证码唯一约束冲突。
+func isVerifyCodeConflict(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) &&
+		pgErr.Code == "23505" && pgErr.ConstraintName == "uniq_certificates_verify_code"
 }
 
 // Image 返回证书图片；仅本人或管理员（canManage）可读，其余一律 404 以不暴露

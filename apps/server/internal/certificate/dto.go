@@ -80,3 +80,31 @@ func toCertificateView(c Certificate) CertificateView {
 	}
 	return v
 }
+
+// AdminFilter 是管理员审核列表的筛选条件。Status 为空表示不筛选（返回全部状态）；
+// Page/Size 为分页参数（偏移由仓储层接收）。
+type AdminFilter struct {
+	Status Status
+	Page   int
+	Size   int
+}
+
+// CertificateUserView 是管理员列表中证书持有者的摘要，仅包含非敏感字段。
+type CertificateUserView struct {
+	ID       int64  `json:"id"`
+	Username string `json:"username"`
+	Nickname string `json:"nickname"`
+}
+
+// AdminCertificateView 是管理员列表项：内嵌证书视图，附持有者摘要。
+type AdminCertificateView struct {
+	CertificateView
+	User CertificateUserView `json:"user"`
+}
+
+// ReviewInput 是审核输入。Action 取 approve/reject；reject 时 Reason 必填 1–500 字，
+// approve 忽略 Reason。
+type ReviewInput struct {
+	Action string `json:"action"`
+	Reason string `json:"reason"`
+}

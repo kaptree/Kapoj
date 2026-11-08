@@ -3,6 +3,7 @@ package certificate_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -460,6 +461,256 @@ func TestVerifyApprovedOnly(t *testing.T) {
 	v, err = e.svc.Verify(ctx, "short")
 	require.NoError(t, err)
 	assert.False(t, v.Valid)
+}
+
+func TestAdminListFiltersAndPagination(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	require.NoError(t, certificate.SeedTypes(ctx, e.db))
+	typeID := firstActiveTypeID(t, e)
+
+	u1 := createUser(t, e.db, "admin-list-a", "列表用户甲")
+	u2 := createUser(t, e.db, "admin-list-b", "列表用户乙")
+
+	base := time.Now()
+	mk := func(userID int64, status certificate.Status, level string, at time.Time) certificate.Certificate {
+		c := certificate.Certificate{
+			UserID:              userID,
+			CertificateTypeID:   typeID,
+			CertificateTypeName: "蓝桥杯",
+			Level:               level,
+			ImageKey:            "certificates/1",
+			ImageContentType:    "image/png",
+			Status:              status,
+			SubmittedAt:         at,
+		}
+		require.NoError(t, e.db.Create(&c).Error)
+		return c
+	}
+	c1 := mk(u1, certificate.StatusPending, "省一", base)
+	c2 := mk(u2, certificate.StatusApproved, "国一", base.Add(time.Second))
+	c3 := mk(u1, certificate.StatusRejected, "省二", base.Add(2*time.Second))
+
+	// 空 status（all）返回全部，按 submitted_at 倒序、id 倒序。
+	page, err := e.svc.ListAdmin(ctx, "", 1, 20)
+	require.NoError(t, err)
+	assert.EqualValues(t, 3, page.Total)
+	require.Len(t, page.Items, 3)
+	assert.Equal(t, c3.ID, page.Items[0].ID)
+	assert.Equal(t, c2.ID, page.Items[1].ID)
+	assert.Equal(t, c1.ID, page.Items[2].ID)
+
+	// 用户摘要：id/username/nickname。
+	assert.Equal(t, u1, page.Items[0].User.ID)
+	assert.Equal(t, "admin-list-a", page.Items[0].User.Username)
+	assert.Equal(t, "列表用户甲", page.Items[0].User.Nickname)
+	assert.Equal(t, u2, page.Items[1].User.ID)
+
+	// status 筛选。
+	pending, err := e.svc.ListAdmin(ctx, certificate.StatusPending, 1, 20)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, pending.Total)
+	assert.Equal(t, c1.ID, pending.Items[0].ID)
+
+	approved, err := e.svc.ListAdmin(ctx, certificate.StatusApproved, 1, 20)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, approved.Total)
+	assert.Equal(t, c2.ID, approved.Items[0].ID)
+	assert.Equal(t, "国一", approved.Items[0].Level)
+
+	rejected, err := e.svc.ListAdmin(ctx, certificate.StatusRejected, 1, 20)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, rejected.Total)
+	assert.Equal(t, c3.ID, rejected.Items[0].ID)
+
+	// 分页。
+	p1, err := e.svc.ListAdmin(ctx, "", 1, 2)
+	require.NoError(t, err)
+	assert.EqualValues(t, 3, p1.Total)
+	require.Len(t, p1.Items, 2)
+	p2, err := e.svc.ListAdmin(ctx, "", 2, 2)
+	require.NoError(t, err)
+	require.Len(t, p2.Items, 1)
+
+	// 非法 status 40001。
+	_, err = e.svc.ListAdmin(ctx, certificate.Status("bogus"), 1, 20)
+	requireAppErrorCode(t, err, 40001)
+}
+
+func TestReviewApprove(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	require.NoError(t, certificate.SeedTypes(ctx, e.db))
+	typeID := firstActiveTypeID(t, e)
+	ownerID := createUser(t, e.db, "review-owner", "审核主人")
+	adminID := createUser(t, e.db, "review-admin", "审核员")
+
+	v, err := e.svc.Submit(ctx, ownerID, typeID, "省一", bytes.NewReader(testPNG))
+	require.NoError(t, err)
+
+	got, err := e.svc.Review(ctx, adminID, v.ID, certificate.ReviewInput{Action: "approve"})
+	require.NoError(t, err)
+	assert.Equal(t, certificate.StatusApproved, got.Status)
+	assert.NotEmpty(t, got.VerifyCode)
+	require.NotNil(t, got.ReviewedAt)
+	// 验证码格式 KAPOJ-XXXX-XXXX，字母表去除 I/L/O/U/0/1。
+	assert.Regexp(t, `^KAPOJ-[A-HJKMNP-TV-Z2-9]{4}-[A-HJKMNP-TV-Z2-9]{4}$`, got.VerifyCode)
+
+	var cert certificate.Certificate
+	require.NoError(t, e.db.First(&cert, v.ID).Error)
+	assert.Equal(t, certificate.StatusApproved, cert.Status)
+	require.NotNil(t, cert.ReviewedBy)
+	assert.Equal(t, adminID, *cert.ReviewedBy)
+	require.NotNil(t, cert.ReviewedAt)
+	require.NotNil(t, cert.VerifyCode)
+	assert.Equal(t, got.VerifyCode, *cert.VerifyCode)
+
+	// 公开 Verify 变为 valid。
+	pv, err := e.svc.Verify(ctx, got.VerifyCode)
+	require.NoError(t, err)
+	assert.True(t, pv.Valid)
+	assert.Equal(t, "审核主人", pv.Nickname)
+
+	// 重复审核 40001。
+	_, err = e.svc.Review(ctx, adminID, v.ID, certificate.ReviewInput{Action: "approve"})
+	requireAppErrorCode(t, err, 40001)
+}
+
+func TestReviewReject(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	require.NoError(t, certificate.SeedTypes(ctx, e.db))
+	typeID := firstActiveTypeID(t, e)
+	ownerID := createUser(t, e.db, "reject-owner", "驳回主人")
+	adminID := createUser(t, e.db, "reject-admin", "驳回审核员")
+
+	v, err := e.svc.Submit(ctx, ownerID, typeID, "省一", bytes.NewReader(testPNG))
+	require.NoError(t, err)
+
+	// 缺原因 / 超 500 字 -> 40001。
+	_, err = e.svc.Review(ctx, adminID, v.ID, certificate.ReviewInput{Action: "reject"})
+	requireAppErrorCode(t, err, 40001)
+	_, err = e.svc.Review(ctx, adminID, v.ID, certificate.ReviewInput{Action: "reject", Reason: strings.Repeat("长", 501)})
+	requireAppErrorCode(t, err, 40001)
+
+	// 合法驳回（两侧空白去除）。
+	got, err := e.svc.Review(ctx, adminID, v.ID, certificate.ReviewInput{Action: "reject", Reason: "  证书信息不符  "})
+	require.NoError(t, err)
+	assert.Equal(t, certificate.StatusRejected, got.Status)
+	assert.Equal(t, "证书信息不符", got.RejectReason)
+	assert.Empty(t, got.VerifyCode)
+
+	var cert certificate.Certificate
+	require.NoError(t, e.db.First(&cert, v.ID).Error)
+	assert.Equal(t, certificate.StatusRejected, cert.Status)
+	assert.Equal(t, "证书信息不符", cert.RejectReason)
+	assert.Nil(t, cert.VerifyCode, "驳回后 verify_code 应为 NULL")
+	require.NotNil(t, cert.ReviewedBy)
+	assert.Equal(t, adminID, *cert.ReviewedBy)
+
+	// 驳回原因仅本人/管理员可见：本人列表可见，公开核验 invalid 且无原因。
+	mine, err := e.svc.ListMine(ctx, ownerID, 1, 20)
+	require.NoError(t, err)
+	assert.Equal(t, "证书信息不符", mine.Items[0].RejectReason)
+	pv, err := e.svc.Verify(ctx, "KAPOJ-AAAA-BBBB")
+	require.NoError(t, err)
+	assert.False(t, pv.Valid)
+
+	admin, err := e.svc.ListAdmin(ctx, certificate.StatusRejected, 1, 20)
+	require.NoError(t, err)
+	assert.Equal(t, "证书信息不符", admin.Items[0].RejectReason)
+}
+
+func TestReviewNotFoundAndTerminal(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	require.NoError(t, certificate.SeedTypes(ctx, e.db))
+	typeID := firstActiveTypeID(t, e)
+	ownerID := createUser(t, e.db, "term-owner", "终态主人")
+	adminID := createUser(t, e.db, "term-admin", "终态审核员")
+
+	// 不存在 404。
+	_, err := e.svc.Review(ctx, adminID, 999999, certificate.ReviewInput{Action: "approve"})
+	requireAppErrorCode(t, err, 40400)
+
+	// 已通过证书再审核 -> 40001 terminal。
+	code := "KAPOJ-TERM-TERM"
+	require.NoError(t, e.db.Create(&certificate.Certificate{
+		UserID:              ownerID,
+		CertificateTypeID:   typeID,
+		CertificateTypeName: "蓝桥杯",
+		Level:               "省一",
+		ImageKey:            "certificates/1",
+		ImageContentType:    "image/png",
+		Status:              certificate.StatusApproved,
+		VerifyCode:          &code,
+		SubmittedAt:         time.Now(),
+	}).Error)
+	var approved certificate.Certificate
+	require.NoError(t, e.db.Where("status = ?", certificate.StatusApproved).First(&approved).Error)
+	_, err = e.svc.Review(ctx, adminID, approved.ID, certificate.ReviewInput{Action: "approve"})
+	requireAppErrorCode(t, err, 40001)
+
+	// 非法 action 40001。
+	pending := &certificate.Certificate{
+		UserID:              ownerID,
+		CertificateTypeID:   typeID,
+		CertificateTypeName: "蓝桥杯",
+		Level:               "省一",
+		ImageKey:            "certificates/2",
+		ImageContentType:    "image/png",
+		Status:              certificate.StatusPending,
+		SubmittedAt:         time.Now(),
+	}
+	require.NoError(t, e.db.Create(pending).Error)
+	_, err = e.svc.Review(ctx, adminID, pending.ID, certificate.ReviewInput{Action: "banana"})
+	requireAppErrorCode(t, err, 40001)
+}
+
+func TestReviewNoSensitivePublicFields(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	require.NoError(t, certificate.SeedTypes(ctx, e.db))
+	typeID := firstActiveTypeID(t, e)
+	ownerID := createUser(t, e.db, "sensitive-owner", "敏感主人")
+	adminID := createUser(t, e.db, "sensitive-admin", "敏感审核员")
+
+	v, err := e.svc.Submit(ctx, ownerID, typeID, "省一", bytes.NewReader(testPNG))
+	require.NoError(t, err)
+	_, err = e.svc.Review(ctx, adminID, v.ID, certificate.ReviewInput{Action: "approve"})
+	require.NoError(t, err)
+
+	page, err := e.svc.ListAdmin(ctx, certificate.StatusApproved, 1, 20)
+	require.NoError(t, err)
+	require.Len(t, page.Items, 1)
+
+	b, err := json.Marshal(page.Items[0])
+	require.NoError(t, err)
+	var m map[string]any
+	require.NoError(t, json.Unmarshal(b, &m))
+	userObj, ok := m["user"].(map[string]any)
+	require.True(t, ok, "管理员列表应包含 user 摘要")
+	for _, key := range []string{"email", "passwordHash", "password", "avatarUrl", "bio", "coins", "rating", "role", "status"} {
+		_, exists := userObj[key]
+		assert.False(t, exists, "管理员用户摘要不应包含 %s", key)
+	}
+	for _, key := range []string{"id", "username", "nickname"} {
+		_, exists := userObj[key]
+		assert.True(t, exists, "管理员用户摘要应包含 %s", key)
+	}
+
+	// 公开核验不含敏感字段。
+	pv, err := e.svc.Verify(ctx, page.Items[0].VerifyCode)
+	require.NoError(t, err)
+	assert.True(t, pv.Valid)
+	pb, err := json.Marshal(pv)
+	require.NoError(t, err)
+	var pm map[string]any
+	require.NoError(t, json.Unmarshal(pb, &pm))
+	for _, key := range []string{"imageUrl", "userId", "email", "rejectReason", "reviewedBy", "verifyCode"} {
+		_, exists := pm[key]
+		assert.False(t, exists, "公开核验不应包含 %s", key)
+	}
 }
 
 type failingStorage struct {

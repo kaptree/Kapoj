@@ -477,3 +477,158 @@ func TestPublicVerifyHTTP(t *testing.T) {
 		assert.False(t, ok, "无效核验不应包含 %s", key)
 	}
 }
+
+func TestAdminCertificateList(t *testing.T) {
+	f := newFx(t)
+	userToken := f.token("user")
+	adminToken := f.certManageToken()
+	typeID := f.activeTypeID()
+
+	// 用户提交一张 pending 证书。
+	w, _ := f.multipart("/api/certificates", userToken, map[string]string{
+		"typeId": fmt.Sprintf("%d", typeID), "level": "省一",
+	}, "file", "c.png", pngBytes)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+
+	// 无 token 401。
+	w, _ = f.do(http.MethodGet, "/api/admin/certificates", "", nil)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+
+	// 普通用户 403。
+	w, _ = f.do(http.MethodGet, "/api/admin/certificates", userToken, nil)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+
+	// 管理员 200，默认 pending（空 status）。
+	w, resp := f.do(http.MethodGet, "/api/admin/certificates", adminToken, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data := resp["data"].(map[string]any)
+	assert.EqualValues(t, 1, data["total"])
+	items := data["items"].([]any)
+	require.Len(t, items, 1)
+	it := items[0].(map[string]any)
+	assert.Equal(t, "pending", it["status"])
+	userObj := it["user"].(map[string]any)
+	assert.NotEmpty(t, userObj["username"])
+	assert.NotEmpty(t, userObj["nickname"])
+
+	// status=approved 空，status=all 全部，status=pending 命中。
+	w, resp = f.do(http.MethodGet, "/api/admin/certificates?status=approved", adminToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.EqualValues(t, 0, resp["data"].(map[string]any)["total"])
+
+	w, resp = f.do(http.MethodGet, "/api/admin/certificates?status=all", adminToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.EqualValues(t, 1, resp["data"].(map[string]any)["total"])
+
+	w, resp = f.do(http.MethodGet, "/api/admin/certificates?status=pending", adminToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.EqualValues(t, 1, resp["data"].(map[string]any)["total"])
+
+	// 非法 status 40001。
+	w, resp = f.do(http.MethodGet, "/api/admin/certificates?status=bogus", adminToken, nil)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+}
+
+func TestAdminReviewHTTP(t *testing.T) {
+	f := newFx(t)
+	userToken := f.token("user")
+	adminToken := f.certManageToken()
+	typeID := f.activeTypeID()
+
+	submit := func(level string) int64 {
+		f.t.Helper()
+		w, resp := f.multipart("/api/certificates", userToken, map[string]string{
+			"typeId": fmt.Sprintf("%d", typeID), "level": level,
+		}, "file", "c.png", pngBytes)
+		require.Equal(f.t, http.StatusCreated, w.Code, w.Body.String())
+		return int64(resp["data"].(map[string]any)["id"].(float64))
+	}
+
+	certID := submit("省一")
+
+	// 未登录 401。
+	w, _ := f.do(http.MethodPost, fmt.Sprintf("/api/admin/certificates/%d/review", certID), "", map[string]any{"action": "approve"})
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+
+	// 普通用户 403。
+	w, _ = f.do(http.MethodPost, fmt.Sprintf("/api/admin/certificates/%d/review", certID), userToken, map[string]any{"action": "approve"})
+	assert.Equal(t, http.StatusForbidden, w.Code)
+
+	// 非法 action 40001。
+	w, resp := f.do(http.MethodPost, fmt.Sprintf("/api/admin/certificates/%d/review", certID), adminToken, map[string]any{"action": "banana"})
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	// reject 缺原因 40001。
+	w, resp = f.do(http.MethodPost, fmt.Sprintf("/api/admin/certificates/%d/review", certID), adminToken, map[string]any{"action": "reject"})
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	// 通过 200。
+	w, resp = f.do(http.MethodPost, fmt.Sprintf("/api/admin/certificates/%d/review", certID), adminToken, map[string]any{"action": "approve"})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data := resp["data"].(map[string]any)
+	assert.Equal(t, "approved", data["status"])
+	assert.NotEmpty(t, data["verifyCode"])
+
+	// 重复审核 40001。
+	w, resp = f.do(http.MethodPost, fmt.Sprintf("/api/admin/certificates/%d/review", certID), adminToken, map[string]any{"action": "approve"})
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	// 不存在 404。
+	w, _ = f.do(http.MethodPost, "/api/admin/certificates/999999/review", adminToken, map[string]any{"action": "approve"})
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	// 驳回成功 200 且返回 rejectReason。
+	certID2 := submit("国一")
+	w, resp = f.do(http.MethodPost, fmt.Sprintf("/api/admin/certificates/%d/review", certID2), adminToken, map[string]any{"action": "reject", "reason": "证书信息不符"})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data = resp["data"].(map[string]any)
+	assert.Equal(t, "rejected", data["status"])
+	assert.Equal(t, "证书信息不符", data["rejectReason"])
+	assert.Empty(t, data["verifyCode"])
+}
+
+func TestReviewAudit(t *testing.T) {
+	f := newFx(t)
+	userToken := f.token("user")
+	adminToken := f.certManageToken()
+	adminID := f.ids["cert.manage"]
+	typeID := f.activeTypeID()
+
+	submit := func() int64 {
+		f.t.Helper()
+		w, resp := f.multipart("/api/certificates", userToken, map[string]string{
+			"typeId": fmt.Sprintf("%d", typeID), "level": "省一",
+		}, "file", "c.png", pngBytes)
+		require.Equal(f.t, http.StatusCreated, w.Code, w.Body.String())
+		return int64(resp["data"].(map[string]any)["id"].(float64))
+	}
+
+	// 通过写审计：action=certificate.manage、target=certificate、summary=通过证书。
+	certID := submit()
+	w, resp := f.do(http.MethodPost, fmt.Sprintf("/api/admin/certificates/%d/review", certID), adminToken, map[string]any{"action": "approve"})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	verifyCode := resp["data"].(map[string]any)["verifyCode"].(string)
+
+	var audit rbac.AdminAuditLog
+	require.NoError(t, f.db.Where("action = ? AND target_type = ? AND target_id = ?",
+		"certificate.manage", "certificate", certID).Order("id DESC").First(&audit).Error)
+	assert.Equal(t, "通过证书", audit.Summary)
+	assert.Equal(t, adminID, audit.ActorID)
+	// 审计不写验证码。
+	assert.NotContains(t, audit.Summary, verifyCode)
+
+	// 驳回写审计：summary=驳回证书，不写驳回原因。
+	certID2 := submit()
+	w, _ = f.do(http.MethodPost, fmt.Sprintf("/api/admin/certificates/%d/review", certID2), adminToken, map[string]any{"action": "reject", "reason": "证书信息不符"})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	var audit2 rbac.AdminAuditLog
+	require.NoError(t, f.db.Where("action = ? AND target_type = ? AND target_id = ?",
+		"certificate.manage", "certificate", certID2).Order("id DESC").First(&audit2).Error)
+	assert.Equal(t, "驳回证书", audit2.Summary)
+	assert.NotContains(t, audit2.Summary, "证书信息不符")
+}
