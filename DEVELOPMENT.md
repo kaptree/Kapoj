@@ -3,7 +3,7 @@
 > 本文档基于 `plan.md` 细化，是 kapOJ（Kap Online Judge）平台的详细开发规格说明书。
 > 目标：**打造出最有趣味的 Online Judge 平台**。
 > 文档包含完整的架构设计、数据库设计、模块需求，并为每个模块提供了可直接交给 Codex 的**开发提示词（Prompt）**。
-> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)，前端 UI 迁移见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。当前进度：**M4-2A、M4-2B、M4-2C、M4-3、M4-4、RBAC-D、M5-A、M5-4、M5-5、M5-6 与 M5-7 已完成**（M0–M3 已完成；M4 已完成；M5 部分完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页、签到、Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线模型、权限、路线/节点 CRUD 与树结构；M4-2B 交付服务端进度计算（AC 事件补算 + 读取补算、完成锁存）与题目下线/删除守卫；M4-2C 交付学习路线前端（列表/树详情/编辑/官方管理页，PrimeVue TreeTable/DataTable，UI-31）；M4-3 交付轻量社交互动（题解点赞、用户关注、站内通知，回复/点赞/关注接入活跃度与共享分，前端点赞按钮/关注 Dialog/通知铃铛/通知页，UI-32，见 4.8）；M4-4 交付 Rating 衰减与赛季重置（`rating.settings.manage` 权限与 Rating 分组、管理设置 API、`/admin/rating` 设置页、月度高分段衰减、赛季软重置、`decay`/`season_reset` 历史与公开赛季接口）；RBAC-A 交付权限目录、内置角色、首次 Seed/旧角色映射、实时 Access 解析、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/`canAny`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化，以及文档、HTTP 冒烟与浏览器 E2E；M5-A 交付 AI 后端基础（多 provider 配置、用户 API key AES-GCM 加密存储、OpenAI 兼容补全/格式化/优化与题目 AI 提示缓存/限流，AI 路由始终挂载、未配置密钥时返回 40002）；M5-5 交付 AI 前端（提交页 AI 补全/格式化/优化工具栏、题目详情 AI 提示、`/settings/ai` AI 配置页与用户菜单入口，见 §6.5）；M5-6 交付 HydroOJ 题包导入（`POST /api/problems/import/hydro`、大小限制/防路径穿越、slug 冲突不覆盖、默认下线、逐题部分成功与整包回滚，见 §7）与题目详情公开创建者摘要（`author{id,username,nickname}`），前端新增 `/problems/import` 导入页、题目列表「导入题包」入口与详情创建者链接。AI 出题造数据（M5-4）已交付：标程 → AI 纯 Python 3 造数据脚本 → judge 沙盒生成输入/输出 → 预览确认入库，见 §6.4；M5-7 证书认证已交付（证书类型/提交/审核/公开验证码核验，见 §5.6）；头像上传（M5-8）尚未实现）。前端 UI 已完成 UI-00～UI-20 的 PrimeVue 4 迁移（含 UI-19 题库编辑与 UI-20 异常页）、UI-30（M4-C 排行榜/历史）、UI-31（M4-7 学习路线）、UI-32（M4-3 社交互动）与 RBAC-D 管理后台页面直接实现，Element Plus 依赖与过渡样式已移除；该迁移已提交。题目详情页已改造为「题面 + 提示卡片 + 右侧四资源卡片」，并交付官方题解（创建者编辑 + 金币解锁）、解题思路论坛（帖子/回复/软删除）、提交统计页与关联比赛页，详见 4.3；题目主更新不再写入题解字段，官方题解专用接口是唯一写入口。
+> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)，前端 UI 迁移见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。当前进度：**M4-2A、M4-2B、M4-2C、M4-3、M4-4、RBAC-D、M5-A、M5-4、M5-5、M5-6、M5-7 与 M5-8 已完成**（M0–M3 已完成；M4 已完成；M5 已完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页、签到、Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线模型、权限、路线/节点 CRUD 与树结构；M4-2B 交付服务端进度计算（AC 事件补算 + 读取补算、完成锁存）与题目下线/删除守卫；M4-2C 交付学习路线前端（列表/树详情/编辑/官方管理页，PrimeVue TreeTable/DataTable，UI-31）；M4-3 交付轻量社交互动（题解点赞、用户关注、站内通知，回复/点赞/关注接入活跃度与共享分，前端点赞按钮/关注 Dialog/通知铃铛/通知页，UI-32，见 4.8）；M4-4 交付 Rating 衰减与赛季重置（`rating.settings.manage` 权限与 Rating 分组、管理设置 API、`/admin/rating` 设置页、月度高分段衰减、赛季软重置、`decay`/`season_reset` 历史与公开赛季接口）；RBAC-A 交付权限目录、内置角色、首次 Seed/旧角色映射、实时 Access 解析、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/`canAny`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化，以及文档、HTTP 冒烟与浏览器 E2E；M5-A 交付 AI 后端基础（多 provider 配置、用户 API key AES-GCM 加密存储、OpenAI 兼容补全/格式化/优化与题目 AI 提示缓存/限流，AI 路由始终挂载、未配置密钥时返回 40002）；M5-5 交付 AI 前端（提交页 AI 补全/格式化/优化工具栏、题目详情 AI 提示、`/settings/ai` AI 配置页与用户菜单入口，见 §6.5）；M5-6 交付 HydroOJ 题包导入（`POST /api/problems/import/hydro`、大小限制/防路径穿越、slug 冲突不覆盖、默认下线、逐题部分成功与整包回滚，见 §7）与题目详情公开创建者摘要（`author{id,username,nickname}`），前端新增 `/problems/import` 导入页、题目列表「导入题包」入口与详情创建者链接。AI 出题造数据（M5-4）已交付：标程 → AI 纯 Python 3 造数据脚本 → judge 沙盒生成输入/输出 → 预览确认入库，见 §6.4；M5-7 证书认证已交付（证书类型/提交/审核/公开验证码核验，见 §5.6）；头像上传（M5-8）已交付（本地存储上传/移除、公开读取、上传优先与外链替换语义，见 §4.1））。前端 UI 已完成 UI-00～UI-20 的 PrimeVue 4 迁移（含 UI-19 题库编辑与 UI-20 异常页）、UI-30（M4-C 排行榜/历史）、UI-31（M4-7 学习路线）、UI-32（M4-3 社交互动）与 RBAC-D 管理后台页面直接实现，Element Plus 依赖与过渡样式已移除；该迁移已提交。题目详情页已改造为「题面 + 提示卡片 + 右侧四资源卡片」，并交付官方题解（创建者编辑 + 金币解锁）、解题思路论坛（帖子/回复/软删除）、提交统计页与关联比赛页，详见 4.3；题目主更新不再写入题解字段，官方题解专用接口是唯一写入口。
 
 ---
 
@@ -77,7 +77,7 @@ kapOJ 是一个融合 **竞技评测 + 游戏化成长体系 + AI 辅助** 的�
 | 缓存     | Redis                                                      | 会话、排行榜、限流、任务队列                                                     |
 | 消息队列 | Asynq（基于 Redis）                                        | 评测任务异步调度                                                                 |
 | 评测沙盒 | 独立评测服务 + Docker 容器隔离                             | 多语言编译运行，资源限制                                                         |
-| 对象存储 | MinIO / 本地文件系统                                       | 题目数据、徽章图片、证书                                                         |
+| 对象存储 | MinIO / 本地文件系统                                       | 题目数据、徽章图片、证书、用户头像                                                         |
 | AI 对接  | OpenAI 兼容 API                                            | DeepSeek / OpenAI / Qwen / GLM 统一接入                                          |
 | 部署     | Docker Compose / K8s                                       | 前后端、评测服务容器化                                                           |
 
@@ -175,6 +175,8 @@ kapoj/
 ```sql
 users (
   id, username, nickname, email, password_hash, avatar_url,
+  avatar_key,      -- 上传头像的 storage key（avatars/<userID>/<random>）；空表示无上传
+  avatar_content_type, -- 上传头像的 MIME（仅服务端使用，不返回给客户端）
   role,            -- legacy 兼容字段：user / problem_admin / contest_admin / super_admin；自 RBAC-C 起仅用于展示，不再参与管理授权
   rating,          -- 当前比赛 Rating（由 rating_history 结算得出，此处为缓存）
   coins,           -- 金币余额，不允许为负（CHECK coins >= 0）
@@ -186,6 +188,9 @@ users (
 -- 实现差异（M0）：username 与 email 统一存小写，因此唯一性不区分大小写；
 -- 唯一索引名为 uniq_users_username、uniq_users_email，CHECK 约束名为 chk_users_coins_non_negative；
 -- 新用户 rating 默认 1500。
+-- 实现差异（M5-8）：users 增加 avatar_key（storage 键，仅内部上传）与 avatar_content_type（MIME）；
+-- avatarUploaded 为计算字段（avatar_key != ''），不单独存列；avatar_url 仍是所有展示位置读取的有效 URL
+-- （外链或内部接口 /api/users/<id>/avatar?v=<unix>）。
 -- 实现差异（M4-A）：rating_history 已由 db.Migrate 创建，唯一索引名为 uniq_rating_history_user_contest，
 -- 使用部分唯一索引 (user_id, contest_id) WHERE contest_id IS NOT NULL；contest_id 可空，kind 本阶段只写 contest。
 -- 实现差异（M4-4）：rating_history 增加 period_key（默认 ''，比赛结算恒为空串），新增部分唯一索引
@@ -589,6 +594,9 @@ user_ai_configs (
 | POST | /auth/logout       | 登出，吊销 refresh token        |
 | GET  | /users/me          | 当前用户信息                    |
 | PUT  | /users/me          | 更新资料                        |
+| POST | /users/me/avatar   | 上传头像（登录；multipart `file`） |
+| DELETE | /users/me/avatar | 移除头像（登录）                 |
+| GET  | /users/:id/avatar  | 读取上传头像（公开）             |
 | GET  | /users/:id/profile | 查看他人主页                    |
 | GET  | /admin/users       | 用户分页列表（`user.read`，见 4.7） |
 
@@ -609,7 +617,7 @@ user_ai_configs (
 - `GET /users/:id/profile` 不返回邮箱和角色；M3-B 起返回真实的 `equippedBadges`（数组，最多 `KAPOJ_MAX_EQUIPPED_BADGES` 个）与 `equippedTitle`（无装备时为 null），已装备但后来下线的徽章/称号仍展示。
 - M3-C 起个人主页昵称旁用 `IdentityShowcase` 展示装备称号与徽章；用户菜单显示金币余额并提供「装扮管理」入口。金币余额以服务端 `GET /users/me` 为准，购买或装备后刷新。
 - `GET /admin/users` 原为超级管理员的用户分页列表；RBAC-B 起改为 `user.read` 权限（super 绕过），并新增 keyword/status/roleId 筛选，详见 4.7。该接口也用于验收「管理员接口对无权限用户返回 403」。
-- 头像上传依赖 MinIO，**未实现**，安排在 M5-8；目前只能填写头像链接。修改密码接口**未实现**。
+- 头像上传已实现（M5-8，见下）；修改密码接口**未实现**。
 
 **实现状态（RBAC-A，2026-11-06）**
 
@@ -624,6 +632,13 @@ user_ai_configs (
 - 新增 `/api/admin/*` 管理接口，全部使用 `RequirePermission`（super 绕过但仍写审计）：角色 CRUD/权限矩阵、权限目录、用户列表/详情/编辑/角色分配/封禁/解封、审计查询、仪表盘统计，接口清单与权限码见 4.7。
 - 敏感变更（角色/权限、用户角色分配、封禁/解封、管理员编辑用户）在同一事务内写审计，失败回滚不留下审计；审计摘要为中文，不含密码/token/代码/测试数据。
 - 保护规则：系统角色不可删除、code/name 不可改；`super_admin` 权限不可修改；只有 super 能授予/移除/封禁/解封 super；禁止封禁自己；禁止移除/封禁最后一个 active super（事务 + PostgreSQL advisory lock 串行化）。详见 4.7。
+
+**实现状态（M5-8 头像上传 ✅，2026-11-09）**
+
+- 用户可在个人资料页上传头像（PNG/JPEG/WebP/GIF，≤2 MiB，magic bytes 校验），保存到本地 `storage.Storage`，key 为 `avatars/<userID>/<random>`；`avatar_url` 写为内部接口 `/api/users/<id>/avatar?v=<unix>`，`avatar_key`/`avatar_content_type` 写库；`Me`/`Profile` 增加计算字段 `avatarUploaded`（`avatar_key != ''`）。
+- 来源语义：上传优先于外链；保存非空 `avatarUrl` 会替换上传头像（清空 `avatar_key`/`avatar_content_type` 并删除旧文件）；保存空 `avatarUrl` 保留已有上传（避免表单把内部 URL 当外链误删）；移除头像清空外链与上传。管理员编辑用户沿用同一语义（非空外链清空 key，空外链保留上传；admin 路径不持有 storage，旧文件删除为 minor）。
+- 公开读取 `GET /api/users/:id/avatar` 无认证，按 `avatar_key` 读取并返回 DB 中的 contentType，响应 `Cache-Control: public, max-age=31536000, immutable`（URL 带 v 缓存破坏）；无上传/文件缺失返回 404。上传/移除仅本人登录可用（401/40001）。
+- 上传失败/DB 失败会清理新文件，旧头像不丢；替换/移除成功后 best-effort 删除旧文件。不新增权限码、不接 MinIO、不提供裁剪/压缩/审核；前端所有 `avatarUrl` 展示位置（UserMenu/UserProfile/榜单/测评/社交）自动使用新头像。
 
 **Codex 提示词（用户与认证）**
 
@@ -1527,7 +1542,7 @@ user_ai_configs (
 
 ## 6. AI 辅助功能模块
 
-**实现状态（M5-A ✅；M5-1～M5-3、M5-4、M5-5 已完成；M5-7 证书认证已完成；M5-8 头像上传待办）**
+**实现状态（M5-A ✅；M5-1～M5-3、M5-4、M5-5 已完成；M5-7 证书认证已完成；M5-8 头像上传已完成，见 4.1）**
 
 - **路由挂载**：AI 路由（`/api/ai/configs` GET/POST、`/api/ai/complete`、`/api/ai/format`、`/api/ai/optimize`、`/api/ai/hint`）**始终挂载**（`ai.Service` 恒非 nil）；管理员在 `/admin/ai` 关闭 AI 后，`RequireAIEnabled` 中间件让所有 `/api/ai/*` 统一返回 404（见 §6.6）。未配置密钥时后端也正常启动，AI 路由仍可访问（`GET /api/ai/configs` 返回 200 + `keyConfigured=false`），保存配置/AI 调用返回 40001（见 §6.7 无密钥语义）。
 - **密钥来源**：加密密钥来自环境变量 `KAPOJ_AI_ENCRYPTION_KEY`（优先）或本地密钥文件 `KAPOJ_AI_KEY_FILE`（默认 `data/ai.key`）；env 非法 base64/长度在启动时报错，文件缺失/非法则视为未配置（后台可生成/覆盖）。详见 §6.7。
@@ -1536,7 +1551,7 @@ user_ai_configs (
 - **OpenAI 客户端**：`POST {base_url}/chat/completions`，Bearer key，解析 `choices[0].message.content`；非 2xx / 空 choices / 畸形 JSON / 超时统一映射为 `50200 AI 服务调用失败`（`KAPOJ_AI_REQUEST_TIMEOUT` 控制超时，默认 45s），不泄露 key 与上游响应体敏感内容。
 - **限流**：补全/格式化/优化/首次生成提示按用户 Redis 冷却（`kapoj:ai:cool:<userID>`，`SetNX`，`KAPOJ_AI_COOLDOWN` 默认 2s），超限返回 `42903`；Redis 故障返回 `50300`；缓存命中的提示不消耗冷却。
 - **提示缓存**：`POST /api/ai/hint` 登录 + `LoadAccess`；缓存命中直接返回 `cached=true`，未命中要求用户配置并调用模型后 `INSERT ... ON CONFLICT (problem_id) DO NOTHING` 写入缓存；非公开题对无 `problem.view_hidden` 的用户返回 40400。
-- **范围外**：M5-8（头像上传）尚未实现（M5-4 出题造数据见 §6.4，M5-5 AI 前端见 §6.5，M5-6 HydroOJ 导入见 §7，M5-7 证书认证见 §5.6）；M5-A 不新增管理员权限码。
+- **范围外**：M5-A 不新增管理员权限码（M5-4 出题造数据见 §6.4，M5-5 AI 前端见 §6.5，M5-6 HydroOJ 导入见 §7，M5-7 证书认证见 §5.6，M5-8 头像上传见 §4.1）。
 
 ### 6.1 功能清单
 
