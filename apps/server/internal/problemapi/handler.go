@@ -73,7 +73,7 @@ func RegisterRoutes(
 	if o.MaxImportUncompressedBytes > 0 {
 		problem.WithHydroUncompressedLimit(o.MaxImportUncompressedBytes)(s)
 	}
-	h := &handler{svc: s, accepted: accepted, contests: contests, rbac: o.RBAC, solutions: o.Solutions, discussions: o.Discussions, maxImportFileBytes: maxImport}
+	h := &handler{svc: s, accepted: accepted, contests: contests, rbac: o.RBAC, solutions: o.Solutions, discussions: o.Discussions, social: o.Social, maxImportFileBytes: maxImport}
 
 	// resolver 为 nil 时 RequirePermission 会拒绝所有写操作，LoadAccess 为
 	// 空操作；生产环境 router 始终传入 RBAC service。
@@ -105,6 +105,8 @@ func RegisterRoutes(
 	api.POST("/problems/:id/solutions/:postId/replies", middleware.RequireAuth(), load, h.createReply)
 	api.PUT("/problems/:id/solutions/:postId/replies/:replyId", middleware.RequireAuth(), load, h.updateReply)
 	api.DELETE("/problems/:id/solutions/:postId/replies/:replyId", middleware.RequireAuth(), load, h.deleteReply)
+	api.POST("/problems/:id/solutions/:postId/like", middleware.RequireAuth(), load, h.likePost)
+	api.DELETE("/problems/:id/solutions/:postId/like", middleware.RequireAuth(), load, h.unlikePost)
 
 	problemJSON.POST("/problems", require(string(rbac.PermProblemCreate)), audit(string(rbac.PermProblemCreate)), h.create)
 	problemJSON.PUT("/problems/:id", require(string(rbac.PermProblemUpdate)), audit(string(rbac.PermProblemUpdate)), h.update)
@@ -128,6 +130,7 @@ type handler struct {
 	rbac        *rbac.Service
 	solutions   *problem.OfficialSolutionService
 	discussions *problem.DiscussionService
+	social      *social.Service
 
 	maxImportFileBytes int64
 }

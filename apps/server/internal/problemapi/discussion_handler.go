@@ -1,6 +1,8 @@
 package problemapi
 
 import (
+	"log/slog"
+
 	"github.com/gin-gonic/gin"
 
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
@@ -97,7 +99,57 @@ func (h *handler) deletePost(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
+	if h.social != nil {
+		if err := h.social.CleanupSolutionPost(c.Request.Context(), postID); err != nil {
+			slog.Warn("problemapi: cleanup solution post failed", "post", postID, "err", err)
+		}
+	}
 	httpx.OK(c, nil)
+}
+
+func (h *handler) likePost(c *gin.Context) {
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	postID, ok := pathID(c, "postId")
+	if !ok {
+		return
+	}
+	actorID := currentUserID(c)
+	// 先复用讨论服务校验题目/帖子可见性（隐藏题 404、帖子不存在 404）。
+	if _, err := h.discussions.GetPost(c.Request.Context(), actorID, id, postID, viewer(c), currentIsSuper(c), isModerator(c)); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	result, err := h.social.LikeSolutionPost(c.Request.Context(), actorID, postID)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, result)
+}
+
+func (h *handler) unlikePost(c *gin.Context) {
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	postID, ok := pathID(c, "postId")
+	if !ok {
+		return
+	}
+	actorID := currentUserID(c)
+	if _, err := h.discussions.GetPost(c.Request.Context(), actorID, id, postID, viewer(c), currentIsSuper(c), isModerator(c)); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	result, err := h.social.UnlikeSolutionPost(c.Request.Context(), actorID, postID)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, result)
 }
 
 func (h *handler) createReply(c *gin.Context) {
@@ -117,6 +169,11 @@ func (h *handler) createReply(c *gin.Context) {
 	if err != nil {
 		httpx.Fail(c, err)
 		return
+	}
+	if h.social != nil {
+		if err := h.social.OnSolutionReply(c.Request.Context(), postID, reply.ID, currentUserID(c)); err != nil {
+			slog.Warn("problemapi: reply hook failed", "post", postID, "reply", reply.ID, "err", err)
+		}
 	}
 	httpx.Created(c, reply)
 }

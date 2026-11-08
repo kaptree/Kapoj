@@ -278,6 +278,63 @@ func TestDiscussionPermissions(t *testing.T) {
 	assertDiscussionCode(t, err, 40400)
 }
 
+func TestDiscussionLikeCountsAndLikedByMe(t *testing.T) {
+	e := newDiscEnv(t)
+	ctx := context.Background()
+	const (
+		creator = int64(45)
+		author  = int64(46)
+		liker1  = int64(47)
+		liker2  = int64(48)
+	)
+	e.addUser(t, creator, "creator", "c")
+	e.addUser(t, author, "author", "a")
+	e.addUser(t, liker1, "liker1", "l1")
+	e.addUser(t, liker2, "liker2", "l2")
+	p := e.addProblem(t, "like-disc", creator, true)
+
+	detail, err := e.svc.CreatePost(ctx, author, p.ID, problem.Viewer{}, false,
+		problem.SolutionPostInput{Title: "L", ContentMD: "body"})
+	require.NoError(t, err)
+	postID := detail.ID
+
+	// 无点赞时 likeCount=0、likedByMe=false。
+	page, err := e.svc.ListPosts(ctx, liker1, p.ID, problem.Viewer{}, false, false, 1, 20)
+	require.NoError(t, err)
+	require.Len(t, page.Items, 1)
+	assert.EqualValues(t, 0, page.Items[0].LikeCount)
+	assert.False(t, page.Items[0].LikedByMe)
+
+	// 插入两条点赞。
+	require.NoError(t, e.db.Create(&problem.SolutionPostLike{UserID: liker1, PostID: postID}).Error)
+	require.NoError(t, e.db.Create(&problem.SolutionPostLike{UserID: liker2, PostID: postID}).Error)
+
+	// 列表批量返回 likeCount=2，liker1 的 likedByMe=true。
+	page, err = e.svc.ListPosts(ctx, liker1, p.ID, problem.Viewer{}, false, false, 1, 20)
+	require.NoError(t, err)
+	require.Len(t, page.Items, 1)
+	assert.EqualValues(t, 2, page.Items[0].LikeCount)
+	assert.True(t, page.Items[0].LikedByMe)
+
+	// 游客视角 likedByMe=false。
+	page, err = e.svc.ListPosts(ctx, 0, p.ID, problem.Viewer{}, false, false, 1, 20)
+	require.NoError(t, err)
+	require.Len(t, page.Items, 1)
+	assert.EqualValues(t, 2, page.Items[0].LikeCount)
+	assert.False(t, page.Items[0].LikedByMe)
+
+	// 详情同样返回 likeCount/likedByMe。
+	d, err := e.svc.GetPost(ctx, liker2, p.ID, postID, problem.Viewer{}, false, false)
+	require.NoError(t, err)
+	assert.EqualValues(t, 2, d.LikeCount)
+	assert.True(t, d.LikedByMe)
+
+	d, err = e.svc.GetPost(ctx, author, p.ID, postID, problem.Viewer{}, false, false)
+	require.NoError(t, err)
+	assert.EqualValues(t, 2, d.LikeCount)
+	assert.False(t, d.LikedByMe)
+}
+
 func TestDiscussionHiddenProblem(t *testing.T) {
 	e := newDiscEnv(t)
 	ctx := context.Background()

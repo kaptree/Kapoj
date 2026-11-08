@@ -100,6 +100,33 @@ func TestMigrateCreatesDiscussionSchema(t *testing.T) {
 	assert.True(t, g.Migrator().HasColumn(&problem.SolutionReply{}, "content_md"))
 }
 
+func TestMigrateCreatesSolutionLikeSchema(t *testing.T) {
+	dsn := os.Getenv("KAPOJ_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("KAPOJ_TEST_DATABASE_URL not set; skipping database test")
+	}
+	g, err := open(dsn, io.Discard)
+	require.NoError(t, err)
+	require.NoError(t, Migrate(g))
+	sqlDB, err := g.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	assert.True(t, g.Migrator().HasTable("problem_solution_post_likes"), "缺少表 problem_solution_post_likes")
+	assert.True(t, g.Migrator().HasIndex(&problem.SolutionPostLike{}, "uniq_solution_post_likes"))
+	assert.True(t, g.Migrator().HasIndex(&problem.SolutionPostLike{}, "idx_solution_post_likes_post"))
+
+	userID := time.Now().UnixNano()
+	postID := userID
+	t.Cleanup(func() {
+		require.NoError(t, g.Where("post_id = ?", postID).Delete(&problem.SolutionPostLike{}).Error)
+	})
+	first := &problem.SolutionPostLike{UserID: userID, PostID: postID, CreatedAt: time.Now()}
+	require.NoError(t, g.Create(first).Error)
+	duplicate := &problem.SolutionPostLike{UserID: userID, PostID: postID, CreatedAt: time.Now()}
+	assert.Error(t, g.Create(duplicate).Error, "同一用户同一帖子只能点赞一次")
+}
+
 func TestMigrateCreatesRatingSchema(t *testing.T) {
 	dsn := os.Getenv("KAPOJ_TEST_DATABASE_URL")
 	if dsn == "" {

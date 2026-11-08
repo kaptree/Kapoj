@@ -46,6 +46,8 @@ type SolutionPostItem struct {
 	Excerpt    string        `json:"excerpt"`
 	Author     AuthorSummary `json:"author"`
 	ReplyCount int64         `json:"replyCount"`
+	LikeCount  int64         `json:"likeCount"`
+	LikedByMe  bool          `json:"likedByMe"`
 	CreatedAt  time.Time     `json:"createdAt"`
 	UpdatedAt  time.Time     `json:"updatedAt"`
 	CanEdit    bool          `json:"canEdit"`
@@ -349,8 +351,19 @@ func (s *DiscussionService) postDetail(ctx context.Context, p *Problem, userID i
 		return nil, err
 	}
 
+	likeCounts, err := s.likeCounts(ctx, []int64{post.ID})
+	if err != nil {
+		return nil, err
+	}
+	likedByMe, err := s.likedByMe(ctx, userID, []int64{post.ID})
+	if err != nil {
+		return nil, err
+	}
+
 	item.Author = authors[post.UserID]
 	item.ReplyCount = int64(len(replies))
+	item.LikeCount = likeCounts[post.ID]
+	item.LikedByMe = likedByMe[post.ID]
 	replyItems := make([]SolutionReplyItem, 0, len(replies))
 	for _, r := range replies {
 		replyItems = append(replyItems, SolutionReplyItem{
@@ -401,17 +414,68 @@ func (s *DiscussionService) postItems(ctx context.Context, p *Problem, userID in
 	if err != nil {
 		return nil, err
 	}
+	likeCounts, err := s.likeCounts(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	likedByMe, err := s.likedByMe(ctx, userID, ids)
+	if err != nil {
+		return nil, err
+	}
 
 	for _, post := range posts {
 		items = append(items, SolutionPostItem{
 			ID: post.ID, ProblemID: post.ProblemID, UserID: post.UserID,
 			Title: post.Title, Excerpt: excerpt(post.ContentMD),
 			Author: authors[post.UserID], ReplyCount: replyCounts[post.ID],
+			LikeCount: likeCounts[post.ID], LikedByMe: likedByMe[post.ID],
 			CreatedAt: post.CreatedAt.UTC(), UpdatedAt: post.UpdatedAt.UTC(),
 			CanEdit: canEdit(userID, post.UserID), CanDelete: canDelete(userID, post.UserID, p, isModerator),
 		})
 	}
 	return items, nil
+}
+
+func (s *DiscussionService) likeCounts(ctx context.Context, postIDs []int64) (map[int64]int64, error) {
+	out := make(map[int64]int64, len(postIDs))
+	if len(postIDs) == 0 {
+		return out, nil
+	}
+	var rows []struct {
+		PostID int64
+		N      int64
+	}
+	if err := s.db.WithContext(ctx).Model(&SolutionPostLike{}).
+		Select("post_id, COUNT(*) AS n").
+		Where("post_id IN ?", postIDs).
+		Group("post_id").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		out[r.PostID] = r.N
+	}
+	return out, nil
+}
+
+func (s *DiscussionService) likedByMe(ctx context.Context, userID int64, postIDs []int64) (map[int64]bool, error) {
+	out := make(map[int64]bool, len(postIDs))
+	if userID <= 0 || len(postIDs) == 0 {
+		return out, nil
+	}
+	var rows []struct {
+		PostID int64
+	}
+	if err := s.db.WithContext(ctx).Model(&SolutionPostLike{}).
+		Select("post_id").
+		Where("user_id = ? AND post_id IN ?", userID, postIDs).
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		out[r.PostID] = true
+	}
+	return out, nil
 }
 
 func (s *DiscussionService) replyCounts(ctx context.Context, postIDs []int64) (map[int64]int64, error) {

@@ -32,3 +32,14 @@ type SolutionReply struct {
 }
 
 func (SolutionReply) TableName() string { return "problem_solution_replies" }
+
+// SolutionPostLike 是解题思路帖子的点赞记录；unique(user_id, post_id) 保证同一
+// 用户对同一帖子只能点赞一次。
+type SolutionPostLike struct {
+	ID        int64     `gorm:"primaryKey"`
+	UserID    int64     `gorm:"not null;uniqueIndex:uniq_solution_post_likes,priority:1"`
+	PostID    int64     `gorm:"not null;uniqueIndex:uniq_solution_post_likes,priority:2;index:idx_solution_post_likes_post"`
+	CreatedAt time.Time `gorm:"type:timestamptz;not null"`
+}
+
+func (SolutionPostLike) TableName() string { return "problem_solution_post_likes" }

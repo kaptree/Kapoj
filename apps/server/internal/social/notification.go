@@ -22,6 +22,11 @@ func insertNotification(tx *gorm.DB, n *Notification) error {
 	return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(n).Error
 }
 
+// solutionPostLink 生成帖子详情页站内相对路径，供点赞/回复通知复用。
+func solutionPostLink(problemID, postID int64) string {
+	return fmt.Sprintf("/problems/%d/solutions/%d", problemID, postID)
+}
+
 // ListNotifications 返回用户自己的通知，按 created_at DESC, id DESC 排序。
 func (s *Service) ListNotifications(ctx context.Context, userID int64, page, size int) (*NotificationPage, error) {
 	if userID <= 0 {
@@ -155,6 +160,6 @@ func (s *Service) OnSolutionReply(ctx context.Context, postID, replyID, actorID 
 		DedupeKey:  fmt.Sprintf("reply:%d", replyID),
 		TargetType: targetTypeSolutionPost,
 		TargetID:   postID,
-		Link:       fmt.Sprintf("/problems/%d/solutions/%d", post.ProblemID, postID),
+		Link:       solutionPostLink(post.ProblemID, postID),
 	})
 }

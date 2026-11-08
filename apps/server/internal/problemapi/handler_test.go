@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/kaptree/kapoj/apps/server/internal/activity"
 	"github.com/kaptree/kapoj/apps/server/internal/config"
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
@@ -53,9 +54,10 @@ func newFx(t *testing.T) *fx {
 	root := filepath.Join(t.TempDir(), "store")
 	store, err := storage.NewLocal(root)
 	require.NoError(t, err)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	h := router.New(router.Deps{
 		DB:      g,
-		Redis:   redis.NewClient(&redis.Options{Addr: mr.Addr()}),
+		Redis:   rdb,
 		Storage: store,
 		Config: &config.Config{
 			JWTSecret:       strings.Repeat("s", 32),
@@ -65,6 +67,7 @@ func newFx(t *testing.T) *fx {
 		},
 		Enqueuer: noopQueue{},
 		RBAC:     rbacSvc,
+		Activity: activity.NewService(g, rdb),
 	})
 	return &fx{t: t, h: h, db: g, rbac: rbacSvc, root: root, tokens: map[string]string{}}
 }
@@ -995,4 +998,145 @@ func TestProblemDetailAuthorDBError(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 	assert.EqualValues(t, 50000, resp["code"])
 	assert.NoError(t, restoreErr)
+}
+
+// createPostID 以给定 token 在题目下创建解题思路帖子并返回其 ID。
+func (f *fx) createPostID(problemID int64, token, title string) int64 {
+	f.t.Helper()
+	post := f.createPost(problemID, token, title, "body")
+	return int64(post["id"].(float64))
+}
+
+func TestSolutionLikeRoutesAndPermissions(t *testing.T) {
+	f := newFx(t)
+	pid := f.publish("likes", nil)
+	authorTok, _ := f.registerUser("user")
+	likerTok, likerID := f.registerUser("user")
+	postID := f.createPostID(pid, authorTok, "P")
+	likePath := path("/api/problems/%d/solutions/%d/like", pid, postID)
+
+	// 游客 401。
+	w, resp := f.do(http.MethodPost, likePath, "", nil)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.EqualValues(t, 40100, resp["code"])
+
+	// 点赞成功。
+	w, resp = f.do(http.MethodPost, likePath, likerTok, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data := resp["data"].(map[string]any)
+	assert.Equal(t, true, data["liked"])
+	assert.EqualValues(t, 1, data["likeCount"])
+
+	// 重复点赞幂等。
+	w, resp = f.do(http.MethodPost, likePath, likerTok, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.EqualValues(t, 1, resp["data"].(map[string]any)["likeCount"])
+
+	// 自赞 40001。
+	w, resp = f.do(http.MethodPost, likePath, authorTok, nil)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	// 取消赞。
+	w, resp = f.do(http.MethodDelete, likePath, likerTok, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	data = resp["data"].(map[string]any)
+	assert.Equal(t, false, data["liked"])
+	assert.EqualValues(t, 0, data["likeCount"])
+
+	// 不存在的帖子 404。
+	w, _ = f.do(http.MethodPost, path("/api/problems/%d/solutions/999999/like", pid), likerTok, nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	// 隐藏题帖子 404（无 view_hidden）。
+	hidden := f.create(body("hiddenlike"))
+	w, _ = f.do(http.MethodPost, path("/api/problems/%d/solutions/1/like", hidden), likerTok, nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	// 点赞者活跃度 +1，且唯一。
+	var likeLogs int64
+	require.NoError(t, f.db.Model(&activity.ActivityLog{}).
+		Where("user_id = ? AND action = ?", likerID, activity.ActionSolutionLike).Count(&likeLogs).Error)
+	assert.EqualValues(t, 1, likeLogs)
+}
+
+func TestSolutionReplyTriggersNotificationAndActivity(t *testing.T) {
+	f := newFx(t)
+	pid := f.publish("replyhook", nil)
+	authorTok, authorID := f.registerUser("user")
+	replierTok, replierID := f.registerUser("user")
+	postID := f.createPostID(pid, authorTok, "P")
+
+	w, resp := f.do(http.MethodPost, path("/api/problems/%d/solutions/%d/replies", pid, postID), replierTok,
+		map[string]string{"contentMd": "nice"})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	replyID := int64(resp["data"].(map[string]any)["id"].(float64))
+
+	// 帖子作者收到一条回复通知。
+	var notifCount int64
+	require.NoError(t, f.db.Table("notifications").
+		Where("user_id = ? AND type = ?", authorID, "solution_reply").Count(&notifCount).Error)
+	assert.EqualValues(t, 1, notifCount)
+
+	// 回复者活跃度 +3。
+	var al activity.ActivityLog
+	require.NoError(t, f.db.Where("user_id = ? AND action = ? AND ref_id = ?",
+		replierID, activity.ActionSolutionReply, replyID).Take(&al).Error)
+	assert.Equal(t, 3, al.Points)
+}
+
+func TestDeleteSolutionPostCleansUpLikes(t *testing.T) {
+	f := newFx(t)
+	pid := f.publish("delclean", nil)
+	authorTok, _ := f.registerUser("user")
+	likerTok, _ := f.registerUser("user")
+	postID := f.createPostID(pid, authorTok, "P")
+
+	w, _ := f.do(http.MethodPost, path("/api/problems/%d/solutions/%d/like", pid, postID), likerTok, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	// 作者删除帖子。
+	w, _ = f.do(http.MethodDelete, path("/api/problems/%d/solutions/%d", pid, postID), authorTok, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	// 点赞与共享项被清理。
+	var likeCount int64
+	require.NoError(t, f.db.Table("problem_solution_post_likes").Where("post_id = ?", postID).Count(&likeCount).Error)
+	assert.EqualValues(t, 0, likeCount)
+
+	var sharedCount int64
+	require.NoError(t, f.db.Table("shared_items").Where("type = ? AND ref_id = ?", "solution", postID).Count(&sharedCount).Error)
+	assert.EqualValues(t, 0, sharedCount)
+}
+
+func TestSolutionListAndDetailLikeCounts(t *testing.T) {
+	f := newFx(t)
+	pid := f.publish("likecount", nil)
+	authorTok, _ := f.registerUser("user")
+	likerTok, _ := f.registerUser("user")
+	postID := f.createPostID(pid, authorTok, "P")
+
+	w, _ := f.do(http.MethodPost, path("/api/problems/%d/solutions/%d/like", pid, postID), likerTok, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	// 列表（点赞者视角）。
+	_, resp := f.do(http.MethodGet, path("/api/problems/%d/solutions", pid), likerTok, nil)
+	items := resp["data"].(map[string]any)["items"].([]any)
+	require.Len(t, items, 1)
+	item := items[0].(map[string]any)
+	assert.EqualValues(t, 1, item["likeCount"])
+	assert.Equal(t, true, item["likedByMe"])
+
+	// 列表（游客视角）。
+	_, resp = f.do(http.MethodGet, path("/api/problems/%d/solutions", pid), "", nil)
+	items = resp["data"].(map[string]any)["items"].([]any)
+	item = items[0].(map[string]any)
+	assert.EqualValues(t, 1, item["likeCount"])
+	assert.Equal(t, false, item["likedByMe"])
+
+	// 详情。
+	_, resp = f.do(http.MethodGet, path("/api/problems/%d/solutions/%d", pid, postID), likerTok, nil)
+	detail := resp["data"].(map[string]any)
+	assert.EqualValues(t, 1, detail["likeCount"])
+	assert.Equal(t, true, detail["likedByMe"])
 }
