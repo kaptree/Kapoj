@@ -88,6 +88,7 @@ function profile(overrides: Partial<Profile> = {}): Profile {
     username: 'alice',
     nickname: 'Alice',
     avatarUrl: '',
+    avatarUploaded: false,
     bio: '',
     rating: 1500,
     coins: 100,
@@ -236,6 +237,53 @@ describe('AdminUsersView', () => {
     })
     expect(toast.add).toHaveBeenCalledWith(
       expect.objectContaining({ severity: 'success', summary: '用户资料已更新' }),
+    )
+    wrapper.unmount()
+  })
+
+  it('blanks the external field and hints when the profile has an uploaded avatar', async () => {
+    auth.can.mockImplementation((code) => code === PERM.user.update)
+    vi.mocked(listAdminUsers).mockResolvedValue({ total: 1, items: [userItem()] })
+    vi.mocked(getAdminUser).mockResolvedValue(userDetail({ id: 1, nickname: 'Alice Admin' }))
+    vi.mocked(getProfile).mockResolvedValue(
+      profile({ avatarUrl: '/api/users/1/avatar?v=1', avatarUploaded: true }),
+    )
+    vi.mocked(updateAdminUser).mockResolvedValue(userDetail())
+    const wrapper = await mountPage()
+
+    await buttons(wrapper, '编辑')[0]!.trigger('click')
+    await flushPromises()
+
+    expect((dialog().querySelector('.avatar-input') as HTMLInputElement).value).toBe('')
+    expect(dialog().textContent).toContain('该用户已上传头像；留空保留，填写外链会替换上传')
+
+    // 保存空外链 → 后端保留上传头像。
+    dialogButton('保存')!.click()
+    await flushPromises()
+    expect(updateAdminUser).toHaveBeenCalledWith(1, expect.objectContaining({ avatarUrl: '' }))
+    wrapper.unmount()
+  })
+
+  it('replaces the uploaded avatar when an external URL is provided', async () => {
+    auth.can.mockImplementation((code) => code === PERM.user.update)
+    vi.mocked(listAdminUsers).mockResolvedValue({ total: 1, items: [userItem()] })
+    vi.mocked(getAdminUser).mockResolvedValue(userDetail({ id: 1, nickname: 'Alice Admin' }))
+    vi.mocked(getProfile).mockResolvedValue(
+      profile({ avatarUrl: '/api/users/1/avatar?v=1', avatarUploaded: true }),
+    )
+    vi.mocked(updateAdminUser).mockResolvedValue(userDetail())
+    const wrapper = await mountPage()
+
+    await buttons(wrapper, '编辑')[0]!.trigger('click')
+    await flushPromises()
+
+    setField(dialog().querySelector('.avatar-input')!, 'https://example.com/new.png')
+    dialogButton('保存')!.click()
+    await flushPromises()
+
+    expect(updateAdminUser).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ avatarUrl: 'https://example.com/new.png' }),
     )
     wrapper.unmount()
   })

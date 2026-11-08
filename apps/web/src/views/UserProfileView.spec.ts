@@ -40,6 +40,7 @@ function profile(overrides: Partial<Profile> = {}): Profile {
     username: 'alice',
     nickname: 'Alice',
     avatarUrl: '',
+    avatarUploaded: false,
     bio: '热爱算法与开源。',
     rating: 1680,
     coins: 1234,

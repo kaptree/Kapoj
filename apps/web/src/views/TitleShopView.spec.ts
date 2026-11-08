@@ -112,6 +112,7 @@ function me(coins = 500): Me {
     nickname: 'Alice',
     email: 'alice@example.com',
     avatarUrl: '',
+    avatarUploaded: false,
     bio: '',
     role: 'user',
     roles: [],

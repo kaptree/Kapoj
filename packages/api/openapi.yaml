@@ -98,6 +98,64 @@ paths:
               schema: { $ref: '#/components/schemas/MeResponse' }
         '400': { $ref: '#/components/responses/Error' }
         '401': { $ref: '#/components/responses/Error' }
+  /users/me/avatar:
+    post:
+      summary: 上传头像（登录；multipart）
+      description: |
+        file 字段支持 PNG、JPEG、WebP、GIF，且不超过 2 MiB；保存为 avatars/<userID>/<random>，
+        并把 avatar_url 写为 /api/users/<id>/avatar?v=<unix>。缺少文件、格式或大小非法返回 40001。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '200':
+          description: 上传后的当前用户
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+    delete:
+      summary: 移除头像（登录）
+      description: 清空上传头像与外链头像；无头像时幂等。返回最新 Me。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 移除后的当前用户
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+  /users/{id}/avatar:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    get:
+      summary: 读取上传头像（公开）
+      description: 只返回上传到本地存储的头像；外链头像或文件缺失返回 404。URL 带 v 参数破坏缓存，响应可长缓存。
+      responses:
+        '200':
+          description: 原始图片，最大 2 MiB
+          headers:
+            Cache-Control:
+              schema: { type: string }
+              description: public, max-age=31536000, immutable
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+            image/jpeg:
+              schema: { type: string, format: binary }
+            image/webp:
+              schema: { type: string, format: binary }
+            image/gif:
+              schema: { type: string, format: binary }
+        '404': { $ref: '#/components/responses/Error' }
   /users/{id}/profile:
     get:
       summary: 用户公开主页
@@ -2799,13 +2857,16 @@ components:
     Me:
       type: object
       description: 登录/注册响应中的 user 权限字段可能为空；前端登录后应调用 GET /users/me 获取最新角色与权限。
-      required: [id, username, nickname, email, avatarUrl, role, rating, coins, bio, status, roles, permissions, isSuperAdmin, createdAt]
+      required: [id, username, nickname, email, avatarUrl, avatarUploaded, role, rating, coins, bio, status, roles, permissions, isSuperAdmin, createdAt]
       properties:
         id: { type: integer, format: int64 }
         username: { type: string }
         nickname: { type: string }
         email: { type: string }
         avatarUrl: { type: string }
+        avatarUploaded:
+          type: boolean
+          description: 是否已有上传头像；为 true 时 avatarUrl 为内部头像接口，前端不应将其填入外链输入
         role: { $ref: '#/components/schemas/Role' }
         rating: { type: integer }
         coins: { type: integer, format: int64 }
@@ -2832,12 +2893,15 @@ components:
         name: { type: string }
     Profile:
       type: object
-      required: [id, username, nickname, avatarUrl, bio, rating, coins, equippedBadges, equippedTitle, createdAt]
+      required: [id, username, nickname, avatarUrl, avatarUploaded, bio, rating, coins, equippedBadges, equippedTitle, createdAt]
       properties:
         id: { type: integer, format: int64 }
         username: { type: string }
         nickname: { type: string }
         avatarUrl: { type: string }
+        avatarUploaded:
+          type: boolean
+          description: 是否已有上传头像；为 true 时 avatarUrl 为内部头像接口，前端不应将其填入外链输入
         bio: { type: string }
         rating: { type: integer }
         coins: { type: integer, format: int64 }

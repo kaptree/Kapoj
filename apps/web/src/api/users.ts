@@ -6,3 +6,11 @@ export const getMe = () => http.get<Me>('/users/me')
 export const updateMe = (input: UpdateMeRequest) => http.put<Me>('/users/me', input)
 
 export const getProfile = (id: number | string) => http.get<Profile>(`/users/${id}/profile`)
+
+export const uploadAvatar = (file: File) => {
+  const form = new FormData()
+  form.append('file', file)
+  return http.postForm<Me>('/users/me/avatar', form)
+}
+
+export const deleteAvatar = () => http.delete<Me>('/users/me/avatar')

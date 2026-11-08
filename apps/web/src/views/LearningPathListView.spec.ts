@@ -29,6 +29,7 @@ function me(overrides: Partial<Me> = {}): Me {
     nickname: 'Alice',
     email: 'alice@example.com',
     avatarUrl: '',
+    avatarUploaded: false,
     bio: '',
     role: 'user',
     roles: [],

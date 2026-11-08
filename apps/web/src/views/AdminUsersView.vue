@@ -161,22 +161,33 @@ const editSaving = ref(false)
 const editingId = ref<number | null>(null)
 const editForm = ref({ nickname: '', bio: '', avatarUrl: '' })
 const editErrors = ref({ nickname: '', bio: '', avatarUrl: '' })
+const editAvatarUploaded = ref(false)
+
+const editAvatarHint = computed(() =>
+  editAvatarUploaded.value
+    ? '该用户已上传头像；留空保留，填写外链会替换上传'
+    : '填写 http(s) 图片外链',
+)
 
 async function openEdit(item: AdminUserItem) {
   editingId.value = item.id
   editForm.value = { nickname: '', bio: '', avatarUrl: '' }
   editErrors.value = { nickname: '', bio: '', avatarUrl: '' }
+  editAvatarUploaded.value = false
   editDialogVisible.value = true
   editLoading.value = true
   try {
     const [detail, profile] = await Promise.all([getAdminUser(item.id), getProfile(item.id)])
     if (editingId.value !== item.id) return
     // Nickname comes from the admin detail; bio/avatarUrl from the public profile.
+    // An uploaded avatar exposes an internal URL; keep the external field blank so
+    // leaving it empty preserves the upload (backend semantics).
     editForm.value = {
       nickname: detail.nickname,
       bio: profile.bio,
-      avatarUrl: profile.avatarUrl,
+      avatarUrl: profile.avatarUploaded ? '' : profile.avatarUrl,
     }
+    editAvatarUploaded.value = profile.avatarUploaded
   } catch (e) {
     if (editingId.value !== item.id) return
     fail(e, '加载用户详情失败')
@@ -531,7 +542,7 @@ onMounted(() => {
             fluid
           />
         </AppFormField>
-        <AppFormField label="头像链接" :error="editErrors.avatarUrl">
+        <AppFormField label="头像链接" :error="editErrors.avatarUrl" :hint="editAvatarHint">
           <InputText
             id="edit-avatar"
             v-model="editForm.avatarUrl"

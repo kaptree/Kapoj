@@ -234,6 +234,128 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/me/avatar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 上传头像（登录；multipart）
+         * @description file 字段支持 PNG、JPEG、WebP、GIF，且不超过 2 MiB；保存为 avatars/<userID>/<random>，
+         *     并把 avatar_url 写为 /api/users/<id>/avatar?v=<unix>。缺少文件、格式或大小非法返回 40001。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "multipart/form-data": {
+                        /** Format: binary */
+                        file: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 上传后的当前用户 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MeResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+            };
+        };
+        /**
+         * 移除头像（登录）
+         * @description 清空上传头像与外链头像；无头像时幂等。返回最新 Me。
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 移除后的当前用户 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MeResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{id}/avatar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * 读取上传头像（公开）
+         * @description 只返回上传到本地存储的头像；外链头像或文件缺失返回 404。URL 带 v 参数破坏缓存，响应可长缓存。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 原始图片，最大 2 MiB */
+                200: {
+                    headers: {
+                        /** @description public, max-age=31536000, immutable */
+                        "Cache-Control"?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "image/png": string;
+                        "image/jpeg": string;
+                        "image/webp": string;
+                        "image/gif": string;
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users/{id}/profile": {
         parameters: {
             query?: never;
@@ -6246,6 +6368,8 @@ export interface components {
             nickname: string;
             email: string;
             avatarUrl: string;
+            /** @description 是否已有上传头像；为 true 时 avatarUrl 为内部头像接口，前端不应将其填入外链输入 */
+            avatarUploaded: boolean;
             role: components["schemas"]["Role"];
             rating: number;
             /** Format: int64 */
@@ -6273,6 +6397,8 @@ export interface components {
             username: string;
             nickname: string;
             avatarUrl: string;
+            /** @description 是否已有上传头像；为 true 时 avatarUrl 为内部头像接口，前端不应将其填入外链输入 */
+            avatarUploaded: boolean;
             bio: string;
             rating: number;
             /** Format: int64 */

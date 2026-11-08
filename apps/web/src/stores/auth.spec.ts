@@ -24,6 +24,7 @@ const me: Me = {
   nickname: 'Alice',
   email: 'alice@example.com',
   avatarUrl: '',
+  avatarUploaded: false,
   role: 'user',
   roles: [],
   permissions: [],

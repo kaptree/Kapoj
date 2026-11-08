@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import Avatar from 'primevue/avatar'
 import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
@@ -8,12 +8,17 @@ import Textarea from 'primevue/textarea'
 import { useToast } from 'primevue/usetoast'
 
 import { ApiError } from '@/api/http'
+import { deleteAvatar, uploadAvatar } from '@/api/users'
 import AppFormField from '@/components/ui/AppFormField.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
 import { useAuthStore } from '@/stores/auth'
 import { validateAvatarUrl, validateBio, validateProfileNickname } from '@/validation'
+
+const MAX_AVATAR_BYTES = 2 * 1024 * 1024
+const IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
+const IMAGE_EXT_RE = /\.(png|jpe?g|webp|gif)$/i
 
 const auth = useAuthStore()
 const toast = useToast()
@@ -25,13 +30,31 @@ const saving = ref(false)
 const saveError = ref('')
 const refreshError = ref('')
 
+const fileInput = ref<HTMLInputElement | null>(null)
+const pendingFile = ref<File | null>(null)
+const pendingPreview = ref('')
+const uploading = ref(false)
+const removing = ref(false)
+
 const currentUser = computed(() => auth.user)
+
+const avatarUploaded = computed(() => auth.user?.avatarUploaded === true)
+
+const canRemove = computed(() => avatarUploaded.value || fields.value.avatarUrl.trim() !== '')
 
 const avatarPlaceholder = '例如 https://example.com/avatar.png'
 
+const avatarHint = computed(() =>
+  avatarUploaded.value
+    ? '填写外链会替换已上传头像；留空则保留上传头像。'
+    : '填写图片外链，或在上方上传头像图片。',
+)
+
 const avatarPreview = computed(() => {
-  const value = fields.value.avatarUrl.trim()
-  return value && validateAvatarUrl(value) === null ? value : undefined
+  if (pendingPreview.value) return pendingPreview.value
+  const external = fields.value.avatarUrl.trim()
+  if (external && validateAvatarUrl(external) === null) return external
+  return auth.user?.avatarUrl || undefined
 })
 
 const bioCount = computed(() => Array.from(fields.value.bio).length)
@@ -58,6 +81,14 @@ function validateAll() {
   return !errors.value.nickname && !errors.value.bio && !errors.value.avatarUrl
 }
 
+function revokePendingPreview() {
+  if (pendingPreview.value) {
+    URL.revokeObjectURL(pendingPreview.value)
+    pendingPreview.value = ''
+  }
+  pendingFile.value = null
+}
+
 onMounted(async () => {
   try {
     await auth.fetchMe()
@@ -67,11 +98,75 @@ onMounted(async () => {
     if (auth.user) {
       fields.value.nickname = auth.user.nickname
       fields.value.bio = auth.user.bio
-      fields.value.avatarUrl = auth.user.avatarUrl
+      // 已上传头像的内部 URL 不应填入外链输入，预览回落到 auth.user.avatarUrl。
+      fields.value.avatarUrl = auth.user.avatarUploaded ? '' : auth.user.avatarUrl
     }
     loading.value = false
   }
 })
+
+onBeforeUnmount(revokePendingPreview)
+
+function chooseImage() {
+  fileInput.value?.click()
+}
+
+function onFileChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  const picked = input.files?.[0] ?? null
+  if (!picked) return
+  if (picked.size > MAX_AVATAR_BYTES) {
+    toast.add({ severity: 'warn', summary: '头像不能超过 2 MiB', life: 3000 })
+    input.value = ''
+    return
+  }
+  if (!IMAGE_MIME_TYPES.has(picked.type) && !IMAGE_EXT_RE.test(picked.name)) {
+    toast.add({ severity: 'warn', summary: '仅支持 PNG、JPEG、WebP 或 GIF 图片', life: 3000 })
+    input.value = ''
+    return
+  }
+  revokePendingPreview()
+  pendingFile.value = picked
+  pendingPreview.value = URL.createObjectURL(picked)
+  input.value = ''
+}
+
+async function upload() {
+  const file = pendingFile.value
+  if (!file) {
+    toast.add({ severity: 'warn', summary: '请先选择头像图片', life: 3000 })
+    return
+  }
+  uploading.value = true
+  try {
+    const me = await uploadAvatar(file)
+    auth.setUser(me)
+    revokePendingPreview()
+    fields.value.avatarUrl = ''
+    toast.add({ severity: 'success', summary: '头像已上传', life: 3000 })
+  } catch (e) {
+    const message = e instanceof ApiError ? e.message : '上传失败，请稍后再试'
+    toast.add({ severity: 'error', summary: '上传失败', detail: message, life: 4000 })
+  } finally {
+    uploading.value = false
+  }
+}
+
+async function removeAvatar() {
+  removing.value = true
+  try {
+    const me = await deleteAvatar()
+    auth.setUser(me)
+    revokePendingPreview()
+    fields.value.avatarUrl = ''
+    toast.add({ severity: 'success', summary: '头像已移除', life: 3000 })
+  } catch (e) {
+    const message = e instanceof ApiError ? e.message : '移除失败，请稍后再试'
+    toast.add({ severity: 'error', summary: '移除失败', detail: message, life: 4000 })
+  } finally {
+    removing.value = false
+  }
+}
 
 async function save() {
   if (!validateAll()) return
@@ -106,7 +201,7 @@ async function save() {
     <AppPageHeader
       eyebrow="ACCOUNT // PROFILE"
       title="编辑资料"
-      description="更新公开资料；头像上传将在后续版本提供。"
+      description="更新公开资料与头像。"
     />
 
     <AppSurface v-if="loading" padding="lg">
@@ -176,7 +271,7 @@ async function save() {
             v-slot="{ id, invalid, describedby }"
             label="头像链接"
             :error="errors.avatarUrl"
-            hint="头像上传功能将在后续版本提供，目前请填写图片链接。"
+            :hint="avatarHint"
           >
             <InputText
               :id="id"
@@ -190,6 +285,43 @@ async function save() {
               @update:model-value="clearError('avatarUrl')"
             />
           </AppFormField>
+
+          <div class="avatar-upload">
+            <input
+              ref="fileInput"
+              type="file"
+              class="avatar-file-input"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              aria-label="选择头像图片"
+              @change="onFileChange"
+            />
+            <Button
+              type="button"
+              label="选择图片"
+              icon="pi pi-image"
+              severity="secondary"
+              outlined
+              @click="chooseImage"
+            />
+            <Button
+              type="button"
+              label="上传头像"
+              icon="pi pi-upload"
+              :loading="uploading"
+              @click="upload"
+            />
+            <Button
+              v-if="canRemove"
+              type="button"
+              label="移除头像"
+              icon="pi pi-trash"
+              severity="danger"
+              outlined
+              :loading="removing"
+              :disabled="uploading"
+              @click="removeAvatar"
+            />
+          </div>
 
           <Button
             type="submit"
@@ -251,6 +383,16 @@ async function save() {
 
 .form-banner {
   margin-bottom: var(--kapoj-space-4);
+}
+
+.avatar-upload {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kapoj-space-2);
+}
+
+.avatar-file-input {
+  display: none;
 }
 
 .profile-submit {
