@@ -36,6 +36,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/submission"
 	"github.com/kaptree/kapoj/apps/server/internal/submissionapi"
 	"github.com/kaptree/kapoj/apps/server/internal/submissionevents"
+	"github.com/kaptree/kapoj/apps/server/internal/testcasegen"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
 	"github.com/kaptree/kapoj/apps/server/internal/userapi"
 )
@@ -48,18 +49,19 @@ const (
 )
 
 type Deps struct {
-	DB         *gorm.DB
-	Redis      *redis.Client
-	Storage    storage.Storage
-	Config     *config.Config
-	Enqueuer   submission.Enqueuer
-	Game       *gamification.Service
-	Rating     *rating.Service
-	Activity   *activity.Service
-	Learning   *learning.Service
-	RBAC       *rbac.Service
-	AI         *ai.Service
-	AISettings *ai.SettingsService
+	DB          *gorm.DB
+	Redis       *redis.Client
+	Storage     storage.Storage
+	Config      *config.Config
+	Enqueuer    submission.Enqueuer
+	Game        *gamification.Service
+	Rating      *rating.Service
+	Activity    *activity.Service
+	Learning    *learning.Service
+	RBAC        *rbac.Service
+	AI          *ai.Service
+	AISettings  *ai.SettingsService
+	TestcaseGen *testcasegen.Service
 }
 
 func New(d Deps) *gin.Engine {
@@ -151,6 +153,7 @@ func New(d Deps) *gin.Engine {
 			Solutions:   problem.NewOfficialSolutionService(d.DB, problemRepo),
 			Discussions: problem.NewDiscussionService(d.DB, problemRepo),
 			Social:      socialSvc,
+			TestcaseGen: d.TestcaseGen,
 		})
 	submissionSvc := submission.NewService(
 		submissionRepo,

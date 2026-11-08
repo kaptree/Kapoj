@@ -15,6 +15,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 	"github.com/kaptree/kapoj/apps/server/internal/social"
+	"github.com/kaptree/kapoj/apps/server/internal/testcasegen"
 )
 
 const (
@@ -50,6 +51,8 @@ type Options struct {
 	// allowed during a HydroOJ import. Zero means the package default
 	// (problem.MaxHydroUncompressed). Tests may set a small value.
 	MaxImportUncompressedBytes int64
+	// TestcaseGen 是 AI 出题造数据服务；非 nil 时注册相关路由。
+	TestcaseGen *testcasegen.Service
 }
 
 // auditTargetProblem 是内容管理审计的 target type。
@@ -73,7 +76,7 @@ func RegisterRoutes(
 	if o.MaxImportUncompressedBytes > 0 {
 		problem.WithHydroUncompressedLimit(o.MaxImportUncompressedBytes)(s)
 	}
-	h := &handler{svc: s, accepted: accepted, contests: contests, rbac: o.RBAC, solutions: o.Solutions, discussions: o.Discussions, social: o.Social, maxImportFileBytes: maxImport}
+	h := &handler{svc: s, accepted: accepted, contests: contests, rbac: o.RBAC, solutions: o.Solutions, discussions: o.Discussions, social: o.Social, maxImportFileBytes: maxImport, testcaseGen: o.TestcaseGen}
 
 	// resolver 为 nil 时 RequirePermission 会拒绝所有写操作，LoadAccess 为
 	// 空操作；生产环境 router 始终传入 RBAC service。
@@ -120,6 +123,11 @@ func RegisterRoutes(
 	uploads.POST("/problems/:id/testcases", require(string(rbac.PermProblemTestcaseManage)), audit(string(rbac.PermProblemTestcaseManage)), h.addTestcase)
 	uploads.POST("/problems/:id/checker", require(string(rbac.PermProblemCheckerManage)), audit(string(rbac.PermProblemCheckerManage)), h.uploadChecker)
 
+	if h.testcaseGen != nil {
+		api.POST("/problems/:id/testcase-generations", require(string(rbac.PermProblemTestcaseManage)), audit(string(rbac.PermProblemTestcaseManage)), h.createTestcaseGeneration)
+		api.GET("/problems/:id/testcase-generations/:genId", require(string(rbac.PermProblemTestcaseManage)), h.getTestcaseGeneration)
+	}
+
 	imports.POST("/problems/import/hydro", require(string(rbac.PermProblemCreate)), h.importHydro)
 }
 
@@ -133,6 +141,7 @@ type handler struct {
 	social      *social.Service
 
 	maxImportFileBytes int64
+	testcaseGen        *testcasegen.Service
 }
 
 func viewer(c *gin.Context) problem.Viewer {

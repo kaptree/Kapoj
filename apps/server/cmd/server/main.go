@@ -24,10 +24,12 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/judgequeue"
 	"github.com/kaptree/kapoj/apps/server/internal/learning"
+	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/rating"
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 	"github.com/kaptree/kapoj/apps/server/internal/router"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
+	"github.com/kaptree/kapoj/apps/server/internal/testcasegen"
 )
 
 func main() {
@@ -96,6 +98,13 @@ func run() error {
 		ai.NewRedisLimiter(rdb, cfg.AICooldown),
 		ai.NewOpenAIClient(cfg.AIRequestTimeout))
 	aiSettings := ai.NewSettingsService(g, keyMgr, cfg.AIKeyFile)
+	testcaseGenSvc := testcasegen.NewService(
+		testcasegen.NewGormRepository(g),
+		problem.NewGormRepository(g),
+		store,
+		aiSvc,
+		queue,
+	)
 
 	// 启动时核对密钥文件与数据库指纹，恢复“写文件成功但重加密事务未提交”
 	// 这一崩溃窗口；不一致且无法恢复时拒绝启动。
@@ -132,7 +141,7 @@ func run() error {
 		Handler: router.New(router.Deps{
 			DB: g, Redis: rdb, Storage: store, Config: cfg, Enqueuer: queue, Game: gameSvc,
 			Rating: ratingSvc, Activity: activitySvc, Learning: learningSvc, RBAC: rbacSvc,
-			AI: aiSvc, AISettings: aiSettings,
+			AI: aiSvc, AISettings: aiSettings, TestcaseGen: testcaseGenSvc,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}

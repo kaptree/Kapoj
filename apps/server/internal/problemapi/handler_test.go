@@ -22,12 +22,14 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/kaptree/kapoj/apps/server/internal/activity"
+	"github.com/kaptree/kapoj/apps/server/internal/ai"
 	"github.com/kaptree/kapoj/apps/server/internal/config"
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 	"github.com/kaptree/kapoj/apps/server/internal/router"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
+	"github.com/kaptree/kapoj/apps/server/internal/testcasegen"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
@@ -35,6 +37,18 @@ import (
 type noopQueue struct{}
 
 func (noopQueue) Enqueue(context.Context, int64) error { return nil }
+
+// fakeGenScripts 返回固定的 Python 脚本，避免测试依赖真实 AI。
+type fakeGenScripts struct{}
+
+func (fakeGenScripts) GenerateTestcaseScript(context.Context, int64, ai.TestcaseScriptInput) (string, error) {
+	return "print(1)", nil
+}
+
+// fakeGenEnqueuer 记录被投递的 generation id。
+type fakeGenEnqueuer struct{}
+
+func (fakeGenEnqueuer) EnqueueTestcaseGeneration(context.Context, int64) error { return nil }
 
 type fx struct {
 	t      *testing.T
@@ -55,6 +69,13 @@ func newFx(t *testing.T) *fx {
 	store, err := storage.NewLocal(root)
 	require.NoError(t, err)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	testcaseGenSvc := testcasegen.NewService(
+		testcasegen.NewGormRepository(g),
+		problem.NewGormRepository(g),
+		store,
+		fakeGenScripts{},
+		fakeGenEnqueuer{},
+	)
 	h := router.New(router.Deps{
 		DB:      g,
 		Redis:   rdb,
@@ -65,9 +86,10 @@ func newFx(t *testing.T) *fx {
 			RefreshTokenTTL: time.Hour,
 			SubmitCooldown:  time.Second,
 		},
-		Enqueuer: noopQueue{},
-		RBAC:     rbacSvc,
-		Activity: activity.NewService(g, rdb),
+		Enqueuer:    noopQueue{},
+		RBAC:        rbacSvc,
+		Activity:    activity.NewService(g, rdb),
+		TestcaseGen: testcaseGenSvc,
 	})
 	return &fx{t: t, h: h, db: g, rbac: rbacSvc, root: root, tokens: map[string]string{}}
 }

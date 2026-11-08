@@ -20,6 +20,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 	"github.com/kaptree/kapoj/apps/server/internal/social"
 	"github.com/kaptree/kapoj/apps/server/internal/submission"
+	"github.com/kaptree/kapoj/apps/server/internal/testcasegen"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
 
@@ -62,5 +63,6 @@ func Migrate(g *gorm.DB) error {
 		&rbac.Role{}, &rbac.Permission{}, &rbac.RolePermission{},
 		&rbac.UserRole{}, &rbac.AdminAuditLog{}, &rbac.Meta{},
 		&ai.Provider{}, &ai.UserConfig{}, &ai.Hint{}, &ai.Settings{},
+		&testcasegen.Generation{}, &testcasegen.GenerationCase{},
 	)
 }
