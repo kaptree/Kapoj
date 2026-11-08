@@ -33,6 +33,7 @@ func RegisterRoutes(public, api, uploads gin.IRouter, s *certificate.Service, op
 	if h.rbac != nil {
 		resolver = h.rbac
 	}
+	load := middleware.LoadAccess(resolver)
 	require := func(code string) gin.HandlerFunc {
 		return middleware.RequirePermission(resolver, code)
 	}
@@ -46,6 +47,11 @@ func RegisterRoutes(public, api, uploads gin.IRouter, s *certificate.Service, op
 	}
 
 	public.GET("/certificate-types", h.listActiveTypes)
+	public.GET("/certificates/verify", h.publicVerify)
+
+	uploads.POST("/certificates", middleware.RequireAuth(), h.submitCertificate)
+	api.GET("/certificates/my", middleware.RequireAuth(), h.myCertificates)
+	api.GET("/certificates/:id/image", middleware.RequireAuth(), load, h.certificateImage)
 
 	api.GET("/admin/certificate-types", manage(h.listAllTypes)...)
 	api.POST("/admin/certificate-types", manage(h.createType)...)

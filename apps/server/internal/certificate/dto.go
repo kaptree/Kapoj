@@ -1,5 +1,10 @@
 package certificate
 
+import (
+	"fmt"
+	"time"
+)
+
 // TypeInput 是管理员创建或更新证书类型的输入。
 // IsActive 使用指针区分「未提交」与显式 false：创建缺省为 true，更新缺省保留原值。
 type TypeInput struct {
@@ -26,4 +31,52 @@ func toTypeView(t CertificateType) TypeView {
 		IsActive:    t.IsActive,
 		SortOrder:   t.SortOrder,
 	}
+}
+
+// CertificateView 是证书的 API 表示。ImageURL 恒为鉴权图片接口地址，仅本人与
+// 管理员可通过带 Bearer 的请求读取；Type 使用提交时快照的类型名；VerifyCode 仅
+// 在 approved 时非空。
+type CertificateView struct {
+	ID           int64      `json:"id"`
+	Type         string     `json:"type"`
+	Level        string     `json:"level"`
+	Status       Status     `json:"status"`
+	ImageURL     string     `json:"imageUrl"`
+	RejectReason string     `json:"rejectReason"`
+	VerifyCode   string     `json:"verifyCode"`
+	SubmittedAt  time.Time  `json:"submittedAt"`
+	ReviewedAt   *time.Time `json:"reviewedAt"`
+}
+
+// PublicCertificateView 是公开核验结果。仅当 Valid 为 true 时携带类型/等级/
+// 昵称/通过时间；绝不返回图片、邮箱、用户 ID、审核人、驳回原因等敏感信息。
+type PublicCertificateView struct {
+	Valid      bool       `json:"valid"`
+	Type       string     `json:"type,omitempty"`
+	Level      string     `json:"level,omitempty"`
+	Nickname   string     `json:"nickname,omitempty"`
+	ApprovedAt *time.Time `json:"approvedAt,omitempty"`
+}
+
+// Image 是证书图片的原始字节与内容类型（内容类型取自数据库，而非重新探测）。
+type Image struct {
+	Data        []byte
+	ContentType string
+}
+
+func toCertificateView(c Certificate) CertificateView {
+	v := CertificateView{
+		ID:           c.ID,
+		Type:         c.CertificateTypeName,
+		Level:        c.Level,
+		Status:       c.Status,
+		ImageURL:     fmt.Sprintf("/api/certificates/%d/image", c.ID),
+		RejectReason: c.RejectReason,
+		SubmittedAt:  c.SubmittedAt,
+		ReviewedAt:   c.ReviewedAt,
+	}
+	if c.VerifyCode != nil {
+		v.VerifyCode = *c.VerifyCode
+	}
+	return v
 }

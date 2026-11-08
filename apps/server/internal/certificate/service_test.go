@@ -1,8 +1,11 @@
 package certificate_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +18,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
+	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
 
 type env struct {
@@ -232,4 +236,267 @@ func TestTypeRenameKeepsCertificateSnapshot(t *testing.T) {
 	var got certificate.Certificate
 	require.NoError(t, e.db.First(&got, cert.ID).Error)
 	assert.Equal(t, "蓝桥杯", got.CertificateTypeName)
+}
+
+// testPNG 以合法 PNG magic bytes 开头，http.DetectContentType 会识别为 image/png。
+var testPNG = []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0, 0, 0, 0x0d, 'I', 'H', 'D', 'R'}
+
+func createUser(t *testing.T, g *gorm.DB, username, nickname string) int64 {
+	t.Helper()
+	u := &user.User{
+		Username:     username,
+		Nickname:     nickname,
+		Email:        username + "@example.com",
+		PasswordHash: "x",
+	}
+	require.NoError(t, g.Create(u).Error)
+	return u.ID
+}
+
+func firstActiveTypeID(t *testing.T, e *env) int64 {
+	t.Helper()
+	active, err := e.svc.ListActiveTypes(context.Background())
+	require.NoError(t, err)
+	require.NotEmpty(t, active)
+	return active[0].ID
+}
+
+func TestSubmitCertificate(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	require.NoError(t, certificate.SeedTypes(ctx, e.db))
+	typeID := firstActiveTypeID(t, e)
+	userID := createUser(t, e.db, "submit-user", "提交用户")
+
+	v, err := e.svc.Submit(ctx, userID, typeID, " 省一 ", bytes.NewReader(testPNG))
+	require.NoError(t, err)
+	assert.Equal(t, certificate.StatusPending, v.Status)
+	assert.Equal(t, "蓝桥杯", v.Type)
+	assert.Equal(t, "省一", v.Level, "level 应去除两侧空白")
+	assert.Equal(t, fmt.Sprintf("/api/certificates/%d/image", v.ID), v.ImageURL)
+	assert.Empty(t, v.VerifyCode)
+
+	var cert certificate.Certificate
+	require.NoError(t, e.db.First(&cert, v.ID).Error)
+	assert.Equal(t, "蓝桥杯", cert.CertificateTypeName)
+	assert.Equal(t, fmt.Sprintf("certificates/%d", cert.ID), cert.ImageKey)
+	assert.Equal(t, "image/png", cert.ImageContentType)
+	assert.Equal(t, certificate.StatusPending, cert.Status)
+	assert.Equal(t, userID, cert.UserID)
+
+	// 我的列表可见。
+	page, err := e.svc.ListMine(ctx, userID, 1, 20)
+	require.NoError(t, err)
+	require.Len(t, page.Items, 1)
+	assert.Equal(t, v.ID, page.Items[0].ID)
+
+	// owner 可读取图片字节与内容类型。
+	img, err := e.svc.Image(ctx, v.ID, userID, false)
+	require.NoError(t, err)
+	assert.Equal(t, "image/png", img.ContentType)
+	assert.Equal(t, testPNG, img.Data)
+}
+
+func TestSubmitValidation(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	require.NoError(t, certificate.SeedTypes(ctx, e.db))
+	typeID := firstActiveTypeID(t, e)
+	userID := createUser(t, e.db, "val-user", "校验用户")
+
+	// 停用类型 40001。
+	require.NoError(t, e.db.Model(&certificate.CertificateType{}).
+		Where("id = ?", typeID).Update("is_active", false).Error)
+	_, err := e.svc.Submit(ctx, userID, typeID, "省一", bytes.NewReader(testPNG))
+	requireAppErrorCode(t, err, 40001)
+
+	// 类型不存在 404。
+	_, err = e.svc.Submit(ctx, userID, 999999, "省一", bytes.NewReader(testPNG))
+	requireAppErrorCode(t, err, 40400)
+
+	// 重新启用。
+	require.NoError(t, e.db.Model(&certificate.CertificateType{}).
+		Where("id = ?", typeID).Update("is_active", true).Error)
+
+	// level 空/超 50、空图、超 5 MiB、非图片 -> 40001。
+	_, err = e.svc.Submit(ctx, userID, typeID, "  ", bytes.NewReader(testPNG))
+	requireAppErrorCode(t, err, 40001)
+	_, err = e.svc.Submit(ctx, userID, typeID, strings.Repeat("级", 51), bytes.NewReader(testPNG))
+	requireAppErrorCode(t, err, 40001)
+	_, err = e.svc.Submit(ctx, userID, typeID, "省一", bytes.NewReader(nil))
+	requireAppErrorCode(t, err, 40001)
+	_, err = e.svc.Submit(ctx, userID, typeID, "省一", bytes.NewReader(make([]byte, 5<<20+1)))
+	requireAppErrorCode(t, err, 40001)
+	_, err = e.svc.Submit(ctx, userID, typeID, "省一", strings.NewReader("hello world"))
+	requireAppErrorCode(t, err, 40001)
+
+	// 校验失败不留行。
+	var count int64
+	require.NoError(t, e.db.Model(&certificate.Certificate{}).Where("user_id = ?", userID).Count(&count).Error)
+	assert.Zero(t, count)
+}
+
+func TestListMinePagination(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	require.NoError(t, certificate.SeedTypes(ctx, e.db))
+	typeID := firstActiveTypeID(t, e)
+	userID := createUser(t, e.db, "page-user", "分页用户")
+
+	for i := 0; i < 3; i++ {
+		_, err := e.svc.Submit(ctx, userID, typeID, fmt.Sprintf("等级%d", i), bytes.NewReader(testPNG))
+		require.NoError(t, err)
+	}
+
+	page, err := e.svc.ListMine(ctx, userID, 1, 2)
+	require.NoError(t, err)
+	assert.EqualValues(t, 3, page.Total)
+	require.Len(t, page.Items, 2)
+	// 按提交时间倒序：后提交的在前。
+	assert.Equal(t, "等级2", page.Items[0].Level)
+	assert.Equal(t, "等级1", page.Items[1].Level)
+
+	page2, err := e.svc.ListMine(ctx, userID, 2, 2)
+	require.NoError(t, err)
+	require.Len(t, page2.Items, 1)
+	assert.Equal(t, "等级0", page2.Items[0].Level)
+}
+
+func TestCertificateImageAccess(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	require.NoError(t, certificate.SeedTypes(ctx, e.db))
+	typeID := firstActiveTypeID(t, e)
+
+	ownerID := createUser(t, e.db, "img-owner", "图片主人")
+	otherID := createUser(t, e.db, "img-other", "他人")
+
+	v, err := e.svc.Submit(ctx, ownerID, typeID, "省一", bytes.NewReader(testPNG))
+	require.NoError(t, err)
+
+	// owner 200。
+	img, err := e.svc.Image(ctx, v.ID, ownerID, false)
+	require.NoError(t, err)
+	assert.Equal(t, "image/png", img.ContentType)
+	assert.Equal(t, testPNG, img.Data)
+
+	// 其他用户 404。
+	_, err = e.svc.Image(ctx, v.ID, otherID, false)
+	requireAppErrorCode(t, err, 40400)
+
+	// 管理员（canManage=true）200。
+	img, err = e.svc.Image(ctx, v.ID, otherID, true)
+	require.NoError(t, err)
+	assert.Equal(t, testPNG, img.Data)
+
+	// 不存在 404。
+	_, err = e.svc.Image(ctx, 999999, ownerID, false)
+	requireAppErrorCode(t, err, 40400)
+}
+
+func TestVerifyApprovedOnly(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	require.NoError(t, certificate.SeedTypes(ctx, e.db))
+	typeID := firstActiveTypeID(t, e)
+
+	userID := createUser(t, e.db, "verify-user", "核验昵称")
+	code := "KAPOJ-ABCD-EFGH"
+	approvedAt := time.Now()
+
+	approved := &certificate.Certificate{
+		UserID:              userID,
+		CertificateTypeID:   typeID,
+		CertificateTypeName: "蓝桥杯",
+		Level:               "省一",
+		ImageKey:            "certificates/1",
+		ImageContentType:    "image/png",
+		Status:              certificate.StatusApproved,
+		VerifyCode:          &code,
+		SubmittedAt:         time.Now(),
+		ReviewedAt:          &approvedAt,
+	}
+	require.NoError(t, e.db.Create(approved).Error)
+
+	// pending / rejected 即使带 verify_code 也不会命中。
+	pendingCode := "KAPOJ-PEND-PEND"
+	require.NoError(t, e.db.Create(&certificate.Certificate{
+		UserID:              userID,
+		CertificateTypeID:   typeID,
+		CertificateTypeName: "蓝桥杯",
+		Level:               "省一",
+		ImageKey:            "certificates/2",
+		ImageContentType:    "image/png",
+		Status:              certificate.StatusPending,
+		VerifyCode:          &pendingCode,
+		SubmittedAt:         time.Now(),
+	}).Error)
+
+	// approved 返回 valid + 类型/等级/昵称/通过时间。
+	v, err := e.svc.Verify(ctx, "kapoj-abcd-efgh")
+	require.NoError(t, err)
+	assert.True(t, v.Valid)
+	assert.Equal(t, "蓝桥杯", v.Type)
+	assert.Equal(t, "省一", v.Level)
+	assert.Equal(t, "核验昵称", v.Nickname)
+	require.NotNil(t, v.ApprovedAt)
+
+	// 大小写/空格/无连字符/去前缀容错。
+	for _, c := range []string{" KAPOJ ABCD EFGH ", "abcd-efgh", "ABCDEFGH", "kapoj abcd efgh"} {
+		v, err = e.svc.Verify(ctx, c)
+		require.NoError(t, err)
+		assert.True(t, v.Valid, "code %q 应核验通过", c)
+		assert.Equal(t, "核验昵称", v.Nickname)
+	}
+
+	// pending / rejected / unknown 统一 {valid:false}。
+	for _, c := range []string{pendingCode, "KAPOJ-ZZZZ-ZZZZ"} {
+		v, err = e.svc.Verify(ctx, c)
+		require.NoError(t, err)
+		assert.False(t, v.Valid)
+	}
+
+	// 无效格式直接 false。
+	v, err = e.svc.Verify(ctx, "short")
+	require.NoError(t, err)
+	assert.False(t, v.Valid)
+}
+
+type failingStorage struct {
+	putErr  error
+	deleted []string
+}
+
+func (f *failingStorage) Put(context.Context, string, io.Reader, int64) (int64, error) {
+	return 0, f.putErr
+}
+
+func (f *failingStorage) Open(context.Context, string) (io.ReadCloser, error) {
+	return nil, storage.ErrNotFound
+}
+
+func (f *failingStorage) Delete(_ context.Context, key string) error {
+	f.deleted = append(f.deleted, key)
+	return nil
+}
+
+func TestSubmitStorageFailureCleansRow(t *testing.T) {
+	g := testutil.PG(t)
+	require.NoError(t, certificate.SeedTypes(context.Background(), g))
+	var typ certificate.CertificateType
+	require.NoError(t, g.Where("is_active = ?", true).First(&typ).Error)
+
+	userID := createUser(t, g, "fail-user", "失败用户")
+
+	fs := &failingStorage{putErr: errors.New("disk full")}
+	svc := certificate.NewService(certificate.NewGormRepository(g), fs)
+
+	_, err := svc.Submit(context.Background(), userID, typ.ID, "省一", bytes.NewReader(testPNG))
+	require.Error(t, err)
+
+	// 失败后不留行，且尝试删除文件。
+	var count int64
+	require.NoError(t, g.Model(&certificate.Certificate{}).Where("user_id = ?", userID).Count(&count).Error)
+	assert.Zero(t, count)
+	assert.NotEmpty(t, fs.deleted, "清理时应尝试删除对象")
 }

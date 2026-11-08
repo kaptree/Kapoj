@@ -19,6 +19,13 @@ type Repository interface {
 	CreateType(ctx context.Context, t *CertificateType) error
 	UpdateType(ctx context.Context, t *CertificateType) error
 	DeleteType(ctx context.Context, id int64) error
+
+	CreateCertificate(ctx context.Context, c *Certificate) error
+	FindCertificate(ctx context.Context, id int64) (*Certificate, error)
+	UpdateCertificateImage(ctx context.Context, id int64, key, contentType string) error
+	DeleteCertificate(ctx context.Context, id int64) error
+	ListMine(ctx context.Context, userID int64, offset, limit int) ([]Certificate, int64, error)
+	FindByVerifyCode(ctx context.Context, code string) (*Certificate, string, error)
 }
 
 // GormRepository 是 Repository 的 GORM 实现。
@@ -88,4 +95,71 @@ func (r *GormRepository) DeleteType(ctx context.Context, id int64) error {
 		return ErrTypeInUse
 	}
 	return nil
+}
+
+// CreateCertificate 写入证书申请。
+func (r *GormRepository) CreateCertificate(ctx context.Context, c *Certificate) error {
+	return r.db.WithContext(ctx).Create(c).Error
+}
+
+// FindCertificate 返回指定证书；不存在时返回 gorm.ErrRecordNotFound。
+func (r *GormRepository) FindCertificate(ctx context.Context, id int64) (*Certificate, error) {
+	var c Certificate
+	if err := r.db.WithContext(ctx).First(&c, id).Error; err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
+// UpdateCertificateImage 回填证书图片的 storage key 与内容类型（提交时先插入
+// pending 行、再上传、再回填）。
+func (r *GormRepository) UpdateCertificateImage(ctx context.Context, id int64, key, contentType string) error {
+	return r.db.WithContext(ctx).Model(&Certificate{}).Where("id = ?", id).
+		Updates(map[string]any{
+			"image_key":          key,
+			"image_content_type": contentType,
+		}).Error
+}
+
+// DeleteCertificate 删除证书；用于提交失败时的清理。
+func (r *GormRepository) DeleteCertificate(ctx context.Context, id int64) error {
+	return r.db.WithContext(ctx).Delete(&Certificate{}, id).Error
+}
+
+// ListMine 返回某用户的证书分页，按提交时间倒序，并返回总数。
+func (r *GormRepository) ListMine(ctx context.Context, userID int64, offset, limit int) ([]Certificate, int64, error) {
+	q := r.db.WithContext(ctx).Model(&Certificate{}).Where("user_id = ?", userID)
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var certs []Certificate
+	if err := q.Order("submitted_at DESC, id DESC").Offset(offset).Limit(limit).Find(&certs).Error; err != nil {
+		return nil, 0, err
+	}
+	return certs, total, nil
+}
+
+// verifyRow 是证书 join 用户昵称的查询结果。
+type verifyRow struct {
+	Certificate
+	Nickname string `gorm:"column:nickname"`
+}
+
+// FindByVerifyCode 按验证码精确匹配已通过的证书，并 join users 取持有者昵称。
+// 未命中返回 gorm.ErrRecordNotFound。调用方需先规范化验证码（大写、去空格/连字符）。
+func (r *GormRepository) FindByVerifyCode(ctx context.Context, code string) (*Certificate, string, error) {
+	var row verifyRow
+	err := r.db.WithContext(ctx).Table("certificates AS c").
+		Select("c.*, u.nickname").
+		Joins("JOIN users AS u ON u.id = c.user_id").
+		Where("c.status = ? AND c.verify_code = ?", StatusApproved, code).
+		Scan(&row).Error
+	if err != nil {
+		return nil, "", err
+	}
+	if row.ID == 0 {
+		return nil, "", gorm.ErrRecordNotFound
+	}
+	return &row.Certificate, row.Nickname, nil
 }
