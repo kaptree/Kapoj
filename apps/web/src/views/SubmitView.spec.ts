@@ -103,6 +103,7 @@ function detail(id: number): ProblemDetail {
 function aiConfig(overrides: Partial<AIConfigView> = {}): AIConfigView {
   return {
     configured: true,
+    keyConfigured: true,
     provider: 'deepseek',
     modelName: 'deepseek-chat',
     apiKeyMasked: 'sk-***',
@@ -291,6 +292,19 @@ describe('SubmitView', () => {
     wrapper.unmount()
   })
 
+  it('shows the key-missing banner (no config link) when keyConfigured is false', async () => {
+    vi.mocked(getAIConfig).mockResolvedValue(aiConfig({ configured: false, keyConfigured: false }))
+    const { wrapper } = await mountPage()
+
+    expect(wrapper.text()).toContain('管理员尚未配置 AI 密钥')
+    expect(wrapper.text()).not.toContain('尚未配置 AI 模型')
+    expect(wrapper.find('a[href="/settings/ai"]').exists()).toBe(false)
+    expect((aiButton(wrapper, 'AI 补全')!.element as HTMLButtonElement).disabled).toBe(true)
+    expect((aiButton(wrapper, 'AI 格式化')!.element as HTMLButtonElement).disabled).toBe(true)
+    expect((aiButton(wrapper, 'AI 优化')!.element as HTMLButtonElement).disabled).toBe(true)
+    wrapper.unmount()
+  })
+
   it('completes at cursor and inserts returned fragment', async () => {
     localStorage.setItem('kapoj:code:practice:1:cpp', 'int main() {}')
     editorMock.getCursorByteOffset.mockReturnValue(7)
@@ -390,6 +404,22 @@ describe('SubmitView', () => {
     await flushPromises()
     expect(toast.add).toHaveBeenCalledWith(expect.objectContaining({ summary: '尚未配置 AI 模型' }))
     expect(wrapper.find('a[href="/settings/ai"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('maps the platform-key-missing 40001 to the key banner without a config link', async () => {
+    localStorage.setItem('kapoj:code:practice:1:cpp', 'int main() {}')
+    const { wrapper } = await mountPage()
+
+    vi.mocked(completeCode).mockRejectedValueOnce(new ApiError(400, 40001, 'AI 加密密钥未配置'))
+    await aiButton(wrapper, 'AI 补全')!.trigger('click')
+    await flushPromises()
+
+    expect(toast.add).toHaveBeenCalledWith(
+      expect.objectContaining({ summary: '管理员尚未配置 AI 密钥' }),
+    )
+    expect(wrapper.text()).toContain('管理员尚未配置 AI 密钥')
+    expect(wrapper.find('a[href="/settings/ai"]').exists()).toBe(false)
     wrapper.unmount()
   })
 })

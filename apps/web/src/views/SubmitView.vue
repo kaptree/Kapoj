@@ -93,14 +93,28 @@ const optimizePreview = ref('')
 const optimizeSuggestions = ref('')
 
 const aiConfigured = computed(() => aiConfig.value?.configured === true)
+const aiKeyConfigured = computed(() => aiConfig.value?.keyConfigured === true)
 const aiButtonsDisabled = computed(
-  () => aiBusy.value !== null || !aiAvailable.value || aiLoadFailed.value || !aiConfigured.value,
+  () =>
+    aiBusy.value !== null ||
+    !aiAvailable.value ||
+    aiLoadFailed.value ||
+    !aiKeyConfigured.value ||
+    !aiConfigured.value,
+)
+const showKeyMissingBanner = computed(
+  () =>
+    aiAvailable.value &&
+    !aiLoadFailed.value &&
+    aiConfig.value !== null &&
+    aiConfig.value.keyConfigured === false,
 )
 const showConfigBanner = computed(
   () =>
     aiAvailable.value &&
     !aiLoadFailed.value &&
     aiConfig.value !== null &&
+    aiConfig.value.keyConfigured !== false &&
     !aiConfig.value.configured,
 )
 const optimizeCanApply = computed(
@@ -114,8 +128,21 @@ function byteLength(value: string): number {
 function handleAIError(e: unknown) {
   if (e instanceof ApiError) {
     if (e.code === 40001) {
+      if (e.message === 'AI 加密密钥未配置') {
+        aiConfig.value = {
+          configured: false,
+          keyConfigured: false,
+          provider: '',
+          modelName: '',
+          apiKeyMasked: '',
+          providers: aiConfig.value?.providers ?? [],
+        }
+        toast.add({ severity: 'warn', summary: '管理员尚未配置 AI 密钥', life: 4000 })
+        return
+      }
       aiConfig.value = {
         configured: false,
+        keyConfigured: true,
         provider: '',
         modelName: '',
         apiKeyMasked: '',
@@ -454,6 +481,9 @@ async function submit() {
         </div>
 
         <Message v-if="!aiAvailable" severity="warn" :closable="false">AI 功能未启用</Message>
+        <Message v-else-if="showKeyMissingBanner" severity="warn" :closable="false">
+          管理员尚未配置 AI 密钥
+        </Message>
         <Message v-else-if="showConfigBanner" severity="info" :closable="false">
           尚未配置 AI 模型，配置后可使用补全/格式化/优化
           <RouterLink to="/settings/ai" class="ai-config-link">去配置</RouterLink>

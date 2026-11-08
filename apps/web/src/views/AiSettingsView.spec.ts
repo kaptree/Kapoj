@@ -21,6 +21,7 @@ vi.mock('@/api/ai', () => ({
 function aiConfig(overrides: Partial<AIConfigView> = {}): AIConfigView {
   return {
     configured: true,
+    keyConfigured: true,
     provider: 'deepseek',
     modelName: 'deepseek-chat',
     apiKeyMasked: 'sk-****abcd',
@@ -62,6 +63,23 @@ describe('AiSettingsView', () => {
 
     expect(wrapper.text()).toContain('AI 功能未启用，请联系管理员')
     expect(wrapper.findComponent(Select).exists()).toBe(false)
+  })
+
+  it('shows the key-missing notice and no form when the platform key is not configured', async () => {
+    vi.mocked(getAIConfig).mockResolvedValue(
+      aiConfig({
+        configured: false,
+        keyConfigured: false,
+        provider: '',
+        modelName: '',
+        apiKeyMasked: '',
+      }),
+    )
+    const wrapper = await mountPage()
+
+    expect(wrapper.text()).toContain('管理员尚未配置 AI 加密密钥，请联系管理员')
+    expect(wrapper.findComponent(Select).exists()).toBe(false)
+    expect(saveAIConfig).not.toHaveBeenCalled()
   })
 
   it('requires a key on first save', async () => {

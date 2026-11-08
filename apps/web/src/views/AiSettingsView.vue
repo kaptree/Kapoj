@@ -32,6 +32,9 @@ const providers = computed(() => config.value?.providers ?? [])
 const configured = computed(() => config.value?.configured === true)
 const maskedKey = computed(() => config.value?.apiKeyMasked ?? '')
 
+/** True only after a successful load that reports the platform key is missing. */
+const keyMissing = computed(() => config.value !== null && config.value.keyConfigured === false)
+
 const currentProvider = computed(
   () => providers.value.find((p) => p.code === provider.value) ?? null,
 )
@@ -139,6 +142,12 @@ onMounted(() => {
     <AppSurface v-else-if="!aiAvailable" padding="lg">
       <Message severity="warn" :closable="false" role="status">
         AI 功能未启用，请联系管理员
+      </Message>
+    </AppSurface>
+
+    <AppSurface v-else-if="keyMissing" padding="lg">
+      <Message severity="warn" :closable="false" role="status">
+        管理员尚未配置 AI 加密密钥，请联系管理员
       </Message>
     </AppSurface>
 

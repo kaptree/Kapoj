@@ -329,6 +329,25 @@ describe('ProblemDetailView', () => {
     wrapper.unmount()
   })
 
+  it('shows the admin-key-missing message without a config link on 40001', async () => {
+    auth.isLoggedIn = true
+    vi.mocked(getProblem).mockResolvedValue(detail(1))
+    vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
+    vi.mocked(getAIHint).mockRejectedValue(new ApiError(400, 40001, 'AI 加密密钥未配置'))
+    const wrapper = mountView()
+    await flushPromises()
+
+    const button = wrapper
+      .findAllComponents({ name: 'Button' })
+      .find((b) => b.text().includes('AI 提示'))
+    await button!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('管理员尚未配置 AI 密钥')
+    expect(wrapper.find('a[href="/settings/ai"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('maps 429/502/404 to Chinese toast', async () => {
     auth.isLoggedIn = true
     vi.mocked(getProblem).mockResolvedValue(detail(1))
