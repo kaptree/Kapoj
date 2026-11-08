@@ -535,7 +535,7 @@ user_ai_configs (
 - 已建表：`ai_providers`（code 唯一 `uniq_ai_providers_code`）、`user_ai_configs`（user_id 唯一 `uniq_user_ai_configs_user`）、`ai_hints`（problem_id 唯一 `uniq_ai_hints_problem`）。
 - 平台级 provider 的密钥不写入数据库；`ai_providers.api_key_ref` 保留为环境变量名或密钥服务 ID 引用，当前固定为空字符串，M5-A 不实现平台代付 key。
 - 内置 provider seed（幂等，`ON CONFLICT DO NOTHING`，不覆盖已有行）：`deepseek` / DeepSeek / `https://api.deepseek.com/v1` / `deepseek-chat`、`openai` / OpenAI / `https://api.openai.com/v1` / `gpt-4o-mini`、`qwen` / 通义千问 / `https://dashscope.aliyuncs.com/compatible-mode/v1` / `qwen-plus`、`glm` / 智谱 GLM / `https://open.bigmodel.cn/api/paas/v4` / `glm-4-flash`。
-- `user_ai_configs.api_key_encrypted` 使用 AES-256-GCM（随机 12 字节 nonce，输出 `v1:`+base64(nonce+ciphertext)），密钥为 base64 编码的 32 字节（`KAPOJ_AI_ENCRYPTION_KEY`）；接口只返回脱敏值（长度 >8 显示前 3 字符 + … + 后 4 字符，否则 `****`），不写日志、不写审计摘要。
+- `user_ai_configs.api_key_encrypted` 使用 AES-256-GCM（随机 12 字节 nonce，输出 `v1:`+base64(nonce+ciphertext)），密钥为 base64 编码的 32 字节（来自环境变量 `KAPOJ_AI_ENCRYPTION_KEY` 或密钥文件 `KAPOJ_AI_KEY_FILE`，见 §6.7）；接口只返回脱敏值（长度 >8 显示前 3 字符 + … + 后 4 字符，否则 `****`），不写日志、不写审计摘要。
 - 提示缓存：`ai_hints` 每题唯一；首个用户触发后生成，后续用户直接读取缓存，不要求用户 AI 配置、不消耗限流；非公开题对无 `problem.view_hidden` 的用户与不存在一致返回 40400，不泄露存在性。
 
 
@@ -1047,6 +1047,9 @@ user_ai_configs (
 | PUT | `/api/admin/rating/settings` | `rating.settings.manage` | 整体更新 Rating 设置；校验范围；写审计（M4-4） |
 | GET | `/api/admin/ai/settings` | `ai.settings.manage` | AI 开关与密钥配置状态 `{enabled,keyConfigured,updatedAt}`（AI 管理开关） |
 | PUT | `/api/admin/ai/settings` | `ai.settings.manage` | 启用/关闭 AI；无密钥时启用返回 40001；与审计同事务（AI 管理开关） |
+| GET | `/api/admin/ai/key` | `ai.settings.manage` | AI 加密密钥状态 `{configured,source,masked,fingerprint}`（不含完整密钥） |
+| POST | `/api/admin/ai/key/generate` | `ai.settings.manage` | 生成并轮换密钥；完整密钥仅一次性返回 |
+| PUT | `/api/admin/ai/key` | `ai.settings.manage` | 手动填写密钥；已有密钥时轮换重加密 |
 
 - **保护规则**：系统角色不可删除、code/name 不可改；`super_admin` 权限不可修改；只有 super 能授予/移除/封禁/解封 super；禁止封禁自己（40001）；禁止移除/封禁最后一个 active super（40001）。角色/权限变更、用户角色分配、封禁/解封、管理员编辑用户在同一事务内写审计，失败回滚。
 - 自定义角色 code 创建后不可修改（`^[a-z][a-z0-9_]{2,63}$`），权限用 code 整体替换、重复去重、非法 code 返回 40001。
@@ -1464,7 +1467,8 @@ user_ai_configs (
 
 **实现状态（M5-A ✅；M5-1～M5-3、M5-5 已完成；M5-4、M5-7、M5-8 待办）**
 
-- **启用/关闭语义**：AI 路由（`/api/ai/configs` GET/POST、`/api/ai/complete`、`/api/ai/format`、`/api/ai/optimize`、`/api/ai/hint`）仅在配置了合法的 `KAPOJ_AI_ENCRYPTION_KEY`（base64 编码的 32 字节，`openssl rand -base64 32` 生成）时挂载；未配置时后端正常启动，只是这些路由不存在（404）。非法 base64 或长度不对时启动直接报错。此外还有运行时开关：管理员在 `/admin/ai` 关闭 AI 后，即使配置了密钥，所有 `/api/ai/*` 也统一返回 404（见 §6.6）。
+- **路由挂载**：AI 路由（`/api/ai/configs` GET/POST、`/api/ai/complete`、`/api/ai/format`、`/api/ai/optimize`、`/api/ai/hint`）**始终挂载**（`ai.Service` 恒非 nil）；管理员在 `/admin/ai` 关闭 AI 后，`RequireAIEnabled` 中间件让所有 `/api/ai/*` 统一返回 404（见 §6.6）。未配置密钥时后端也正常启动，AI 路由仍可访问（`GET /api/ai/configs` 返回 200 + `keyConfigured=false`），保存配置/AI 调用返回 40001（见 §6.7 无密钥语义）。
+- **密钥来源**：加密密钥来自环境变量 `KAPOJ_AI_ENCRYPTION_KEY`（优先）或本地密钥文件 `KAPOJ_AI_KEY_FILE`（默认 `data/ai.key`）；env 非法 base64/长度在启动时报错，文件缺失/非法则视为未配置（后台可生成/覆盖）。详见 §6.7。
 - **provider**：启动时幂等 seed 四个内置 provider（`deepseek`/`openai`/`qwen`/`glm`，见 3.9）；只有 `is_active=true` 的 provider 可用，未知/停用 provider 被拒绝。
 - **加密**：用户 API key 使用 AES-256-GCM 加密存储（随机 nonce，`v1:` 前缀），接口只返回脱敏值，不写日志/审计；平台 provider 的密钥不写入数据库。
 - **OpenAI 客户端**：`POST {base_url}/chat/completions`，Bearer key，解析 `choices[0].message.content`；非 2xx / 空 choices / 畸形 JSON / 超时统一映射为 `50200 AI 服务调用失败`（`KAPOJ_AI_REQUEST_TIMEOUT` 控制超时，默认 45s），不泄露 key 与上游响应体敏感内容。
@@ -1551,8 +1555,8 @@ user_ai_configs (
 
 - **设置 API**：`GET/PUT /api/admin/ai/settings`（需 `ai.settings.manage`）返回/更新 `{enabled, keyConfigured, updatedAt}`。设置存单例 `ai_settings`（`id=1`，首次读取懒创建、默认 `enabled=true`，`ON CONFLICT DO NOTHING`），更新与审计在同一事务内（action=`ai.settings.manage`、target=`ai_settings`、summary「启用/关闭 AI 功能」），审计失败回滚。
 - **关闭语义**：关闭后所有 `/api/ai/*` 接口立即返回 404（与未配置密钥一致，不暴露「AI 已关闭」），用户侧 AI 设置/提交页工具栏/题目提示自动降级为「AI 功能未启用」；重新开启立即恢复，无需重启。关闭**不删除**用户的 `user_ai_configs`/`ai_hints`，重新开启后用户配置与提示缓存仍在。
-- **密钥缺失语义**：`keyConfigured` 为只读，表示进程启动时是否配置了合法 `KAPOJ_AI_ENCRYPTION_KEY`（即 `d.AI != nil`）；未配置时管理页显示「未配置 AI 加密密钥，无法启用」，开关禁用，启用请求返回 40001，关闭仍可保存（此时 AI 路由本就不挂载，404）。
-- **管理页**：`AdminAiView` 展示当前状态 Tag（已启用/已关闭/不可用）、`ToggleSwitch`、密钥缺失 `Message` 警告、保存按钮与 Toast；仅 `ai.settings.manage` 可见保存按钮，`AdminNav`「AI 设置」入口按权限显隐。管理 API 不受 AI 开关影响，始终可访问（有权限时）。
+- **密钥缺失语义**：`keyConfigured` 为只读，动态取自 `KeyManager.Configured()`（env 或密钥文件，见 §6.7）；未配置时管理页显示「未配置 AI 加密密钥，无法启用」，开关禁用，启用请求返回 40001，关闭仍可保存（此时 AI 路由仍挂载，`GET /api/ai/configs` 返回 `keyConfigured=false`、保存/调用返回 40001）。
+- **管理页**：`AdminAiView` 展示当前状态 Tag（已启用/已关闭/不可用）、`ToggleSwitch`、密钥缺失 `Message` 警告、保存按钮与 Toast；下方「加密密钥」板块展示密钥状态 Tag（未配置/已配置（文件）/由环境变量管理）、脱敏值与指纹，提供自动生成（一次性显示完整密钥 + 复制 + 备份警告）、手动填写、重新生成/手动替换（二次确认），环境变量来源只读（见 §6.7）。仅 `ai.settings.manage` 可见保存按钮，`AdminNav`「AI 设置」入口按权限显隐。管理 API 不受 AI 开关影响，始终可访问（有权限时）。
 - **权限**：`ai.settings.manage` 默认只授予 `super_admin`，不自动授予 `content_admin`；需要时用 RBAC-B 给自定义角色分配该权限。普通用户/无权限账号访问管理接口返回 403，不影响其正常 AI 使用。
 
 **Codex 提示词（历史参考，已实现）**
@@ -1574,6 +1578,24 @@ user_ai_configs (
 
 请输出完整代码与类型定义。
 ```
+
+---
+
+### 6.7 AI 加密密钥管理（密钥文件/生成/手动/轮换）
+
+管理员可在 `/admin/ai` 的「加密密钥」板块查看密钥状态、自动生成或手动填写密钥并写入本地密钥文件，运行时立即生效；已有密钥轮换时自动重加密所有用户 AI Key。环境变量密钥优先且后台只读。
+
+- **密钥文件与优先级**：`KAPOJ_AI_KEY_FILE`（可选，默认 `data/ai.key`，权限 0600，父目录不存在时 0700 创建），文件内容为单行 base64 编码的 32 字节密钥（`openssl rand -base64 32` 等价，允许末尾换行）。环境变量 `KAPOJ_AI_ENCRYPTION_KEY` 优先级高于文件：env 非空时校验 base64/32 字节，非法则启动失败，且忽略文件（来源 `env`）；env 为空时读文件，文件不存在 → 未配置（`none`），格式非法 → 记录警告并视为未配置（后台可覆盖）。
+- **KeyManager**（`ai.KeyManager`，`sync.RWMutex`）：启动时由 `ai.NewKeyManager(envKey, filePath)` 构造，提供 `Configured()/Source()（env|file|none）/Masked()（前 3…后 4）/Fingerprint()（SHA-256 hex）/Encrypt/Decrypt/Replace`。`ai.Service` 改为持有 `*KeyManager`，所有加解密走当前密钥；运行时 `Replace` 原子切换新密钥，无需重启。
+- **无密钥语义**：AI 路由始终挂载；未配置密钥时 `GET /api/ai/configs` 返回 200 + `keyConfigured=false`（含启用的 provider 列表），用户保存配置、补全/格式化/优化、无缓存的提示返回 40001「AI 加密密钥未配置」，提示缓存命中仍可返回。`ai_settings.keyConfigured` 改为 `KeyManager.Configured()` 动态判断（不再用 `d.AI==nil`）。
+- **管理 API**（均需 `ai.settings.manage`，复用第 36 权限，不新增）：
+  - `GET /api/admin/ai/key` → `KeyView{configured,source,masked,fingerprint}`（不含完整密钥）。
+  - `POST /api/admin/ai/key/generate` → 用 `crypto/rand` 生成 32 字节 base64 并保存，返回 `{...KeyView,key}`（完整密钥仅此一次，供备份）。
+  - `PUT /api/admin/ai/key` body `{key}` → 校验 base64/32 字节并保存。
+  - 环境变量来源时 POST/PUT 返回 40001「由环境变量管理，只读」；审计 action=`ai.settings.manage`、target=`ai_key`、summary「生成/更新 AI 加密密钥」（不含密钥/指纹）。
+- **轮换与重加密**（`ai.SettingsService.GenerateKey/SetKey/rotate`）：已有密钥时重新生成/替换会在事务内 `SELECT ... FOR UPDATE` 全部 `user_ai_configs`，逐行旧密钥解密、新密钥重新加密；任一失败回滚。写密钥文件采用临时文件 + `os.Rename` 原子替换（0600），旧文件备份为 `ai.key.bak`，DB 事务成功后删除备份、失败恢复备份（文件写失败则回滚 DB）；`ai_settings.key_fingerprint` 更新为 SHA-256 指纹（仅诊断/一致性，不存密钥）。
+- **保护规则**：无旧密钥但存在 `user_ai_configs` 时返回 40001「存在无法解密的用户 AI 配置，请先恢复旧密钥」，不破坏数据；无旧密钥且无配置时直接保存。管理开关关闭不删除密钥/用户配置，重新开启恢复；启用要求当前 `keyConfigured=true`。
+- **用户侧状态**：`AIConfigView.keyConfigured` 区分「AI 功能未启用」（404/开关关闭）与「管理员尚未配置 AI 密钥」（keyConfigured=false）与「尚未配置 AI 模型」（用户未配置 key）；提交页工具栏、题目提示、AI 设置页据此分别降级，缓存命中的提示仍展示。
 
 ---
 

@@ -221,7 +221,8 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 
 **启用方式**
 
-- AI 接口只有后端配置了 `KAPOJ_AI_ENCRYPTION_KEY`（base64 编码的 32 字节密钥）时才挂载；不配置时后端正常启动，`/api/ai/*` 路由不存在（404）。生成密钥：`openssl rand -base64 32`。
+- AI 接口始终挂载；加密密钥来自环境变量 `KAPOJ_AI_ENCRYPTION_KEY`（优先）或本地密钥文件 `KAPOJ_AI_KEY_FILE`（默认 `data/ai.key`）。未配置密钥时后端正常启动，`GET /api/ai/configs` 返回 `keyConfigured=false`，保存配置/AI 调用返回 40001「AI 加密密钥未配置」。生成密钥：`openssl rand -base64 32`。
+- 可在管理后台 `/admin/ai` 的「加密密钥」板块自动生成或手动填写密钥（写入密钥文件，0600），运行时立即生效，无需重启（见下方「AI 加密密钥管理」）。
 - 可选参数：`KAPOJ_AI_REQUEST_TIMEOUT`（AI 上游请求超时，默认 `45s`）、`KAPOJ_AI_COOLDOWN`（同一用户两次 AI 调用最小间隔，默认 `2s`）。
 
 **用户如何使用**
@@ -241,7 +242,7 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 
 ## AI 辅助前端（M5-5）
 
-前端已接入 M5-A AI 后端，入口如下（需后端配置 `KAPOJ_AI_ENCRYPTION_KEY`，否则页面显示「AI 功能未启用」）：
+前端已接入 M5-A AI 后端，入口如下（需后端已配置 AI 加密密钥，否则页面显示「管理员尚未配置 AI 密钥」；AI 开关关闭时显示「AI 功能未启用」）：
 
 - **提交页 AI 工具栏** `/problems/:id/submit`：编辑器工具栏（语言选择与提交按钮之间）新增「AI 补全 / AI 格式化 / AI 优化」按钮。补全按当前光标（UTF-8 字节偏移）插入返回片段；格式化/优化先弹预览 Dialog，确认后才替换代码。未配置 AI 时显示提示与 `/settings/ai` 链接并禁用按钮；代码超过 64 KiB、限流、上游错误均给出中文提示。
 - **题目详情 AI 提示** `/problems/:id`：提示卡片右上角「AI 提示」按钮；游客点击跳登录，登录用户调用生成/读取提示，缓存命中显示「来自缓存」。首个用户生成后全局缓存，其他用户复用。
@@ -251,10 +252,18 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 
 ## AI 管理开关（`/admin/ai`）
 
-- 管理后台新增「AI 设置」`/admin/ai`（需 `ai.settings.manage` 权限，默认仅 `super_admin`）：显示当前状态（已启用/已关闭/不可用）与是否已配置加密密钥，用开关启用/关闭 AI 并保存。
-- 接口 `GET/PUT /api/admin/ai/settings`：返回/更新 `{enabled, keyConfigured, updatedAt}`；关闭后所有 `/api/ai/*` 立即返回 404（与未配置密钥一致），用户侧显示「AI 功能未启用」，重新开启立即恢复，无需重启。
-- 密钥要求：`keyConfigured` 表示进程启动时是否配置了 `KAPOJ_AI_ENCRYPTION_KEY`；未配置时管理页显示警告且不能启用（启用请求返回 40001），关闭仍可保存。关闭不删除用户 AI 配置与提示缓存。
+- 管理后台新增「AI 设置」`/admin/ai`（需 `ai.settings.manage` 权限，默认仅 `super_admin`）：显示当前状态（已启用/已关闭/不可用）与是否已配置加密密钥，用开关启用/关闭 AI 并保存；下方「加密密钥」板块展示密钥状态并可生成/手动填写/轮换（见下节）。
+- 接口 `GET/PUT /api/admin/ai/settings`：返回/更新 `{enabled, keyConfigured, updatedAt}`；关闭后所有 `/api/ai/*` 立即返回 404，用户侧显示「AI 功能未启用」，重新开启立即恢复，无需重启。
+- 密钥要求：`keyConfigured` 动态取自当前密钥（env 或密钥文件）；未配置时管理页显示警告且不能启用（启用请求返回 40001），关闭仍可保存。关闭不删除用户 AI 配置与提示缓存。
 - 写操作写审计（action=`ai.settings.manage`、target=`ai_settings`）；无权限账号访问管理接口返回 403。完整语义见 [`DEVELOPMENT.md`](DEVELOPMENT.md) §6.6。
+
+## AI 加密密钥管理
+
+- 密钥文件 `KAPOJ_AI_KEY_FILE`（默认 `data/ai.key`，0600）；环境变量 `KAPOJ_AI_ENCRYPTION_KEY` 优先且后台只读（此时 `/admin/ai` 密钥板块只读显示「由环境变量管理」）。
+- 管理 API（均需 `ai.settings.manage`）：`GET /api/admin/ai/key` 返回 `{configured,source,masked,fingerprint}`（不含完整密钥）；`POST /api/admin/ai/key/generate` 自动生成 32 字节密钥并一次性返回完整密钥（请立即备份）；`PUT /api/admin/ai/key` 手动填写 base64/32 字节密钥。
+- 轮换：已有密钥时生成/替换会自动用旧密钥解密、新密钥重新加密所有 `user_ai_configs`；事务失败回滚，旧文件备份为 `ai.key.bak` 并在成功后删除。无旧密钥但存在用户配置时返回 40001，防止破坏性覆盖。
+- 无密钥错误：未配置密钥时用户保存配置、补全/格式化/优化、无缓存提示返回 40001「AI 加密密钥未配置」；`GET /api/ai/configs` 返回 `keyConfigured=false`；提示缓存命中仍可返回。
+- 完整语义见 [`DEVELOPMENT.md`](DEVELOPMENT.md) §6.7。
 
 ## 题目详情资源、官方题解与解题思路论坛
 

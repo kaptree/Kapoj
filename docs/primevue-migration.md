@@ -3,7 +3,7 @@
 > 本文档是美化工程的唯一进度来源。每次会话开始先读这里，结束时更新状态、验证结果和设计决策。
 >
 > - 最后更新：2026-11-08
-> - 当前阶段：P2 页面（UI-19 待开始）；M4-C 新功能 UI-30、M4-7 学习路线 UI-31、M4-3 社交互动 UI-32、RBAC-D 管理后台 UI-36、M4-4 Rating 设置 UI-37、M5-6 题目导入 UI-35、M5-5 AI 面板 UI-34 与 AI 管理开关 UI-38 已完成
+> - 当前阶段：P2 页面（UI-19 待开始）；M4-C 新功能 UI-30、M4-7 学习路线 UI-31、M4-3 社交互动 UI-32、RBAC-D 管理后台 UI-36、M4-4 Rating 设置 UI-37、M5-6 题目导入 UI-35、M5-5 AI 面板 UI-34 与 AI 管理开关/加密密钥 UI-38 已完成
 > - 工作分支：`feat/m1-problems-judge`（RBAC-D 管理后台在 `feat/rbac-d-admin-ui` 完成，M4-3 社交互动在 `feat/m4-3-social` 完成）
 > - 本次基线：`0f2d62d feat(web): rating history card`
 
@@ -16,9 +16,9 @@
 | blocked | 0 |
 | todo | 3 |
 
-其中现有 UI 迁移任务 `UI-00～UI-18` 已完成，M4-C 新功能 `UI-30`（排行榜、签到与 Rating 历史卡片）、M4-7 新功能 `UI-31`（学习路线）、M4-3 新功能 `UI-32`（社交互动：题解点赞、关注/粉丝 Dialog、通知铃铛与通知页）、RBAC-D 管理后台 `UI-36`（管理壳/仪表盘/用户/角色/审计页面）、M5-6 题目导入 `UI-35`（导入页）、M5-5 AI 面板 `UI-34`（提交页工具栏/详情 AI 提示/配置页）与 AI 管理开关 `UI-38`（`/admin/ai` 设置页）已直接使用 PrimeVue 4 完成；剩余 `UI-19` 题库编辑与 `UI-20` 异常页；`UI-33` 为尚未实现的新功能，不计入现有页面迁移完成度。
+其中现有 UI 迁移任务 `UI-00～UI-18` 已完成，M4-C 新功能 `UI-30`（排行榜、签到与 Rating 历史卡片）、M4-7 新功能 `UI-31`（学习路线）、M4-3 新功能 `UI-32`（社交互动：题解点赞、关注/粉丝 Dialog、通知铃铛与通知页）、RBAC-D 管理后台 `UI-36`（管理壳/仪表盘/用户/角色/审计页面）、M5-6 题目导入 `UI-35`（导入页）、M5-5 AI 面板 `UI-34`（提交页工具栏/详情 AI 提示/配置页）与 AI 管理开关/加密密钥 `UI-38`（`/admin/ai` 设置页）已直接使用 PrimeVue 4 完成；剩余 `UI-19` 题库编辑与 `UI-20` 异常页；`UI-33` 为尚未实现的新功能，不计入现有页面迁移完成度。
 
-M4-C 排行榜、签到与 Rating 历史（UI-30）、M4-7 学习路线（UI-31）、M4-3 社交互动（UI-32）、RBAC-D 管理后台（UI-36）、M4-4 Rating 设置页（UI-37）、M5-6 题目导入页（UI-35）、M5-5 AI 面板（UI-34）与 AI 管理开关页（UI-38）已直接使用 PrimeVue 4 完成；现有页面迁移剩余 UI-19 → UI-20。若后续某页面进入功能开发，先标记 `blocked` 并跳过。
+M4-C 排行榜、签到与 Rating 历史（UI-30）、M4-7 学习路线（UI-31）、M4-3 社交互动（UI-32）、RBAC-D 管理后台（UI-36）、M4-4 Rating 设置页（UI-37）、M5-6 题目导入页（UI-35）、M5-5 AI 面板（UI-34）与 AI 管理开关/加密密钥页（UI-38）已直接使用 PrimeVue 4 完成；现有页面迁移剩余 UI-19 → UI-20。若后续某页面进入功能开发，先标记 `blocked` 并跳过。
 
 ## 进度表
 
@@ -50,10 +50,10 @@ M4-C 排行榜、签到与 Rating 历史（UI-30）、M4-7 学习路线（UI-31�
 | UI-31 | 新功能 | 学习路线 | P3 | done | UI-00 | 直接使用 PrimeVue；树形/解锁进度 | 2026-11-07 完成。`LearningPathListView`/`LearningPathDetailView`/`LearningPathEditView`/`AdminLearningPathsView` + `LearningNodeDialog`；复用 TreeTable/DataTable/Dialog/Select/InputNumber/ProgressBar/Tag |
 | UI-32 | 新功能 | 社交互动 | P3 | done | UI-00 | 直接使用 PrimeVue；点赞/关注/通知 | 2026-11-08 完成。题解列表/详情点赞按钮、`UserProfileView` 关注按钮 + `FollowListDialog`（粉丝/关注 Tab）、`NotificationBell`（未读 badge/60s 轮询）、`NotificationsView`；复用 AppPageHeader/AppSurface/DataTable/Dialog/TabView/Paginator/Toast/Button；不新增 UI 依赖 |
 | UI-33 | 新功能 | 证书认证 | P3 | todo | UI-00 | 直接使用 PrimeVue；提交/审核/核验 | 尚未实现 |
-| UI-34 | 新功能 | AI 辅助面板 | P3 | done | UI-00、UI-06 | 直接使用 PrimeVue；API key 配置/提示 | 2026-11-08 完成。`SubmitView` AI 工具栏（补全/格式化/优化 + 预览 Dialog）、`ProblemDetailView` AI 提示、`AiSettingsView`（`/settings/ai`）与 `UserMenu`「AI 设置」入口；复用 AppPageHeader/AppSurface/AppFormField/Select/InputText/Password/Message/Button/Toast/Dialog；不新增 UI 依赖 |
+| UI-34 | 新功能 | AI 辅助面板 | P3 | done | UI-00、UI-06 | 直接使用 PrimeVue；API key 配置/提示 | 2026-11-08 完成。`SubmitView` AI 工具栏（补全/格式化/优化 + 预览 Dialog，区分「AI 功能未启用」/「管理员尚未配置 AI 密钥」/「尚未配置 AI 模型」）、`ProblemDetailView` AI 提示、`AiSettingsView`（`/settings/ai`，区分 404 与 `keyConfigured=false`）与 `UserMenu`「AI 设置」入口；复用 AppPageHeader/AppSurface/AppFormField/Select/InputText/Password/Message/Button/Toast/Dialog；不新增 UI 依赖 |
 | UI-35 | 新功能 | 题目导入 | P3 | done | UI-00 | 直接使用 PrimeVue；HydroOJ 导入 | 2026-11-08 完成。`ProblemImportView`（`/problems/import`）复用 AppPageHeader/AppSurface/DataTable/Message/Button；题目列表「导入题包」入口与详情创建者链接；不新增 UI 依赖 |
 | UI-37 | 新功能 | M4-4 Rating 设置页：`AdminRatingView` | P3 | done | UI-00、UI-36 | 直接使用 PrimeVue；衰减/赛季设置与只读当前赛季 | 2026-11-08 完成。`AdminRatingView`（`/admin/rating`）复用 AppPageHeader/AppSurface/AppFormField/ToggleSwitch/InputNumber/InputText/Toast；`AdminNav` 增加「Rating」入口；不新增 UI 依赖 |
-| UI-38 | 新功能 | AI 管理开关：`AdminAiView` | P3 | done | UI-00、UI-36 | 直接使用 PrimeVue；状态 Tag/ToggleSwitch/密钥缺失禁用 | 2026-11-08 完成。`AdminAiView`（`/admin/ai`）复用 AppPageHeader/AppSurface/AppFormField/ToggleSwitch/Message/Tag/Toast；`AdminNav` 增加「AI 设置」入口（`ai.settings.manage`）；不新增 UI 依赖 |
+| UI-38 | 新功能 | AI 管理开关 + 加密密钥：`AdminAiView` | P3 | done | UI-00、UI-36 | 直接使用 PrimeVue；状态 Tag/ToggleSwitch/密钥缺失禁用 | 2026-11-08 完成。`AdminAiView`（`/admin/ai`）复用 AppPageHeader/AppSurface/AppFormField/ToggleSwitch/Message/Tag/Toast，并新增「加密密钥」板块（状态 Tag 未配置/文件/env、自动生成一次性显示 + 复制、手动填写、轮换二次确认、env 只读）；`AdminNav` 增加「AI 设置」入口（`ai.settings.manage`）；不新增 UI 依赖 |
 
 ## Legacy allowlist
 
