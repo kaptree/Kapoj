@@ -3,7 +3,7 @@
 > 本文档基于 `plan.md` 细化，是 kapOJ（Kap Online Judge）平台的详细开发规格说明书。
 > 目标：**打造出最有趣味的 Online Judge 平台**。
 > 文档包含完整的架构设计、数据库设计、模块需求，并为每个模块提供了可直接交给 Codex 的**开发提示词（Prompt）**。
-> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)，前端 UI 迁移见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。当前进度：**M4-2A、M4-2B、M4-2C、M4-3、M4-4、RBAC-D、M5-A 与 M5-6 已完成**（M0–M3 已完成；M4 已完成；M5 部分完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页、签到、Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线模型、权限、路线/节点 CRUD 与树结构；M4-2B 交付服务端进度计算（AC 事件补算 + 读取补算、完成锁存）与题目下线/删除守卫；M4-2C 交付学习路线前端（列表/树详情/编辑/官方管理页，PrimeVue TreeTable/DataTable，UI-31）；M4-3 交付轻量社交互动（题解点赞、用户关注、站内通知，回复/点赞/关注接入活跃度与共享分，前端点赞按钮/关注 Dialog/通知铃铛/通知页，UI-32，见 4.8）；M4-4 交付 Rating 衰减与赛季重置（`rating.settings.manage` 权限与 Rating 分组、管理设置 API、`/admin/rating` 设置页、月度高分段衰减、赛季软重置、`decay`/`season_reset` 历史与公开赛季接口）；RBAC-A 交付权限目录、内置角色、首次 Seed/旧角色映射、实时 Access 解析、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/`canAny`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化，以及文档、HTTP 冒烟与浏览器 E2E；M5-A 交付 AI 后端基础（多 provider 配置、用户 API key AES-GCM 加密存储、OpenAI 兼容补全/格式化/优化与题目 AI 提示缓存/限流，AI 路由仅在配置 `KAPOJ_AI_ENCRYPTION_KEY` 时挂载）；M5-6 交付 HydroOJ 题包导入（`POST /api/problems/import/hydro`、大小限制/防路径穿越、slug 冲突不覆盖、默认下线、逐题部分成功与整包回滚，见 §7）与题目详情公开创建者摘要（`author{id,username,nickname}`），前端新增 `/problems/import` 导入页、题目列表「导入题包」入口与详情创建者链接。AI 出题造数据/前端/证书/头像（M5-4、M5-5、M5-7、M5-8）尚未实现）。前端 UI 已完成 UI-00～UI-18 的 PrimeVue 4 迁移、UI-30（M4-C 排行榜/历史）、UI-31（M4-7 学习路线）、UI-32（M4-3 社交互动）与 RBAC-D 管理后台页面直接实现，剩余 UI-19 题库编辑与 UI-20 异常页；该迁移已提交。题目详情页已改造为「题面 + 提示卡片 + 右侧四资源卡片」，并交付官方题解（创建者编辑 + 金币解锁）、解题思路论坛（帖子/回复/软删除）、提交统计页与关联比赛页，详见 4.3；题目主更新不再写入题解字段，官方题解专用接口是唯一写入口。
+> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)，前端 UI 迁移见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。当前进度：**M4-2A、M4-2B、M4-2C、M4-3、M4-4、RBAC-D、M5-A 与 M5-6 已完成**（M0–M3 已完成；M4 已完成；M5 部分完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页、签到、Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线模型、权限、路线/节点 CRUD 与树结构；M4-2B 交付服务端进度计算（AC 事件补算 + 读取补算、完成锁存）与题目下线/删除守卫；M4-2C 交付学习路线前端（列表/树详情/编辑/官方管理页，PrimeVue TreeTable/DataTable，UI-31）；M4-3 交付轻量社交互动（题解点赞、用户关注、站内通知，回复/点赞/关注接入活跃度与共享分，前端点赞按钮/关注 Dialog/通知铃铛/通知页，UI-32，见 4.8）；M4-4 交付 Rating 衰减与赛季重置（`rating.settings.manage` 权限与 Rating 分组、管理设置 API、`/admin/rating` 设置页、月度高分段衰减、赛季软重置、`decay`/`season_reset` 历史与公开赛季接口）；RBAC-A 交付权限目录、内置角色、首次 Seed/旧角色映射、实时 Access 解析、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/`canAny`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化，以及文档、HTTP 冒烟与浏览器 E2E；M5-A 交付 AI 后端基础（多 provider 配置、用户 API key AES-GCM 加密存储、OpenAI 兼容补全/格式化/优化与题目 AI 提示缓存/限流，AI 路由仅在配置 `KAPOJ_AI_ENCRYPTION_KEY` 时挂载）；M5-5 交付 AI 前端（提交页 AI 补全/格式化/优化工具栏、题目详情 AI 提示、`/settings/ai` AI 配置页与用户菜单入口，见 §6.5）；M5-6 交付 HydroOJ 题包导入（`POST /api/problems/import/hydro`、大小限制/防路径穿越、slug 冲突不覆盖、默认下线、逐题部分成功与整包回滚，见 §7）与题目详情公开创建者摘要（`author{id,username,nickname}`），前端新增 `/problems/import` 导入页、题目列表「导入题包」入口与详情创建者链接。AI 出题造数据/证书/头像（M5-4、M5-7、M5-8）尚未实现）。前端 UI 已完成 UI-00～UI-18 的 PrimeVue 4 迁移、UI-30（M4-C 排行榜/历史）、UI-31（M4-7 学习路线）、UI-32（M4-3 社交互动）与 RBAC-D 管理后台页面直接实现，剩余 UI-19 题库编辑与 UI-20 异常页；该迁移已提交。题目详情页已改造为「题面 + 提示卡片 + 右侧四资源卡片」，并交付官方题解（创建者编辑 + 金币解锁）、解题思路论坛（帖子/回复/软删除）、提交统计页与关联比赛页，详见 4.3；题目主更新不再写入题解字段，官方题解专用接口是唯一写入口。
 
 ---
 
@@ -1457,7 +1457,7 @@ user_ai_configs (
 
 ## 6. AI 辅助功能模块
 
-**实现状态（M5-A ✅，M5-1～M5-3 已完成；M5-4～M5-8 待办）**
+**实现状态（M5-A ✅；M5-1～M5-3、M5-5 已完成；M5-4、M5-7、M5-8 待办）**
 
 - **启用/关闭语义**：AI 路由（`/api/ai/configs` GET/POST、`/api/ai/complete`、`/api/ai/format`、`/api/ai/optimize`、`/api/ai/hint`）仅在配置了合法的 `KAPOJ_AI_ENCRYPTION_KEY`（base64 编码的 32 字节，`openssl rand -base64 32` 生成）时挂载；未配置时后端正常启动，只是这些路由不存在（404）。非法 base64 或长度不对时启动直接报错。
 - **provider**：启动时幂等 seed 四个内置 provider（`deepseek`/`openai`/`qwen`/`glm`，见 3.9）；只有 `is_active=true` 的 provider 可用，未知/停用 provider 被拒绝。
@@ -1465,7 +1465,7 @@ user_ai_configs (
 - **OpenAI 客户端**：`POST {base_url}/chat/completions`，Bearer key，解析 `choices[0].message.content`；非 2xx / 空 choices / 畸形 JSON / 超时统一映射为 `50200 AI 服务调用失败`（`KAPOJ_AI_REQUEST_TIMEOUT` 控制超时，默认 45s），不泄露 key 与上游响应体敏感内容。
 - **限流**：补全/格式化/优化/首次生成提示按用户 Redis 冷却（`kapoj:ai:cool:<userID>`，`SetNX`，`KAPOJ_AI_COOLDOWN` 默认 2s），超限返回 `42903`；Redis 故障返回 `50300`；缓存命中的提示不消耗冷却。
 - **提示缓存**：`POST /api/ai/hint` 登录 + `LoadAccess`；缓存命中直接返回 `cached=true`，未命中要求用户配置并调用模型后 `INSERT ... ON CONFLICT (problem_id) DO NOTHING` 写入缓存；非公开题对无 `problem.view_hidden` 的用户返回 40400。
-- **范围外**：M5-4（出题造数据）、M5-5（AI 前端工具栏/提示/配置页）、M5-6（HydroOJ 导入）、M5-7（证书）、M5-8（头像上传）均未实现；M5-A 不新增管理员权限码。
+- **范围外**：M5-4（出题造数据）、M5-7（证书）、M5-8（头像上传）尚未实现（M5-5 AI 前端见 §6.5，M5-6 HydroOJ 导入见 §7）；M5-A 不新增管理员权限码。
 
 ### 6.1 功能清单
 
@@ -1528,7 +1528,19 @@ user_ai_configs (
 请输出完整代码、AI 提示词模板与类型定义。
 ```
 
-### 6.5 Codex 提示词（AI 辅助 - 前端）
+### 6.5 AI 辅助前端（M5-5 ✅）
+
+**实现状态（M5-5 ✅）**
+
+- **提交页 AI 工具栏**（`SubmitView.vue`）：在语言 Select 与提交按钮之间新增「AI 补全 / AI 格式化 / AI 优化」三个小尺寸按钮。页面加载时调用 `GET /api/ai/configs`：未配置（`configured=false`）时显示「尚未配置 AI 模型」提示与 `/settings/ai` 链接并禁用按钮；路由 404（未启用）时显示「AI 功能未启用」；其他加载失败静默禁用按钮（不阻塞提交）。三个按钮互斥禁用；补全按当前光标 UTF-8 字节偏移调用 `POST /api/ai/complete` 并把返回片段插入光标处（空片段提示「没有可插入的补全」）；格式化返回代码与当前不同才弹预览 Dialog（「应用格式化/取消」），相同提示「代码已是格式化状态」；优化 Dialog 展示 Markdown 建议与优化代码（「应用优化代码」）；只有确认应用才替换当前语言草稿。代码按 UTF-8 字节 ≤64 KiB 前置拦截（超限提示「代码超过 64 KiB，无法使用 AI」，不发请求）。
+- **题目详情 AI 提示**（`ProblemDetailView.vue`）：提示卡片标题右侧新增「AI 提示」按钮；游客跳登录（redirect 当前路径），登录调用 `POST /api/ai/hint`；成功在官方提示下方新增「AI 提示」区块（MarkdownView，缓存命中显示「来自缓存」标签）；40001 且无缓存显示「尚未配置 AI 模型」+ 去配置链接，42903 Toast「操作过于频繁，请稍后再试」，50200/50300 Toast「AI 服务暂时不可用」，404 Toast「题目不存在」；不自动请求，切换题目/重新加载清空本地 AI 状态。
+- **AI 配置页 `/settings/ai`**（`AiSettingsView.vue`，路由 `ai-settings`、`requiresAuth`）：加载 `GET /api/ai/configs`；404 显示「AI 功能未启用，请联系管理员」并禁用表单；成功展示 provider Select（`providers`，切换时按 provider 默认模型填充）、模型 InputText（占位默认模型）、API Key `Password`（已配置时留空保留现有密钥、显示脱敏 key）；首次配置 key 必填，保存调用 `POST /api/ai/configs`，成功 Toast 并刷新视图；provider 必选、首次 key 非空校验中文。说明文案：密钥仅加密存储、不会回显明文，AI 调用使用用户自己的 key。移动端表单单列。
+- **用户菜单**：`UserMenu.vue` 登录用户新增「AI 设置」菜单项（`pi pi-sparkles`）跳转 `/settings/ai`。
+- **API 客户端**：`apps/web/src/api/ai.ts` 提供 `getAIConfig`/`saveAIConfig`/`completeCode`/`formatCode`/`optimizeCode`/`getAIHint`；类型别名在 `api/types.ts`（复用 `schema.d.ts` 的 AI schema，不新增 OpenAPI 改动）。
+- **CodeEditor**：`CodeEditor.vue` 暴露 `getCursorByteOffset()`（Monaco UTF-16 offset → UTF-8 字节）与 `insertAtCursor(text)`。
+- **错误映射**：40001「尚未配置 AI 模型」、42903「操作过于频繁，请稍后再试」、50200/50300「AI 服务暂时不可用」、404「AI 功能未启用/题目不存在」、代码 >64KiB「代码超过 64 KiB，无法使用 AI」、空补全「没有可插入的补全」、格式化无变化「代码已是格式化状态」。
+
+**Codex 提示词（历史参考，已实现）**
 
 ```text
 你是一名前端工程师，请为 kapOJ 实现「AI 辅助」模块的前端。
@@ -1660,7 +1672,7 @@ problem/
 
 状态图例：✅ 已完成　🚧 进行中　⬜ 未开始。只有模块的验收标准全部满足后才标记 ✅。
 
-M5 进度：M5-A（AI 后端基础：多 provider 配置、用户 API key 加密存储、补全/格式化/优化与题目提示缓存/限流）与 M5-6（HydroOJ 题包导入 + 题目详情公开创建者摘要，见 §7）已完成；M5-4（AI 出题造数据）、M5-5（AI 前端）、M5-7（证书认证）、M5-8（头像上传）仍未完成，因此 M5 整体保持 🚧。
+M5 进度：M5-A（AI 后端基础：多 provider 配置、用户 API key 加密存储、补全/格式化/优化与题目提示缓存/限流）、M5-5（AI 前端：提交页 AI 工具栏、题目详情 AI 提示、AI 配置页，见 §6.5）与 M5-6（HydroOJ 题包导入 + 题目详情公开创建者摘要，见 §7）已完成；M5-4（AI 出题造数据）、M5-7（证书认证）、M5-8（头像上传）仍未完成，因此 M5 整体保持 🚧。
 
 M3 进度：M3-A（金币、事件、成就、任务后端）、M3-B（徽章、称号、公开身份后端）与 M3-C（成就页、任务大厅、徽章商城、称号商店、装扮管理、游戏化管理、公开身份接入与真实浏览器验收）均已完成，M3 标记为 ✅。
 
