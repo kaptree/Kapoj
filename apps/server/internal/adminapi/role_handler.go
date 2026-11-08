@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/kaptree/kapoj/apps/server/internal/ai"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
@@ -15,13 +16,14 @@ import (
 // RegisterRoutes 挂载管理后台角色/权限接口；路由组需已运行
 // middleware.Authenticate。所有管理接口都通过 RequirePermission 授权，
 // super_admin 由中间件直接放行。opts.Game 非空时额外挂载金币调整接口；
-// opts.Rating 非空时额外挂载 Rating 设置接口。
+// opts.Rating 非空时额外挂载 Rating 设置接口；opts.AI 非空时额外挂载
+// AI 设置接口。
 func RegisterRoutes(api gin.IRouter, s *rbac.Service, opts ...Options) {
 	var o Options
 	if len(opts) > 0 {
 		o = opts[0]
 	}
-	h := &handler{svc: s, game: o.Game, rating: o.Rating}
+	h := &handler{svc: s, game: o.Game, rating: o.Rating, ai: o.AI}
 
 	api.GET("/admin/stats", append(requirePermission(s, string(rbac.PermAdminDashboardView)), h.stats)...)
 	api.GET("/admin/audit", append(requirePermission(s, string(rbac.PermAdminAuditView)), h.listAudit)...)
@@ -46,12 +48,17 @@ func RegisterRoutes(api gin.IRouter, s *rbac.Service, opts ...Options) {
 		api.GET("/admin/rating/settings", append(requirePermission(s, string(rbac.PermRatingSettingsManage)), h.getRatingSettings)...)
 		api.PUT("/admin/rating/settings", append(requirePermission(s, string(rbac.PermRatingSettingsManage)), h.updateRatingSettings)...)
 	}
+	if h.ai != nil {
+		api.GET("/admin/ai/settings", append(requirePermission(s, string(rbac.PermAISettingsManage)), h.getAISettings)...)
+		api.PUT("/admin/ai/settings", append(requirePermission(s, string(rbac.PermAISettingsManage)), h.updateAISettings)...)
+	}
 }
 
 type handler struct {
 	svc    *rbac.Service
 	game   *gamification.Service
 	rating *rating.Service
+	ai     *ai.SettingsService
 }
 
 // roleUpdateRequest 是 PUT /admin/roles/:id 的请求体。Code 为可选字段：

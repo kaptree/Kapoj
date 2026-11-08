@@ -96,8 +96,9 @@ func New(d Deps) *gin.Engine {
 		userOpts.IdentityLookup = d.Game
 	}
 	userapi.RegisterRoutes(api, userSvc, userOpts)
+	aiSettings := ai.NewSettingsService(d.DB, d.AI != nil)
 	if d.RBAC != nil {
-		adminapi.RegisterRoutes(api, d.RBAC, adminapi.Options{Game: d.Game, Rating: d.Rating})
+		adminapi.RegisterRoutes(api, d.RBAC, adminapi.Options{Game: d.Game, Rating: d.Rating, AI: aiSettings})
 	}
 	if d.Game != nil {
 		gamificationapi.RegisterRoutes(api, uploads, d.Game, gamificationapi.Options{RBAC: d.RBAC})
@@ -120,7 +121,7 @@ func New(d Deps) *gin.Engine {
 		learningapi.RegisterRoutes(api, d.Learning, learningapi.Options{RBAC: d.RBAC})
 	}
 	if d.AI != nil {
-		aiapi.RegisterRoutes(api, d.AI, aiapi.Options{RBAC: d.RBAC})
+		aiapi.RegisterRoutes(api, d.AI, aiapi.Options{RBAC: d.RBAC, Settings: aiSettings})
 	}
 	contestRepo := contest.NewGormRepository(d.DB)
 	contestSvc := contest.NewService(contestRepo)

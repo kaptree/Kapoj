@@ -10,12 +10,14 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 )
 
-// Options 配置 AI 接口的可选依赖；RBAC 预留给后续 hint 接口。
+// Options 配置 AI 接口的可选依赖；RBAC 预留给后续 hint 接口。Settings 非空时
+// 所有 AI 路由挂载 AI 开关中间件（关闭即 404）。
 type Options struct {
-	RBAC *rbac.Service
+	RBAC     *rbac.Service
+	Settings *ai.SettingsService
 }
 
-// RegisterRoutes mounts AI config endpoints. Both routes require auth; the
+// RegisterRoutes mounts AI config endpoints. All routes require auth; the
 // router group must already run middleware.Authenticate.
 func RegisterRoutes(r gin.IRouter, s *ai.Service, opts ...Options) {
 	var o Options
@@ -32,12 +34,34 @@ func RegisterRoutes(r gin.IRouter, s *ai.Service, opts ...Options) {
 	}
 	load := middleware.LoadAccess(resolver)
 
-	r.GET("/ai/configs", middleware.RequireAuth(), h.getConfig)
-	r.POST("/ai/configs", middleware.RequireAuth(), h.saveConfig)
-	r.POST("/ai/complete", middleware.RequireAuth(), h.complete)
-	r.POST("/ai/format", middleware.RequireAuth(), h.format)
-	r.POST("/ai/optimize", middleware.RequireAuth(), h.optimize)
-	r.POST("/ai/hint", middleware.RequireAuth(), load, h.hint)
+	group := r.Group("/ai", middleware.RequireAuth())
+	if o.Settings != nil {
+		group.Use(RequireAIEnabled(o.Settings))
+	}
+
+	group.GET("/configs", h.getConfig)
+	group.POST("/configs", h.saveConfig)
+	group.POST("/complete", h.complete)
+	group.POST("/format", h.format)
+	group.POST("/optimize", h.optimize)
+	group.POST("/hint", load, h.hint)
+}
+
+// RequireAIEnabled 在 AI 开关关闭时让所有 AI 接口返回 404（与未挂载一致，
+// 不暴露“AI 已关闭”）；设置读取 DB 错误返回 500，不静默放行。
+func RequireAIEnabled(settings *ai.SettingsService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		enabled, err := settings.Enabled(c.Request.Context())
+		if err != nil {
+			httpx.Fail(c, err)
+			return
+		}
+		if !enabled {
+			httpx.Fail(c, httpx.ErrNotFound)
+			return
+		}
+		c.Next()
+	}
 }
 
 type handler struct {

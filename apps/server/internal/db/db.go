@@ -61,6 +61,6 @@ func Migrate(g *gorm.DB) error {
 		&learning.UserLearningProgress{},
 		&rbac.Role{}, &rbac.Permission{}, &rbac.RolePermission{},
 		&rbac.UserRole{}, &rbac.AdminAuditLog{}, &rbac.Meta{},
-		&ai.Provider{}, &ai.UserConfig{}, &ai.Hint{},
+		&ai.Provider{}, &ai.UserConfig{}, &ai.Hint{}, &ai.Settings{},
 	)
 }

@@ -71,7 +71,7 @@ func countRows(t *testing.T, g *gorm.DB, model any) int64 {
 
 func TestCatalogDefinitions(t *testing.T) {
 	permissions := rbac.AllPermissions()
-	require.Len(t, permissions, 35)
+	require.Len(t, permissions, 36)
 
 	codes := make(map[string]struct{}, len(permissions))
 	for _, def := range permissions {
@@ -138,8 +138,9 @@ func TestPermissionCatalogExactCodes(t *testing.T) {
 		"learning_path.official.manage",
 		"learning_path.admin.read",
 		"rating.settings.manage",
+		"ai.settings.manage",
 	}
-	require.Len(t, expected, 35)
+	require.Len(t, expected, 36)
 
 	codes := make([]string, len(rbac.PermissionCodes))
 	for i, code := range rbac.PermissionCodes {

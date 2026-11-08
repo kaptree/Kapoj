@@ -41,6 +41,29 @@ func newAIHandler(t *testing.T) (http.Handler, *gorm.DB) {
 	return r, g
 }
 
+// newAISettingsHandler 构造挂载了 AI 开关中间件的测试引擎；enabled=false 时
+// 预先将设置关闭，用于验证所有 /ai 路由统一 404。
+func newAISettingsHandler(t *testing.T, enabled bool) (http.Handler, *gorm.DB) {
+	t.Helper()
+	g := testutil.PG(t)
+	require.NoError(t, ai.SeedProviders(context.Background(), g))
+	enc, err := ai.NewEncryptor(base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")))
+	require.NoError(t, err)
+	svc := ai.NewService(g, enc, nil, nil)
+	settings := ai.NewSettingsService(g, true)
+	if !enabled {
+		_, err := settings.Update(context.Background(), 1, false, nil)
+		require.NoError(t, err)
+	}
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	issuer := auth.NewTokenIssuer(testJWTSecret, 15*time.Minute)
+	api := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(1<<20))
+	aiapi.RegisterRoutes(api, svc, aiapi.Options{Settings: settings})
+	return r, g
+}
+
 func createUser(t *testing.T, g *gorm.DB, username string) int64 {
 	t.Helper()
 	require.NoError(t, g.Exec(
@@ -113,4 +136,35 @@ func TestAIConfigAPIRequiresAuth(t *testing.T) {
 	w, resp = do(t, h, http.MethodPost, "/api/ai/configs", token, `{"provider":"nope","apiKey":"x"}`)
 	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
 	assert.EqualValues(t, 40001, resp["code"])
+}
+
+func TestAIRoutesDisabledReturn404(t *testing.T) {
+	h, g := newAISettingsHandler(t, false)
+	userID := createUser(t, g, "aidisabled")
+	token := tokenFor(t, userID)
+
+	routes := []struct{ method, path, body string }{
+		{http.MethodGet, "/api/ai/configs", ""},
+		{http.MethodPost, "/api/ai/configs", `{"provider":"deepseek","apiKey":"x"}`},
+		{http.MethodPost, "/api/ai/complete", `{}`},
+		{http.MethodPost, "/api/ai/format", `{}`},
+		{http.MethodPost, "/api/ai/optimize", `{}`},
+		{http.MethodPost, "/api/ai/hint", `{}`},
+	}
+	for _, rt := range routes {
+		w, resp := do(t, h, rt.method, rt.path, token, rt.body)
+		require.Equal(t, http.StatusNotFound, w.Code, "%s %s 应返回 404", rt.method, rt.path)
+		assert.EqualValues(t, 40400, resp["code"], "%s %s", rt.method, rt.path)
+	}
+}
+
+func TestAIRoutesEnabledPass(t *testing.T) {
+	h, g := newAISettingsHandler(t, true)
+	userID := createUser(t, g, "aienabled")
+	token := tokenFor(t, userID)
+
+	w, resp := do(t, h, http.MethodGet, "/api/ai/configs", token, "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data := resp["data"].(map[string]any)
+	assert.Equal(t, false, data["configured"])
 }

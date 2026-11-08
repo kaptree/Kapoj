@@ -42,7 +42,7 @@ func TestListPermissionsAndRoles(t *testing.T) {
 	svc := rbac.NewService(g)
 
 	permissions := svc.ListPermissions(ctx)
-	require.Len(t, permissions, 35)
+	require.Len(t, permissions, 36)
 
 	codes := make(map[string]struct{}, len(permissions))
 	groups := make([]string, 0, 8)
@@ -67,7 +67,7 @@ func TestListPermissionsAndRoles(t *testing.T) {
 		lastSort = item.SortOrder
 	}
 	assert.ElementsMatch(t, []string{
-		"管理后台", "用户与角色", "题库", "测评记录", "比赛", "游戏化", "学习路线", "Rating",
+		"管理后台", "用户与角色", "题库", "测评记录", "比赛", "游戏化", "学习路线", "Rating", "AI",
 	}, groups)
 
 	roles, err := svc.ListRoles(ctx)

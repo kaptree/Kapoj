@@ -270,7 +270,7 @@ func TestMigrateCreatesAITables(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
-	for _, table := range []string{"ai_providers", "user_ai_configs", "ai_hints"} {
+	for _, table := range []string{"ai_providers", "user_ai_configs", "ai_hints", "ai_settings"} {
 		assert.True(t, g.Migrator().HasTable(table), "缺少表 %s", table)
 	}
 	assert.True(t, g.Migrator().HasIndex(&ai.Provider{}, "uniq_ai_providers_code"))

@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"github.com/kaptree/kapoj/apps/server/internal/ai"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/rating"
@@ -16,6 +17,7 @@ import (
 type Options struct {
 	Game   *gamification.Service
 	Rating *rating.Service
+	AI     *ai.SettingsService
 }
 
 // adjustCoins 处理 POST /admin/users/:id/coins，调整目标用户金币并在同一事务
