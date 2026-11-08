@@ -1,7 +1,9 @@
 package generation_test
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -43,6 +45,12 @@ func (f *fakeSandbox) Run(_ context.Context, req sandbox.RunRequest) (sandbox.Ru
 	if f.runFn != nil {
 		return f.runFn(req)
 	}
+	return f.defaultRun(req)
+}
+
+// defaultRun emulates the real sandbox: the generator echoes its seed and the
+// standard program doubles its input.
+func (f *fakeSandbox) defaultRun(req sandbox.RunRequest) (sandbox.RunResult, error) {
 	data, err := os.ReadFile(req.InputPath)
 	if err != nil {
 		return sandbox.RunResult{}, err
@@ -104,6 +112,11 @@ func caseCount(t *testing.T, pool *pgxpool.Pool, id int64) int {
 	require.NoError(t, pool.QueryRow(context.Background(),
 		`SELECT count(*) FROM testcase_generation_cases WHERE generation_id = $1`, id).Scan(&n))
 	return n
+}
+
+// generatedDir is the storage directory where a generation's files live.
+func (e *genEnv) generatedDir(id int64) string {
+	return filepath.Join(e.root, "problems", strconv.FormatInt(e.problem, 10), "generated", strconv.FormatInt(id, 10))
 }
 
 func TestGenerationStoresFilesAndCases(t *testing.T) {
@@ -294,4 +307,90 @@ func TestGenerationClaimSkip(t *testing.T) {
 	assert.Empty(t, e.sb.runs)
 	status, _ := genStatus(t, e.pool, id)
 	assert.Equal(t, model.GenerationReady, status)
+}
+
+// infraFail runs the pipeline and asserts that an infrastructure error leaves
+// the generation terminal (failed) with no cases and no files, and that the
+// original error is surfaced.
+func infraFail(t *testing.T, e *genEnv, id int64) {
+	t.Helper()
+	err := e.pipe.Run(context.Background(), id)
+	require.Error(t, err)
+
+	status, message := genStatus(t, e.pool, id)
+	assert.Equal(t, model.GenerationFailed, status)
+	assert.Contains(t, message, "系统错误")
+	assert.Zero(t, caseCount(t, e.pool, id), "infra failure must record no cases")
+
+	_, statErr := os.Stat(e.generatedDir(id))
+	assert.True(t, os.IsNotExist(statErr), "infra failure must remove generated files")
+}
+
+func TestGenerationCompileInfraErrorCleansUp(t *testing.T) {
+	e := newGenEnv(t)
+	id := e.insert(t, "cpp", "int main(){}", "print(1)", 2, "pending")
+	e.sb.compileFn = func(sandbox.CompileRequest) (sandbox.CompileResult, error) {
+		return sandbox.CompileResult{}, errors.New("docker unavailable")
+	}
+
+	infraFail(t, e, id)
+}
+
+func TestGenerationRunInfraErrorCleansUp(t *testing.T) {
+	e := newGenEnv(t)
+	id := e.insert(t, "cpp", "int main(){}", "print(1)", 2, "pending")
+	// Group 1 succeeds, then the group 2 generator run fails with an infra error.
+	e.sb.runFn = func(req sandbox.RunRequest) (sandbox.RunResult, error) {
+		if len(e.sb.runs) == 3 {
+			return sandbox.RunResult{}, errors.New("docker unavailable")
+		}
+		return e.sb.defaultRun(req)
+	}
+
+	infraFail(t, e, id)
+}
+
+func TestGenerationPutInfraErrorCleansUp(t *testing.T) {
+	e := newGenEnv(t)
+	id := e.insert(t, "cpp", "int main(){}", "print(1)", 2, "pending")
+	// Group 1 stores successfully; group 2's generator emits more than the
+	// 16 MiB Put limit without flagging truncation, so storage.Put errors.
+	e.sb.runFn = func(req sandbox.RunRequest) (sandbox.RunResult, error) {
+		res, err := e.sb.defaultRun(req)
+		if err != nil {
+			return res, err
+		}
+		if req.Language == "python3" && len(e.sb.runs) == 3 {
+			return sandbox.RunResult{Output: bytes.Repeat([]byte("x"), (16<<20)+1)}, nil
+		}
+		return res, nil
+	}
+
+	infraFail(t, e, id)
+}
+
+func TestGenerationAddCaseInfraErrorCleansUp(t *testing.T) {
+	e := newGenEnv(t)
+	id := e.insert(t, "cpp", "int main(){}", "print(1)", 2, "pending")
+	stdRuns := 0
+	e.sb.runFn = func(req sandbox.RunRequest) (sandbox.RunResult, error) {
+		res, err := e.sb.defaultRun(req)
+		if err != nil {
+			return res, err
+		}
+		if req.Language != "python3" {
+			stdRuns++
+			if stdRuns == 2 {
+				// Pre-insert the group 2 case so AddGenerationCase hits the
+				// unique(generation_id, sort_order) constraint.
+				_, err := e.pool.Exec(context.Background(),
+					`INSERT INTO testcase_generation_cases (generation_id, sort_order, input_file, output_file, input_size, output_size)
+					 VALUES ($1, 2, 'x.in', 'x.out', 0, 0)`, id)
+				require.NoError(t, err)
+			}
+		}
+		return res, nil
+	}
+
+	infraFail(t, e, id)
 }

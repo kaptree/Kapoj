@@ -77,7 +77,7 @@ func (p *Pipeline) Run(ctx context.Context, generationID int64) error {
 		Language: string(model.LanguagePython3), Source: []byte(gen.GeneratorCode),
 	})
 	if err != nil {
-		return err
+		return p.failInfra(ctx, gen, genKey, err)
 	}
 	if genCompiled.ArtifactDir != "" {
 		defer p.sandbox.Cleanup(genCompiled.ArtifactDir)
@@ -91,7 +91,7 @@ func (p *Pipeline) Run(ctx context.Context, generationID int64) error {
 		Language: string(gen.Language), Source: []byte(gen.StandardCode),
 	})
 	if err != nil {
-		return err
+		return p.failInfra(ctx, gen, genKey, err)
 	}
 	if stdCompiled.ArtifactDir != "" {
 		defer p.sandbox.Cleanup(stdCompiled.ArtifactDir)
@@ -102,7 +102,7 @@ func (p *Pipeline) Run(ctx context.Context, generationID int64) error {
 
 	work, err := os.MkdirTemp("", "kapoj-gen-*")
 	if err != nil {
-		return err
+		return p.failInfra(ctx, gen, genKey, err)
 	}
 	defer func() { _ = os.RemoveAll(work) }()
 
@@ -112,7 +112,7 @@ func (p *Pipeline) Run(ctx context.Context, generationID int64) error {
 			if errors.As(err, &f) {
 				return p.fail(ctx, gen, genKey, f.message)
 			}
-			return err
+			return p.failInfra(ctx, gen, genKey, err)
 		}
 	}
 
@@ -211,6 +211,21 @@ func (p *Pipeline) fail(ctx context.Context, gen *model.Generation, genKey, mess
 		return err
 	}
 	return p.repo.FinishGeneration(ctx, gen.ID, model.GenerationFailed, truncate(message, maxErrorMessage))
+}
+
+// failInfra performs best-effort cleanup after an infrastructure error and
+// marks the generation failed so it can never be left stuck in "running" with
+// partial cases or files. The original error is returned so Asynq/logs still
+// observe the infrastructure failure.
+func (p *Pipeline) failInfra(ctx context.Context, gen *model.Generation, genKey string, cause error) error {
+	_ = p.repo.ResetGenerationCases(ctx, gen.ID)
+	_ = storage.RemoveAll(p.storageRoot, genKey)
+	message := "系统错误"
+	if cause != nil {
+		message = "系统错误：" + truncate(cause.Error(), maxErrorMessage)
+	}
+	_ = p.repo.FinishGeneration(ctx, gen.ID, model.GenerationFailed, message)
+	return cause
 }
 
 // generatedKey is the shared storage directory for one generation's files.
