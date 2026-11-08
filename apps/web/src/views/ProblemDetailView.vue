@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
 import { useToast } from 'primevue/usetoast'
 
+import { getAIHint } from '@/api/ai'
 import { ApiError } from '@/api/http'
 import { getProblem, getStatistics } from '@/api/problems'
 import type { ProblemDetail, ProblemStats } from '@/api/types'
@@ -21,6 +22,7 @@ import { useTheme } from '@/theme/theme'
 import { formatCoins } from '@/utils/gamification'
 
 const route = useRoute()
+const router = useRouter()
 const auth = useAuthStore()
 const toast = useToast()
 const { isDark } = useTheme()
@@ -36,6 +38,12 @@ const stats = ref<ProblemStats | null>(null)
 const loading = ref(false)
 const error = ref('')
 
+const aiHint = ref('')
+const aiHintCached = ref(false)
+const aiHintLoading = ref(false)
+const aiHintError = ref('')
+const aiConfigMissing = ref(false)
+
 const typeLabels = { traditional: '传统题', special: '特判题', interactive: '交互题' } as const
 
 let latest = 0
@@ -46,6 +54,13 @@ async function load(id: string) {
   error.value = ''
   problem.value = null
   stats.value = null
+
+  // AI hints are per-problem; reset local state whenever the problem changes.
+  aiHint.value = ''
+  aiHintCached.value = false
+  aiHintLoading.value = false
+  aiHintError.value = ''
+  aiConfigMissing.value = false
 
   try {
     const detail = await getProblem(id)
@@ -79,6 +94,41 @@ watch(
 function retry() {
   const id = route.params.id
   if (typeof id === 'string') void load(id)
+}
+
+async function requestAIHint() {
+  if (!auth.isLoggedIn) {
+    void router.push({ name: 'login', query: { redirect: route.fullPath } })
+    return
+  }
+  const pid = problem.value?.id
+  if (pid == null) return
+
+  aiHintLoading.value = true
+  aiHintError.value = ''
+  aiConfigMissing.value = false
+  try {
+    const result = await getAIHint(pid)
+    if (problem.value?.id !== pid) return
+    aiHint.value = result.hint
+    aiHintCached.value = result.cached
+  } catch (e) {
+    if (problem.value?.id !== pid) return
+    if (e instanceof ApiError && e.code === 40001) {
+      aiHintError.value = '尚未配置 AI 模型'
+      aiConfigMissing.value = true
+    } else if (e instanceof ApiError && e.code === 42903) {
+      toast.add({ severity: 'warn', summary: '操作过于频繁，请稍后再试', life: 3000 })
+    } else if (e instanceof ApiError && (e.code === 50200 || e.code === 50300)) {
+      toast.add({ severity: 'error', summary: 'AI 服务暂时不可用', life: 3000 })
+    } else if (e instanceof ApiError && (e.status === 404 || e.code === 40400)) {
+      toast.add({ severity: 'error', summary: '题目不存在', life: 3000 })
+    } else {
+      aiHintError.value = 'AI 提示加载失败，请稍后再试'
+    }
+  } finally {
+    if (problem.value?.id === pid) aiHintLoading.value = false
+  }
 }
 
 async function copy(text: string) {
@@ -259,13 +309,40 @@ const authorName = computed(() => {
           </AppSurface>
 
           <AppSurface as="section" padding="lg" class="hint-card">
-            <h2 id="problem-hint-title" class="section-title">提示</h2>
+            <div class="hint-header">
+              <h2 id="problem-hint-title" class="section-title">提示</h2>
+              <Button
+                type="button"
+                size="small"
+                icon="pi pi-sparkles"
+                label="AI 提示"
+                :loading="aiHintLoading"
+                :disabled="aiHintLoading"
+                @click="requestAIHint"
+              />
+            </div>
             <MarkdownView
               v-if="problem?.hintMd"
               :source="problem?.hintMd ?? ''"
               :theme="isDark ? 'dark' : 'light'"
             />
             <AppEmptyState v-else icon="pi pi-lightbulb" title="暂无提示" />
+
+            <div v-if="aiHintLoading" class="ai-hint-loading">AI 正在生成提示…</div>
+            <div v-else-if="aiHint" class="ai-hint">
+              <div class="ai-hint__head">
+                <span class="ai-hint__title">AI 提示</span>
+                <span v-if="aiHintCached" class="ai-hint__cached">来自缓存</span>
+              </div>
+              <MarkdownView :source="aiHint" :theme="isDark ? 'dark' : 'light'" />
+            </div>
+            <div v-else-if="aiConfigMissing" class="ai-hint-config">
+              <Message severity="info" :closable="false">
+                {{ aiHintError }}
+                <RouterLink to="/settings/ai">去配置</RouterLink>
+              </Message>
+            </div>
+            <div v-else-if="aiHintError" class="ai-hint-error">{{ aiHintError }}</div>
           </AppSurface>
         </div>
 
@@ -440,6 +517,60 @@ const authorName = computed(() => {
   color: var(--kapoj-text);
   font-size: 1.1rem;
   line-height: 1.3;
+}
+
+.hint-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kapoj-space-3);
+  margin-bottom: var(--kapoj-space-3);
+}
+
+.hint-header .section-title {
+  margin: 0;
+}
+
+.ai-hint-loading {
+  margin-top: var(--kapoj-space-4);
+  color: var(--kapoj-text-secondary);
+  font-size: 0.875rem;
+}
+
+.ai-hint {
+  margin-top: var(--kapoj-space-4);
+  padding-top: var(--kapoj-space-4);
+  border-top: 1px solid var(--kapoj-border);
+}
+
+.ai-hint__head {
+  display: flex;
+  align-items: center;
+  gap: var(--kapoj-space-2);
+  margin-bottom: var(--kapoj-space-2);
+}
+
+.ai-hint__title {
+  color: var(--kapoj-text);
+  font-weight: 600;
+}
+
+.ai-hint__cached {
+  padding: 0 8px;
+  color: var(--kapoj-info);
+  font-size: 11px;
+  border: 1px solid color-mix(in srgb, var(--kapoj-info) 32%, transparent);
+  border-radius: var(--kapoj-radius-xs);
+}
+
+.ai-hint-config,
+.ai-hint-error {
+  margin-top: var(--kapoj-space-4);
+}
+
+.ai-hint-error {
+  color: var(--kapoj-text-secondary);
+  font-size: 0.875rem;
 }
 
 .sample-grid {

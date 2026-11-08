@@ -5,23 +5,31 @@ import { createPinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { reactive } from 'vue'
 
+import { getAIHint } from '@/api/ai'
 import { ApiError } from '@/api/http'
 import { getProblem, getStatistics } from '@/api/problems'
 import type { ProblemDetail, ProblemStats } from '@/api/types'
 import ProblemDetailView from './ProblemDetailView.vue'
 
-const route = reactive({ params: { id: '1' }, query: {} })
+const route = reactive({ params: { id: '1' }, query: {}, fullPath: '/problems/1' })
 
+const toast = vi.hoisted(() => ({ add: vi.fn() }))
+const routerPush = vi.hoisted(() => vi.fn())
 const auth = vi.hoisted(() => ({
+  isLoggedIn: false as boolean,
   can: vi.fn<(code: string) => boolean>(() => false),
 }))
 
 vi.mock('vue-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-router')>()
-  return { ...actual, useRoute: () => route }
+  return { ...actual, useRoute: () => route, useRouter: () => ({ push: routerPush }) }
 })
+vi.mock('primevue/usetoast', () => ({ useToast: () => toast }))
 vi.mock('@/components/MarkdownView.vue', () => ({
   default: { props: ['source', 'theme'], template: '<div>{{ source }}</div>' },
+}))
+vi.mock('@/api/ai', () => ({
+  getAIHint: vi.fn(),
 }))
 vi.mock('@/api/problems', () => ({
   getProblem: vi.fn(),
@@ -80,8 +88,13 @@ function mountView() {
 beforeEach(() => {
   auth.can.mockReset()
   auth.can.mockReturnValue(false)
+  auth.isLoggedIn = false
+  toast.add.mockReset()
+  routerPush.mockReset()
+  vi.mocked(getAIHint).mockReset()
   route.params.id = '1'
   route.query = {}
+  route.fullPath = '/problems/1'
 })
 
 describe('ProblemDetailView', () => {
@@ -252,6 +265,131 @@ describe('ProblemDetailView', () => {
 
     expect(wrapper.text()).not.toContain('创建者')
     expect(wrapper.find('a[href^="/users/"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shows AI hint button and sends guests to login', async () => {
+    vi.mocked(getProblem).mockResolvedValue(detail(1))
+    vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
+    const wrapper = mountView()
+    await flushPromises()
+
+    const button = wrapper
+      .findAllComponents({ name: 'Button' })
+      .find((b) => b.text().includes('AI 提示'))
+    expect(button).toBeTruthy()
+
+    await button!.trigger('click')
+    await flushPromises()
+
+    expect(routerPush).toHaveBeenCalledWith({
+      name: 'login',
+      query: { redirect: '/problems/1' },
+    })
+    expect(getAIHint).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('loads and renders AI hint with cached label', async () => {
+    auth.isLoggedIn = true
+    vi.mocked(getProblem).mockResolvedValue(detail(1))
+    vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
+    vi.mocked(getAIHint).mockResolvedValue({ hint: 'AI hint text', cached: true })
+    const wrapper = mountView()
+    await flushPromises()
+
+    const button = wrapper
+      .findAllComponents({ name: 'Button' })
+      .find((b) => b.text().includes('AI 提示'))
+    await button!.trigger('click')
+    await flushPromises()
+
+    expect(getAIHint).toHaveBeenCalledWith(1)
+    expect(wrapper.text()).toContain('AI hint text')
+    expect(wrapper.text()).toContain('来自缓存')
+    wrapper.unmount()
+  })
+
+  it('shows config link when AI config missing', async () => {
+    auth.isLoggedIn = true
+    vi.mocked(getProblem).mockResolvedValue(detail(1))
+    vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
+    vi.mocked(getAIHint).mockRejectedValue(new ApiError(400, 40001, 'ai config not set'))
+    const wrapper = mountView()
+    await flushPromises()
+
+    const button = wrapper
+      .findAllComponents({ name: 'Button' })
+      .find((b) => b.text().includes('AI 提示'))
+    await button!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('尚未配置 AI 模型')
+    expect(wrapper.find('a[href="/settings/ai"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('maps 429/502/404 to Chinese toast', async () => {
+    auth.isLoggedIn = true
+    vi.mocked(getProblem).mockResolvedValue(detail(1))
+    vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
+
+    const cases: Array<[ApiError, string]> = [
+      [new ApiError(429, 42903, 'rate limited'), '操作过于频繁，请稍后再试'],
+      [new ApiError(502, 50200, 'upstream'), 'AI 服务暂时不可用'],
+      [new ApiError(503, 50300, 'redis'), 'AI 服务暂时不可用'],
+      [new ApiError(404, 40400, 'not found'), '题目不存在'],
+    ]
+
+    for (const [err, expected] of cases) {
+      toast.add.mockClear()
+      vi.mocked(getAIHint).mockRejectedValue(err)
+      const wrapper = mountView()
+      await flushPromises()
+
+      const button = wrapper
+        .findAllComponents({ name: 'Button' })
+        .find((b) => b.text().includes('AI 提示'))
+      await button!.trigger('click')
+      await flushPromises()
+
+      expect(toast.add).toHaveBeenCalledWith(expect.objectContaining({ summary: expected }))
+      wrapper.unmount()
+    }
+  })
+
+  it('clears AI hint when the problem id changes', async () => {
+    auth.isLoggedIn = true
+    vi.mocked(getProblem).mockResolvedValue(detail(1))
+    vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
+    vi.mocked(getAIHint).mockResolvedValue({ hint: 'AI hint text', cached: false })
+    const wrapper = mountView()
+    await flushPromises()
+
+    const button = wrapper
+      .findAllComponents({ name: 'Button' })
+      .find((b) => b.text().includes('AI 提示'))
+    await button!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('AI hint text')
+
+    vi.mocked(getProblem).mockResolvedValue(detail(2))
+    route.params.id = '2'
+    route.fullPath = '/problems/2'
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('AI hint text')
+    wrapper.unmount()
+  })
+
+  it('does not request AI hint automatically', async () => {
+    auth.isLoggedIn = true
+    vi.mocked(getProblem).mockResolvedValue(detail(1))
+    vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(getAIHint).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 })
