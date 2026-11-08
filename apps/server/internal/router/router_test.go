@@ -269,9 +269,9 @@ func TestRouterWiresAIEndpoints(t *testing.T) {
 	w, _ := call(plain, http.MethodGet, "/api/ai/configs", "", "")
 	assert.Equal(t, http.StatusNotFound, w.Code)
 
-	enc, err := ai.NewEncryptor(base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")))
+	km, err := ai.NewKeyManager(base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")), "")
 	require.NoError(t, err)
-	aiSvc := ai.NewService(g, enc, nil, nil)
+	aiSvc := ai.NewService(g, km, nil, nil)
 
 	h := New(Deps{
 		DB: g, Redis: rdb, Storage: store,

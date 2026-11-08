@@ -23,9 +23,9 @@ import (
 
 func buildHintHandler(t *testing.T, g *gorm.DB, client ai.ChatClient, limiter ai.Limiter, rbacSvc *rbac.Service) http.Handler {
 	t.Helper()
-	enc, err := ai.NewEncryptor(base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")))
+	km, err := ai.NewKeyManager(base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")), "")
 	require.NoError(t, err)
-	svc := ai.NewService(g, enc, limiter, client)
+	svc := ai.NewService(g, km, limiter, client)
 
 	gin.SetMode(gin.TestMode)
 	r := gin.New()

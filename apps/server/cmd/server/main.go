@@ -85,18 +85,17 @@ func run() error {
 	learningSvc := learning.NewService(learning.NewRepository(g))
 	rbacSvc := rbac.NewService(g)
 
-	// AI service is only mounted when a valid encryption key is configured;
-	// an empty key means AI routes stay absent but the server starts normally.
-	var aiSvc *ai.Service
-	if cfg.AIEncryptionKey != "" {
-		enc, err := ai.NewEncryptor(cfg.AIEncryptionKey)
-		if err != nil {
-			return err
-		}
-		aiSvc = ai.NewService(g, enc,
-			ai.NewRedisLimiter(rdb, cfg.AICooldown),
-			ai.NewOpenAIClient(cfg.AIRequestTimeout))
+	// KeyManager loads the AI encryption key from the environment (priority) or
+	// a local file. An invalid env key fails startup; a missing/invalid file
+	// degrades to "not configured" so the admin UI can generate one later.
+	keyMgr, err := ai.NewKeyManager(cfg.AIEncryptionKey, cfg.AIKeyFile)
+	if err != nil {
+		return err
 	}
+	aiSvc := ai.NewService(g, keyMgr,
+		ai.NewRedisLimiter(rdb, cfg.AICooldown),
+		ai.NewOpenAIClient(cfg.AIRequestTimeout))
+	aiSettings := ai.NewSettingsService(g, keyMgr, cfg.AIKeyFile)
 
 	gameServer := asynq.NewServer(
 		asynq.RedisClientOpt{Addr: cfg.RedisAddr},
@@ -127,7 +126,7 @@ func run() error {
 		Handler: router.New(router.Deps{
 			DB: g, Redis: rdb, Storage: store, Config: cfg, Enqueuer: queue, Game: gameSvc,
 			Rating: ratingSvc, Activity: activitySvc, Learning: learningSvc, RBAC: rbacSvc,
-			AI: aiSvc,
+			AI: aiSvc, AISettings: aiSettings,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}

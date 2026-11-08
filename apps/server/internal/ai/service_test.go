@@ -2,6 +2,7 @@ package ai_test
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,11 +14,25 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
 )
 
+// newKeyManager 构造一个已配置（env 来源）的 KeyManager。
+func newKeyManager(t *testing.T) *ai.KeyManager {
+	t.Helper()
+	km, err := ai.NewKeyManager(testKeyB64, "")
+	require.NoError(t, err)
+	return km
+}
+
+// newNoKeyManager 构造一个未配置密钥的 KeyManager。
+func newNoKeyManager(t *testing.T) *ai.KeyManager {
+	t.Helper()
+	km, err := ai.NewKeyManager("", filepath.Join(t.TempDir(), "nonexistent"))
+	require.NoError(t, err)
+	return km
+}
+
 func newService(t *testing.T, g *gorm.DB) *ai.Service {
 	t.Helper()
-	enc, err := ai.NewEncryptor(testKeyB64)
-	require.NoError(t, err)
-	return ai.NewService(g, enc, nil, nil)
+	return ai.NewService(g, newKeyManager(t), nil, nil)
 }
 
 func TestAIConfigUpsertAndMask(t *testing.T) {

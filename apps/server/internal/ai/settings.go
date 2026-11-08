@@ -41,17 +41,18 @@ type SettingsInput struct {
 	Enabled *bool `json:"enabled"`
 }
 
-// SettingsService reads and updates the AI feature switch. keyConfigured records
-// whether the process started with a valid AI encryption key; enabling is
-// rejected while it is false.
+// SettingsService reads and updates the AI feature switch. The current
+// KeyManager supplies keyConfigured dynamically; enabling is rejected while no
+// key is configured. keyFile is retained for the key-management feature (Task 2).
 type SettingsService struct {
-	db            *gorm.DB
-	keyConfigured bool
+	db      *gorm.DB
+	keys    *KeyManager
+	keyFile string
 }
 
 // NewSettingsService constructs an AI settings service.
-func NewSettingsService(db *gorm.DB, keyConfigured bool) *SettingsService {
-	return &SettingsService{db: db, keyConfigured: keyConfigured}
+func NewSettingsService(db *gorm.DB, keys *KeyManager, keyFile string) *SettingsService {
+	return &SettingsService{db: db, keys: keys, keyFile: keyFile}
 }
 
 // Get returns the current settings, creating the default row lazily when the
@@ -75,7 +76,7 @@ func (s *SettingsService) Get(ctx context.Context) (*SettingsView, error) {
 // The audit callback runs inside the transaction, so its failure rolls back the
 // whole update.
 func (s *SettingsService) Update(ctx context.Context, actorID int64, enabled bool, audit func(*gorm.DB) error) (*SettingsView, error) {
-	if enabled && !s.keyConfigured {
+	if enabled && !s.keys.Configured() {
 		return nil, httpx.ErrValidation("未配置 AI 加密密钥，无法启用")
 	}
 
@@ -135,7 +136,7 @@ func (s *SettingsService) Enabled(ctx context.Context) (bool, error) {
 func (s *SettingsService) view(settings Settings) *SettingsView {
 	return &SettingsView{
 		Enabled:       settings.Enabled,
-		KeyConfigured: s.keyConfigured,
+		KeyConfigured: s.keys.Configured(),
 		UpdatedAt:     settings.UpdatedAt.UTC(),
 	}
 }

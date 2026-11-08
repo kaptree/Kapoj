@@ -23,6 +23,7 @@ type Config struct {
 	RatingScanInterval time.Duration
 	RatingJudgeGrace   time.Duration
 	AIEncryptionKey    string
+	AIKeyFile          string
 	AIRequestTimeout   time.Duration
 	AICooldown         time.Duration
 }
@@ -48,6 +49,7 @@ func Load() (*Config, error) {
 	v.SetDefault("rating_scan_interval", "60s")
 	v.SetDefault("rating_judge_grace", "10m")
 	v.SetDefault("ai_encryption_key", "")
+	v.SetDefault("ai_key_file", "data/ai.key")
 	v.SetDefault("ai_request_timeout", "45s")
 	v.SetDefault("ai_cooldown", "2s")
 
@@ -65,6 +67,7 @@ func Load() (*Config, error) {
 		RatingScanInterval: v.GetDuration("rating_scan_interval"),
 		RatingJudgeGrace:   v.GetDuration("rating_judge_grace"),
 		AIEncryptionKey:    v.GetString("ai_encryption_key"),
+		AIKeyFile:          v.GetString("ai_key_file"),
 		AIRequestTimeout:   v.GetDuration("ai_request_timeout"),
 		AICooldown:         v.GetDuration("ai_cooldown"),
 	}

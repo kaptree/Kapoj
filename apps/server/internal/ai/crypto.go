@@ -16,8 +16,10 @@ var ErrInvalidKey = errors.New("invalid encryption key")
 const ciphertextVersion = "v1"
 
 // Encryptor 使用 AES-256-GCM 加密用户 API key；密钥为 32 字节。
+// key 保留原始 base64 密钥，供 KeyManager 展示脱敏值与计算指纹。
 type Encryptor struct {
 	aead cipher.AEAD
+	key  string
 }
 
 // NewEncryptor 解析 base64 编码的密钥，密钥必须解码为 32 字节。
@@ -37,7 +39,7 @@ func NewEncryptor(base64Key string) (*Encryptor, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Encryptor{aead: aead}, nil
+	return &Encryptor{aead: aead, key: base64Key}, nil
 }
 
 // Encrypt 加密明文并返回 "v1:" + base64(nonce+ciphertext)，nonce 为 12 字节。

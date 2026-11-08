@@ -48,17 +48,18 @@ const (
 )
 
 type Deps struct {
-	DB       *gorm.DB
-	Redis    *redis.Client
-	Storage  storage.Storage
-	Config   *config.Config
-	Enqueuer submission.Enqueuer
-	Game     *gamification.Service
-	Rating   *rating.Service
-	Activity *activity.Service
-	Learning *learning.Service
-	RBAC     *rbac.Service
-	AI       *ai.Service
+	DB         *gorm.DB
+	Redis      *redis.Client
+	Storage    storage.Storage
+	Config     *config.Config
+	Enqueuer   submission.Enqueuer
+	Game       *gamification.Service
+	Rating     *rating.Service
+	Activity   *activity.Service
+	Learning   *learning.Service
+	RBAC       *rbac.Service
+	AI         *ai.Service
+	AISettings *ai.SettingsService
 }
 
 func New(d Deps) *gin.Engine {
@@ -96,9 +97,8 @@ func New(d Deps) *gin.Engine {
 		userOpts.IdentityLookup = d.Game
 	}
 	userapi.RegisterRoutes(api, userSvc, userOpts)
-	aiSettings := ai.NewSettingsService(d.DB, d.AI != nil)
 	if d.RBAC != nil {
-		adminapi.RegisterRoutes(api, d.RBAC, adminapi.Options{Game: d.Game, Rating: d.Rating, AI: aiSettings})
+		adminapi.RegisterRoutes(api, d.RBAC, adminapi.Options{Game: d.Game, Rating: d.Rating, AI: d.AISettings})
 	}
 	if d.Game != nil {
 		gamificationapi.RegisterRoutes(api, uploads, d.Game, gamificationapi.Options{RBAC: d.RBAC})
@@ -121,7 +121,7 @@ func New(d Deps) *gin.Engine {
 		learningapi.RegisterRoutes(api, d.Learning, learningapi.Options{RBAC: d.RBAC})
 	}
 	if d.AI != nil {
-		aiapi.RegisterRoutes(api, d.AI, aiapi.Options{RBAC: d.RBAC, Settings: aiSettings})
+		aiapi.RegisterRoutes(api, d.AI, aiapi.Options{RBAC: d.RBAC, Settings: d.AISettings})
 	}
 	contestRepo := contest.NewGormRepository(d.DB)
 	contestSvc := contest.NewService(contestRepo)

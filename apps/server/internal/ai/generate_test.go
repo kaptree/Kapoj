@@ -44,9 +44,7 @@ func intPtr(n int) *int { return &n }
 
 func newGenerateService(t *testing.T, g *gorm.DB, client ai.ChatClient, limiter ai.Limiter) *ai.Service {
 	t.Helper()
-	enc, err := ai.NewEncryptor(testKeyB64)
-	require.NoError(t, err)
-	return ai.NewService(g, enc, limiter, client)
+	return ai.NewService(g, newKeyManager(t), limiter, client)
 }
 
 func msgText(req ai.ChatRequest) string {

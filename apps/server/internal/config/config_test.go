@@ -187,3 +187,15 @@ func TestLoadAIConfig(t *testing.T) {
 		assert.Error(t, err, "KAPOJ_AI_ENCRYPTION_KEY=%q must be rejected", raw)
 	}
 }
+
+func TestLoadAIKeyFile(t *testing.T) {
+	t.Setenv("KAPOJ_JWT_SECRET", strings.Repeat("a", 32))
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, "data/ai.key", cfg.AIKeyFile)
+
+	t.Setenv("KAPOJ_AI_KEY_FILE", "/var/lib/kapoj/ai.key")
+	cfg, err = Load()
+	require.NoError(t, err)
+	assert.Equal(t, "/var/lib/kapoj/ai.key", cfg.AIKeyFile)
+}

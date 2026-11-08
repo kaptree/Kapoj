@@ -20,12 +20,14 @@ type ProviderOption struct {
 }
 
 // ConfigView 是用户 AI 配置的脱敏视图，绝不包含明文或密文 API key。
+// KeyConfigured 报告平台是否已配置 AI 加密密钥（与用户自身是否配置无关）。
 type ConfigView struct {
-	Configured   bool             `json:"configured"`
-	Provider     string           `json:"provider"`
-	ModelName    string           `json:"modelName"`
-	APIKeyMasked string           `json:"apiKeyMasked"`
-	Providers    []ProviderOption `json:"providers"`
+	Configured    bool             `json:"configured"`
+	KeyConfigured bool             `json:"keyConfigured"`
+	Provider      string           `json:"provider"`
+	ModelName     string           `json:"modelName"`
+	APIKeyMasked  string           `json:"apiKeyMasked"`
+	Providers     []ProviderOption `json:"providers"`
 }
 
 // SaveConfigInput 是保存用户 AI 配置的请求体。
@@ -38,15 +40,18 @@ type SaveConfigInput struct {
 // Service 提供 provider 查询、用户 AI 配置的读取/保存与代码生成能力。
 type Service struct {
 	db      *gorm.DB
-	enc     *Encryptor
+	keys    *KeyManager
 	limiter Limiter
 	client  ChatClient
 }
 
 // NewService 构造 AI 服务；limiter/client 为生成接口所需，可传 nil（仅配置查询时）。
-func NewService(db *gorm.DB, enc *Encryptor, limiter Limiter, client ChatClient) *Service {
-	return &Service{db: db, enc: enc, limiter: limiter, client: client}
+func NewService(db *gorm.DB, keys *KeyManager, limiter Limiter, client ChatClient) *Service {
+	return &Service{db: db, keys: keys, limiter: limiter, client: client}
 }
+
+// KeyConfigured 报告平台是否已配置 AI 加密密钥。
+func (s *Service) KeyConfigured() bool { return s.keys.Configured() }
 
 // ListProviders 返回启用的 provider 选项。
 func (s *Service) ListProviders(ctx context.Context) ([]ProviderOption, error) {
@@ -63,12 +68,16 @@ func (s *Service) ListProviders(ctx context.Context) ([]ProviderOption, error) {
 }
 
 // GetConfig 读取用户配置；无配置时返回 configured=false 及启用的 provider 列表。
+// 未配置平台密钥时直接返回 keyConfigured=false，不尝试解密用户密文。
 func (s *Service) GetConfig(ctx context.Context, userID int64) (*ConfigView, error) {
 	providers, err := s.ListProviders(ctx)
 	if err != nil {
 		return nil, err
 	}
-	view := &ConfigView{Providers: providers}
+	view := &ConfigView{Providers: providers, KeyConfigured: s.keys.Configured()}
+	if !s.keys.Configured() {
+		return view, nil
+	}
 
 	var cfg UserConfig
 	err = s.db.WithContext(ctx).Where("user_id = ?", userID).First(&cfg).Error
@@ -79,7 +88,7 @@ func (s *Service) GetConfig(ctx context.Context, userID int64) (*ConfigView, err
 		return nil, err
 	}
 
-	plain, err := s.enc.Decrypt(cfg.APIKeyEncrypted)
+	plain, err := s.keys.Decrypt(cfg.APIKeyEncrypted)
 	if err != nil {
 		return nil, err
 	}
@@ -93,6 +102,10 @@ func (s *Service) GetConfig(ctx context.Context, userID int64) (*ConfigView, err
 // SaveConfig 保存用户配置：provider 必须启用；model 为空时用默认 model；
 // 首次保存必须提供 key；已有配置且 key 为空时保留原密文。
 func (s *Service) SaveConfig(ctx context.Context, userID int64, in SaveConfigInput) (*ConfigView, error) {
+	if !s.keys.Configured() {
+		return nil, errNoKey()
+	}
+
 	code := strings.TrimSpace(in.Provider)
 	if code == "" {
 		return nil, httpx.ErrValidation("provider is required")
@@ -128,7 +141,7 @@ func (s *Service) SaveConfig(ctx context.Context, userID int64, in SaveConfigInp
 	encrypted := existing.APIKeyEncrypted
 	key := strings.TrimSpace(in.APIKey)
 	if key != "" {
-		encrypted, err = s.enc.Encrypt(key)
+		encrypted, err = s.keys.Encrypt(key)
 		if err != nil {
 			return nil, err
 		}
@@ -148,7 +161,7 @@ func (s *Service) SaveConfig(ctx context.Context, userID int64, in SaveConfigInp
 		return nil, err
 	}
 
-	plain, err := s.enc.Decrypt(encrypted)
+	plain, err := s.keys.Decrypt(encrypted)
 	if err != nil {
 		return nil, err
 	}
@@ -157,11 +170,12 @@ func (s *Service) SaveConfig(ctx context.Context, userID int64, in SaveConfigInp
 		return nil, err
 	}
 	return &ConfigView{
-		Configured:   true,
-		Provider:     code,
-		ModelName:    modelName,
-		APIKeyMasked: maskKey(plain),
-		Providers:    providers,
+		Configured:    true,
+		KeyConfigured: true,
+		Provider:      code,
+		ModelName:     modelName,
+		APIKeyMasked:  maskKey(plain),
+		Providers:     providers,
 	}, nil
 }
 

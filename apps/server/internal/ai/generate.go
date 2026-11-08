@@ -135,8 +135,14 @@ func (s *Service) chatRequest(ctx context.Context, userID int64) (ChatRequest, e
 		return ChatRequest{}, httpx.ErrValidation("model is required")
 	}
 
-	apiKey, err := s.enc.Decrypt(cfg.APIKeyEncrypted)
+	apiKey, err := s.keys.Decrypt(cfg.APIKeyEncrypted)
 	if err != nil {
+		// KeyManager.Decrypt returns the 40001 validation AppError only when no
+		// platform key is configured; any other failure is a decrypt error.
+		var appErr *httpx.AppError
+		if errors.As(err, &appErr) {
+			return ChatRequest{}, err
+		}
 		slog.Error("ai: decrypt api key failed", "operation", "decrypt", "err", err)
 		return ChatRequest{}, httpx.ErrBadGateway
 	}

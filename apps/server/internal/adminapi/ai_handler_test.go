@@ -2,6 +2,7 @@ package adminapi_test
 
 import (
 	"context"
+	"encoding/base64"
 	"net/http"
 	"strings"
 	"testing"
@@ -30,7 +31,14 @@ func newAISettingsFixture(t *testing.T, keyConfigured bool) *fixture {
 	r := gin.New()
 	r.Use(middleware.Authenticate(issuer))
 	svc := rbac.NewService(g)
-	settings := ai.NewSettingsService(g, keyConfigured)
+
+	envKey := ""
+	if keyConfigured {
+		envKey = base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))
+	}
+	keyMgr, err := ai.NewKeyManager(envKey, "")
+	require.NoError(t, err)
+	settings := ai.NewSettingsService(g, keyMgr, "")
 	adminapi.RegisterRoutes(r.Group("/api"), svc, adminapi.Options{AI: settings})
 	return &fixture{engine: r, db: g, issuer: issuer, svc: svc}
 }

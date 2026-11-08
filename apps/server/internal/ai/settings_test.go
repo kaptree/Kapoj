@@ -16,7 +16,7 @@ import (
 
 func TestSettingsDefaultLazyCreate(t *testing.T) {
 	g := testutil.PG(t)
-	svc := ai.NewSettingsService(g, true)
+	svc := ai.NewSettingsService(g, newKeyManager(t), "")
 
 	view, err := svc.Get(context.Background())
 	require.NoError(t, err)
@@ -35,7 +35,7 @@ func TestSettingsDefaultLazyCreate(t *testing.T) {
 func TestSettingsUpdateAndKeyMissing(t *testing.T) {
 	t.Run("关闭允许且写审计", func(t *testing.T) {
 		g := testutil.PG(t)
-		svc := ai.NewSettingsService(g, false)
+		svc := ai.NewSettingsService(g, newNoKeyManager(t), "")
 
 		audited := false
 		view, err := svc.Update(context.Background(), 42, false, func(tx *gorm.DB) error {
@@ -54,7 +54,7 @@ func TestSettingsUpdateAndKeyMissing(t *testing.T) {
 
 	t.Run("启用无密钥返回 40001", func(t *testing.T) {
 		g := testutil.PG(t)
-		svc := ai.NewSettingsService(g, false)
+		svc := ai.NewSettingsService(g, newNoKeyManager(t), "")
 
 		audited := false
 		_, err := svc.Update(context.Background(), 42, true, func(tx *gorm.DB) error {
@@ -73,7 +73,7 @@ func TestSettingsUpdateAndKeyMissing(t *testing.T) {
 
 	t.Run("审计回调失败回滚", func(t *testing.T) {
 		g := testutil.PG(t)
-		svc := ai.NewSettingsService(g, true)
+		svc := ai.NewSettingsService(g, newKeyManager(t), "")
 
 		_, err := svc.Update(context.Background(), 42, false, func(tx *gorm.DB) error {
 			return errors.New("audit boom")
@@ -87,7 +87,7 @@ func TestSettingsUpdateAndKeyMissing(t *testing.T) {
 
 	t.Run("DB 错误", func(t *testing.T) {
 		g := testutil.PG(t)
-		svc := ai.NewSettingsService(g, true)
+		svc := ai.NewSettingsService(g, newKeyManager(t), "")
 		sqlDB, err := g.DB()
 		require.NoError(t, err)
 		require.NoError(t, sqlDB.Close())
@@ -100,7 +100,7 @@ func TestSettingsUpdateAndKeyMissing(t *testing.T) {
 func TestSettingsEnabled(t *testing.T) {
 	t.Run("默认 true", func(t *testing.T) {
 		g := testutil.PG(t)
-		svc := ai.NewSettingsService(g, true)
+		svc := ai.NewSettingsService(g, newKeyManager(t), "")
 		enabled, err := svc.Enabled(context.Background())
 		require.NoError(t, err)
 		assert.True(t, enabled)
@@ -108,7 +108,7 @@ func TestSettingsEnabled(t *testing.T) {
 
 	t.Run("关闭后 false", func(t *testing.T) {
 		g := testutil.PG(t)
-		svc := ai.NewSettingsService(g, true)
+		svc := ai.NewSettingsService(g, newKeyManager(t), "")
 		_, err := svc.Update(context.Background(), 1, false, nil)
 		require.NoError(t, err)
 		enabled, err := svc.Enabled(context.Background())
@@ -118,7 +118,7 @@ func TestSettingsEnabled(t *testing.T) {
 
 	t.Run("缺失行默认 true", func(t *testing.T) {
 		g := testutil.PG(t)
-		svc := ai.NewSettingsService(g, true)
+		svc := ai.NewSettingsService(g, newKeyManager(t), "")
 		// 不先调用 Get，直接 Enabled：行不存在时返回默认 true。
 		enabled, err := svc.Enabled(context.Background())
 		require.NoError(t, err)
