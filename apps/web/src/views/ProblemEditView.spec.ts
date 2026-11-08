@@ -313,4 +313,34 @@ describe('ProblemEditView', () => {
     expect(chips.props('addOnBlur')).toBe(true)
     wrapper.unmount()
   })
+
+  it('normalizes tags on save (trim, drop empty, cap 10)', async () => {
+    vi.mocked(getProblem).mockResolvedValue(
+      detail({ tags: ['  math ', 'beginner', '', '   ', 'x', 'y', 'z', 'a', 'b', 'c', 'd'] }),
+    )
+    vi.mocked(updateProblem).mockResolvedValue(detail())
+    const { wrapper } = await mountView('/problems/1/edit')
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(updateProblem).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({
+        tags: ['math', 'beginner', 'x', 'y', 'z', 'a', 'b', 'c', 'd'],
+      }),
+    )
+    wrapper.unmount()
+  })
+
+  it('resets stale load flags on the create path', async () => {
+    // Create path never calls getProblem and clears any leftover load flags.
+    const { wrapper } = await mountView('/problems/new')
+
+    expect(getProblem).not.toHaveBeenCalled()
+    expect(wrapper.text()).not.toContain('加载题目失败')
+    expect(wrapper.text()).not.toContain('题目不存在')
+    expect(wrapper.find('.tc-stub').exists()).toBe(false)
+    wrapper.unmount()
+  })
 })

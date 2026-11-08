@@ -112,6 +112,9 @@ async function load() {
     Object.assign(form, emptyForm())
     checkerUploaded.value = false
     published.value = false
+    loadFailed.value = false
+    notFound.value = false
+    error.value = ''
     return
   }
   loading.value = true
@@ -139,15 +142,26 @@ function describe(e: unknown, fallback: string) {
   return e instanceof ApiError ? e.message : fallback
 }
 
+// Spec §4.2: tags are trimmed, empties removed, capped at 10 before submit.
+function normalizedForm(): FormState {
+  return {
+    ...form,
+    tags: form.tags
+      .map((t) => t.trim())
+      .filter(Boolean)
+      .slice(0, 10),
+  }
+}
+
 async function save() {
   saving.value = true
   error.value = ''
   try {
     if (problemId.value !== null) {
-      fill(await updateProblem(problemId.value, form))
+      fill(await updateProblem(problemId.value, normalizedForm()))
       toast.add({ severity: 'success', summary: '已保存', life: 3000 })
     } else {
-      const created = await createProblem(form)
+      const created = await createProblem(normalizedForm())
       toast.add({
         severity: 'success',
         summary: '题目已创建。请上传测试点，再回到这里发布。',
@@ -269,13 +283,14 @@ function remove() {
             </AppFormField>
 
             <AppFormField label="类型">
-              <template #default>
+              <template #default="{ id }">
                 <SelectButton
                   v-model="form.type"
                   :options="TYPE_OPTIONS"
                   option-label="label"
                   option-value="value"
                   :allow-empty="false"
+                  :aria-labelledby="id"
                 />
               </template>
             </AppFormField>

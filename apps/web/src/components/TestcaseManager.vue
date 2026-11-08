@@ -211,73 +211,68 @@ function goAiGenerate() {
       </div>
     </Message>
 
-    <DataTable
-      :value="cases"
-      :loading="loading"
-      data-key="id"
-      size="small"
-      responsive-layout="scroll"
-      class="tc-table"
-    >
-      <Column header="序号" style="width: 60px">
-        <template #body="{ data }">{{ data.sortOrder }}</template>
-      </Column>
-      <Column header="大小（输入 / 输出）" style="min-width: 140px">
-        <template #body="{ data }">
-          {{ formatBytes(data.inputSize) }} / {{ formatBytes(data.outputSize) }}
-        </template>
-      </Column>
-      <Column header="分数" style="width: 140px">
-        <template #body="{ data }">
-          <InputNumber
-            :model-value="data.score"
-            :min="0"
-            :max="1000"
-            size="small"
-            :disabled="busy"
-            @value-change="(v) => changeScore(data, v)"
-          />
-        </template>
-      </Column>
-      <Column header="样例" style="width: 80px">
-        <template #body="{ data }">
-          <ToggleSwitch
-            :model-value="data.isSample"
-            :disabled="busy"
-            @update:model-value="(v: boolean) => changeSample(data, v)"
-          />
-        </template>
-      </Column>
-      <Column header="操作" style="min-width: 170px">
-        <template #body="{ data, index }">
-          <div class="ops">
-            <Button
-              label="上移"
-              text
+    <div class="tc-table-wrap" tabindex="0" role="region" aria-label="测试点表格，可横向滚动">
+      <DataTable :value="cases" :loading="loading" data-key="id" size="small" class="tc-table">
+        <Column header="序号" style="width: 60px">
+          <template #body="{ data }">{{ data.sortOrder }}</template>
+        </Column>
+        <Column header="大小（输入 / 输出）" style="min-width: 140px">
+          <template #body="{ data }">
+            {{ formatBytes(data.inputSize) }} / {{ formatBytes(data.outputSize) }}
+          </template>
+        </Column>
+        <Column header="分数" style="width: 140px">
+          <template #body="{ data }">
+            <InputNumber
+              :model-value="data.score"
+              :min="0"
+              :max="1000"
               size="small"
-              :disabled="busy || index === 0"
-              @click="move(index, -1)"
-            />
-            <Button
-              label="下移"
-              text
-              size="small"
-              :disabled="busy || index === cases.length - 1"
-              @click="move(index, 1)"
-            />
-            <Button
-              label="删除"
-              text
-              size="small"
-              severity="danger"
               :disabled="busy"
-              @click="remove(data)"
+              @value-change="(v) => changeScore(data, v)"
             />
-          </div>
-        </template>
-      </Column>
-      <template #empty>还没有测试点</template>
-    </DataTable>
+          </template>
+        </Column>
+        <Column header="样例" style="width: 80px">
+          <template #body="{ data }">
+            <ToggleSwitch
+              :model-value="data.isSample"
+              :disabled="busy"
+              @update:model-value="(v: boolean) => changeSample(data, v)"
+            />
+          </template>
+        </Column>
+        <Column header="操作" style="min-width: 170px">
+          <template #body="{ data, index }">
+            <div class="ops">
+              <Button
+                label="上移"
+                text
+                size="small"
+                :disabled="busy || index === 0"
+                @click="move(index, -1)"
+              />
+              <Button
+                label="下移"
+                text
+                size="small"
+                :disabled="busy || index === cases.length - 1"
+                @click="move(index, 1)"
+              />
+              <Button
+                label="删除"
+                text
+                size="small"
+                severity="danger"
+                :disabled="busy"
+                @click="remove(data)"
+              />
+            </div>
+          </template>
+        </Column>
+        <template #empty>还没有测试点</template>
+      </DataTable>
+    </div>
 
     <section class="uploader">
       <h3>上传新测试点</h3>
@@ -371,10 +366,25 @@ function goAiGenerate() {
   gap: var(--kapoj-space-2);
 }
 
-.tc-table {
-  overflow: hidden;
+.tc-table-wrap {
+  overflow-x: auto;
   border: 1px solid var(--kapoj-border);
   border-radius: var(--kapoj-radius-md);
+}
+
+.tc-table-wrap:focus-visible {
+  outline: 2px solid var(--kapoj-primary);
+  outline-offset: 2px;
+}
+
+/* The wrapper owns horizontal scrolling on narrow screens; avoid nesting a
+   second scroll container inside DataTable. */
+.tc-table-wrap :deep(.p-datatable-table-container) {
+  overflow: visible !important;
+}
+
+.tc-table :deep(.p-datatable-table) {
+  min-width: 590px;
 }
 
 .tc-table :deep(.p-datatable-thead > tr > th) {

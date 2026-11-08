@@ -107,6 +107,20 @@ describe('TestcaseManager', () => {
     wrapper.unmount()
   })
 
+  it('wraps the DataTable in a scroll container', async () => {
+    vi.mocked(listTestcases).mockResolvedValue([tc({ id: 1, sortOrder: 1 })])
+    const wrapper = mountManager('traditional')
+    await flushPromises()
+
+    // jsdom cannot measure overflow, so assert the structural wrapper exists
+    // around the DataTable and owns the scroll/border.
+    const wrap = wrapper.find('.tc-table-wrap')
+    expect(wrap.exists()).toBe(true)
+    expect(wrap.findComponent({ name: 'DataTable' }).exists()).toBe(true)
+    expect(wrap.classes()).toContain('tc-table-wrap')
+    wrapper.unmount()
+  })
+
   it('shows AI button only for traditional', async () => {
     const wrapper = mountManager('traditional')
     await flushPromises()

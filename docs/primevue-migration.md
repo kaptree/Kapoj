@@ -153,6 +153,7 @@ M4-C 排行榜、签到与 Rating 历史（UI-30）、M4-7 学习路线（UI-31�
 84. **任务面板**：`MultiSelect` 远程搜索题目、最多 20 道；开始/结束使用两个 `DatePicker`；`hasRecords` 时冻结题目与奖励，Markdown 描述按主题渲染。
 85. **称号面板**：`ColorPicker` 提供颜色，非法值回退主题文字色；解锁类型支持 Rating / AC 题数 / 成就 code，成就下拉支持加载失败重试。
 86. **RBAC-D 管理后台授权**：管理入口与按钮从「`super_admin`/`hasRole`」迁移为 `auth.can`/`canAny`；游戏化管理不再仅 `super_admin` 可见，而是任一 `gamification.*.manage` 权限即可进入，tab 按权限生成。决策 13/41/80 中「游戏化管理仅 `super_admin`」「`canManage` 通过 `hasRole`」的表述已被 RBAC-D 取代（管理壳见 UI-36）。
+87. **表格窄屏横向滚动（`responsive-layout` 无效）**：PrimeVue 4.5.5 的 `DataTable` 没有 `responsive-layout`/`responsiveLayout` prop（那是 PrimeVue 5 的 API；4.x 只有 `breakpoint`，且未提供滚动/堆叠布局开关）。给 `DataTable` 传 `responsive-layout="scroll"` 是死透传，不会产生横向滚动。正确做法是在 `DataTable` 外包一个显式 `overflow-x: auto` 的滚动容器，并把边框/圆角放在容器上；`DataTable` 容器不得再写 `overflow: hidden`（会裁掉操作列）。`TestcaseManager`（UI-19）据此改为 `.tc-table-wrap` 滚动容器 + `.p-datatable-table { min-width: 590px }` + `.p-datatable-table-container { overflow: visible }`，与 `LeaderboardView`/`SubmissionsView` 等既有做法一致；390px 下操作列可达、页面无横向溢出。
 
 ## 验证记录
 
