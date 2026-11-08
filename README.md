@@ -2,7 +2,7 @@
 
 打造最有趣味的 Online Judge 平台。规格见 [`DEVELOPMENT.md`](DEVELOPMENT.md)，进度见 [`docs/任务清单.md`](docs/任务清单.md) 与 [`docs/开发日志.md`](docs/开发日志.md)。
 
-当前进度：**M4-2A、M4-2B、M4-2C、M4-3、M4-4、RBAC-D、M5-A、M5-5 与 M5-6 已完成**（M0–M3 已完成；M4 已完成；M5 部分完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页（Rating/活跃度/共享三 Tab、等级颜色、签到）、用户主页 Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线后端模型、官方/自定义权限、路线/节点 CRUD 与树结构，路线 API 已可用；M4-2B 交付服务端进度计算（AC 事件补算 + 读取补算、完成锁存）与题目下线/删除守卫；M4-2C 交付学习路线前端列表/树详情/编辑/官方管理页；M4-3 交付轻量社交互动（题解点赞、关注、站内通知，回复/点赞/关注接入活跃度与共享分，前端点赞按钮/关注 Dialog/通知铃铛/通知页，见下）；M4-4 交付 Rating 衰减与赛季重置（`rating.settings.manage` 权限与 Rating 分组、管理设置 API、`/admin/rating` 设置页、月度高分段衰减、赛季软重置、`decay`/`season_reset` 历史与公开赛季接口）；RBAC-A 交付权限模型、权限目录、首次 Seed/旧角色映射、实时 Access、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化；M5-A 交付 AI 后端基础：多 provider 配置、用户 API key 加密存储、补全/格式化/优化与题目提示缓存/限流；M5-5 交付 AI 前端：提交页 AI 补全/格式化/优化工具栏、题目详情 AI 提示、`/settings/ai` AI 配置页与用户菜单入口（见下）；另交付 AI 管理开关：`ai.settings.manage` 权限（第 36 个，分组「AI」）、`GET/PUT /api/admin/ai/settings` 与 `/admin/ai` 开关页，关闭后 `/api/ai/*` 统一 404（见下）；M5-6 交付 HydroOJ 题包导入（`POST /api/problems/import/hydro`、大小限制/防路径穿越、slug 冲突不覆盖、默认下线、部分成功与回滚）与题目详情公开创建者摘要（`author{id,username,nickname}`），前端新增 `/problems/import` 导入页与详情创建者链接（见下）；AI 出题造数据/证书/头像（M5-4、M5-7、M5-8）尚未实现）。前端并行进行 PrimeVue 4 迁移，**UI-00～UI-18、UI-30（M4-C 排行榜/历史）、UI-31（M4-7 学习路线）、UI-32（M4-3 社交互动）、UI-34（M5-5 AI 面板）、UI-35（M5-6 题目导入）与 RBAC-D 管理后台页面已完成并提交**，剩余题库编辑（UI-19）与异常页（UI-20），详见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。题目详情资源区、官方题解与解题思路论坛已完成（见下）。
+当前进度：**M4-2A、M4-2B、M4-2C、M4-3、M4-4、RBAC-D、M5-A、M5-4、M5-5 与 M5-6 已完成**（M0–M3 已完成；M4 已完成；M5 部分完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页（Rating/活跃度/共享三 Tab、等级颜色、签到）、用户主页 Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线后端模型、官方/自定义权限、路线/节点 CRUD 与树结构，路线 API 已可用；M4-2B 交付服务端进度计算（AC 事件补算 + 读取补算、完成锁存）与题目下线/删除守卫；M4-2C 交付学习路线前端列表/树详情/编辑/官方管理页；M4-3 交付轻量社交互动（题解点赞、关注、站内通知，回复/点赞/关注接入活跃度与共享分，前端点赞按钮/关注 Dialog/通知铃铛/通知页，见下）；M4-4 交付 Rating 衰减与赛季重置（`rating.settings.manage` 权限与 Rating 分组、管理设置 API、`/admin/rating` 设置页、月度高分段衰减、赛季软重置、`decay`/`season_reset` 历史与公开赛季接口）；RBAC-A 交付权限模型、权限目录、首次 Seed/旧角色映射、实时 Access、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化；M5-A 交付 AI 后端基础：多 provider 配置、用户 API key 加密存储、补全/格式化/优化与题目提示缓存/限流；M5-5 交付 AI 前端：提交页 AI 补全/格式化/优化工具栏、题目详情 AI 提示、`/settings/ai` AI 配置页与用户菜单入口（见下）；另交付 AI 管理开关：`ai.settings.manage` 权限（第 36 个，分组「AI」）、`GET/PUT /api/admin/ai/settings` 与 `/admin/ai` 开关页，关闭后 `/api/ai/*` 统一 404（见下）；M5-6 交付 HydroOJ 题包导入（`POST /api/problems/import/hydro`、大小限制/防路径穿越、slug 冲突不覆盖、默认下线、部分成功与回滚）与题目详情公开创建者摘要（`author{id,username,nickname}`），前端新增 `/problems/import` 导入页与详情创建者链接（见下）；M5-4 交付 AI 出题造数据（标程 → AI 纯 Python 3 造数据脚本 → judge 沙盒生成输入/输出 → 预览确认入库，见下）；证书/头像（M5-7、M5-8）尚未实现）。前端并行进行 PrimeVue 4 迁移，**UI-00～UI-18、UI-30（M4-C 排行榜/历史）、UI-31（M4-7 学习路线）、UI-32（M4-3 社交互动）、UI-34（M5-5 AI 面板）、UI-35（M5-6 题目导入）、UI-39（M5-4 AI 造数据）与 RBAC-D 管理后台页面已完成并提交**，剩余题库编辑（UI-19）与异常页（UI-20），详见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。题目详情资源区、官方题解与解题思路论坛已完成（见下）。
 
 ## 目录结构
 
@@ -264,6 +264,40 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 - 轮换：已有密钥时生成/替换会自动用旧密钥解密、新密钥重新加密所有 `user_ai_configs`；事务失败回滚，旧文件备份为 `ai.key.bak` 并在成功后删除。无旧密钥但存在用户配置时返回 40001，防止破坏性覆盖。
 - 无密钥错误：未配置密钥时用户保存配置、补全/格式化/优化、无缓存提示返回 40001「AI 加密密钥未配置」；`GET /api/ai/configs` 返回 `keyConfigured=false`；提示缓存命中仍可返回。
 - 完整语义见 [`DEVELOPMENT.md`](DEVELOPMENT.md) §6.7。
+
+## AI 出题造数据（M5-4）
+
+管理员在题目编辑中提交标程后，AI 生成纯 Python 3 标准库造数据脚本，judge 在 Docker 沙盒生成输入/输出，管理员预览确认后写入题目测试数据。
+
+**使用步骤**
+
+1. 确保评测服务已启动并拉取了 Python 镜像（造数据脚本用 `python:3.12-slim` 运行，标程按语言用对应镜像）：
+   ```bash
+   docker pull python:3.12-slim     # 生成器必需
+   docker pull gcc:14               # 标程为 C/C++ 时
+   docker pull eclipse-temurin:21-jdk   # 标程为 Java 时
+   docker pull golang:1.26          # 标程为 Go 时
+   ```
+2. 登录拥有 `problem.testcase.manage` 权限的管理员账号，进入题目编辑页，在测试点区域点击「AI 造数据」进入 `/problems/:id/testcase-generator`。
+3. 选择标程语言（c/cpp/python3/java/go）、粘贴/填写标程源码（≤64 KiB）、选择生成组数（1–10），点击「生成数据」。仅传统题支持（special/interactive 不支持自动生成输出）。
+4. 页面轮询生成状态（约 2 秒一次，最长 10 分钟）；生成完成后预览各组输入/输出（最多显示前 64 KiB），点击「确认入库」把测试点写入题目（score=10、排序接在已有测试点后），或「丢弃」删除生成结果与文件。
+5. 确认后的测试数据即可正常发布题目并参与评测；发布流程不变。
+
+**规则**
+
+- AI 生成的脚本必须是纯 Python 3 标准库脚本（stdin 读 1-based 整数 seed、stdout 输出一组输入，不写文件/不联网）；若模型返回 cyaron 等第三方依赖，沙盒会因缺少依赖而失败，请修改标程重新生成。
+- 生成器/标程只在 judge Docker 沙盒执行（无网络、只读、CPU/内存/输出限制）；生成器 5s/256MB/16 MiB 输出，标程按题目 time/memory 限制与 16 MiB 输出上限。服务器进程绝不执行用户/AI 代码。
+- 权限复用 `problem.testcase.manage`，不新增权限码；确认/丢弃/创建写审计。AI 管理开关只关闭 `/api/ai/*`，不影响本题管理接口。
+- 接口：`POST /api/problems/:id/testcase-generations`、`GET .../testcase-generations/:genId`、`GET .../cases/:caseId/preview?kind=input|output`、`POST .../confirm`、`DELETE .../testcase-generations/:genId`。
+
+**失败排查**
+
+- 平台密钥缺失：创建任务返回 40002「AI 加密密钥未配置」。请用 `openssl rand -base64 32` 配置 `KAPOJ_AI_ENCRYPTION_KEY`（或 `/admin/ai` 的「加密密钥」板块生成）。
+- 用户未配置 AI 模型：返回 40001「尚未配置 AI 模型」。请在 `/settings/ai` 保存自己的 provider/模型/API key。
+- 生成脚本语法错误/标程编译失败：生成状态 `failed`，页面显示中文/编译错误摘要；修改标程后重新生成。
+- Docker/镜像不可用：judge 报错找不到镜像或 Docker API 错误；先确认 `docker info` 正常、已 `docker pull python:3.12-slim` 及对应标程镜像。
+- storage 目录不可读：judge 启动即失败（`KAPOJ_STORAGE_DIR ... is not readable`）；确认 server 与 judge 使用同一个绝对路径。
+- 队列任务未消费（状态一直 `pending`）：确认 `apps/judge` 已启动、与后端连接同一个 Redis（`KAPOJ_REDIS_ADDR`），且状态不是 `pending` 卡住（可重新发起一次任务）。
 
 ## 题目详情资源、官方题解与解题思路论坛
 
