@@ -88,6 +88,22 @@ export const useAuthStore = defineStore('auth', () => {
     persist()
   }
 
+  /**
+   * Persist a user payload while keeping the RBAC fields that some endpoints
+   * (profile update, avatar upload/remove) omit from their responses. Falling
+   * back to the incoming payload keeps the first login working when there is
+   * no prior user to inherit from.
+   */
+  function setUserPreservingRbac(me: Me) {
+    const current = user.value
+    setUser({
+      ...me,
+      roles: current?.roles ?? me.roles,
+      permissions: current?.permissions ?? me.permissions,
+      isSuperAdmin: current?.isSuperAdmin ?? me.isSuperAdmin,
+    })
+  }
+
   function clear() {
     accessToken.value = null
     refreshToken.value = null
@@ -119,14 +135,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   /** Saves the profile while preserving the current RBAC fields. */
   async function updateProfile(input: UpdateMeRequest): Promise<void> {
-    const updated = await usersApi.updateMe(input)
-    const current = user.value
-    setUser({
-      ...updated,
-      roles: current?.roles ?? updated.roles,
-      permissions: current?.permissions ?? updated.permissions,
-      isSuperAdmin: current?.isSuperAdmin ?? updated.isSuperAdmin,
-    })
+    setUserPreservingRbac(await usersApi.updateMe(input))
   }
 
   return {
@@ -140,6 +149,7 @@ export const useAuthStore = defineStore('auth', () => {
     setTokens,
     setSession,
     setUser,
+    setUserPreservingRbac,
     clear,
     login,
     register,

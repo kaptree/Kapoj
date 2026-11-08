@@ -31,6 +31,7 @@ const auth = vi.hoisted(() => ({
   fetchMe: vi.fn(),
   updateProfile: vi.fn(),
   setUser: vi.fn(),
+  setUserPreservingRbac: vi.fn(),
 }))
 
 const toast = vi.hoisted(() => ({ add: vi.fn() }))
@@ -76,6 +77,15 @@ beforeEach(() => {
   auth.setUser.mockReset()
   auth.setUser.mockImplementation((me: Me) => {
     auth.user = me
+  })
+  auth.setUserPreservingRbac.mockReset()
+  auth.setUserPreservingRbac.mockImplementation((me: Me) => {
+    auth.user = {
+      ...me,
+      roles: auth.user?.roles ?? me.roles,
+      permissions: auth.user?.permissions ?? me.permissions,
+      isSuperAdmin: auth.user?.isSuperAdmin ?? me.isSuperAdmin,
+    }
   })
   toast.add.mockReset()
   vi.mocked(uploadAvatar).mockReset()
@@ -204,7 +214,7 @@ describe('ProfileEditView', () => {
     await flushPromises()
 
     expect(uploadAvatar).toHaveBeenCalledWith(file)
-    expect(auth.setUser).toHaveBeenCalledWith(uploadedMe)
+    expect(auth.setUserPreservingRbac).toHaveBeenCalledWith(uploadedMe)
     expect(avatarInput(wrapper).element.value).toBe('')
     expect(toast.add).toHaveBeenCalledWith(
       expect.objectContaining({ severity: 'success', summary: '头像已上传' }),
@@ -226,11 +236,56 @@ describe('ProfileEditView', () => {
     await flushPromises()
 
     expect(deleteAvatar).toHaveBeenCalled()
-    expect(auth.setUser).toHaveBeenCalledWith(removedMe)
+    expect(auth.setUserPreservingRbac).toHaveBeenCalledWith(removedMe)
     expect(avatarInput(wrapper).element.value).toBe('')
     expect(toast.add).toHaveBeenCalledWith(
       expect.objectContaining({ severity: 'success', summary: '头像已移除' }),
     )
+  })
+
+  it('preserves RBAC roles/permissions/isSuperAdmin after upload', async () => {
+    auth.user = {
+      ...baseUser,
+      roles: [{ id: 1, code: 'content_admin', name: '内容管理员' }],
+      permissions: ['problem.update'],
+      isSuperAdmin: true,
+    }
+    vi.mocked(uploadAvatar).mockResolvedValue({
+      ...baseUser,
+      avatarUploaded: true,
+      avatarUrl: '/api/users/1/avatar?v=999',
+    })
+    const wrapper = await mountProfile()
+
+    await setFile(wrapper, fileLike('avatar.png', 100, 'image/png'))
+    await button(wrapper, '上传头像').trigger('click')
+    await flushPromises()
+
+    expect(auth.setUserPreservingRbac).toHaveBeenCalled()
+    expect(auth.user?.roles).toEqual([{ id: 1, code: 'content_admin', name: '内容管理员' }])
+    expect(auth.user?.permissions).toEqual(['problem.update'])
+    expect(auth.user?.isSuperAdmin).toBe(true)
+  })
+
+  it('preserves RBAC roles/permissions/isSuperAdmin after remove', async () => {
+    auth.user = {
+      ...baseUser,
+      avatarUploaded: true,
+      avatarUrl: '/api/users/1/avatar?v=123',
+      roles: [{ id: 1, code: 'content_admin', name: '内容管理员' }],
+      permissions: ['problem.update'],
+      isSuperAdmin: true,
+    }
+    vi.mocked(deleteAvatar).mockResolvedValue({ ...baseUser, avatarUploaded: false, avatarUrl: '' })
+    const wrapper = await mountProfile()
+
+    await button(wrapper, '移除头像').trigger('click')
+    await flushPromises()
+
+    expect(auth.setUserPreservingRbac).toHaveBeenCalled()
+    expect(auth.user?.roles).toEqual([{ id: 1, code: 'content_admin', name: '内容管理员' }])
+    expect(auth.user?.permissions).toEqual(['problem.update'])
+    expect(auth.user?.isSuperAdmin).toBe(true)
   })
 
   it('saves an empty external URL when an avatar is uploaded (backend preserves it)', async () => {

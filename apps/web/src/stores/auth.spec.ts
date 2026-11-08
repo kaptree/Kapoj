@@ -187,4 +187,25 @@ describe('auth store', () => {
     expect(store.user?.permissions).toEqual(['problem.update'])
     expect(store.user?.isSuperAdmin).toBe(false)
   })
+
+  it('setUserPreservingRbac preserves roles/permissions/isSuperAdmin', () => {
+    const store = useAuthStore()
+    store.setSession({
+      accessToken: 'a',
+      refreshToken: 'r',
+      user: {
+        ...me,
+        roles: [{ id: 1, code: 'content_admin', name: '内容管理员' }],
+        permissions: ['problem.update'],
+        isSuperAdmin: true,
+      },
+    })
+
+    store.setUserPreservingRbac({ ...me, nickname: 'Alice2' })
+
+    expect(store.user?.nickname).toBe('Alice2')
+    expect(store.user?.roles).toEqual([{ id: 1, code: 'content_admin', name: '内容管理员' }])
+    expect(store.user?.permissions).toEqual(['problem.update'])
+    expect(store.user?.isSuperAdmin).toBe(true)
+  })
 })

@@ -158,7 +158,8 @@ func (s *Service) UploadAvatar(ctx context.Context, id int64, r io.Reader) (*Use
 		return nil, err
 	}
 
-	key := fmt.Sprintf("%s%d/%s", avatarKeyPrefix, id, randomHex(16))
+	suffix := randomHex(16)
+	key := fmt.Sprintf("%s%d/%s", avatarKeyPrefix, id, suffix)
 	if _, err := s.store.Put(ctx, key, bytes.NewReader(data), maxAvatarBytes); err != nil {
 		if errors.Is(err, storage.ErrTooLarge) {
 			return nil, httpx.ErrValidation("图片不能超过 2 MiB")
@@ -166,7 +167,7 @@ func (s *Service) UploadAvatar(ctx context.Context, id int64, r io.Reader) (*Use
 		return nil, err
 	}
 
-	url := fmt.Sprintf("/api/users/%d/avatar?v=%d", id, time.Now().Unix())
+	url := fmt.Sprintf("/api/users/%d/avatar?v=%s", id, suffix)
 	err = s.repo.UpdateProfile(ctx, id, ProfileChanges{
 		AvatarURL:         &url,
 		AvatarKey:         &key,

@@ -119,6 +119,7 @@ func TestUploadAvatarReplacesOldKey(t *testing.T) {
 	second, err := e.svc.UploadAvatar(ctx, e.user.ID, bytes.NewReader(gifMagic))
 	require.NoError(t, err)
 	assert.NotEqual(t, oldKey, second.AvatarKey)
+	assert.NotEqual(t, first.AvatarURL, second.AvatarURL, "cache-busting v must change per upload")
 
 	_, err = e.store.Open(ctx, oldKey)
 	assert.ErrorIs(t, err, storage.ErrNotFound, "old avatar file must be deleted")

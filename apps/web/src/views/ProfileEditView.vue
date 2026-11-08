@@ -140,7 +140,7 @@ async function upload() {
   uploading.value = true
   try {
     const me = await uploadAvatar(file)
-    auth.setUser(me)
+    auth.setUserPreservingRbac(me)
     revokePendingPreview()
     fields.value.avatarUrl = ''
     toast.add({ severity: 'success', summary: '头像已上传', life: 3000 })
@@ -156,7 +156,7 @@ async function removeAvatar() {
   removing.value = true
   try {
     const me = await deleteAvatar()
-    auth.setUser(me)
+    auth.setUserPreservingRbac(me)
     revokePendingPreview()
     fields.value.avatarUrl = ''
     toast.add({ severity: 'success', summary: '头像已移除', life: 3000 })
