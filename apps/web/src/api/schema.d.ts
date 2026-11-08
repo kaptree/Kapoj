@@ -5018,7 +5018,7 @@ export interface paths {
         put?: never;
         /**
          * 代码自动补全（登录，限流）
-         * @description 在光标处补全代码片段；要求已配置 AI provider/key。调用按用户限流（KAPOJ_AI_COOLDOWN）， 无配置或参数非法返回 40001，限流返回 42903，上游 AI 服务失败返回 50200，Redis 不可用返回 50300。
+         * @description 在光标处补全代码片段；要求已配置 AI provider/key。调用按用户限流（KAPOJ_AI_COOLDOWN）， 平台未配置加密密钥返回 40002，用户未配置 AI 模型或参数非法返回 40001，限流返回 42903， 上游 AI 服务失败返回 50200，Redis 不可用返回 50300。
          */
         post: {
             parameters: {
@@ -5066,7 +5066,7 @@ export interface paths {
         put?: never;
         /**
          * 代码格式化（登录，限流）
-         * @description 返回格式化后的完整代码；要求已配置 AI provider/key。其余语义与 /ai/complete 一致： 参数非法 40001、限流 42903、上游失败 50200、Redis 不可用 50300。
+         * @description 返回格式化后的完整代码；要求已配置 AI provider/key。其余语义与 /ai/complete 一致： 平台未配置加密密钥 40002、参数非法 40001、限流 42903、上游失败 50200、Redis 不可用 50300。
          */
         post: {
             parameters: {
