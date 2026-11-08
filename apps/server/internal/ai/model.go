@@ -18,6 +18,19 @@ type Provider struct {
 
 func (Provider) TableName() string { return "ai_providers" }
 
+// Settings 是 ai_settings 单例行；KeyFingerprint 记录当前密钥文件的 SHA-256
+// 指纹（仅诊断/一致性，不存密钥本身）。
+type Settings struct {
+	ID             int16     `gorm:"primaryKey"`
+	Enabled        bool      `gorm:"not null;default:true"`
+	KeyFingerprint string    `gorm:"column:key_fingerprint;size:64;not null;default:''"`
+	UpdatedBy      int64     `gorm:"not null;default:0"`
+	UpdatedAt      time.Time `gorm:"type:timestamptz;not null"`
+}
+
+// TableName keeps the table name from the design document.
+func (Settings) TableName() string { return "ai_settings" }
+
 // UserConfig 是用户自行填写的 AI 配置，每个用户唯一一条；Provider 为 provider code。
 type UserConfig struct {
 	ID              int64     `gorm:"primaryKey"`

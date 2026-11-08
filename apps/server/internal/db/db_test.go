@@ -276,6 +276,7 @@ func TestMigrateCreatesAITables(t *testing.T) {
 	assert.True(t, g.Migrator().HasIndex(&ai.Provider{}, "uniq_ai_providers_code"))
 	assert.True(t, g.Migrator().HasIndex(&ai.UserConfig{}, "uniq_user_ai_configs_user"))
 	assert.True(t, g.Migrator().HasIndex(&ai.Hint{}, "uniq_ai_hints_problem"))
+	assert.True(t, g.Migrator().HasColumn(&ai.Settings{}, "key_fingerprint"))
 }
 
 func TestMigrateCreatesActivitySchema(t *testing.T) {

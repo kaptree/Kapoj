@@ -50,3 +50,49 @@ func (h *handler) updateAISettings(c *gin.Context) {
 	}
 	httpx.OK(c, view)
 }
+
+// getAIKey 处理 GET /admin/ai/key，返回密钥状态（不含完整密钥）。
+func (h *handler) getAIKey(c *gin.Context) {
+	httpx.OK(c, h.ai.KeyView())
+}
+
+// generateAIKey 处理 POST /admin/ai/key/generate，生成并轮换密钥；完整密钥
+// 仅在响应中一次性返回。
+func (h *handler) generateAIKey(c *gin.Context) {
+	actor := auditActor(c)
+	result, err := h.ai.GenerateKey(c.Request.Context(), actor.ActorID, func(tx *gorm.DB) error {
+		return rbac.WriteAuditTx(
+			tx, actor,
+			rbac.AuditActionAISettingsManage,
+			rbac.AuditTargetAIKey, 0,
+			"生成 AI 加密密钥",
+		)
+	})
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, result)
+}
+
+// setAIKey 处理 PUT /admin/ai/key，手动填写密钥并保存；已有密钥时轮换。
+func (h *handler) setAIKey(c *gin.Context) {
+	in, ok := httpx.BindJSON[ai.KeyInput](c)
+	if !ok {
+		return
+	}
+	actor := auditActor(c)
+	view, err := h.ai.SetKey(c.Request.Context(), actor.ActorID, in.Key, func(tx *gorm.DB) error {
+		return rbac.WriteAuditTx(
+			tx, actor,
+			rbac.AuditActionAISettingsManage,
+			rbac.AuditTargetAIKey, 0,
+			"更新 AI 加密密钥",
+		)
+	})
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, view)
+}

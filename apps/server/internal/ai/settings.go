@@ -15,18 +15,6 @@ import (
 // settingsID is the fixed primary key of the singleton ai_settings row.
 const settingsID int16 = 1
 
-// Settings is the singleton configuration row (id=1) for the AI feature switch.
-// Missing rows are lazily created on first read with enabled=true.
-type Settings struct {
-	ID        int16     `gorm:"primaryKey"`
-	Enabled   bool      `gorm:"not null;default:true"`
-	UpdatedBy int64     `gorm:"not null;default:0"`
-	UpdatedAt time.Time `gorm:"type:timestamptz;not null"`
-}
-
-// TableName keeps the table name from the design document.
-func (Settings) TableName() string { return "ai_settings" }
-
 // SettingsView is the read model returned by the admin AI settings API.
 type SettingsView struct {
 	Enabled       bool      `json:"enabled"`
