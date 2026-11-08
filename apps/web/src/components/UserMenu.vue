@@ -48,7 +48,9 @@ const menuItems = computed<MenuItem[]>(() => {
     {
       label: 'AI 设置',
       icon: 'pi pi-sparkles',
-      command: () => router.push({ name: 'ai-settings' }),
+      command: () => {
+        void router.push({ name: 'ai-settings' })
+      },
     },
   ]
 

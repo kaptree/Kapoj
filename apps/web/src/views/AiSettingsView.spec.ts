@@ -106,6 +106,29 @@ describe('AiSettingsView', () => {
     expect(wrapper.findComponent(InputText).props('modelValue')).toBe('gpt-4o-mini')
   })
 
+  it('replaces the old provider default model when switching providers', async () => {
+    vi.mocked(getAIConfig).mockResolvedValue(aiConfig())
+    const wrapper = await mountPage()
+
+    expect(wrapper.findComponent(InputText).props('modelValue')).toBe('deepseek-chat')
+
+    wrapper.findComponent(Select).vm.$emit('update:modelValue', 'openai')
+    await flushPromises()
+
+    expect(wrapper.findComponent(Select).props('modelValue')).toBe('openai')
+    expect(wrapper.findComponent(InputText).props('modelValue')).toBe('gpt-4o-mini')
+  })
+
+  it('preserves a user-customized model when switching providers', async () => {
+    vi.mocked(getAIConfig).mockResolvedValue(aiConfig({ modelName: 'my-custom-model' }))
+    const wrapper = await mountPage()
+
+    wrapper.findComponent(Select).vm.$emit('update:modelValue', 'openai')
+    await flushPromises()
+
+    expect(wrapper.findComponent(InputText).props('modelValue')).toBe('my-custom-model')
+  })
+
   it('submits the entered model and key and refreshes the view on success', async () => {
     vi.mocked(getAIConfig).mockResolvedValue(
       aiConfig({ configured: false, provider: '', modelName: '', apiKeyMasked: '' }),

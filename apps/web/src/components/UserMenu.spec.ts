@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
 import Menu from 'primevue/menu'
 import type { MenuItem } from 'primevue/menuitem'
@@ -120,7 +120,8 @@ describe('UserMenu', () => {
     expect(aiItem).toBeDefined()
     expect(aiItem?.icon).toBe('pi pi-sparkles')
 
-    await aiItem?.command?.({} as never)
+    aiItem?.command?.({} as never)
+    await flushPromises()
     expect(router.currentRoute.value.name).toBe('ai-settings')
   })
 

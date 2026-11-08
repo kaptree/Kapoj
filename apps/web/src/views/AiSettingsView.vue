@@ -74,14 +74,14 @@ async function load() {
 
 function onProviderChange(value: string) {
   const previous = providers.value.find((p) => p.code === provider.value)
+  // Fill the new provider's default when the model is empty or still on the old
+  // default; keep a user-customized model unchanged.
+  if (!modelName.value || modelName.value === previous?.defaultModel) {
+    modelName.value = providers.value.find((p) => p.code === value)?.defaultModel ?? ''
+  }
   provider.value = value
   errors.value.provider = ''
   saveError.value = ''
-  const next = providers.value.find((p) => p.code === value)
-  // Fill the provider default when the field is empty or still on the previous default.
-  if (!modelName.value || modelName.value === previous?.defaultModel) {
-    modelName.value = next?.defaultModel ?? ''
-  }
 }
 
 function clearApiKeyError() {
@@ -155,7 +155,7 @@ onMounted(() => {
           required
         >
           <Select
-            v-model="provider"
+            :model-value="provider"
             :input-id="id"
             :options="providers"
             option-label="name"
