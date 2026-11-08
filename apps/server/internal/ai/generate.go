@@ -112,7 +112,7 @@ func (s *Service) chatRequest(ctx context.Context, userID int64) (ChatRequest, e
 	var cfg UserConfig
 	err := s.db.WithContext(ctx).Where("user_id = ?", userID).First(&cfg).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return ChatRequest{}, httpx.ErrValidation("ai config not set")
+		return ChatRequest{}, httpx.ErrValidation("尚未配置 AI 模型")
 	}
 	if err != nil {
 		return ChatRequest{}, err
@@ -121,18 +121,18 @@ func (s *Service) chatRequest(ctx context.Context, userID int64) (ChatRequest, e
 	var provider Provider
 	err = s.db.WithContext(ctx).Where("code = ?", cfg.Provider).First(&provider).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return ChatRequest{}, httpx.ErrValidation("unknown provider")
+		return ChatRequest{}, httpx.ErrValidation("未知的服务商")
 	}
 	if err != nil {
 		return ChatRequest{}, err
 	}
 	if !provider.IsActive {
-		return ChatRequest{}, httpx.ErrValidation("provider is not active")
+		return ChatRequest{}, httpx.ErrValidation("服务商未启用")
 	}
 
 	model := strings.TrimSpace(cfg.ModelName)
 	if model == "" {
-		return ChatRequest{}, httpx.ErrValidation("model is required")
+		return ChatRequest{}, httpx.ErrValidation("模型名不能为空")
 	}
 
 	apiKey, err := s.keys.Decrypt(cfg.APIKeyEncrypted)
@@ -166,21 +166,21 @@ func (s *Service) checkLimit(ctx context.Context, userID int64) error {
 
 func validateGenerateInput(in GenerateInput, requireCursor bool) error {
 	if len(in.Code) > maxCodeBytes {
-		return httpx.ErrValidation("code is too large")
+		return httpx.ErrValidation("代码过大")
 	}
 	lang := strings.TrimSpace(in.Language)
 	if lang == "" {
-		return httpx.ErrValidation("language is required")
+		return httpx.ErrValidation("语言不能为空")
 	}
 	if len(lang) > maxLanguageLen {
-		return httpx.ErrValidation("language is too long")
+		return httpx.ErrValidation("语言过长")
 	}
 	if requireCursor {
 		if in.Cursor == nil {
-			return httpx.ErrValidation("cursor is required")
+			return httpx.ErrValidation("缺少光标位置")
 		}
 		if *in.Cursor < 0 || *in.Cursor > len(in.Code) {
-			return httpx.ErrValidation("cursor is out of range")
+			return httpx.ErrValidation("光标位置超出范围")
 		}
 	}
 	return nil

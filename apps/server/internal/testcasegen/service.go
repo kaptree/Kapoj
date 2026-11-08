@@ -112,7 +112,7 @@ func (s *Service) Create(ctx context.Context, problemID, userID int64, in Create
 		return nil, err
 	}
 	if p.Type != problem.TypeTraditional {
-		return nil, httpx.ErrValidation("only traditional problems support AI testcase generation")
+		return nil, httpx.ErrValidation("仅传统题支持 AI 造数据")
 	}
 
 	samples := make([]ai.TestcaseScriptSample, 0, len(p.Samples))
@@ -309,16 +309,16 @@ func generatedFileKey(problemID, generationID int64, n int, ext string) string {
 
 func validateCreateInput(lang, src string, count int) error {
 	if !validLanguages[lang] {
-		return httpx.ErrValidation("unsupported language")
+		return httpx.ErrValidation("不支持的语言")
 	}
 	if count < 1 || count > 10 {
-		return httpx.ErrValidation("testcase count must be between 1 and 10")
+		return httpx.ErrValidation("生成组数必须在 1 到 10 之间")
 	}
 	if src == "" {
-		return httpx.ErrValidation("source code is required")
+		return httpx.ErrValidation("标程代码不能为空")
 	}
 	if len(src) > maxSourceBytes {
-		return httpx.ErrValidation("source code is too large")
+		return httpx.ErrValidation("标程代码过大")
 	}
 	return nil
 }

@@ -42,7 +42,7 @@ const problemId = computed(() => Number(route.params.id))
 
 const language = ref<SubmissionLanguage>('cpp')
 const sourceCode = ref('')
-const count = ref(5)
+const count = ref<number | null>(5)
 
 const creating = ref(false)
 const confirming = ref(false)
@@ -95,16 +95,26 @@ function byteLength(value: string): number {
   return new TextEncoder().encode(value).length
 }
 
+/** Substrings that mark a 40001 as a missing user AI configuration (worth a settings link). */
+const AI_CONFIG_KEYWORDS = ['AI 模型', 'AI 设置', 'API Key', '服务商', '模型']
+
+function isAIConfigMissing(message: string): boolean {
+  return AI_CONFIG_KEYWORDS.some((k) => message.includes(k))
+}
+
 /** Maps an API error to a user-facing message and whether to offer the AI settings link. */
 function mapError(e: unknown): { message: string; aiLink: boolean } {
   if (e instanceof ApiError) {
     if (e.code === 40002) return { message: '管理员尚未配置 AI 加密密钥', aiLink: false }
-    if (e.code === 40001) return { message: e.message || '请先在 AI 设置中配置模型', aiLink: true }
+    if (e.code === 40001) {
+      const msg = e.message || '操作失败，请稍后再试'
+      return { message: msg, aiLink: isAIConfigMissing(msg) }
+    }
     if (e.code === 42903 || e.code === 50200 || e.code === 50300) {
       return { message: e.message || 'AI 服务暂时不可用，请稍后再试', aiLink: false }
     }
     if (e.status === 404) return { message: '题目不存在或没有权限', aiLink: false }
-    return { message: '操作失败，请稍后再试', aiLink: false }
+    return { message: e.message || '操作失败，请稍后再试', aiLink: false }
   }
   return { message: '操作失败，请稍后再试', aiLink: false }
 }
@@ -126,6 +136,11 @@ async function create() {
     toast.add({ severity: 'warn', summary: '源码超过 64 KiB', life: 3000 })
     return
   }
+  const c = count.value
+  if (c === null || !Number.isInteger(c) || c < 1 || c > 10) {
+    toast.add({ severity: 'warn', summary: '生成组数必须是 1 到 10 之间的整数', life: 3000 })
+    return
+  }
 
   creating.value = true
   error.value = ''
@@ -135,7 +150,7 @@ async function create() {
     const gen = await createTestcaseGeneration(problemId.value, {
       language: language.value,
       sourceCode: src,
-      testcaseCount: count.value,
+      testcaseCount: c,
     })
     generation.value = gen
     if (!isTerminal(gen.status)) startPolling()
@@ -151,12 +166,19 @@ const POLL_TIMEOUT_MS = 10 * 60 * 1000
 
 let pollTimer: number | undefined
 let pollDeadline = 0
+let cancelled = false
 
 function isTerminal(s: TestcaseGenerationStatus): boolean {
   return s === 'ready' || s === 'failed' || s === 'confirmed' || s === 'discarded'
 }
 
+/** A poll GET failure that will not recover by retrying (e.g. generation gone). */
+function isTerminalPollError(e: unknown): boolean {
+  return e instanceof ApiError && (e.status === 404 || e.status === 403)
+}
+
 function stopPolling() {
+  cancelled = true
   if (pollTimer !== undefined) {
     window.clearTimeout(pollTimer)
     pollTimer = undefined
@@ -165,13 +187,16 @@ function stopPolling() {
 
 function startPolling() {
   stopPolling()
+  cancelled = false
   pollDeadline = Date.now() + POLL_TIMEOUT_MS
   schedulePoll()
 }
 
 function schedulePoll() {
+  if (cancelled) return
   pollTimer = window.setTimeout(async () => {
     pollTimer = undefined
+    if (cancelled) return
     const gen = generation.value
     if (!gen) return
     if (Date.now() >= pollDeadline) {
@@ -180,9 +205,23 @@ function schedulePoll() {
     }
     try {
       const next = await getTestcaseGeneration(problemId.value, gen.id)
+      if (cancelled) return
       generation.value = next
       if (!isTerminal(next.status)) schedulePoll()
-    } catch {
+    } catch (e) {
+      if (cancelled) return
+      if (isTerminalPollError(e)) {
+        const mapped = mapError(e)
+        error.value = mapped.message
+        showAiConfigLink.value = mapped.aiLink
+        toast.add({
+          severity: 'error',
+          summary: '查询生成状态失败',
+          detail: mapped.message,
+          life: 4000,
+        })
+        return
+      }
       // A transient GET failure should not abort the poll; keep going until the deadline.
       schedulePoll()
     }

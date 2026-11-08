@@ -108,19 +108,19 @@ func (s *Service) SaveConfig(ctx context.Context, userID int64, in SaveConfigInp
 
 	code := strings.TrimSpace(in.Provider)
 	if code == "" {
-		return nil, httpx.ErrValidation("provider is required")
+		return nil, httpx.ErrValidation("服务商不能为空")
 	}
 
 	var provider Provider
 	err := s.db.WithContext(ctx).Where("code = ?", code).First(&provider).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, httpx.ErrValidation("unknown provider")
+		return nil, httpx.ErrValidation("未知的服务商")
 	}
 	if err != nil {
 		return nil, err
 	}
 	if !provider.IsActive {
-		return nil, httpx.ErrValidation("provider is not active")
+		return nil, httpx.ErrValidation("服务商未启用")
 	}
 
 	modelName := strings.TrimSpace(in.ModelName)
@@ -128,7 +128,7 @@ func (s *Service) SaveConfig(ctx context.Context, userID int64, in SaveConfigInp
 		modelName = provider.DefaultModel
 	}
 	if modelName == "" {
-		return nil, httpx.ErrValidation("model is required")
+		return nil, httpx.ErrValidation("模型名不能为空")
 	}
 
 	var existing UserConfig
@@ -146,7 +146,7 @@ func (s *Service) SaveConfig(ctx context.Context, userID int64, in SaveConfigInp
 			return nil, err
 		}
 	} else if !hasExisting {
-		return nil, httpx.ErrValidation("api key is required")
+		return nil, httpx.ErrValidation("API Key 不能为空")
 	}
 
 	cfg := UserConfig{

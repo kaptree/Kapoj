@@ -363,4 +363,121 @@ describe('TestcaseGeneratorView', () => {
     await vi.advanceTimersByTimeAsync(10000)
     expect(getTestcaseGeneration).not.toHaveBeenCalled()
   })
+
+  it('does not re-arm the poll after unmount during an in-flight GET', async () => {
+    vi.useFakeTimers()
+    vi.mocked(createTestcaseGeneration).mockResolvedValue(genView({ status: 'pending' }))
+    let resolveGet: ((v: TestcaseGenerationView) => void) | undefined
+    vi.mocked(getTestcaseGeneration).mockImplementation(
+      () => new Promise<TestcaseGenerationView>((resolve) => (resolveGet = resolve)),
+    )
+    const { wrapper } = await mountPage()
+
+    setSource(wrapper, 'int main() { return 0; }')
+    await nextTick()
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(getTestcaseGeneration).toHaveBeenCalledTimes(1)
+
+    wrapper.unmount()
+
+    resolveGet!(genView({ status: 'running' }))
+    await flushPromises()
+
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(getTestcaseGeneration).toHaveBeenCalledTimes(1)
+  })
+
+  it('times out after 10 minutes and stops polling', async () => {
+    vi.useFakeTimers()
+    vi.mocked(createTestcaseGeneration).mockResolvedValue(genView({ status: 'pending' }))
+    vi.mocked(getTestcaseGeneration).mockResolvedValue(genView({ status: 'pending' }))
+    const { wrapper } = await mountPage()
+
+    setSource(wrapper, 'int main() { return 0; }')
+    await nextTick()
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000)
+    expect(wrapper.text()).toContain('生成超时')
+
+    const calls = vi.mocked(getTestcaseGeneration).mock.calls.length
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(vi.mocked(getTestcaseGeneration).mock.calls.length).toBe(calls)
+    wrapper.unmount()
+  })
+
+  it('stops polling and surfaces the error on a terminal GET failure', async () => {
+    vi.useFakeTimers()
+    vi.mocked(createTestcaseGeneration).mockResolvedValue(genView({ status: 'pending' }))
+    vi.mocked(getTestcaseGeneration).mockRejectedValue(
+      new ApiError(404, 40400, '题目不存在或没有权限'),
+    )
+    const { wrapper } = await mountPage()
+
+    setSource(wrapper, 'int main() { return 0; }')
+    await nextTick()
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(getTestcaseGeneration).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('题目不存在或没有权限')
+
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(getTestcaseGeneration).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it('warns and skips create when count is not an integer 1-10', async () => {
+    const { wrapper } = await mountPage()
+    setSource(wrapper, 'int main() { return 0; }')
+    await nextTick()
+
+    wrapper.findComponent(InputNumber).vm.$emit('update:modelValue', null)
+    await nextTick()
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(createTestcaseGeneration).not.toHaveBeenCalled()
+    expect(toast.add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'warn',
+        summary: '生成组数必须是 1 到 10 之间的整数',
+      }),
+    )
+    wrapper.unmount()
+  })
+
+  it('shows a non-config 40001 without the AI settings link', async () => {
+    vi.mocked(createTestcaseGeneration).mockRejectedValue(
+      new ApiError(400, 40001, '仅传统题支持 AI 造数据'),
+    )
+    const { wrapper } = await mountPage()
+    setSource(wrapper, 'int main() { return 0; }')
+    await nextTick()
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('仅传统题支持 AI 造数据')
+    expect(wrapper.find('a[href="/settings/ai"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shows the server message for unmapped API errors', async () => {
+    vi.mocked(createTestcaseGeneration).mockRejectedValue(
+      new ApiError(500, 50000, '服务器内部错误'),
+    )
+    const { wrapper } = await mountPage()
+    setSource(wrapper, 'int main() { return 0; }')
+    await nextTick()
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('服务器内部错误')
+    wrapper.unmount()
+  })
 })

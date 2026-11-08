@@ -61,13 +61,13 @@ func (s *Service) GenerateTestcaseScript(ctx context.Context, userID int64, in T
 
 func validateTestcaseScriptInput(in TestcaseScriptInput) error {
 	if in.TestcaseCount < 1 || in.TestcaseCount > 10 {
-		return httpx.ErrValidation("testcase count must be between 1 and 10")
+		return httpx.ErrValidation("生成组数必须在 1 到 10 之间")
 	}
 	if strings.TrimSpace(in.StandardCode) == "" {
-		return httpx.ErrValidation("standard code is required")
+		return httpx.ErrValidation("标程代码不能为空")
 	}
 	if len(in.StandardCode) > maxCodeBytes {
-		return httpx.ErrValidation("standard code is too large")
+		return httpx.ErrValidation("标程代码过大")
 	}
 	return nil
 }
