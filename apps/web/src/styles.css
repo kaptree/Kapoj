@@ -82,17 +82,3 @@
 .user-menu__popup .p-menu-item-icon {
   color: var(--kapoj-text-secondary);
 }
-
-/*
- * Transitional until the result pages are migrated (UI-20): Element Plus
- * renders these titles outside cards, so they need the dark-canvas colors.
- */
-.app-main .el-result__title,
-.app-main .el-result__title p {
-  color: var(--kapoj-text);
-}
-
-.app-main .el-result__subtitle,
-.app-main .el-result__subtitle p {
-  color: var(--kapoj-text-secondary);
-}

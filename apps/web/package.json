@@ -11,10 +11,8 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@element-plus/icons-vue": "^2.3.2",
     "@primeuix/themes": "^1.2.5",
     "axios": "^1.21.0",
-    "element-plus": "^2.14.7",
     "highlight.js": "^11.12.0",
     "katex": "^0.19.1",
     "md-editor-v3": "^7.1.0",

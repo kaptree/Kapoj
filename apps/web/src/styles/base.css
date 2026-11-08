@@ -20,12 +20,8 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/*
- * Links inside legacy Element Plus cards keep the framework color until the
- * page is migrated. The `--kapoj-*` fallback applies after Element Plus is gone.
- */
 a {
-  color: var(--el-color-primary, var(--kapoj-primary));
+  color: var(--kapoj-primary);
   text-decoration: none;
 }
 
