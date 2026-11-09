@@ -164,10 +164,6 @@ func (s *Service) Create(ctx context.Context, v Viewer, userID int64, in Input) 
 		}
 		return nil, err
 	}
-	in, err = in.ValidateForProblem(p.Type)
-	if err != nil {
-		return nil, err
-	}
 	var contestID *int64
 	if in.ContestID > 0 {
 		c, err := s.contests.FindByID(ctx, in.ContestID)
@@ -213,6 +209,10 @@ func (s *Service) Create(ctx context.Context, v Viewer, userID int64, in Input) 
 	}
 	if !p.IsPublic && !v.CanViewHiddenProblems && contestID == nil {
 		return nil, httpx.ErrNotFound
+	}
+	in, err = in.ValidateForProblem(p.Type)
+	if err != nil {
+		return nil, err
 	}
 	if p.Type == problem.TypeObjective {
 		// Objective submissions are graded from their answer; they need no

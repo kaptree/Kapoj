@@ -137,6 +137,18 @@ func TestCreateRejectsHiddenProblem(t *testing.T) {
 	assert.Len(t, e.queue.ids, 1)
 }
 
+func TestCreateHiddenProblemInvalidPayloadReturnsNotFound(t *testing.T) {
+	e := newEnv(t)
+	p := publicProblem("hidden-invalid")
+	p.IsPublic = false
+	e.createProblem(t, p, 1)
+
+	_, err := e.svc.Create(context.Background(), submission.Viewer{UserID: 2}, 2, submission.Input{
+		ProblemID: p.ID, Language: "rust", Code: "x",
+	})
+	assertCode(t, err, 40400)
+}
+
 func TestCreateRejectsInteractiveAndIncompleteProblems(t *testing.T) {
 	e := newEnv(t)
 	interactive := publicProblem("interactive")
