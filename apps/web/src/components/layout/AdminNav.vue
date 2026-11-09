@@ -83,6 +83,13 @@ const aiItem: AdminNavItem = {
   icon: 'pi pi-sparkles',
 }
 
+const siteItem: AdminNavItem = {
+  key: 'site',
+  path: '/admin/site',
+  label: '站点设置',
+  icon: 'pi pi-image',
+}
+
 const groups = computed<AdminNavGroup[]>(() => {
   const contentItems: AdminNavItem[] = []
   if (auth.canAny(PROBLEM_MANAGE_PERMISSIONS)) {
@@ -129,6 +136,9 @@ const groups = computed<AdminNavGroup[]>(() => {
   }
   if (contentItems.length > 0) {
     items.push({ key: 'content', label: '内容', items: contentItems })
+  }
+  if (auth.can(PERM.site.settings.manage)) {
+    items.push({ key: 'site', label: '站点', items: [siteItem] })
   }
   return items
 })

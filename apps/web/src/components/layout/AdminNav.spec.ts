@@ -32,6 +32,7 @@ const routes = [
   { path: '/contests', component: { template: '<div />' } },
   { path: '/admin/learning-paths', component: { template: '<div />' } },
   { path: '/admin/certificates', component: { template: '<div />' } },
+  { path: '/admin/site', component: { template: '<div />' } },
 ]
 
 async function mountNav(path = '/admin') {
@@ -176,6 +177,18 @@ describe('AdminNav', () => {
     expect(auth.can).toHaveBeenCalledWith(PERM.certificate.manage)
     expect(wrapper.find('a[href="/admin/certificates"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('证书审核')
+    wrapper.unmount()
+  })
+
+  it('shows the site settings entry only with site.settings.manage', async () => {
+    let wrapper = await mountNav()
+    expect(wrapper.text()).not.toContain('站点设置')
+
+    auth.can.mockImplementation((code) => code === PERM.site.settings.manage)
+    wrapper = await mountNav()
+    expect(auth.can).toHaveBeenCalledWith(PERM.site.settings.manage)
+    expect(wrapper.find('a[href="/admin/site"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('站点设置')
     wrapper.unmount()
   })
 })

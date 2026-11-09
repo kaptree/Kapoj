@@ -341,6 +341,16 @@ export const router = createRouter({
             title: '证书审核',
           },
         },
+        {
+          path: 'site',
+          name: 'admin-site',
+          component: () => import('@/views/AdminSiteView.vue'),
+          meta: {
+            requiresAuth: true,
+            permission: PERM.site.settings.manage,
+            title: '站点设置',
+          },
+        },
       ],
     },
   ],
