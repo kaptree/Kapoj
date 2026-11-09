@@ -296,7 +296,10 @@ func TestReferencedProblemCannotBeDeleted(t *testing.T) {
 	assert.EqualValues(t, 40001, resp["code"])
 	assert.Contains(t, resp["message"], "比赛")
 
+	// 题目已被进行中的比赛派生锁定，游客不可见，但题目仍存在。
 	w, _ = f.do(http.MethodGet, fmt.Sprintf("/api/problems/%d", p1.ID), "", nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	w, _ = f.do(http.MethodGet, fmt.Sprintf("/api/problems/%d", p1.ID), f.token("problem_admin"), nil)
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
