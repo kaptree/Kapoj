@@ -181,10 +181,10 @@ func TestSitePublicAndAdminHTTP(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	home := resp["data"].(map[string]any)["home"].(map[string]any)
 	home["eyebrow"] = "UPDATED"
-	w, resp = f.do(http.MethodPut, "/api/admin/site/home", managerToken, home)
+	w, _ = f.do(http.MethodPut, "/api/admin/site/home", managerToken, home)
 	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	// 公开读取已更新
-	w, resp = f.do(http.MethodGet, "/api/site", "", nil)
+	_, resp = f.do(http.MethodGet, "/api/site", "", nil)
 	assert.Equal(t, "UPDATED", resp["data"].(map[string]any)["home"].(map[string]any)["eyebrow"])
 }
 
@@ -227,6 +227,6 @@ func TestSiteUploadAndVisitHTTP(t *testing.T) {
 	w, resp = f.do(http.MethodPost, "/api/site/visit", "", nil)
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.EqualValues(t, 1, resp["data"].(map[string]any)["visitCount"])
-	w, resp = f.do(http.MethodPost, "/api/site/visit", "", nil)
+	_, resp = f.do(http.MethodPost, "/api/site/visit", "", nil)
 	assert.EqualValues(t, 2, resp["data"].(map[string]any)["visitCount"])
 }
