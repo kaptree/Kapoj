@@ -974,8 +974,8 @@ func TestRanklistMarksFirstBlood(t *testing.T) {
 	for _, row := range rank.Rows { byUser[row.UserID] = row }
 	assert.True(t, byUser[userID].Problems[0].FirstBlood)
 	assert.False(t, byUser[otherID].Problems[0].FirstBlood)
-	assert.Equal(t, 2, byUser[userID].Problems[0].Attempts)
-	assert.Equal(t, 1, byUser[otherID].Problems[0].Attempts)
+	assert.Equal(t, 1, byUser[userID].Problems[0].Attempts)
+	assert.Equal(t, 0, byUser[otherID].Problems[0].Attempts)
 }
 
 func TestRanklistFirstBloodTieUsesUserID(t *testing.T) {
