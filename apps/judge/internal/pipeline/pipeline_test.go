@@ -359,6 +359,17 @@ func TestPipelineMissingTestcaseFileIsSystemError(t *testing.T) {
 	assert.Equal(t, model.StatusJudging, got.Status)
 }
 
+func TestPipelineNoTestcasesDoesNotPublish(t *testing.T) {
+	e := newEnv(t, "traditional")
+	sub := e.submit(t, model.LanguageCPP, "code")
+
+	err := e.pipe.Run(context.Background(), sub)
+	require.Error(t, err)
+	assert.Empty(t, e.pub.ids, "validation failures must not publish a judging event")
+	got, _ := e.repo.FindByID(context.Background(), sub)
+	assert.Equal(t, model.StatusJudging, got.Status)
+}
+
 func submissionResult(t *testing.T, pool *pgxpool.Pool, submissionID int64) (model.Status, int) {
 	t.Helper()
 	var status string
@@ -394,6 +405,21 @@ func TestObjectiveSubmission(t *testing.T) {
 	assert.Zero(t, timeMS)
 	assert.Zero(t, memKB)
 	assert.JSONEq(t, "[]", string(raw))
+}
+
+func TestObjectiveSubmissionMatchesSecondAnswer(t *testing.T) {
+	e := newEnv(t, "objective")
+	problem := testutil.InsertObjectiveProblem(t, e.pool, []string{"A", "hello world"})
+	sub := testutil.InsertObjectiveSubmission(t, e.pool, e.userID, problem, "HELLO WORLD", "pending")
+
+	require.NoError(t, e.pipe.Run(context.Background(), sub))
+
+	status, score := submissionResult(t, e.pool, sub)
+	assert.Equal(t, model.StatusAccepted, status)
+	assert.Equal(t, 100, score)
+	assert.Equal(t, 1, acceptCount(t, e.pool, problem))
+	assert.Empty(t, e.sb.compiles)
+	assert.Empty(t, e.sb.runs)
 }
 
 func TestObjectiveSubmissionWrongAnswer(t *testing.T) {

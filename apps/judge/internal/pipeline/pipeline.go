@@ -69,9 +69,9 @@ func (p *Pipeline) Run(ctx context.Context, submissionID int64) error {
 	if err != nil {
 		return fmt.Errorf("claim submission: %w", err)
 	}
-	p.publish(ctx, sub.ID)
 
 	if prob.Type == "objective" {
+		p.publish(ctx, sub.ID)
 		accepted := false
 		user := strings.TrimSpace(sub.Answer)
 		for _, answer := range prob.Answers {
@@ -96,6 +96,7 @@ func (p *Pipeline) Run(ctx context.Context, submissionID int64) error {
 	if !sub.Language.Valid() {
 		return fmt.Errorf("unsupported language %q", sub.Language)
 	}
+	p.publish(ctx, sub.ID)
 
 	work, err := os.MkdirTemp("", "kapoj-judge-*")
 	if err != nil {
