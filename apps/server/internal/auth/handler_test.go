@@ -334,3 +334,21 @@ func TestLogoutOthersRejectsUnknownSession(t *testing.T) {
 	_, resp = authJSON(r, http.MethodGet, "/api/users/me/sessions", token, "")
 	assert.Len(t, resp["data"], 2, "unknown keep session must not revoke all sessions")
 }
+
+func TestLogoutOthersRejectsOtherUsersSessionHTTP(t *testing.T) {
+	r := newAccountEngine(t)
+	_, aresp := postJSON(r, "/api/auth/register", `{"username":"alice","email":"alice@example.com","password":"correct-horse"}`)
+	adata := aresp["data"].(map[string]any)
+	atoken := adata["accessToken"].(string)
+	_, bresp := postJSON(r, "/api/auth/register", `{"username":"bob","email":"bob@example.com","password":"correct-horse"}`)
+	bsession := bresp["data"].(map[string]any)["sessionId"].(string)
+	postJSON(r, "/api/auth/login", `{"account":"alice","password":"correct-horse"}`)
+
+	w, resp := authJSON(r, http.MethodPost, "/api/users/me/sessions/logout-others", atoken,
+		`{"sessionId":"`+bsession+`"}`)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.EqualValues(t, 40400, resp["code"])
+
+	_, resp = authJSON(r, http.MethodGet, "/api/users/me/sessions", atoken, "")
+	assert.Len(t, resp["data"], 2)
+}

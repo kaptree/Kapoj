@@ -538,17 +538,20 @@ func TestRevokeOthersRejectsOtherUsersKeep(t *testing.T) {
 	store := NewRefreshStore(rdb, time.Hour)
 	ctx := context.Background()
 
-	_, keepAlice, err := store.IssueWithMeta(ctx, 7, SessionMeta{})
+	tokAlice, keepAlice, err := store.IssueWithMeta(ctx, 7, SessionMeta{})
 	require.NoError(t, err)
-	tokBob, _, err := store.IssueWithMeta(ctx, 8, SessionMeta{})
-	require.NoError(t, err)
-
-	err = store.RevokeOthers(ctx, 7, keepAlice)
+	tokBob, bobSID, err := store.IssueWithMeta(ctx, 8, SessionMeta{})
 	require.NoError(t, err)
 
-	// Bob's session is not Alice's to revoke, and Alice's keep stays valid.
+	err = store.RevokeOthers(ctx, 7, bobSID)
+	assert.ErrorIs(t, err, ErrSessionNotFound)
+
+	// Neither Alice's session nor Bob's session is revoked by a foreign keep.
+	_, err = store.Consume(ctx, tokAlice)
+	require.NoError(t, err)
 	_, err = store.Consume(ctx, tokBob)
 	require.NoError(t, err)
+	assert.NotEmpty(t, keepAlice)
 }
 
 func TestRevokeOthersRemovesLegacyTokens(t *testing.T) {

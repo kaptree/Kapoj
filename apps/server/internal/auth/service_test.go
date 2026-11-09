@@ -533,3 +533,19 @@ func TestLogoutOthersRejectsUnknownOrBlankSession(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, views, 2, "invalid keep session must not revoke other sessions")
 }
+
+func TestLogoutOthersRejectsOtherUsersSessionService(t *testing.T) {
+	svc, _ := newService(t)
+	alice := register(t, svc, "alice", "alice@example.com")
+	ctx := context.Background()
+	_, err := svc.Login(ctx, "alice", password)
+	require.NoError(t, err)
+	bob := register(t, svc, "bob", "bob@example.com")
+
+	err = svc.LogoutOthers(ctx, alice.User.ID, bob.SessionID)
+	assertCode(t, err, 40400)
+
+	views, err := svc.ListSessions(ctx, alice.User.ID)
+	require.NoError(t, err)
+	require.Len(t, views, 2, "a foreign keep session must not revoke Alice's sessions")
+}
