@@ -29,24 +29,28 @@ func DefaultHomeContent() HomeContent {
 		QuickLinks: []Link{
 			{
 				Icon:        "pi pi-book",
+				IconPos:     "left",
 				Title:       "题库",
 				Description: "按标签与难度筛选，开始一次练习。",
 				To:          "/problems",
 			},
 			{
 				Icon:        "pi pi-trophy",
+				IconPos:     "left",
 				Title:       "比赛",
 				Description: "参加 ICPC / IOI / OI 赛制，挑战实时榜单。",
 				To:          "/contests",
 			},
 			{
 				Icon:        "pi pi-chart-line",
+				IconPos:     "left",
 				Title:       "排行榜",
 				Description: "查看 Rating、活跃度与共享榜，每日签到领金币。",
 				To:          "/leaderboard",
 			},
 			{
 				Icon:        "pi pi-list-check",
+				IconPos:     "left",
 				Title:       "测评记录",
 				Description: "查看提交状态、耗时与内存。",
 				To:          "/submissions",
@@ -56,24 +60,28 @@ func DefaultHomeContent() HomeContent {
 		GrowthLinks: []Link{
 			{
 				Icon:        "pi pi-star",
+				IconPos:     "left",
 				Title:       "成就墙",
 				Description: "完成条件，解锁成就与奖励。",
 				To:          "/achievements",
 			},
 			{
 				Icon:        "pi pi-check-square",
+				IconPos:     "left",
 				Title:       "任务大厅",
 				Description: "领取任务，AC 全部题目赢取金币。",
 				To:          "/tasks",
 			},
 			{
 				Icon:        "pi pi-shop",
+				IconPos:     "left",
 				Title:       "徽章商城",
 				Description: "用金币购买并装备专属徽章。",
 				To:          "/shop/badges",
 			},
 			{
 				Icon:        "pi pi-crown",
+				IconPos:     "left",
 				Title:       "称号商店",
 				Description: "解锁称号，展示你的竞赛身份。",
 				To:          "/shop/titles",

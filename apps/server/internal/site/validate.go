@@ -180,6 +180,11 @@ func validateLink(label string, l *Link, maxTitle int) error {
 	default:
 		return httpx.ErrValidation(label + "图标位置只能是 left 或 right")
 	}
+	// Normalize the omitted value so the persisted JSON always satisfies the
+	// contract enum (cards default to a leading icon).
+	if l.IconPos == "" {
+		l.IconPos = "left"
+	}
 	return nil
 }
 

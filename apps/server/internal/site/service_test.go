@@ -77,6 +77,35 @@ func TestSiteHomeValidation(t *testing.T) {
 	assertCode(t, err, 40001)
 }
 
+func TestDefaultHomeLinksHaveIconPos(t *testing.T) {
+	home := site.DefaultHomeContent()
+	links := append([]site.Link{}, home.QuickLinks...)
+	links = append(links, home.GrowthLinks...)
+	links = append(links, home.PrimaryCTA, home.SecondaryCTA)
+	require.NotEmpty(t, links)
+	for _, link := range links {
+		assert.Contains(t, []string{"left", "right"}, link.IconPos, "link %q", link.Title)
+	}
+}
+
+func TestSiteHomeNormalizesEmptyIconPos(t *testing.T) {
+	svc, _, _ := newSite(t)
+	ctx := context.Background()
+	home := site.DefaultHomeContent()
+	home.QuickLinks[0].IconPos = ""
+	home.GrowthLinks[0].IconPos = ""
+
+	view, err := svc.UpdateHome(ctx, 1, home)
+	require.NoError(t, err)
+	assert.Equal(t, "left", view.Home.QuickLinks[0].IconPos)
+	assert.Equal(t, "left", view.Home.GrowthLinks[0].IconPos)
+
+	pub, err := svc.Public(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, "left", pub.Home.QuickLinks[0].IconPos)
+	assert.Equal(t, "left", pub.Home.GrowthLinks[0].IconPos)
+}
+
 func TestSiteFooterValidation(t *testing.T) {
 	svc, _, _ := newSite(t)
 	ctx := context.Background()
