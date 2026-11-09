@@ -49,6 +49,7 @@ function contest(overrides: Partial<ContestDetail> = {}): ContestDetail {
     mode: 'ioi',
     isRated: true,
     isPublic: false,
+    disableAi: true,
     registerType: 'password',
     status: 'upcoming',
     problemCount: 2,
@@ -177,6 +178,35 @@ describe('ContestEditView', () => {
       expect.objectContaining({ severity: 'success', summary: '比赛已创建' }),
     )
     expect(router.currentRoute.value.fullPath).toBe('/contests/99')
+    wrapper.unmount()
+  })
+
+  it('defaults disableAi to true and saves the toggle', async () => {
+    const { wrapper } = await mountPage('/contests/new')
+
+    const toggle = wrapper.find('[data-test="contest-disable-ai"] input')
+    expect((toggle.element as HTMLInputElement).checked).toBe(true)
+
+    await titleInput(wrapper).setValue('AI Contest')
+    await toggle.setValue(false)
+    await button(wrapper, '保存')!.trigger('click')
+    await flushPromises()
+
+    expect(createContest).toHaveBeenCalledWith(expect.objectContaining({ disableAi: false }))
+    wrapper.unmount()
+  })
+
+  it('loads and saves disableAi=false', async () => {
+    vi.mocked(getContest).mockResolvedValue(contest({ disableAi: false }))
+    const { wrapper } = await mountPage('/contests/5/edit')
+
+    const toggle = wrapper.find('[data-test="contest-disable-ai"] input')
+    expect((toggle.element as HTMLInputElement).checked).toBe(false)
+
+    await button(wrapper, '保存')!.trigger('click')
+    await flushPromises()
+
+    expect(updateContest).toHaveBeenCalledWith(5, expect.objectContaining({ disableAi: false }))
     wrapper.unmount()
   })
 
@@ -312,6 +342,9 @@ describe('ContestEditView', () => {
     expect(wrapper.findAllComponents(DatePicker)[1]!.props('disabled')).toBe(false)
     expect(wrapper.findAllComponents(Select)[0]!.props('disabled')).toBe(true)
     expect(wrapper.findAllComponents(ToggleSwitch)[0]!.props('disabled')).toBe(false)
+    expect(
+      wrapper.find('[data-test="contest-disable-ai"] input').attributes('disabled'),
+    ).toBeUndefined()
 
     expect(button(wrapper, '添加题目')!.attributes()).toHaveProperty('disabled')
     const row = wrapper.find('.p-datatable-tbody > tr')

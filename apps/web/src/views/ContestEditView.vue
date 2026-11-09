@@ -52,6 +52,7 @@ interface FormState {
   mode: ContestMode
   isRated: boolean
   isPublic: boolean
+  disableAi: boolean
   registerType: ContestRegisterType
   password: string
   inviteCode: string
@@ -75,6 +76,7 @@ function emptyForm(): FormState {
     mode: 'icpc',
     isRated: false,
     isPublic: true,
+    disableAi: true,
     registerType: 'open',
     password: '',
     inviteCode: '',
@@ -145,6 +147,7 @@ async function loadContest() {
       mode: c.mode,
       isRated: c.isRated,
       isPublic: c.isPublic,
+      disableAi: c.disableAi,
       registerType: c.registerType,
       password: '',
       inviteCode: '',
@@ -232,6 +235,7 @@ async function save() {
     mode: current.mode,
     isRated: current.isRated,
     isPublic: current.isPublic,
+    disableAi: current.disableAi,
     registerType: current.registerType,
     password: current.password,
     inviteCode: current.inviteCode,
@@ -393,6 +397,15 @@ onMounted(() => {
               </span>
             </div>
           </div>
+
+          <AppFormField
+            v-slot="{ id }"
+            class="span-2"
+            label="比赛期间禁用 AI"
+            hint="仅对从本场比赛进入题目的参赛者生效"
+          >
+            <ToggleSwitch v-model="form.disableAi" :input-id="id" data-test="contest-disable-ai" />
+          </AppFormField>
 
           <AppFormField class="span-2" label="描述">
             <MarkdownEditor v-model="form.descriptionMd" :theme="isDark ? 'dark' : 'light'" />
