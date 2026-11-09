@@ -6,9 +6,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { reactive } from 'vue'
 
 import { getAIHint } from '@/api/ai'
+import { getContest } from '@/api/contests'
 import { ApiError } from '@/api/http'
 import { getProblem, getStatistics } from '@/api/problems'
-import type { ProblemDetail, ProblemStats } from '@/api/types'
+import type { ContestDetail, ProblemDetail, ProblemStats } from '@/api/types'
 import ProblemDetailView from './ProblemDetailView.vue'
 
 const route = reactive({ params: { id: '1' }, query: {}, fullPath: '/problems/1' })
@@ -34,6 +35,9 @@ vi.mock('@/api/ai', () => ({
 vi.mock('@/api/problems', () => ({
   getProblem: vi.fn(),
   getStatistics: vi.fn(),
+}))
+vi.mock('@/api/contests', () => ({
+  getContest: vi.fn(),
 }))
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => auth,
@@ -72,6 +76,54 @@ function stats(submitCount: number, acceptCount: number): ProblemStats {
   }
 }
 
+function problemItem(
+  problemId: number,
+  displayId: string,
+  overrides: Partial<ContestDetail['problems'][number]> = {},
+): ContestDetail['problems'][number] {
+  return {
+    problemId,
+    title: `Contest Problem ${displayId}`,
+    slug: `contest-problem-${displayId.toLowerCase()}`,
+    displayId,
+    sortOrder: displayId.charCodeAt(0) - 64,
+    score: 100,
+    timeLimitMs: 1000,
+    memoryLimitMb: 256,
+    isPublic: false,
+    locked: true,
+    submitCount: 0,
+    acceptCount: 0,
+    myStatus: '',
+    myAttempts: 0,
+    ...overrides,
+  }
+}
+
+function contest(overrides: Partial<ContestDetail> = {}): ContestDetail {
+  return {
+    id: 5,
+    title: 'Weekly Contest',
+    descriptionMd: '',
+    startTime: '2026-01-01T00:00:00Z',
+    endTime: '2026-01-01T02:00:00Z',
+    mode: 'icpc',
+    isRated: true,
+    isPublic: true,
+    disableAi: false,
+    registerType: 'open',
+    status: 'running',
+    problemCount: 2,
+    participantCount: 10,
+    registered: true,
+    canManage: false,
+    serverTime: '2026-01-01T01:00:00Z',
+    createdAt: '2025-12-01T00:00:00Z',
+    problems: [problemItem(1, 'A'), problemItem(2, 'B')],
+    ...overrides,
+  }
+}
+
 const RouterLinkStub = { props: ['to'], template: '<a :href="to"><slot /></a>' }
 
 function mountView() {
@@ -92,6 +144,7 @@ beforeEach(() => {
   toast.add.mockReset()
   routerPush.mockReset()
   vi.mocked(getAIHint).mockReset()
+  vi.mocked(getContest).mockReset()
   route.params.id = '1'
   route.query = {}
   route.fullPath = '/problems/1'
@@ -206,6 +259,7 @@ describe('ProblemDetailView', () => {
     route.query = { contestId: '123' }
     vi.mocked(getProblem).mockResolvedValue(detail(1))
     vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
+    vi.mocked(getContest).mockResolvedValue(contest({ status: 'ended' }))
     const wrapper = mountView()
     await flushPromises()
 
@@ -225,6 +279,85 @@ describe('ProblemDetailView', () => {
     await flushPromises()
 
     expect(wrapper.text()).not.toContain('返回比赛')
+    wrapper.unmount()
+  })
+
+  it('uses contest problem navigation and hides resources during a running contest', async () => {
+    route.query = { contestId: '5' }
+    vi.mocked(getProblem).mockResolvedValue(detail(1, { isPublic: false }))
+    vi.mocked(getStatistics).mockResolvedValue(stats(10, 5))
+    vi.mocked(getContest).mockResolvedValue(
+      contest({
+        status: 'running',
+        disableAi: true,
+        problems: [problemItem(1, 'A'), problemItem(2, 'B')],
+      }),
+    )
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(getContest).toHaveBeenCalledWith(5)
+    expect(wrapper.find('[data-test="contest-problem-list"]').exists()).toBe(true)
+    const links = wrapper
+      .find('[data-test="contest-problem-list"]')
+      .findAllComponents(RouterLinkStub)
+    expect(links).toHaveLength(2)
+    expect(links[0].props('to')).toEqual({
+      name: 'problem-detail',
+      params: { id: 1 },
+      query: { contestId: '5' },
+    })
+    expect(links[0].classes()).toContain('active')
+    expect(links[1].classes()).not.toContain('active')
+    expect(wrapper.text()).toContain('A')
+    expect(wrapper.text()).not.toContain('官方题解')
+    expect(wrapper.text()).not.toContain('解题思路')
+    expect(wrapper.text()).not.toContain('提交统计')
+    expect(wrapper.text()).not.toContain('关联比赛')
+    expect(wrapper.find('[data-test="ai-hint-button"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('keeps AI hint for contest admins', async () => {
+    auth.can.mockReturnValue(true)
+    route.query = { contestId: '5' }
+    vi.mocked(getProblem).mockResolvedValue(detail(1, { isPublic: false }))
+    vi.mocked(getStatistics).mockResolvedValue(stats(10, 5))
+    vi.mocked(getContest).mockResolvedValue(contest({ status: 'running', disableAi: true }))
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="contest-problem-list"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="ai-hint-button"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('skips the statistics request during a running contest', async () => {
+    route.query = { contestId: '5' }
+    vi.mocked(getProblem).mockResolvedValue(detail(1, { isPublic: false }))
+    vi.mocked(getContest).mockResolvedValue(contest({ status: 'running' }))
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(getStatistics).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('keeps resource cards and statistics after the contest has ended', async () => {
+    route.query = { contestId: '5' }
+    vi.mocked(getProblem).mockResolvedValue(detail(1))
+    vi.mocked(getStatistics).mockResolvedValue(stats(10, 5))
+    vi.mocked(getContest).mockResolvedValue(contest({ status: 'ended' }))
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(getStatistics).toHaveBeenCalledWith('1')
+    expect(wrapper.find('[data-test="contest-problem-list"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('官方题解')
+    expect(wrapper.text()).toContain('解题思路')
+    expect(wrapper.text()).toContain('提交统计')
+    expect(wrapper.text()).toContain('关联比赛')
+    expect(wrapper.find('[data-test="ai-hint-button"]').exists()).toBe(true)
     wrapper.unmount()
   })
 

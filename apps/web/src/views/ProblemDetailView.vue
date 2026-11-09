@@ -6,9 +6,10 @@ import Message from 'primevue/message'
 import { useToast } from 'primevue/usetoast'
 
 import { getAIHint } from '@/api/ai'
+import { getContest } from '@/api/contests'
 import { ApiError } from '@/api/http'
 import { getProblem, getStatistics } from '@/api/problems'
-import type { ProblemDetail, ProblemStats } from '@/api/types'
+import type { ContestDetail, ProblemDetail, ProblemStats } from '@/api/types'
 import MarkdownView from '@/components/MarkdownView.vue'
 import AppDifficultyTag from '@/components/ui/AppDifficultyTag.vue'
 import AppEmptyState from '@/components/ui/AppEmptyState.vue'
@@ -35,6 +36,7 @@ const contestId = computed(() => {
 
 const problem = ref<ProblemDetail | null>(null)
 const stats = ref<ProblemStats | null>(null)
+const contest = ref<ContestDetail | null>(null)
 const loading = ref(false)
 const error = ref('')
 
@@ -54,6 +56,7 @@ async function load(id: string) {
   error.value = ''
   problem.value = null
   stats.value = null
+  contest.value = null
 
   // AI hints are per-problem; reset local state whenever the problem changes.
   aiHint.value = ''
@@ -63,12 +66,18 @@ async function load(id: string) {
   aiConfigMissing.value = false
 
   try {
-    const detail = await getProblem(id)
+    const [detail, nextContest] = await Promise.all([
+      getProblem(id),
+      contestId.value > 0 ? getContest(contestId.value).catch(() => null) : Promise.resolve(null),
+    ])
     if (seq !== latest) return
     problem.value = detail
+    contest.value = nextContest
 
     // Statistics are a nice-to-have; the page works without them, but a late
-    // response for a previous problem must not overwrite this one.
+    // response for a previous problem must not overwrite this one. During a
+    // running contest the stats are locked server-side, so skip the request.
+    if (contestMode.value) return
     const nextStats = await getStatistics(id).catch(() => null)
     if (seq !== latest) return
     stats.value = nextStats
@@ -84,8 +93,8 @@ async function load(id: string) {
 }
 
 watch(
-  () => route.params.id,
-  (id) => {
+  [() => route.params.id, () => contestId.value],
+  ([id]) => {
     if (typeof id === 'string') void load(id)
   },
   { immediate: true },
@@ -154,8 +163,17 @@ const statsLabel = computed(() =>
   stats.value ? `通过率 ${rate.value} · ${stats.value.submitCount} 提交` : '查看提交统计',
 )
 
+const contestMode = computed(() => contestId.value > 0 && contest.value?.status === 'running')
+
+const contestProblems = computed(() => contest.value?.problems ?? [])
+
+const aiHintVisible = computed(
+  () => !(contestMode.value && contest.value?.disableAi && !auth.can(PERM.contest.update)),
+)
+
 const showSolutionResources = computed(
-  () => problem.value?.isPublic !== false || auth.can(PERM.problem.viewHidden),
+  () =>
+    !contestMode.value && (problem.value?.isPublic !== false || auth.can(PERM.problem.viewHidden)),
 )
 
 const authorName = computed(() => {
@@ -315,6 +333,8 @@ const authorName = computed(() => {
             <div class="hint-header">
               <h2 id="problem-hint-title" class="section-title">提示</h2>
               <Button
+                v-if="aiHintVisible"
+                data-test="ai-hint-button"
                 type="button"
                 size="small"
                 icon="pi pi-sparkles"
@@ -350,65 +370,94 @@ const authorName = computed(() => {
         </div>
 
         <aside class="info-column" aria-label="题目资源">
-          <RouterLink
-            v-if="showSolutionResources"
-            class="resource-link"
-            :to="`/problems/${problem?.id}/official-solution`"
+          <AppSurface
+            v-if="contestMode"
+            as="nav"
+            padding="md"
+            class="contest-problem-nav"
+            aria-label="本场题目"
+            data-test="contest-problem-list"
           >
-            <AppSurface as="div" padding="md" interactive class="resource-card">
-              <span class="resource-card__icon" aria-hidden="true">
-                <i class="pi pi-book" />
-              </span>
-              <span class="resource-card__body">
-                <span class="resource-card__title">官方题解</span>
-                <span class="resource-card__sub">{{ solutionPriceLabel }}</span>
-              </span>
-              <i class="pi pi-chevron-right resource-card__arrow" aria-hidden="true" />
-            </AppSurface>
-          </RouterLink>
+            <h2 class="contest-problem-nav__title">本场题目</h2>
+            <RouterLink
+              v-for="p in contestProblems"
+              :key="p.problemId"
+              class="contest-problem-link"
+              :class="{ active: p.problemId === problem?.id }"
+              :to="{
+                name: 'problem-detail',
+                params: { id: p.problemId },
+                query: { contestId: String(contestId) },
+              }"
+            >
+              <span class="contest-problem-link__id">{{ p.displayId }}</span>
+              <span class="contest-problem-link__title">{{ p.title }}</span>
+              <i class="pi pi-angle-right contest-problem-link__arrow" aria-hidden="true" />
+            </RouterLink>
+            <AppEmptyState v-if="!contestProblems.length" icon="pi pi-list" title="本场暂无题目" />
+          </AppSurface>
 
-          <RouterLink
-            v-if="showSolutionResources"
-            class="resource-link"
-            :to="`/problems/${problem?.id}/solutions`"
-          >
-            <AppSurface as="div" padding="md" interactive class="resource-card">
-              <span class="resource-card__icon" aria-hidden="true">
-                <i class="pi pi-comments" />
-              </span>
-              <span class="resource-card__body">
-                <span class="resource-card__title">解题思路</span>
-                <span class="resource-card__sub">帖子 / 回复</span>
-              </span>
-              <i class="pi pi-chevron-right resource-card__arrow" aria-hidden="true" />
-            </AppSurface>
-          </RouterLink>
+          <template v-else>
+            <RouterLink
+              v-if="showSolutionResources"
+              class="resource-link"
+              :to="`/problems/${problem?.id}/official-solution`"
+            >
+              <AppSurface as="div" padding="md" interactive class="resource-card">
+                <span class="resource-card__icon" aria-hidden="true">
+                  <i class="pi pi-book" />
+                </span>
+                <span class="resource-card__body">
+                  <span class="resource-card__title">官方题解</span>
+                  <span class="resource-card__sub">{{ solutionPriceLabel }}</span>
+                </span>
+                <i class="pi pi-chevron-right resource-card__arrow" aria-hidden="true" />
+              </AppSurface>
+            </RouterLink>
 
-          <RouterLink class="resource-link" :to="`/problems/${problem?.id}/statistics`">
-            <AppSurface as="div" padding="md" interactive class="resource-card">
-              <span class="resource-card__icon" aria-hidden="true">
-                <i class="pi pi-chart-bar" />
-              </span>
-              <span class="resource-card__body">
-                <span class="resource-card__title">提交统计</span>
-                <span class="resource-card__sub">{{ statsLabel }}</span>
-              </span>
-              <i class="pi pi-chevron-right resource-card__arrow" aria-hidden="true" />
-            </AppSurface>
-          </RouterLink>
+            <RouterLink
+              v-if="showSolutionResources"
+              class="resource-link"
+              :to="`/problems/${problem?.id}/solutions`"
+            >
+              <AppSurface as="div" padding="md" interactive class="resource-card">
+                <span class="resource-card__icon" aria-hidden="true">
+                  <i class="pi pi-comments" />
+                </span>
+                <span class="resource-card__body">
+                  <span class="resource-card__title">解题思路</span>
+                  <span class="resource-card__sub">帖子 / 回复</span>
+                </span>
+                <i class="pi pi-chevron-right resource-card__arrow" aria-hidden="true" />
+              </AppSurface>
+            </RouterLink>
 
-          <RouterLink class="resource-link" :to="`/problems/${problem?.id}/contests`">
-            <AppSurface as="div" padding="md" interactive class="resource-card">
-              <span class="resource-card__icon" aria-hidden="true">
-                <i class="pi pi-trophy" />
-              </span>
-              <span class="resource-card__body">
-                <span class="resource-card__title">关联比赛</span>
-                <span class="resource-card__sub">查看包含本题的比赛</span>
-              </span>
-              <i class="pi pi-chevron-right resource-card__arrow" aria-hidden="true" />
-            </AppSurface>
-          </RouterLink>
+            <RouterLink class="resource-link" :to="`/problems/${problem?.id}/statistics`">
+              <AppSurface as="div" padding="md" interactive class="resource-card">
+                <span class="resource-card__icon" aria-hidden="true">
+                  <i class="pi pi-chart-bar" />
+                </span>
+                <span class="resource-card__body">
+                  <span class="resource-card__title">提交统计</span>
+                  <span class="resource-card__sub">{{ statsLabel }}</span>
+                </span>
+                <i class="pi pi-chevron-right resource-card__arrow" aria-hidden="true" />
+              </AppSurface>
+            </RouterLink>
+
+            <RouterLink class="resource-link" :to="`/problems/${problem?.id}/contests`">
+              <AppSurface as="div" padding="md" interactive class="resource-card">
+                <span class="resource-card__icon" aria-hidden="true">
+                  <i class="pi pi-trophy" />
+                </span>
+                <span class="resource-card__body">
+                  <span class="resource-card__title">关联比赛</span>
+                  <span class="resource-card__sub">查看包含本题的比赛</span>
+                </span>
+                <i class="pi pi-chevron-right resource-card__arrow" aria-hidden="true" />
+              </AppSurface>
+            </RouterLink>
+          </template>
         </aside>
       </div>
     </div>
@@ -668,6 +717,69 @@ const authorName = computed(() => {
 .resource-card__arrow {
   color: var(--kapoj-text-muted);
   font-size: 0.85rem;
+}
+
+.contest-problem-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kapoj-space-1);
+}
+
+.contest-problem-nav__title {
+  margin: 0 0 var(--kapoj-space-2);
+  color: var(--kapoj-text);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.contest-problem-link {
+  display: flex;
+  align-items: center;
+  gap: var(--kapoj-space-2);
+  padding: var(--kapoj-space-2) var(--kapoj-space-3);
+  color: var(--kapoj-text-secondary);
+  font-size: 0.875rem;
+  text-decoration: none;
+  border: 1px solid transparent;
+  border-radius: var(--kapoj-radius-sm);
+  transition:
+    background var(--kapoj-transition),
+    border-color var(--kapoj-transition),
+    color var(--kapoj-transition);
+}
+
+.contest-problem-link:hover {
+  color: var(--kapoj-text);
+  background: var(--kapoj-bg);
+  border-color: var(--kapoj-border);
+}
+
+.contest-problem-link.active {
+  color: var(--kapoj-text);
+  background: var(--kapoj-primary-soft);
+  border-color: color-mix(in srgb, var(--kapoj-primary) 35%, transparent);
+}
+
+.contest-problem-link__id {
+  flex: 0 0 auto;
+  min-width: 1.4em;
+  color: var(--kapoj-primary);
+  font-weight: 700;
+  text-align: center;
+}
+
+.contest-problem-link__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contest-problem-link__arrow {
+  flex: 0 0 auto;
+  color: var(--kapoj-text-muted);
+  font-size: 0.75rem;
 }
 
 @media (max-width: 1024px) {
