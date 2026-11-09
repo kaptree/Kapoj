@@ -2390,6 +2390,8 @@ paths:
         在光标处补全代码片段；要求已配置 AI provider/key。调用按用户限流（KAPOJ_AI_COOLDOWN），
         平台未配置加密密钥返回 40002，用户未配置 AI 模型或参数非法返回 40001，限流返回 42903，
         上游 AI 服务失败返回 50200，Redis 不可用返回 50300。
+        problemId 对应的锁定题（所属比赛未结束且无权查看）返回 40400；比赛配置禁用 AI 时返回 40302；
+        可管理该比赛的管理员或 super 不受 40400/40302 限制。
       security: [{ bearer: [] }]
       requestBody:
         required: true
@@ -2413,6 +2415,7 @@ paths:
       description: >-
         返回格式化后的完整代码；要求已配置 AI provider/key。其余语义与 /ai/complete 一致：
         平台未配置加密密钥 40002、参数非法 40001、限流 42903、上游失败 50200、Redis 不可用 50300。
+        锁定题返回 40400；比赛禁用 AI 返回 40302；可管理该比赛的管理员或 super 例外。
       security: [{ bearer: [] }]
       requestBody:
         required: true
@@ -2436,6 +2439,7 @@ paths:
       description: >-
         返回优化建议与优化后代码；要求已配置 AI provider/key。模型返回无法解析为 JSON 时，
         原文作为建议、原代码作为代码返回（不丢失用户代码）。其余语义与 /ai/complete 一致。
+        锁定题返回 40400；比赛禁用 AI 返回 40302；可管理该比赛的管理员或 super 例外。
       security: [{ bearer: [] }]
       requestBody:
         required: true
@@ -2459,6 +2463,8 @@ paths:
       description: >-
         首个用户触发后生成并缓存，后续用户直接读取缓存；缓存命中不要求用户 AI 配置、也不消耗限流。
         非公开题目仅拥有 problem.view_hidden 或 super 可请求，否则与不存在一致返回 40400，不泄露存在性。
+        锁定题（所属比赛未结束且无权查看）返回 40400；比赛配置禁用 AI 时返回 40302；
+        可管理该比赛的管理员或 super 不受 40400/40302 限制。
       security: [{ bearer: [] }]
       requestBody:
         required: true
@@ -2752,12 +2758,13 @@ components:
         title: { type: string }
     ContestRankCell:
       type: object
-      required: [attempts, score]
+      required: [attempts, score, firstBlood]
       properties:
         status: { type: string, description: 该题最近一次未通过状态；有 AC 时为 accepted }
         attempts: { type: integer }
         acceptedAt: { type: string, format: date-time }
         score: { type: integer }
+        firstBlood: { type: boolean, description: 是否为该题首个通过 }
     ContestRankRow:
       type: object
       required: [rank, userId, username, nickname, equippedBadges, equippedTitle, solved, penalty, totalScore, problems]
@@ -2825,6 +2832,7 @@ components:
         mode: { $ref: '#/components/schemas/ContestMode' }
         isRated: { type: boolean }
         isPublic: { type: boolean }
+        disableAi: { type: boolean, default: true, description: 创建缺省 true；更新缺省保留原值 }
         registerType: { $ref: '#/components/schemas/ContestRegisterType' }
         password: { type: string, minLength: 4, maxLength: 64, description: 密码报名时必填；更新时留空表示保留原密码 }
         inviteCode: { type: string, minLength: 4, maxLength: 64, description: 邀请码报名时必填；更新时留空表示保留原邀请码 }
@@ -2853,7 +2861,7 @@ components:
                 registered: { type: boolean }
     ContestProblemItem:
       type: object
-      required: [problemId, title, slug, displayId, sortOrder, score]
+      required: [problemId, title, slug, displayId, sortOrder, score, timeLimitMs, memoryLimitMb, isPublic, locked, submitCount, acceptCount, myStatus, myAttempts]
       properties:
         problemId: { type: integer, format: int64 }
         title: { type: string }
@@ -2861,9 +2869,17 @@ components:
         displayId: { type: string }
         sortOrder: { type: integer }
         score: { type: integer }
+        timeLimitMs: { type: integer }
+        memoryLimitMb: { type: integer }
+        isPublic: { type: boolean }
+        locked: { type: boolean, description: 赛题在比赛结束前被锁定 }
+        submitCount: { type: integer, description: 赛后统计；赛时为 0 }
+        acceptCount: { type: integer, description: 赛后统计；赛时为 0 }
+        myStatus: { type: string, description: 本人该题最近一次提交状态；AC 时为 accepted，无提交时为空字符串 }
+        myAttempts: { type: integer, description: 本人该题尝试次数 }
     ContestListItem:
       type: object
-      required: [id, title, descriptionMd, startTime, endTime, mode, isRated, isPublic, registerType, status, problemCount, participantCount, registered, createdAt]
+      required: [id, title, descriptionMd, startTime, endTime, mode, isRated, isPublic, disableAi, registerType, status, problemCount, participantCount, registered, createdAt]
       properties:
         id: { type: integer, format: int64 }
         title: { type: string }
@@ -2873,6 +2889,7 @@ components:
         mode: { $ref: '#/components/schemas/ContestMode' }
         isRated: { type: boolean }
         isPublic: { type: boolean }
+        disableAi: { type: boolean, description: 比赛期间是否禁用 AI 助手 }
         registerType: { $ref: '#/components/schemas/ContestRegisterType' }
         status: { $ref: '#/components/schemas/ContestStatus' }
         problemCount: { type: integer, format: int64 }
@@ -4574,12 +4591,14 @@ components:
         modelName: { type: string, description: 为空时使用 provider 默认模型 }
     AICompleteInput:
       type: object
-      description: 代码自动补全请求体；cursor 必填（字节偏移）。
-      required: [code, language, cursor]
+      description: >-
+        代码自动补全请求体；cursor 必填（字节偏移），problemId 必填。
+      required: [code, language, cursor, problemId]
       properties:
         code: { type: string, maxLength: 65536, description: 按 UTF-8 字节数不超过 64 KiB }
         language: { type: string, minLength: 1, maxLength: 32 }
         cursor: { type: integer, minimum: 0, description: 光标位置（字节偏移，0..len(code)） }
+        problemId: { type: integer, format: int64, minimum: 1 }
     AICompleteOutput:
       type: object
       required: [completion]
@@ -4587,12 +4606,13 @@ components:
         completion: { type: string, description: 补全片段（不含外层 Markdown 代码围栏） }
     AIFormatInput:
       type: object
-      description: 代码格式化请求体；cursor 可选（会被忽略）。
-      required: [code, language]
+      description: 代码格式化请求体；cursor 可选（会被忽略），problemId 必填。
+      required: [code, language, problemId]
       properties:
         code: { type: string, maxLength: 65536, description: 按 UTF-8 字节数不超过 64 KiB }
         language: { type: string, minLength: 1, maxLength: 32 }
         cursor: { type: integer, minimum: 0 }
+        problemId: { type: integer, format: int64, minimum: 1 }
     AIFormatOutput:
       type: object
       required: [code]
@@ -4600,12 +4620,13 @@ components:
         code: { type: string, description: 格式化后的完整代码 }
     AIOptimizeInput:
       type: object
-      description: 代码优化请求体；cursor 可选（会被忽略）。
-      required: [code, language]
+      description: 代码优化请求体；cursor 可选（会被忽略），problemId 必填。
+      required: [code, language, problemId]
       properties:
         code: { type: string, maxLength: 65536, description: 按 UTF-8 字节数不超过 64 KiB }
         language: { type: string, minLength: 1, maxLength: 32 }
         cursor: { type: integer, minimum: 0 }
+        problemId: { type: integer, format: int64, minimum: 1 }
     AIOptimizeOutput:
       type: object
       required: [suggestions, code]

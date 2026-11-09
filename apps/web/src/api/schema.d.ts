@@ -5576,7 +5576,7 @@ export interface paths {
         put?: never;
         /**
          * 代码自动补全（登录，限流）
-         * @description 在光标处补全代码片段；要求已配置 AI provider/key。调用按用户限流（KAPOJ_AI_COOLDOWN）， 平台未配置加密密钥返回 40002，用户未配置 AI 模型或参数非法返回 40001，限流返回 42903， 上游 AI 服务失败返回 50200，Redis 不可用返回 50300。
+         * @description 在光标处补全代码片段；要求已配置 AI provider/key。调用按用户限流（KAPOJ_AI_COOLDOWN）， 平台未配置加密密钥返回 40002，用户未配置 AI 模型或参数非法返回 40001，限流返回 42903， 上游 AI 服务失败返回 50200，Redis 不可用返回 50300。 problemId 对应的锁定题（所属比赛未结束且无权查看）返回 40400；比赛配置禁用 AI 时返回 40302； 可管理该比赛的管理员或 super 不受 40400/40302 限制。
          */
         post: {
             parameters: {
@@ -5624,7 +5624,7 @@ export interface paths {
         put?: never;
         /**
          * 代码格式化（登录，限流）
-         * @description 返回格式化后的完整代码；要求已配置 AI provider/key。其余语义与 /ai/complete 一致： 平台未配置加密密钥 40002、参数非法 40001、限流 42903、上游失败 50200、Redis 不可用 50300。
+         * @description 返回格式化后的完整代码；要求已配置 AI provider/key。其余语义与 /ai/complete 一致： 平台未配置加密密钥 40002、参数非法 40001、限流 42903、上游失败 50200、Redis 不可用 50300。 锁定题返回 40400；比赛禁用 AI 返回 40302；可管理该比赛的管理员或 super 例外。
          */
         post: {
             parameters: {
@@ -5672,7 +5672,7 @@ export interface paths {
         put?: never;
         /**
          * 代码优化（登录，限流）
-         * @description 返回优化建议与优化后代码；要求已配置 AI provider/key。模型返回无法解析为 JSON 时， 原文作为建议、原代码作为代码返回（不丢失用户代码）。其余语义与 /ai/complete 一致。
+         * @description 返回优化建议与优化后代码；要求已配置 AI provider/key。模型返回无法解析为 JSON 时， 原文作为建议、原代码作为代码返回（不丢失用户代码）。其余语义与 /ai/complete 一致。 锁定题返回 40400；比赛禁用 AI 返回 40302；可管理该比赛的管理员或 super 例外。
          */
         post: {
             parameters: {
@@ -5720,7 +5720,7 @@ export interface paths {
         put?: never;
         /**
          * 获取题目 AI 提示（登录，缓存）
-         * @description 首个用户触发后生成并缓存，后续用户直接读取缓存；缓存命中不要求用户 AI 配置、也不消耗限流。 非公开题目仅拥有 problem.view_hidden 或 super 可请求，否则与不存在一致返回 40400，不泄露存在性。
+         * @description 首个用户触发后生成并缓存，后续用户直接读取缓存；缓存命中不要求用户 AI 配置、也不消耗限流。 非公开题目仅拥有 problem.view_hidden 或 super 可请求，否则与不存在一致返回 40400，不泄露存在性。 锁定题（所属比赛未结束且无权查看）返回 40400；比赛配置禁用 AI 时返回 40302； 可管理该比赛的管理员或 super 不受 40400/40302 限制。
          */
         post: {
             parameters: {
@@ -6422,6 +6422,8 @@ export interface components {
             /** Format: date-time */
             acceptedAt?: string;
             score: number;
+            /** @description 是否为该题首个通过 */
+            firstBlood: boolean;
         };
         ContestRankRow: {
             rank: number;
@@ -6476,6 +6478,11 @@ export interface components {
             mode: components["schemas"]["ContestMode"];
             isRated?: boolean;
             isPublic: boolean;
+            /**
+             * @description 创建缺省 true；更新缺省保留原值
+             * @default true
+             */
+            disableAi: boolean;
             registerType: components["schemas"]["ContestRegisterType"];
             /** @description 密码报名时必填；更新时留空表示保留原密码 */
             password?: string;
@@ -6507,6 +6514,19 @@ export interface components {
             displayId: string;
             sortOrder: number;
             score: number;
+            timeLimitMs: number;
+            memoryLimitMb: number;
+            isPublic: boolean;
+            /** @description 赛题在比赛结束前被锁定 */
+            locked: boolean;
+            /** @description 赛后统计；赛时为 0 */
+            submitCount: number;
+            /** @description 赛后统计；赛时为 0 */
+            acceptCount: number;
+            /** @description 本人该题最近一次提交状态；AC 时为 accepted，无提交时为空字符串 */
+            myStatus: string;
+            /** @description 本人该题尝试次数 */
+            myAttempts: number;
         };
         ContestListItem: {
             /** Format: int64 */
@@ -6520,6 +6540,8 @@ export interface components {
             mode: components["schemas"]["ContestMode"];
             isRated: boolean;
             isPublic: boolean;
+            /** @description 比赛期间是否禁用 AI 助手 */
+            disableAi: boolean;
             registerType: components["schemas"]["ContestRegisterType"];
             status: components["schemas"]["ContestStatus"];
             /** Format: int64 */
@@ -7840,35 +7862,41 @@ export interface components {
             /** @description 为空时使用 provider 默认模型 */
             modelName?: string;
         };
-        /** @description 代码自动补全请求体；cursor 必填（字节偏移）。 */
+        /** @description 代码自动补全请求体；cursor 必填（字节偏移），problemId 必填。 */
         AICompleteInput: {
             /** @description 按 UTF-8 字节数不超过 64 KiB */
             code: string;
             language: string;
             /** @description 光标位置（字节偏移，0..len(code)） */
             cursor: number;
+            /** Format: int64 */
+            problemId: number;
         };
         AICompleteOutput: {
             /** @description 补全片段（不含外层 Markdown 代码围栏） */
             completion: string;
         };
-        /** @description 代码格式化请求体；cursor 可选（会被忽略）。 */
+        /** @description 代码格式化请求体；cursor 可选（会被忽略），problemId 必填。 */
         AIFormatInput: {
             /** @description 按 UTF-8 字节数不超过 64 KiB */
             code: string;
             language: string;
             cursor?: number;
+            /** Format: int64 */
+            problemId: number;
         };
         AIFormatOutput: {
             /** @description 格式化后的完整代码 */
             code: string;
         };
-        /** @description 代码优化请求体；cursor 可选（会被忽略）。 */
+        /** @description 代码优化请求体；cursor 可选（会被忽略），problemId 必填。 */
         AIOptimizeInput: {
             /** @description 按 UTF-8 字节数不超过 64 KiB */
             code: string;
             language: string;
             cursor?: number;
+            /** Format: int64 */
+            problemId: number;
         };
         AIOptimizeOutput: {
             /** @description 优化建议 */

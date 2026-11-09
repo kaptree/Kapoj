@@ -31,6 +31,7 @@ function contest(overrides: Partial<ContestListItem> = {}): ContestListItem {
     mode: 'icpc',
     isRated: true,
     isPublic: true,
+    disableAi: true,
     registerType: 'open',
     status: 'running',
     problemCount: 5,
