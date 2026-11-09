@@ -32,6 +32,7 @@ import AppFormField from '@/components/ui/AppFormField.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
+import { useSiteStore } from '@/stores/site'
 
 const ACCEPT_IMAGES = 'image/png,image/jpeg,image/webp,image/gif'
 const ACCEPT_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
@@ -73,6 +74,7 @@ type FieldErrors = Record<string, string>
 
 const toast = useToast()
 const confirm = useConfirm()
+const site = useSiteStore()
 
 const tab = ref('branding')
 
@@ -99,6 +101,21 @@ function emptyLink(): SiteLink {
 
 function cloneLink(item: SiteLink): SiteLink {
   return { ...item }
+}
+
+// Stable per-row keys keep component state attached to the same card when the
+// list is reordered or shortened. These keys never reach the API payload.
+const cardKeys = new WeakMap<SiteLink, number>()
+let nextCardKey = 0
+
+function cardKey(item: SiteLink): number {
+  let key = cardKeys.get(item)
+  if (key === undefined) {
+    nextCardKey += 1
+    key = nextCardKey
+    cardKeys.set(item, key)
+  }
+  return key
 }
 
 function cloneHome(home: SiteHomeContent): SiteHomeContent {
@@ -163,6 +180,12 @@ function applyView(next: SiteAdminView) {
   footerForm.value = footerFromView(next)
   homeErrors.value = {}
   footerErrors.value = {}
+}
+
+/** Keep the public store in sync so this SPA's header/footer update immediately. */
+function applyMutation(next: SiteAdminView) {
+  view.value = next
+  site.setConfig(next)
 }
 
 async function load() {
@@ -271,7 +294,7 @@ async function saveHome() {
   homeSaving.value = true
   try {
     const next = await updateAdminSiteHome(cloneHome(homeForm.value))
-    view.value = next
+    applyMutation(next)
     homeForm.value = cloneHome(next.home)
     toast.add({ severity: 'success', summary: '首页已保存', life: 3000 })
   } catch (e) {
@@ -303,7 +326,7 @@ async function saveFooter() {
       startedAt: startedAt.toISOString(),
     }
     const next = await updateAdminSiteFooter(input)
-    view.value = next
+    applyMutation(next)
     footerForm.value = footerFromView(next)
     toast.add({ severity: 'success', summary: '页脚已保存', life: 3000 })
   } catch (e) {
@@ -328,6 +351,8 @@ function addLink(list: SiteLink[]) {
 
 function removeLink(list: SiteLink[], index: number) {
   list.splice(index, 1)
+  // Positional error keys would otherwise point at the wrong card.
+  homeErrors.value = {}
 }
 
 function moveLink(list: SiteLink[], index: number, delta: number) {
@@ -335,6 +360,7 @@ function moveLink(list: SiteLink[], index: number, delta: number) {
   if (target < 0 || target >= list.length) return
   const [item] = list.splice(index, 1)
   list.splice(target, 0, item)
+  homeErrors.value = {}
 }
 
 function validateUpload(file: File, maxBytes: number, label: string): boolean {
@@ -367,7 +393,7 @@ async function onLogoChange(event: Event) {
 
   uploadingLogo.value = true
   try {
-    view.value = await uploadAdminSiteLogo(file)
+    applyMutation(await uploadAdminSiteLogo(file))
     toast.add({ severity: 'success', summary: 'Logo 已上传', life: 3000 })
   } catch (e) {
     toast.add({
@@ -389,7 +415,7 @@ async function onFaviconChange(event: Event) {
 
   uploadingFavicon.value = true
   try {
-    view.value = await uploadAdminSiteFavicon(file)
+    applyMutation(await uploadAdminSiteFavicon(file))
     toast.add({ severity: 'success', summary: '站点图标已上传', life: 3000 })
   } catch (e) {
     toast.add({
@@ -406,7 +432,7 @@ async function onFaviconChange(event: Event) {
 async function removeLogo() {
   removingLogo.value = true
   try {
-    view.value = await deleteAdminSiteLogo()
+    applyMutation(await deleteAdminSiteLogo())
     toast.add({ severity: 'success', summary: 'Logo 已移除', life: 3000 })
   } catch (e) {
     toast.add({
@@ -423,7 +449,7 @@ async function removeLogo() {
 async function removeFavicon() {
   removingFavicon.value = true
   try {
-    view.value = await deleteAdminSiteFavicon()
+    applyMutation(await deleteAdminSiteFavicon())
     toast.add({ severity: 'success', summary: '站点图标已移除', life: 3000 })
   } catch (e) {
     toast.add({
@@ -813,7 +839,7 @@ onMounted(() => {
 
                 <div
                   v-for="(item, index) in homeForm.quickLinks"
-                  :key="`quick-${index}`"
+                  :key="cardKey(item)"
                   class="card-editor"
                 >
                   <div class="card-editor__head">
@@ -954,7 +980,7 @@ onMounted(() => {
 
                 <div
                   v-for="(item, index) in homeForm.growthLinks"
-                  :key="`growth-${index}`"
+                  :key="cardKey(item)"
                   class="card-editor"
                 >
                   <div class="card-editor__head">

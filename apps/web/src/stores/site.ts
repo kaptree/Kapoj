@@ -120,7 +120,7 @@ function normalizeHome(home: SiteHomeContent): SiteHomeContent {
   }
 }
 
-function applyFavicon(href: string) {
+function applyFavicon(href: string, uploaded: boolean) {
   if (typeof document === 'undefined') return
   let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
   if (!link) {
@@ -129,7 +129,33 @@ function applyFavicon(href: string) {
     document.head.appendChild(link)
   }
   link.href = href
+  if (uploaded) {
+    // Uploads are PNG/JPEG/WebP/GIF; the static fallback is the only SVG.
+    link.removeAttribute('type')
+  } else {
+    link.setAttribute('type', 'image/svg+xml')
+  }
 }
+
+/** Session storage can be blocked by privacy settings or sandboxed frames. */
+function hasVisited(): boolean {
+  try {
+    return sessionStorage.getItem(SITE_VISITED_KEY) !== null
+  } catch {
+    return false
+  }
+}
+
+function markVisited(): void {
+  try {
+    sessionStorage.setItem(SITE_VISITED_KEY, '1')
+  } catch {
+    // The visit still counts for this page load; only cross-reload dedupe is lost.
+  }
+}
+
+// Module-level so concurrent layout mounts share one in-flight report.
+let visitInFlight = false
 
 export const useSiteStore = defineStore('site', () => {
   const config = ref<SitePublicView | null>(null)
@@ -166,31 +192,35 @@ export const useSiteStore = defineStore('site', () => {
     return inFlight
   }
 
-  let visitInFlight: Promise<void> | null = null
-
   /**
-   * Records one visit per browser session. The marker is written in `finally`
-   * so a failed request never blocks the page or retries on every mount.
+   * Records one visit per browser session. The session marker is written only
+   * after a successful request, so a failed report retries on the next mount.
    */
   function recordVisit(): Promise<void> {
-    if (typeof sessionStorage === 'undefined') return Promise.resolve()
-    if (sessionStorage.getItem(SITE_VISITED_KEY)) return Promise.resolve()
-    if (visitInFlight) return visitInFlight
+    if (visitInFlight) return Promise.resolve()
+    if (hasVisited()) return Promise.resolve()
 
-    sessionStorage.setItem(SITE_VISITED_KEY, '1')
-    visitInFlight = recordSiteVisit()
+    visitInFlight = true
+    return recordSiteVisit()
       .then((result) => {
         latestVisitCount.value = result.visitCount
         if (config.value) config.value.visitCount = result.visitCount
+        markVisited()
       })
       .catch(() => undefined)
       .finally(() => {
-        visitInFlight = null
+        visitInFlight = false
       })
-    return visitInFlight
   }
 
-  watch(faviconUrl, (value) => applyFavicon(value || '/favicon.svg'), { immediate: true })
+  /** Replace the cached public config after a successful admin mutation. */
+  function setConfig(next: SitePublicView) {
+    config.value = next
+  }
+
+  watch(faviconUrl, (value) => applyFavicon(value || '/favicon.svg', Boolean(value)), {
+    immediate: true,
+  })
 
   return {
     config,
@@ -202,5 +232,6 @@ export const useSiteStore = defineStore('site', () => {
     visitCount,
     ensureLoaded,
     recordVisit,
+    setConfig,
   }
 })

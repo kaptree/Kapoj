@@ -1,4 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import DatePicker from 'primevue/datepicker'
 import Select from 'primevue/select'
@@ -16,6 +17,7 @@ import {
 } from '@/api/site'
 import { ApiError } from '@/api/http'
 import type { SiteAdminView, SiteHomeContent, SiteLink } from '@/api/types'
+import { useSiteStore } from '@/stores/site'
 import AdminSiteView from './AdminSiteView.vue'
 
 const toast = vi.hoisted(() => ({ add: vi.fn() }))
@@ -24,6 +26,8 @@ const confirm = vi.hoisted(() => ({ require: vi.fn() }))
 vi.mock('primevue/usetoast', () => ({ useToast: () => toast }))
 vi.mock('primevue/useconfirm', () => ({ useConfirm: () => confirm }))
 vi.mock('@/api/site', () => ({
+  getSite: vi.fn(),
+  recordSiteVisit: vi.fn(),
   getAdminSite: vi.fn(),
   updateAdminSiteHome: vi.fn(),
   updateAdminSiteFooter: vi.fn(),
@@ -102,7 +106,9 @@ function siteView(overrides: Partial<SiteAdminView> = {}): SiteAdminView {
 }
 
 async function mountPage() {
-  const wrapper = mount(AdminSiteView, { global: { plugins: [PrimeVue] } })
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  const wrapper = mount(AdminSiteView, { global: { plugins: [PrimeVue, pinia] } })
   await flushPromises()
   return wrapper
 }
@@ -193,6 +199,20 @@ describe('AdminSiteView', () => {
     wrapper.unmount()
   })
 
+  it('refreshes the public site store after a successful save', async () => {
+    vi.mocked(updateAdminSiteHome).mockResolvedValue(
+      siteView({ home: home({ title: '同步后的标题' }) }),
+    )
+    const wrapper = await mountPage()
+    await openTab(wrapper, '首页')
+
+    await wrapper.find('form[data-test="home-form"]').trigger('submit')
+    await flushPromises()
+
+    expect(useSiteStore().config?.home.title).toBe('同步后的标题')
+    wrapper.unmount()
+  })
+
   it('rejects non-http(s) links and wrong icon formats before saving', async () => {
     const wrapper = await mountPage()
     await openTab(wrapper, '首页')
@@ -264,6 +284,7 @@ describe('AdminSiteView', () => {
     expect(wrapper.find('img[data-test="logo-preview"]').attributes('src')).toBe(
       '/api/site/logo?v=2',
     )
+    expect(useSiteStore().logoUrl).toBe('/api/site/logo?v=2')
 
     vi.mocked(deleteAdminSiteLogo).mockResolvedValue(siteView())
     await button(wrapper, '移除 Logo').trigger('click')
@@ -284,6 +305,7 @@ describe('AdminSiteView', () => {
     expect(wrapper.find('img[data-test="favicon-preview"]').attributes('src')).toBe(
       '/api/site/favicon?v=2',
     )
+    expect(useSiteStore().faviconUrl).toBe('/api/site/favicon?v=2')
 
     vi.mocked(deleteAdminSiteFavicon).mockResolvedValue(siteView())
     await button(wrapper, '移除图标').trigger('click')

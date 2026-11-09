@@ -26,6 +26,7 @@ async function mountShell(props: Record<string, unknown> = {}) {
       nav: ({ navigate }: { navigate: () => void }) =>
         h('button', { id: 'nav-close', onClick: navigate }, '导航项'),
       default: () => h('div', { class: 'shell-child' }, '内容'),
+      footer: () => h('footer', { class: 'test-footer' }, '页脚'),
     },
     global: {
       plugins: [router, PrimeVue, createPinia()],
@@ -48,6 +49,15 @@ describe('AppShell', () => {
     expect(wrapper.text()).toContain('演示标题')
     expect(wrapper.find('.shell-child').text()).toBe('内容')
     expect(wrapper.find('#app-sidebar-nav').exists()).toBe(true)
+  })
+
+  it('wraps the footer slot in a div so only the slotted footer is a landmark', async () => {
+    const { wrapper } = await mountShell()
+    const appFooter = wrapper.find('.app-footer')
+
+    expect(appFooter.element.tagName).toBe('DIV')
+    expect(appFooter.find('footer.test-footer').exists()).toBe(true)
+    expect(wrapper.findAll('footer')).toHaveLength(1)
   })
 
   it('supports the admin brand badge and sidebar footer copy', async () => {

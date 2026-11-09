@@ -77,9 +77,9 @@ const pageTitle = computed(() => route.meta.title ?? props.titleFallback)
       <main class="app-main">
         <slot />
       </main>
-      <footer v-if="$slots.footer" class="app-footer">
+      <div v-if="$slots.footer" class="app-footer">
         <slot name="footer" />
-      </footer>
+      </div>
     </div>
 
     <Drawer

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import type { SitePublicView } from '@/api/types'
@@ -112,15 +113,22 @@ describe('site store', () => {
     expect(sessionStorage.getItem(SITE_VISITED_KEY)).toBe('1')
   })
 
-  it('does not repeat the visit request in the same session after a failure', async () => {
-    siteApi.recordSiteVisit.mockRejectedValue(new Error('offline'))
+  it('retries after a failed visit report and marks the session only on success', async () => {
+    siteApi.recordSiteVisit.mockRejectedValueOnce(new Error('offline'))
     const store = useSiteStore()
-    await store.recordVisit()
     await store.recordVisit()
 
     expect(siteApi.recordSiteVisit).toHaveBeenCalledTimes(1)
-    expect(sessionStorage.getItem(SITE_VISITED_KEY)).toBe('1')
+    expect(sessionStorage.getItem(SITE_VISITED_KEY)).toBeNull()
     expect(store.visitCount).toBe(0)
+
+    siteApi.recordSiteVisit.mockResolvedValueOnce({ visitCount: 5 })
+    await store.recordVisit()
+    await store.recordVisit()
+
+    expect(siteApi.recordSiteVisit).toHaveBeenCalledTimes(2)
+    expect(sessionStorage.getItem(SITE_VISITED_KEY)).toBe('1')
+    expect(store.visitCount).toBe(5)
   })
 
   it('deduplicates concurrent visit reports', async () => {
@@ -129,5 +137,44 @@ describe('site store', () => {
     await Promise.all([store.recordVisit(), store.recordVisit()])
 
     expect(siteApi.recordSiteVisit).toHaveBeenCalledTimes(1)
+    expect(sessionStorage.getItem(SITE_VISITED_KEY)).toBe('1')
+    expect(store.visitCount).toBe(3)
+  })
+
+  it('does not throw when session storage is blocked', async () => {
+    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('blocked')
+    })
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('blocked')
+    })
+    siteApi.recordSiteVisit.mockResolvedValue({ visitCount: 9 })
+    const store = useSiteStore()
+
+    try {
+      await expect(store.recordVisit()).resolves.toBeUndefined()
+      expect(siteApi.recordSiteVisit).toHaveBeenCalledTimes(1)
+      expect(store.visitCount).toBe(9)
+    } finally {
+      getItem.mockRestore()
+      setItem.mockRestore()
+    }
+  })
+
+  it('removes the svg type for uploaded favicons and restores it on fallback', async () => {
+    document.head.innerHTML = '<link rel="icon" type="image/svg+xml" href="/favicon.svg" />'
+    siteApi.getSite.mockResolvedValue(siteView({ faviconUrl: '/api/site/favicon?v=3' }))
+    const store = useSiteStore()
+    await store.ensureLoaded()
+
+    const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]')!
+    expect(link.getAttribute('href')).toBe('/api/site/favicon?v=3')
+    expect(link.hasAttribute('type')).toBe(false)
+
+    store.setConfig(siteView({ faviconUrl: '' }))
+    await nextTick()
+
+    expect(link.getAttribute('href')).toBe('/favicon.svg')
+    expect(link.getAttribute('type')).toBe('image/svg+xml')
   })
 })
