@@ -71,7 +71,7 @@ func countRows(t *testing.T, g *gorm.DB, model any) int64 {
 
 func TestCatalogDefinitions(t *testing.T) {
 	permissions := rbac.AllPermissions()
-	require.Len(t, permissions, 37)
+	require.Len(t, permissions, 38)
 
 	codes := make(map[string]struct{}, len(permissions))
 	for _, def := range permissions {
@@ -140,8 +140,9 @@ func TestPermissionCatalogExactCodes(t *testing.T) {
 		"rating.settings.manage",
 		"ai.settings.manage",
 		"certificate.manage",
+		"site.settings.manage",
 	}
-	require.Len(t, expected, 37)
+	require.Len(t, expected, 38)
 
 	codes := make([]string, len(rbac.PermissionCodes))
 	for i, code := range rbac.PermissionCodes {
@@ -154,6 +155,27 @@ func TestPermissionCatalogExactCodes(t *testing.T) {
 		catalogCodes = append(catalogCodes, string(def.Code))
 	}
 	assert.ElementsMatch(t, expected, catalogCodes, "AllPermissions 必须与权限目录完全一致")
+}
+
+func TestSiteSettingsPermissionCatalog(t *testing.T) {
+	defs := rbac.AllPermissions()
+	found := false
+	for _, def := range defs {
+		if def.Code == rbac.PermSiteSettingsManage {
+			found = true
+			assert.Equal(t, rbac.PermissionGroupSite, def.GroupName)
+			assert.Equal(t, "站点", def.GroupName)
+		}
+	}
+	require.True(t, found, "权限目录必须包含 site.settings.manage")
+
+	require.Len(t, rbac.PermissionCodes, 38)
+	assert.Equal(t, rbac.PermSiteSettingsManage, rbac.PermissionCodes[37])
+
+	g := testutil.PG(t)
+	require.NoError(t, rbac.Seed(context.Background(), g))
+	assert.NotContains(t, rolePermissionCodes(t, g, "content_admin"), string(rbac.PermSiteSettingsManage),
+		"content_admin 不应自动获得站点设置权限")
 }
 
 func TestSeedCreatesCatalogAndRoles(t *testing.T) {

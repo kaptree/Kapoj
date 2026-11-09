@@ -349,7 +349,7 @@ func TestRouterMountsAdminRBACRoutes(t *testing.T) {
 
 	w, resp = call(h, http.MethodGet, "/api/admin/permissions", token, "")
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
-	assert.Len(t, resp["data"], 37)
+	assert.Len(t, resp["data"], 38)
 }
 
 func TestRouterWiresRBACMe(t *testing.T) {

@@ -60,6 +60,7 @@ describe('permission catalog', () => {
       'gamification.config.manage',
       'learning_path.official.manage',
       'learning_path.admin.read',
+      'site.settings.manage',
     ]) {
       expect(ADMIN_ACCESS_PERMISSIONS).toContain(code)
     }
@@ -84,5 +85,6 @@ describe('permission catalog', () => {
     expect(PERM.contest.participant.read).toBe('contest.participant.read')
     expect(PERM.contest.announcement.manage).toBe('contest.announcement.manage')
     expect(PERM.gamification.achievement.manage).toBe('gamification.achievement.manage')
+    expect(PERM.site.settings.manage).toBe('site.settings.manage')
   })
 })

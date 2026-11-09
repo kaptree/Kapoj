@@ -32,6 +32,8 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/rating"
 	"github.com/kaptree/kapoj/apps/server/internal/ratingapi"
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
+	"github.com/kaptree/kapoj/apps/server/internal/site"
+	"github.com/kaptree/kapoj/apps/server/internal/siteapi"
 	"github.com/kaptree/kapoj/apps/server/internal/social"
 	"github.com/kaptree/kapoj/apps/server/internal/socialapi"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
@@ -131,6 +133,8 @@ func New(d Deps) *gin.Engine {
 	if d.Certificate != nil {
 		certificateapi.RegisterRoutes(public, api, uploads, d.Certificate, certificateapi.Options{RBAC: d.RBAC})
 	}
+	siteSvc := site.NewService(site.NewGormRepository(d.DB), d.Storage)
+	siteapi.RegisterRoutes(public, api, uploads, siteSvc, d.RBAC)
 	contestRepo := contest.NewGormRepository(d.DB)
 	problemRepo := problem.NewGormRepository(d.DB)
 	if d.AI != nil {

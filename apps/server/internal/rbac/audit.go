@@ -23,6 +23,7 @@ const (
 
 	AuditActionRatingSettingsManage = "rating.settings.manage"
 	AuditActionAISettingsManage     = "ai.settings.manage"
+	AuditActionSiteSettingsManage   = "site.settings.manage"
 
 	AuditTargetRole            = "role"
 	AuditTargetUser            = "user"
@@ -31,6 +32,8 @@ const (
 	AuditTargetAIKey           = "ai_key"
 	AuditTargetCertificate     = "certificate"
 	AuditTargetCertificateType = "certificate_type"
+	AuditTargetSiteSettings    = "site_settings"
+	AuditTargetSiteAsset       = "site_asset"
 )
 
 // WriteAuditTx 在给定事务内写入管理员操作审计；失败会使调用方事务回滚。

@@ -48,6 +48,8 @@ const (
 	PermAISettingsManage     PermissionCode = "ai.settings.manage"
 
 	PermCertificateManage PermissionCode = "certificate.manage"
+
+	PermSiteSettingsManage PermissionCode = "site.settings.manage"
 )
 
 const (
@@ -61,6 +63,7 @@ const (
 	PermissionGroupRating       = "Rating"
 	PermissionGroupAI           = "AI"
 	PermissionGroupCertificate  = "证书"
+	PermissionGroupSite         = "站点"
 )
 
 // PermissionDef 描述权限目录中的一项，用于首次 Seed 与权限矩阵展示。
@@ -119,6 +122,8 @@ var permissionCatalog = []PermissionDef{
 	{Code: PermAISettingsManage, Name: "管理 AI 设置", GroupName: PermissionGroupAI, Description: "启用或关闭 AI 功能"},
 
 	{Code: PermCertificateManage, Name: "管理证书", GroupName: PermissionGroupCertificate, Description: "审核证书认证并维护证书类型"},
+
+	{Code: PermSiteSettingsManage, Name: "管理站点设置", GroupName: PermissionGroupSite, Description: "编辑首页内容、页脚、Logo 与站点图标"},
 }
 
 // PermissionCodes 是按目录顺序排列的全部权限码。
