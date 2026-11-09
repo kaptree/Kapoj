@@ -3,11 +3,13 @@ package auth
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -26,6 +28,17 @@ func newService(t *testing.T) (*Service, user.Repository) {
 		NewRefreshStore(rdb, time.Hour),
 		NewLoginLimiter(rdb))
 	return svc, repo
+}
+
+func newServiceWithRedis(t *testing.T) (*Service, user.Repository, *redis.Client) {
+	t.Helper()
+	_, rdb := newRedis(t)
+	repo := user.NewMemoryRepository()
+	svc := NewService(repo,
+		NewTokenIssuer(testSecret, 15*time.Minute),
+		NewRefreshStore(rdb, time.Hour),
+		NewLoginLimiter(rdb))
+	return svc, repo, rdb
 }
 
 func register(t *testing.T, svc *Service, username, email string) *Session {
@@ -249,4 +262,177 @@ func TestLoginLimitSharedAcrossUsernameAndEmail(t *testing.T) {
 	}
 	_, err := svc.Login(ctx, "alice", password)
 	assertCode(t, err, 42901)
+}
+
+func TestRegisterAndLoginReturnSessionID(t *testing.T) {
+	svc, _ := newService(t)
+	ctx := context.Background()
+
+	s := register(t, svc, "alice", "alice@example.com")
+	assert.NotEmpty(t, s.SessionID)
+
+	s2, err := svc.Login(ctx, "alice", password)
+	require.NoError(t, err)
+	assert.NotEmpty(t, s2.SessionID)
+	assert.NotEqual(t, s.SessionID, s2.SessionID, "each login creates a new session")
+}
+
+func TestRefreshKeepsSessionID(t *testing.T) {
+	svc, _ := newService(t)
+	s := register(t, svc, "alice", "alice@example.com")
+
+	pair, err := svc.Refresh(context.Background(), s.RefreshToken)
+	require.NoError(t, err)
+	assert.NotEmpty(t, pair.SessionID)
+	assert.Equal(t, s.SessionID, pair.SessionID, "refresh rotates the token but keeps the session")
+}
+
+func TestRefreshLegacyTokenGetsNewSession(t *testing.T) {
+	svc, _, rdb := newServiceWithRedis(t)
+	s := register(t, svc, "alice", "alice@example.com")
+	ctx := context.Background()
+
+	// A pre-session refresh token stores a plain integer user ID.
+	legacy := "legacy-token-value-0123456789"
+	hash := hashToken(legacy)
+	require.NoError(t, rdb.Set(ctx, tokenKey(hash), strconv.FormatInt(s.User.ID, 10), time.Hour).Err())
+	require.NoError(t, rdb.SAdd(ctx, userKey(s.User.ID), hash).Err())
+
+	pair, err := svc.Refresh(ctx, legacy)
+	require.NoError(t, err)
+	assert.NotEmpty(t, pair.SessionID, "a legacy token is migrated to a new session")
+	assert.NotEqual(t, s.SessionID, pair.SessionID)
+}
+
+func TestChangePassword(t *testing.T) {
+	svc, _ := newService(t)
+	s := register(t, svc, "alice", "alice@example.com")
+	ctx := context.Background()
+	id := s.User.ID
+	oldHash := s.User.PasswordHash
+
+	// Wrong current password.
+	err := svc.ChangePassword(ctx, id, ChangePasswordInput{CurrentPassword: "wrong-password", NewPassword: "new-password-1"})
+	assertCode(t, err, 40001)
+
+	// New password too short.
+	err = svc.ChangePassword(ctx, id, ChangePasswordInput{CurrentPassword: password, NewPassword: "short"})
+	assertCode(t, err, 40001)
+
+	// New password identical to current.
+	err = svc.ChangePassword(ctx, id, ChangePasswordInput{CurrentPassword: password, NewPassword: password})
+	assertCode(t, err, 40001)
+
+	// Success updates the hash and revokes every session.
+	err = svc.ChangePassword(ctx, id, ChangePasswordInput{CurrentPassword: password, NewPassword: "new-password-2"})
+	require.NoError(t, err)
+
+	u, err := svc.users.FindByID(ctx, id)
+	require.NoError(t, err)
+	assert.NotEqual(t, oldHash, u.PasswordHash)
+
+	_, err = svc.Login(ctx, "alice", password)
+	assertCode(t, err, 40101)
+
+	s2, err := svc.Login(ctx, "alice", "new-password-2")
+	require.NoError(t, err)
+	assert.NotEmpty(t, s2.SessionID)
+
+	_, err = svc.Refresh(ctx, s.RefreshToken)
+	assertCode(t, err, 40100)
+}
+
+func TestChangePasswordTooManyAttempts(t *testing.T) {
+	svc, _ := newService(t)
+	s := register(t, svc, "alice", "alice@example.com")
+	ctx := context.Background()
+	id := s.User.ID
+
+	for i := 0; i < 10; i++ {
+		err := svc.ChangePassword(ctx, id, ChangePasswordInput{CurrentPassword: "wrong-password", NewPassword: "new-password-1"})
+		assertCode(t, err, 40001)
+	}
+	err := svc.ChangePassword(ctx, id, ChangePasswordInput{CurrentPassword: password, NewPassword: "new-password-2"})
+	assertCode(t, err, 42904)
+}
+
+func TestChangePasswordSuccessResetsLimiter(t *testing.T) {
+	svc, _ := newService(t)
+	s := register(t, svc, "alice", "alice@example.com")
+	ctx := context.Background()
+	id := s.User.ID
+
+	for i := 0; i < 9; i++ {
+		_ = svc.ChangePassword(ctx, id, ChangePasswordInput{CurrentPassword: "wrong-password", NewPassword: "new-password"})
+	}
+	require.NoError(t, svc.ChangePassword(ctx, id, ChangePasswordInput{CurrentPassword: password, NewPassword: "new-password-1"}))
+
+	for i := 0; i < 9; i++ {
+		_ = svc.ChangePassword(ctx, id, ChangePasswordInput{CurrentPassword: "wrong-password", NewPassword: "new-password-2"})
+	}
+	require.NoError(t, svc.ChangePassword(ctx, id, ChangePasswordInput{CurrentPassword: "new-password-1", NewPassword: "new-password-2"}))
+}
+
+func TestListRevokeSessions(t *testing.T) {
+	svc, _ := newService(t)
+	s := register(t, svc, "alice", "alice@example.com")
+	ctx := context.Background()
+
+	s2, err := svc.LoginWithMeta(ctx, "alice", password, SessionMeta{IP: "2.2.2.2", UserAgent: "ua-2"})
+	require.NoError(t, err)
+	other := register(t, svc, "bob", "bob@example.com")
+
+	views, err := svc.ListSessions(ctx, s.User.ID)
+	require.NoError(t, err)
+	require.Len(t, views, 2)
+	for _, v := range views {
+		assert.NotContains(t, v.ID, s.RefreshToken)
+		assert.NotContains(t, v.ID, s2.RefreshToken)
+	}
+
+	// Revoking another user's session is a 404.
+	err = svc.RevokeSession(ctx, s.User.ID, other.SessionID)
+	assertCode(t, err, 40400)
+
+	// Unknown session is a 404.
+	err = svc.RevokeSession(ctx, s.User.ID, strings.Repeat("a", 32))
+	assertCode(t, err, 40400)
+
+	// Revoking one session leaves the others.
+	require.NoError(t, svc.RevokeSession(ctx, s.User.ID, s.SessionID))
+	views, err = svc.ListSessions(ctx, s.User.ID)
+	require.NoError(t, err)
+	require.Len(t, views, 1)
+	assert.Equal(t, s2.SessionID, views[0].ID)
+
+	// LogoutOthers keeps the given session.
+	s3, err := svc.Login(ctx, "alice", password)
+	require.NoError(t, err)
+	require.NoError(t, svc.LogoutOthers(ctx, s.User.ID, s3.SessionID))
+	views, err = svc.ListSessions(ctx, s.User.ID)
+	require.NoError(t, err)
+	require.Len(t, views, 1)
+	assert.Equal(t, s3.SessionID, views[0].ID)
+
+	// LogoutAll clears everything.
+	require.NoError(t, svc.LogoutAll(ctx, s.User.ID))
+	views, err = svc.ListSessions(ctx, s.User.ID)
+	require.NoError(t, err)
+	assert.Empty(t, views)
+}
+
+func TestLogoutRevokesCurrentSession(t *testing.T) {
+	svc, _ := newService(t)
+	s := register(t, svc, "alice", "alice@example.com")
+	ctx := context.Background()
+
+	views, err := svc.ListSessions(ctx, s.User.ID)
+	require.NoError(t, err)
+	require.Len(t, views, 1)
+
+	require.NoError(t, svc.Logout(ctx, s.RefreshToken))
+
+	views, err = svc.ListSessions(ctx, s.User.ID)
+	require.NoError(t, err)
+	assert.Empty(t, views)
 }

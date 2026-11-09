@@ -120,6 +120,19 @@ func (r *memoryRepository) UpdateProfile(_ context.Context, id int64, c ProfileC
 	return nil
 }
 
+func (r *memoryRepository) UpdatePassword(_ context.Context, id int64, hash string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	u, ok := r.users[id]
+	if !ok {
+		return ErrNotFound
+	}
+	u.PasswordHash = hash
+	u.UpdatedAt = time.Now()
+	r.users[id] = u
+	return nil
+}
+
 func (r *memoryRepository) List(_ context.Context, offset, limit int) ([]User, int64, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

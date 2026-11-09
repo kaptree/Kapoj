@@ -94,6 +94,7 @@ func New(d Deps) *gin.Engine {
 
 	public := r.Group("/api", middleware.MaxBody(maxBodyBytes))
 	api := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxBodyBytes))
+	auth.RegisterAccountRoutes(api, authSvc)
 	problemJSON := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxProblemJSONBytes))
 	uploads := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxUploadBytes))
 	imports := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxImportBodyBytes))

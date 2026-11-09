@@ -438,3 +438,25 @@ func TestRouterWiresAvatarEndpoints(t *testing.T) {
 	assert.Equal(t, "image/png", w.Header().Get("Content-Type"))
 	assert.Equal(t, png, w.Body.Bytes())
 }
+
+func TestRouterWiresAccountRoutes(t *testing.T) {
+	h := newRouter(t)
+
+	w, resp := call(h, http.MethodPost, "/api/auth/register", "",
+		`{"username":"acct","email":"acct@example.com","password":"correct-horse"}`)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	data := resp["data"].(map[string]any)
+	token := data["accessToken"].(string)
+	assert.NotEmpty(t, data["sessionId"])
+
+	// Unauthenticated access is rejected.
+	w, _ = call(h, http.MethodGet, "/api/users/me/sessions", "", "")
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+
+	// Authenticated list shows the single session created by registration.
+	w, resp = call(h, http.MethodGet, "/api/users/me/sessions", token, "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	sessions := resp["data"].([]any)
+	require.Len(t, sessions, 1)
+	assert.Equal(t, data["sessionId"], sessions[0].(map[string]any)["id"])
+}

@@ -24,6 +24,9 @@ type Repository interface {
 	// UpdateProfile writes only the provided profile fields, so concurrent
 	// changes to other columns (status, coins, role) are never overwritten.
 	UpdateProfile(ctx context.Context, id int64, changes ProfileChanges) error
+	// UpdatePassword replaces only the password hash; it returns ErrNotFound
+	// when the user does not exist.
+	UpdatePassword(ctx context.Context, id int64, hash string) error
 	List(ctx context.Context, offset, limit int) ([]User, int64, error)
 }
 
@@ -100,6 +103,17 @@ func (r *gormRepository) UpdateProfile(ctx context.Context, id int64, changes Pr
 		return err
 	}
 	res := r.db.WithContext(ctx).Model(&User{}).Where("id = ?", id).Updates(cols)
+	if res.Error != nil {
+		return mapErr(res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *gormRepository) UpdatePassword(ctx context.Context, id int64, hash string) error {
+	res := r.db.WithContext(ctx).Model(&User{}).Where("id = ?", id).Update("password_hash", hash)
 	if res.Error != nil {
 		return mapErr(res.Error)
 	}

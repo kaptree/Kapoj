@@ -177,3 +177,33 @@ func TestConcurrentCreateSameUsername(t *testing.T) {
 	}
 	assert.Equal(t, 1, ok)
 }
+
+func TestUpdatePasswordUpdatesHash(t *testing.T) {
+	ctx := context.Background()
+
+	repo := user.NewGormRepository(testutil.PG(t))
+	u := newUser("gwen")
+	require.NoError(t, repo.Create(ctx, u))
+	require.NoError(t, repo.UpdatePassword(ctx, u.ID, "new-hash"))
+	got, err := repo.FindByID(ctx, u.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "new-hash", got.PasswordHash)
+
+	mem := user.NewMemoryRepository()
+	mu := newUser("memgwen")
+	require.NoError(t, mem.Create(ctx, mu))
+	require.NoError(t, mem.UpdatePassword(ctx, mu.ID, "mem-hash"))
+	mgot, err := mem.FindByID(ctx, mu.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "mem-hash", mgot.PasswordHash)
+}
+
+func TestUpdatePasswordMissingUser(t *testing.T) {
+	ctx := context.Background()
+
+	repo := user.NewGormRepository(testutil.PG(t))
+	assert.ErrorIs(t, repo.UpdatePassword(ctx, 999999, "x"), user.ErrNotFound)
+
+	mem := user.NewMemoryRepository()
+	assert.ErrorIs(t, mem.UpdatePassword(ctx, 999999, "x"), user.ErrNotFound)
+}

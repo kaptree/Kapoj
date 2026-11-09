@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -19,9 +20,25 @@ type RegisterInput struct {
 	Nickname string
 }
 
+type ChangePasswordInput struct {
+	CurrentPassword string
+	NewPassword     string
+}
+
+// SessionView is the user-facing view of an active session. It deliberately
+// carries no token, token hash or user ID.
+type SessionView struct {
+	ID         string    `json:"id"`
+	IP         string    `json:"ip"`
+	UserAgent  string    `json:"userAgent"`
+	CreatedAt  time.Time `json:"createdAt"`
+	LastUsedAt time.Time `json:"lastUsedAt"`
+}
+
 type TokenPair struct {
 	AccessToken  string `json:"accessToken"`
 	RefreshToken string `json:"refreshToken"`
+	SessionID    string `json:"sessionId"`
 }
 
 type Session struct {
@@ -41,6 +58,10 @@ func NewService(users user.Repository, tokens *TokenIssuer, refresh *RefreshStor
 }
 
 func (s *Service) Register(ctx context.Context, in RegisterInput) (*Session, error) {
+	return s.RegisterWithMeta(ctx, in, SessionMeta{})
+}
+
+func (s *Service) RegisterWithMeta(ctx context.Context, in RegisterInput, meta SessionMeta) (*Session, error) {
 	username := strings.TrimSpace(in.Username)
 	email := user.Normalize(in.Email)
 	nickname := strings.TrimSpace(in.Nickname)
@@ -81,10 +102,14 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*Session, err
 	case err != nil:
 		return nil, err
 	}
-	return s.newSession(ctx, u)
+	return s.newSession(ctx, u, meta)
 }
 
 func (s *Service) Login(ctx context.Context, account, password string) (*Session, error) {
+	return s.LoginWithMeta(ctx, account, password, SessionMeta{})
+}
+
+func (s *Service) LoginWithMeta(ctx context.Context, account, password string, meta SessionMeta) (*Session, error) {
 	account = user.Normalize(account)
 	u, err := s.findByAccount(ctx, account)
 	if err != nil && !errors.Is(err, user.ErrNotFound) {
@@ -118,7 +143,7 @@ func (s *Service) Login(ctx context.Context, account, password string) (*Session
 	if err := s.limiter.Reset(ctx, key); err != nil {
 		return nil, err
 	}
-	return s.newSession(ctx, u)
+	return s.newSession(ctx, u, meta)
 }
 
 func (s *Service) findByAccount(ctx context.Context, account string) (*user.User, error) {
@@ -129,7 +154,13 @@ func (s *Service) findByAccount(ctx context.Context, account string) (*user.User
 }
 
 func (s *Service) Refresh(ctx context.Context, refreshToken string) (*TokenPair, error) {
-	userID, err := s.refresh.Consume(ctx, refreshToken)
+	return s.RefreshWithMeta(ctx, refreshToken, SessionMeta{})
+}
+
+// RefreshWithMeta consumes the refresh token and rotates it within the same
+// session. A legacy token (without a session) is migrated to a new session.
+func (s *Service) RefreshWithMeta(ctx context.Context, refreshToken string, meta SessionMeta) (*TokenPair, error) {
+	userID, sessionID, err := s.refresh.ConsumeSession(ctx, refreshToken)
 	if errors.Is(err, ErrInvalidRefresh) {
 		return nil, httpx.ErrUnauthorized
 	}
@@ -146,31 +177,128 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string) (*TokenPair,
 	if u.Status == user.StatusBanned {
 		return nil, httpx.ErrUserBanned
 	}
-	return s.issuePair(ctx, u)
+
+	access, err := s.tokens.IssueAccess(u)
+	if err != nil {
+		return nil, err
+	}
+
+	var refresh string
+	if sessionID == "" {
+		refresh, sessionID, err = s.refresh.IssueWithMeta(ctx, userID, meta)
+	} else {
+		refresh, err = s.refresh.Rotate(ctx, userID, sessionID, meta)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &TokenPair{AccessToken: access, RefreshToken: refresh, SessionID: sessionID}, nil
 }
 
+// Logout revokes the refresh token's whole session; it is idempotent.
 func (s *Service) Logout(ctx context.Context, refreshToken string) error {
 	return s.refresh.Revoke(ctx, refreshToken)
 }
 
-func (s *Service) newSession(ctx context.Context, u *user.User) (*Session, error) {
-	pair, err := s.issuePair(ctx, u)
+// ChangePassword validates the current password, updates the hash and revokes
+// every session, forcing the user to log in again. Attempts are rate limited
+// per user; a successful change resets the counter.
+func (s *Service) ChangePassword(ctx context.Context, userID int64, in ChangePasswordInput) error {
+	u, err := s.users.FindByID(ctx, userID)
+	if errors.Is(err, user.ErrNotFound) {
+		return httpx.ErrUnauthorized
+	}
+	if err != nil {
+		return err
+	}
+
+	key := fmt.Sprintf("password:%d", userID)
+	allowed, err := s.limiter.Hit(ctx, key)
+	if err != nil {
+		return httpx.ErrUnavailable
+	}
+	if !allowed {
+		return httpx.ErrTooManyPasswordAttempts
+	}
+
+	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(in.CurrentPassword)) != nil {
+		return httpx.ErrValidation("当前密码错误")
+	}
+	if err := user.ValidatePassword(in.NewPassword); err != nil {
+		return err
+	}
+	if in.NewPassword == in.CurrentPassword {
+		return httpx.ErrValidation("新密码不能与当前密码相同")
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(in.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+
+	if err := s.refresh.RevokeAll(ctx, userID); err != nil {
+		return err
+	}
+	if err := s.users.UpdatePassword(ctx, userID, string(hash)); err != nil {
+		return err
+	}
+	if err := s.limiter.Reset(ctx, key); err != nil {
+		return err
+	}
+	return nil
+}
+
+// ListSessions returns the user's active sessions, most recently used first.
+func (s *Service) ListSessions(ctx context.Context, userID int64) ([]SessionView, error) {
+	infos, err := s.refresh.List(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	views := make([]SessionView, len(infos))
+	for i, si := range infos {
+		views[i] = SessionView(si)
+	}
+	return views, nil
+}
+
+// RevokeSession revokes a single session; unknown or other-user sessions map
+// to 404.
+func (s *Service) RevokeSession(ctx context.Context, userID int64, sessionID string) error {
+	err := s.refresh.RevokeSession(ctx, userID, sessionID)
+	if errors.Is(err, ErrSessionNotFound) {
+		return httpx.ErrNotFound
+	}
+	return err
+}
+
+// LogoutOthers revokes every session except the one to keep.
+func (s *Service) LogoutOthers(ctx context.Context, userID int64, keepSessionID string) error {
+	return s.refresh.RevokeOthers(ctx, userID, keepSessionID)
+}
+
+// LogoutAll revokes every session of the user.
+func (s *Service) LogoutAll(ctx context.Context, userID int64) error {
+	return s.refresh.RevokeAll(ctx, userID)
+}
+
+func (s *Service) newSession(ctx context.Context, u *user.User, meta SessionMeta) (*Session, error) {
+	pair, err := s.issuePair(ctx, u, meta)
 	if err != nil {
 		return nil, err
 	}
 	return &Session{TokenPair: *pair, User: u}, nil
 }
 
-func (s *Service) issuePair(ctx context.Context, u *user.User) (*TokenPair, error) {
+func (s *Service) issuePair(ctx context.Context, u *user.User, meta SessionMeta) (*TokenPair, error) {
 	access, err := s.tokens.IssueAccess(u)
 	if err != nil {
 		return nil, err
 	}
-	refresh, err := s.refresh.Issue(ctx, u.ID)
+	refresh, sessionID, err := s.refresh.IssueWithMeta(ctx, u.ID, meta)
 	if err != nil {
 		return nil, err
 	}
-	return &TokenPair{AccessToken: access, RefreshToken: refresh}, nil
+	return &TokenPair{AccessToken: access, RefreshToken: refresh, SessionID: sessionID}, nil
 }
 
 var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("kapoj-dummy-password"), bcrypt.DefaultCost)
