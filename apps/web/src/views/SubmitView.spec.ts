@@ -299,6 +299,23 @@ describe('SubmitView', () => {
     expect(getAIConfig).not.toHaveBeenCalled()
   })
 
+  it('preserves saved code drafts when unmounted before the problem loads', async () => {
+    localStorage.setItem('kapoj:code:practice:1:cpp', 'saved draft')
+    let resolveProblem!: (value: ProblemDetail) => void
+    vi.mocked(getProblem).mockReturnValue(
+      new Promise<ProblemDetail>((resolve) => {
+        resolveProblem = resolve
+      }),
+    )
+    const { wrapper } = await mountPage()
+
+    wrapper.unmount()
+
+    expect(localStorage.getItem('kapoj:code:practice:1:cpp')).toBe('saved draft')
+    resolveProblem(detail(1))
+    await flushPromises()
+  })
+
   it('submits the current draft and navigates to submissions', async () => {
     localStorage.setItem('kapoj:code:practice:1:cpp', 'int main() { return 0; }')
     const { wrapper, router } = await mountPage()

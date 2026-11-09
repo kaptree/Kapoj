@@ -350,6 +350,10 @@ async function loadProblem() {
 }
 
 onMounted(async () => {
+  // Drafts are keyed by problem/contest, not problem type. Load them before any
+  // await so an early unmount flushes saved code instead of an empty draft.
+  for (const lang of SUBMISSION_LANGUAGES) loadDraft(lang.value)
+
   if (route.query.contestId && contestId.value === 0) {
     toast.add({
       severity: 'warn',
@@ -372,11 +376,8 @@ onMounted(async () => {
 
   await loadProblem()
 
-  // Objective problems have no code drafts and no AI tools.
-  if (!isObjective.value) {
-    for (const lang of SUBMISSION_LANGUAGES) loadDraft(lang.value)
-    void loadAIConfig()
-  }
+  // Objective problems have no AI tools.
+  if (!isObjective.value) void loadAIConfig()
 
   await contestPromise
 })
