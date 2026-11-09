@@ -80,7 +80,7 @@ vi.mock('@/components/CodeEditor.vue', () => ({
   },
 }))
 
-function detail(id: number): ProblemDetail {
+function detail(id: number, overrides: Partial<ProblemDetail> = {}): ProblemDetail {
   return {
     id,
     title: `Problem ${id}`,
@@ -101,6 +101,7 @@ function detail(id: number): ProblemDetail {
     acceptCount: 0,
     createdAt: '',
     solutionPriceCoins: 0,
+    ...overrides,
   } as ProblemDetail
 }
 
@@ -227,6 +228,75 @@ describe('SubmitView', () => {
       expect.objectContaining({ severity: 'warn', summary: '代码不能为空' }),
     )
     wrapper.unmount()
+  })
+
+  it('renders the objective answer form without code tools', async () => {
+    vi.mocked(getProblem).mockResolvedValue(detail(1, { type: 'objective' }))
+    const { wrapper } = await mountPage()
+
+    expect(wrapper.find('[data-test="objective-answer"]').exists()).toBe(true)
+    expect(wrapper.find('.code-editor-stub').exists()).toBe(false)
+    expect(wrapper.findAllComponents(Select)).toHaveLength(0)
+    expect(wrapper.find('[data-test="ai-complete-button"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('客观题')
+    wrapper.unmount()
+  })
+
+  it('submits objective answers without code or language', async () => {
+    vi.mocked(getProblem).mockResolvedValue(detail(1, { type: 'objective' }))
+    const { wrapper, router } = await mountPage()
+
+    await wrapper.find('[data-test="objective-answer"]').setValue('  A  ')
+    await submitButton(wrapper)!.trigger('click')
+    await flushPromises()
+
+    expect(createSubmission).toHaveBeenCalledWith({ problemId: 1, answer: 'A' })
+    expect(router.currentRoute.value.fullPath).toBe('/submissions?problemId=1')
+    wrapper.unmount()
+  })
+
+  it('warns instead of submitting an empty objective answer', async () => {
+    vi.mocked(getProblem).mockResolvedValue(detail(1, { type: 'objective' }))
+    const { wrapper } = await mountPage()
+
+    await wrapper.find('[data-test="objective-answer"]').setValue('   ')
+    await submitButton(wrapper)!.trigger('click')
+    await flushPromises()
+
+    expect(createSubmission).not.toHaveBeenCalled()
+    expect(toast.add).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'warn', summary: '答案不能为空' }),
+    )
+    wrapper.unmount()
+  })
+
+  it('keeps the contest context when submitting an objective answer', async () => {
+    vi.mocked(getProblem).mockResolvedValue(detail(1, { type: 'objective' }))
+    const { wrapper, router } = await mountPage('/problems/1/submit?contestId=5')
+
+    await wrapper.find('[data-test="objective-answer"]').setValue('B')
+    await submitButton(wrapper)!.trigger('click')
+    await flushPromises()
+
+    expect(createSubmission).toHaveBeenCalledWith({ problemId: 1, contestId: 5, answer: 'B' })
+    expect(router.currentRoute.value.fullPath).toBe('/submissions?problemId=1&contestId=5')
+    wrapper.unmount()
+  })
+
+  it('does not show the contest AI banner for objective problems', async () => {
+    vi.mocked(getProblem).mockResolvedValue(detail(1, { type: 'objective' }))
+    vi.mocked(getContest).mockResolvedValue(contestDetail({ status: 'running', disableAi: true }))
+    const { wrapper } = await mountPage('/problems/1/submit?contestId=5')
+
+    expect(wrapper.find('[data-test="contest-ai-banner"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('does not load AI config for objective problems', async () => {
+    vi.mocked(getProblem).mockResolvedValue(detail(1, { type: 'objective' }))
+    await mountPage()
+
+    expect(getAIConfig).not.toHaveBeenCalled()
   })
 
   it('submits the current draft and navigates to submissions', async () => {

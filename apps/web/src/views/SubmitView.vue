@@ -5,6 +5,7 @@ import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import Message from 'primevue/message'
 import Select from 'primevue/select'
+import Textarea from 'primevue/textarea'
 import { useToast } from 'primevue/usetoast'
 
 import { completeCode, formatCode, getAIConfig, optimizeCode } from '@/api/ai'
@@ -12,7 +13,7 @@ import { getContest } from '@/api/contests'
 import { ApiError } from '@/api/http'
 import { getProblem } from '@/api/problems'
 import { createSubmission } from '@/api/submissions'
-import type { AIConfigView, ContestDetail, ProblemDetail, SubmissionLanguage } from '@/api/types'
+import type { AIConfigView, ContestDetail, ProblemDetail } from '@/api/types'
 import CodeEditor from '@/components/CodeEditor.vue'
 import MarkdownView from '@/components/MarkdownView.vue'
 import AppDifficultyTag from '@/components/ui/AppDifficultyTag.vue'
@@ -23,7 +24,12 @@ import AppSurface from '@/components/ui/AppSurface.vue'
 import { PERM } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useTheme } from '@/theme/theme'
-import { languageLabel, monacoLanguage, SUBMISSION_LANGUAGES } from '@/utils/submission'
+import {
+  languageLabel,
+  monacoLanguage,
+  SUBMISSION_LANGUAGES,
+  type CodeSubmissionLanguage,
+} from '@/utils/submission'
 
 const route = useRoute()
 const router = useRouter()
@@ -51,8 +57,10 @@ const contestTitle = computed(() => contest.value?.title ?? '')
 const loading = ref(false)
 const submitting = ref(false)
 const error = ref('')
-const language = ref<SubmissionLanguage>('cpp')
-const drafts = reactive<Record<SubmissionLanguage, string>>({
+const isObjective = computed(() => problem.value?.type === 'objective')
+const answer = ref('')
+const language = ref<CodeSubmissionLanguage>('cpp')
+const drafts = reactive<Record<CodeSubmissionLanguage, string>>({
   c: '',
   cpp: '',
   python3: '',
@@ -60,7 +68,7 @@ const drafts = reactive<Record<SubmissionLanguage, string>>({
   go: '',
 })
 
-const templates: Record<SubmissionLanguage, string> = {
+const templates: Record<CodeSubmissionLanguage, string> = {
   c: '#include <stdio.h>\n\nint main() {\n    // 在此编写代码\n    return 0;\n}\n',
   cpp: '#include <iostream>\n\nint main() {\n    // 在此编写代码\n    return 0;\n}\n',
   python3: '# 在此编写代码\n',
@@ -72,6 +80,7 @@ const typeLabels = {
   traditional: '传统题',
   special: '特判题',
   interactive: '交互题',
+  objective: '客观题',
 } as const
 
 const code = computed({
@@ -288,12 +297,12 @@ function applyOptimize() {
   optimizeDialogVisible.value = false
 }
 
-function storageKey(lang: SubmissionLanguage): string {
+function storageKey(lang: CodeSubmissionLanguage): string {
   const scope = draftContestId > 0 ? `contest:${draftContestId}` : 'practice'
   return `kapoj:code:${scope}:${draftProblemId}:${lang}`
 }
 
-function loadDraft(lang: SubmissionLanguage) {
+function loadDraft(lang: CodeSubmissionLanguage) {
   try {
     drafts[lang] = localStorage.getItem(storageKey(lang)) ?? templates[lang]
   } catch {
@@ -301,7 +310,7 @@ function loadDraft(lang: SubmissionLanguage) {
   }
 }
 
-function saveDraft(lang: SubmissionLanguage, value: string) {
+function saveDraft(lang: CodeSubmissionLanguage, value: string) {
   try {
     localStorage.setItem(storageKey(lang), value)
   } catch {
@@ -312,6 +321,7 @@ function saveDraft(lang: SubmissionLanguage, value: string) {
 let saveTimer: number | undefined
 
 watch(code, () => {
+  if (isObjective.value) return
   const lang = language.value
   const value = code.value
   if (saveTimer !== undefined) window.clearTimeout(saveTimer)
@@ -323,7 +333,7 @@ watch(code, () => {
 
 onBeforeUnmount(() => {
   if (saveTimer !== undefined) window.clearTimeout(saveTimer)
-  saveDraft(language.value, code.value)
+  if (!isObjective.value) saveDraft(language.value, code.value)
 })
 
 async function loadProblem() {
@@ -340,10 +350,6 @@ async function loadProblem() {
 }
 
 onMounted(async () => {
-  for (const lang of SUBMISSION_LANGUAGES) loadDraft(lang.value)
-
-  void loadAIConfig()
-
   if (route.query.contestId && contestId.value === 0) {
     toast.add({
       severity: 'warn',
@@ -365,8 +371,50 @@ onMounted(async () => {
       : Promise.resolve()
 
   await loadProblem()
+
+  // Objective problems have no code drafts and no AI tools.
+  if (!isObjective.value) {
+    for (const lang of SUBMISSION_LANGUAGES) loadDraft(lang.value)
+    void loadAIConfig()
+  }
+
   await contestPromise
 })
+
+async function submitAnswer() {
+  const text = answer.value.trim()
+  if (!text) {
+    toast.add({ severity: 'warn', summary: '答案不能为空', life: 3000 })
+    return
+  }
+
+  submitting.value = true
+  try {
+    const created = await createSubmission({
+      problemId: problemId.value,
+      ...(contestId.value > 0 ? { contestId: contestId.value } : {}),
+      answer: text,
+    })
+    toast.add({
+      severity: 'success',
+      summary: `已提交 #${created.id}`,
+      detail: '正在评测',
+      life: 3000,
+    })
+    const query: Record<string, string> = { problemId: String(problemId.value) }
+    if (contestId.value > 0) query.contestId = String(contestId.value)
+    await router.push({ name: 'submissions', query })
+  } catch (e) {
+    toast.add({
+      severity: 'error',
+      summary: '提交失败',
+      detail: e instanceof ApiError ? e.message : '提交失败，请稍后再试',
+      life: 4000,
+    })
+  } finally {
+    submitting.value = false
+  }
+}
 
 async function submit() {
   const lang = language.value
@@ -449,99 +497,129 @@ async function submit() {
         <span class="slug-chip">{{ problem?.slug }}</span>
         <AppDifficultyTag :difficulty="problem?.difficulty ?? 0" />
         <span class="type-chip">{{ typeLabels[problem?.type ?? 'traditional'] }}</span>
-        <span class="meta-item">
+        <span v-if="problem?.type !== 'objective'" class="meta-item">
           <i class="pi pi-clock" aria-hidden="true" /> {{ problem?.timeLimitMs }} ms
         </span>
-        <span class="meta-item">
+        <span v-if="problem?.type !== 'objective'" class="meta-item">
           <i class="pi pi-database" aria-hidden="true" /> {{ problem?.memoryLimitMb }} MB
         </span>
       </div>
 
       <AppSurface padding="lg" class="editor-card">
-        <Message
-          v-if="contestAIDisabled"
-          data-test="contest-ai-banner"
-          severity="warn"
-          :closable="false"
-        >
-          比赛期间已禁用 AI，管理员可在比赛设置中调整。
-        </Message>
-        <div class="editor-toolbar">
-          <div class="language-field">
-            <label class="field-label" for="submission-language">语言</label>
-            <Select
-              v-model="language"
-              input-id="submission-language"
-              :options="SUBMISSION_LANGUAGES"
-              option-label="label"
-              option-value="value"
-              class="language-select"
+        <template v-if="isObjective">
+          <div class="answer-field">
+            <label class="field-label" for="objective-answer">你的答案</label>
+            <Textarea
+              id="objective-answer"
+              v-model="answer"
+              data-test="objective-answer"
+              class="answer-input"
+              rows="8"
+              maxlength="2000"
+              placeholder="请输入答案"
+              fluid
+            />
+            <p class="hint">提交时会自动去除答案首尾空白。</p>
+          </div>
+          <div class="answer-actions">
+            <span class="char-count">{{ answer.length }} / 2000</span>
+            <Button
+              type="button"
+              label="提交答案"
+              icon="pi pi-send"
+              :loading="submitting"
+              class="submit-button"
+              @click="submitAnswer"
             />
           </div>
-          <div class="ai-toolbar">
+        </template>
+
+        <template v-else>
+          <Message
+            v-if="contestAIDisabled"
+            data-test="contest-ai-banner"
+            severity="warn"
+            :closable="false"
+          >
+            比赛期间已禁用 AI，管理员可在比赛设置中调整。
+          </Message>
+          <div class="editor-toolbar">
+            <div class="language-field">
+              <label class="field-label" for="submission-language">语言</label>
+              <Select
+                v-model="language"
+                input-id="submission-language"
+                :options="SUBMISSION_LANGUAGES"
+                option-label="label"
+                option-value="value"
+                class="language-select"
+              />
+            </div>
+            <div class="ai-toolbar">
+              <Button
+                type="button"
+                label="AI 补全"
+                icon="pi pi-sparkles"
+                size="small"
+                text
+                data-test="ai-complete-button"
+                :loading="aiBusy === 'complete'"
+                :disabled="aiButtonsDisabled"
+                @click="runComplete"
+              />
+              <Button
+                type="button"
+                label="AI 格式化"
+                icon="pi pi-sparkles"
+                size="small"
+                text
+                data-test="ai-format-button"
+                :loading="aiBusy === 'format'"
+                :disabled="aiButtonsDisabled"
+                @click="runFormat"
+              />
+              <Button
+                type="button"
+                label="AI 优化"
+                icon="pi pi-sparkles"
+                size="small"
+                text
+                data-test="ai-optimize-button"
+                :loading="aiBusy === 'optimize'"
+                :disabled="aiButtonsDisabled"
+                @click="runOptimize"
+              />
+            </div>
             <Button
               type="button"
-              label="AI 补全"
-              icon="pi pi-sparkles"
-              size="small"
-              text
-              data-test="ai-complete-button"
-              :loading="aiBusy === 'complete'"
-              :disabled="aiButtonsDisabled"
-              @click="runComplete"
-            />
-            <Button
-              type="button"
-              label="AI 格式化"
-              icon="pi pi-sparkles"
-              size="small"
-              text
-              data-test="ai-format-button"
-              :loading="aiBusy === 'format'"
-              :disabled="aiButtonsDisabled"
-              @click="runFormat"
-            />
-            <Button
-              type="button"
-              label="AI 优化"
-              icon="pi pi-sparkles"
-              size="small"
-              text
-              data-test="ai-optimize-button"
-              :loading="aiBusy === 'optimize'"
-              :disabled="aiButtonsDisabled"
-              @click="runOptimize"
+              :label="`提交 ${languageLabel(language)} 代码`"
+              icon="pi pi-send"
+              :loading="submitting"
+              class="submit-button"
+              @click="submit"
             />
           </div>
-          <Button
-            type="button"
-            :label="`提交 ${languageLabel(language)} 代码`"
-            icon="pi pi-send"
-            :loading="submitting"
-            class="submit-button"
-            @click="submit"
-          />
-        </div>
 
-        <Message v-if="!aiAvailable" severity="warn" :closable="false">AI 功能未启用</Message>
-        <Message v-else-if="showKeyMissingBanner" severity="warn" :closable="false">
-          管理员尚未配置 AI 密钥
-        </Message>
-        <Message v-else-if="showConfigBanner" severity="info" :closable="false">
-          尚未配置 AI 模型，配置后可使用补全/格式化/优化
-          <RouterLink to="/settings/ai" class="ai-config-link">去配置</RouterLink>
-        </Message>
+          <Message v-if="!aiAvailable" severity="warn" :closable="false">AI 功能未启用</Message>
+          <Message v-else-if="showKeyMissingBanner" severity="warn" :closable="false">
+            管理员尚未配置 AI 密钥
+          </Message>
+          <Message v-else-if="showConfigBanner" severity="info" :closable="false">
+            尚未配置 AI 模型，配置后可使用补全/格式化/优化
+            <RouterLink to="/settings/ai" class="ai-config-link">去配置</RouterLink>
+          </Message>
 
-        <p class="hint">代码保存于本机浏览器；提交后可在测评记录中查看结果。</p>
+          <p class="hint">代码保存于本机浏览器；提交后可在测评记录中查看结果。</p>
 
-        <div class="editor-wrap">
-          <CodeEditor
-            ref="editorRef"
-            v-model="code"
-            :language="monacoLanguage(language)"
-            height="520px"
-          />
-        </div>
+          <div class="editor-wrap">
+            <CodeEditor
+              ref="editorRef"
+              v-model="code"
+              :language="monacoLanguage(language)"
+              height="520px"
+            />
+          </div>
+        </template>
       </AppSurface>
 
       <Dialog
@@ -650,6 +728,33 @@ async function submit() {
   display: flex;
   flex-direction: column;
   gap: var(--kapoj-space-3);
+}
+
+.answer-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.answer-input {
+  width: 100%;
+  font-family: var(--kapoj-font-mono);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.answer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kapoj-space-3);
+}
+
+.char-count {
+  color: var(--kapoj-text-muted);
+  font-family: var(--kapoj-font-mono);
+  font-size: 11px;
 }
 
 .editor-toolbar {

@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
 import DataTable from 'primevue/datatable'
 import Paginator from 'primevue/paginator'
+import Select from 'primevue/select'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
@@ -60,6 +61,7 @@ function detail(overrides: Partial<SubmissionDetail> = {}): SubmissionDetail {
     ...item(),
     code: 'int main() {}',
     codeHidden: false,
+    answerHidden: false,
     judgeResult: [{ testcaseId: 1, status: 'accepted', timeMs: 10, memoryKb: 512, message: 'ok' }],
     ...overrides,
   }
@@ -183,6 +185,85 @@ describe('SubmissionsView', () => {
 
     wrapper.unmount()
     expect(source.close).toHaveBeenCalled()
+  })
+
+  it('shows objective submissions with dashes instead of time and memory', async () => {
+    vi.mocked(listSubmissions).mockResolvedValue({
+      total: 1,
+      items: [item({ language: 'answer', timeUsedMs: 0, memoryUsedKb: 0 })],
+    })
+    const { wrapper } = await mountPage()
+
+    expect(wrapper.text()).toContain('客观题')
+    expect(wrapper.text()).toContain('—')
+    expect(wrapper.text()).not.toContain('0 ms')
+    expect(wrapper.text()).not.toContain('0 KB')
+    wrapper.unmount()
+  })
+
+  it('offers objective answers in the language filter', async () => {
+    const { wrapper } = await mountPage()
+
+    const languageSelect = wrapper
+      .findAllComponents(Select)
+      .find((select) => select.props('inputId') === 'filter-language')
+    const values = (languageSelect!.props('options') as { value: string }[]).map(
+      (option) => option.value,
+    )
+
+    expect(values).toContain('answer')
+    expect(values).toContain('cpp')
+    wrapper.unmount()
+  })
+
+  it('renders an objective answer instead of a code block', async () => {
+    vi.mocked(getSubmission).mockResolvedValue(
+      detail({
+        language: 'answer',
+        answer: 'A',
+        answerHidden: false,
+        code: undefined,
+        judgeResult: [],
+        timeUsedMs: 0,
+        memoryUsedKb: 0,
+      }),
+    )
+    const { wrapper } = await mountPage()
+
+    wrapper.findComponent(DataTable).vm.$emit('row-click', { data: item({ language: 'answer' }) })
+    await flushPromises()
+    await nextTick()
+
+    const body = document.body.textContent ?? ''
+    expect(body).toContain('客观题')
+    expect(document.querySelector('[data-test="submission-answer"]')?.textContent).toBe('A')
+    expect(body).not.toContain('代码')
+    expect(body).toContain('—')
+    expect(body).not.toContain('0 ms')
+    expect(body).not.toContain('0 KB')
+    wrapper.unmount()
+  })
+
+  it('hides other users objective answers', async () => {
+    vi.mocked(getSubmission).mockResolvedValue(
+      detail({
+        language: 'answer',
+        answer: undefined,
+        answerHidden: true,
+        code: undefined,
+        judgeResult: [],
+      }),
+    )
+    const { wrapper } = await mountPage()
+
+    wrapper.findComponent(DataTable).vm.$emit('row-click', { data: item({ language: 'answer' }) })
+    await flushPromises()
+    await nextTick()
+
+    const body = document.body.textContent ?? ''
+    expect(body).toContain('答案仅提交者本人可见。')
+    expect(document.querySelector('[data-test="submission-answer"]')).toBeNull()
+    wrapper.unmount()
   })
 
   it('opens the detail drawer with code and judge results', async () => {

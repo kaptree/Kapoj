@@ -12,7 +12,10 @@ export const SUBMISSION_STATUSES: { value: SubmissionStatus; label: string }[] =
   { value: 'system_error', label: '系统错误' },
 ]
 
-export const SUBMISSION_LANGUAGES: { value: SubmissionLanguage; label: string }[] = [
+/** Submission languages backed by a code editor or compiler. */
+export type CodeSubmissionLanguage = Exclude<SubmissionLanguage, 'answer'>
+
+export const SUBMISSION_LANGUAGES: { value: CodeSubmissionLanguage; label: string }[] = [
   { value: 'c', label: 'C' },
   { value: 'cpp', label: 'C++' },
   { value: 'python3', label: 'Python 3' },
@@ -20,8 +23,14 @@ export const SUBMISSION_LANGUAGES: { value: SubmissionLanguage; label: string }[
   { value: 'go', label: 'Go' },
 ]
 
+/** Language filter options include objective answers, which are not code languages. */
+export const SUBMISSION_LANGUAGE_FILTERS: { value: SubmissionLanguage; label: string }[] = [
+  { value: 'answer', label: '客观题' },
+  ...SUBMISSION_LANGUAGES,
+]
+
 const statusLabels = new Map(SUBMISSION_STATUSES.map((s) => [s.value, s.label]))
-const languageLabels = new Map(SUBMISSION_LANGUAGES.map((l) => [l.value, l.label]))
+const languageLabels = new Map(SUBMISSION_LANGUAGE_FILTERS.map((l) => [l.value, l.label]))
 
 export function statusLabel(status: SubmissionStatus): string {
   return statusLabels.get(status) ?? status

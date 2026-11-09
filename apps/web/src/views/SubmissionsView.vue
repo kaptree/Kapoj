@@ -28,7 +28,7 @@ import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppStatusTag from '@/components/ui/AppStatusTag.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
 import { formatDateTime } from '@/utils/format'
-import { languageLabel, SUBMISSION_LANGUAGES, SUBMISSION_STATUSES } from '@/utils/submission'
+import { languageLabel, SUBMISSION_LANGUAGE_FILTERS, SUBMISSION_STATUSES } from '@/utils/submission'
 
 const PAGE_SIZE = 20
 const route = useRoute()
@@ -306,7 +306,7 @@ onBeforeUnmount(() => {
             <Select
               v-model="filters.language"
               input-id="filter-language"
-              :options="SUBMISSION_LANGUAGES"
+              :options="SUBMISSION_LANGUAGE_FILTERS"
               option-label="label"
               option-value="value"
               show-clear
@@ -389,13 +389,17 @@ onBeforeUnmount(() => {
           <template #body="{ data }">{{ languageLabel(data.language) }}</template>
         </Column>
         <Column header="耗时" style="width: 75px">
-          <template #body="{ data }"
-            ><span class="num">{{ data.timeUsedMs }} ms</span></template
-          >
+          <template #body="{ data }">
+            <span class="num">{{
+              data.language === 'answer' ? '—' : `${data.timeUsedMs} ms`
+            }}</span>
+          </template>
         </Column>
         <Column header="内存" style="width: 80px">
           <template #body="{ data }">
-            <span class="num">{{ data.memoryUsedKb }} KB</span>
+            <span class="num">{{
+              data.language === 'answer' ? '—' : `${data.memoryUsedKb} KB`
+            }}</span>
           </template>
         </Column>
         <Column header="得分" style="width: 50px">
@@ -473,11 +477,15 @@ onBeforeUnmount(() => {
           </div>
           <div>
             <dt>耗时</dt>
-            <dd class="num">{{ detail.timeUsedMs }} ms</dd>
+            <dd class="num">
+              {{ detail.language === 'answer' ? '—' : `${detail.timeUsedMs} ms` }}
+            </dd>
           </div>
           <div>
             <dt>内存</dt>
-            <dd class="num">{{ detail.memoryUsedKb }} KB</dd>
+            <dd class="num">
+              {{ detail.language === 'answer' ? '—' : `${detail.memoryUsedKb} KB` }}
+            </dd>
           </div>
           <div>
             <dt>提交时间</dt>
@@ -489,7 +497,30 @@ onBeforeUnmount(() => {
           </div>
         </dl>
 
-        <Message v-if="detail.codeHidden" severity="warn" :closable="false" class="hidden-banner">
+        <template v-if="detail.language === 'answer'">
+          <Message
+            v-if="detail.answerHidden"
+            data-test="answer-hidden"
+            severity="warn"
+            :closable="false"
+            class="hidden-banner"
+          >
+            答案仅提交者本人可见。
+          </Message>
+          <template v-else-if="detail.answer">
+            <h3>答案</h3>
+            <pre class="code-block" data-test="submission-answer" tabindex="0">{{
+              detail.answer
+            }}</pre>
+          </template>
+        </template>
+
+        <Message
+          v-else-if="detail.codeHidden"
+          severity="warn"
+          :closable="false"
+          class="hidden-banner"
+        >
           比赛进行中，其他选手的代码与测评详情暂不可见。
         </Message>
 

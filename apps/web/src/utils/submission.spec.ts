@@ -5,6 +5,7 @@ import {
   monacoLanguage,
   statusLabel,
   statusTagType,
+  SUBMISSION_LANGUAGE_FILTERS,
   SUBMISSION_LANGUAGES,
   SUBMISSION_STATUSES,
 } from './submission'
@@ -30,5 +31,15 @@ describe('submission utils', () => {
     expect(monacoLanguage('c')).toBe('cpp')
     expect(monacoLanguage('python3')).toBe('python')
     expect(monacoLanguage('java')).toBe('java')
+  })
+
+  it('labels objective answers without offering answer as a code language', () => {
+    expect(languageLabel('answer')).toBe('客观题')
+    expect(SUBMISSION_LANGUAGES.map((language) => language.value)).not.toContain('answer')
+    expect(SUBMISSION_LANGUAGE_FILTERS[0]).toEqual({ value: 'answer', label: '客观题' })
+    expect(SUBMISSION_LANGUAGE_FILTERS.map((language) => language.value)).toEqual([
+      'answer',
+      ...SUBMISSION_LANGUAGES.map((language) => language.value),
+    ])
   })
 })
