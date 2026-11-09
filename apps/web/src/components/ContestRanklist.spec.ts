@@ -4,12 +4,32 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { getContestRanklist } from '@/api/contests'
 import { ApiError } from '@/api/http'
-import type { ContestRanklist } from '@/api/types'
+import type { ContestRankCell, ContestRankRow, ContestRanklist } from '@/api/types'
 import ContestRanklistView from './ContestRanklist.vue'
 
 vi.mock('@/api/contests', () => ({
   getContestRanklist: vi.fn(),
 }))
+
+function cell(overrides: Partial<ContestRankCell> = {}): ContestRankCell {
+  return { attempts: 0, score: 0, firstBlood: false, ...overrides }
+}
+
+function row(overrides: Partial<ContestRankRow> = {}): ContestRankRow {
+  return {
+    rank: 1,
+    userId: 1,
+    username: 'user',
+    nickname: 'User',
+    equippedBadges: [],
+    equippedTitle: null,
+    solved: 0,
+    penalty: 0,
+    totalScore: 0,
+    problems: [],
+    ...overrides,
+  }
+}
 
 function ranklist(overrides: Partial<ContestRanklist> = {}): ContestRanklist {
   return {
@@ -40,8 +60,9 @@ function ranklist(overrides: Partial<ContestRanklist> = {}): ContestRanklist {
             attempts: 2,
             score: 100,
             acceptedAt: '2026-01-01T10:00:00Z',
+            firstBlood: true,
           },
-          { status: 'wrong_answer', attempts: 1, score: 0 },
+          { status: 'wrong_answer', attempts: 1, score: 0, firstBlood: false },
         ],
       },
       {
@@ -55,8 +76,8 @@ function ranklist(overrides: Partial<ContestRanklist> = {}): ContestRanklist {
         penalty: 0,
         totalScore: 0,
         problems: [
-          { attempts: 0, score: 0 },
-          { attempts: 0, score: 0 },
+          { attempts: 0, score: 0, firstBlood: false },
+          { attempts: 0, score: 0, firstBlood: false },
         ],
       },
     ],
@@ -86,10 +107,65 @@ describe('ContestRanklist', () => {
     expect(wrapper.text()).toContain('ICPC')
     expect(wrapper.text()).toContain('Alice')
     expect(wrapper.text()).toContain('2 / 120')
-    expect(wrapper.text()).toContain('AC (2)')
+    expect(wrapper.text()).toContain('-2')
     expect(wrapper.text()).toContain('-1')
     expect(wrapper.text()).toContain('Bob')
-    expect(wrapper.findAll('.accepted')).toHaveLength(1)
+    expect(wrapper.findAll('.cell--first')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('colors first blood, later accepts and failures', async () => {
+    vi.mocked(getContestRanklist).mockResolvedValue(
+      ranklist({
+        mode: 'icpc',
+        problems: [{ problemId: 1, displayId: 'A', title: 'A' }],
+        rows: [
+          row({
+            userId: 1,
+            problems: [cell({ status: 'accepted', attempts: 2, score: 100, firstBlood: true })],
+          }),
+          row({
+            userId: 2,
+            problems: [cell({ status: 'accepted', attempts: 0, score: 100, firstBlood: false })],
+          }),
+          row({
+            userId: 3,
+            problems: [cell({ status: 'wrong_answer', attempts: 1, firstBlood: false })],
+          }),
+        ],
+      }),
+    )
+    const wrapper = await mountRanklist()
+
+    expect(wrapper.find('.cell--first').text()).toBe('-2')
+    expect(wrapper.find('.cell--accepted').text()).toBe('-0')
+    expect(wrapper.find('.cell--failed').exists()).toBe(true)
+    expect(wrapper.text()).toContain('首杀')
+    expect(wrapper.text()).toContain('通过')
+    expect(wrapper.text()).toContain('未通过')
+    wrapper.unmount()
+  })
+
+  it('colors accepted and failed IOI cells', async () => {
+    vi.mocked(getContestRanklist).mockResolvedValue(
+      ranklist({
+        mode: 'ioi',
+        problems: [{ problemId: 1, displayId: 'A', title: 'A' }],
+        rows: [
+          row({
+            problems: [cell({ status: 'accepted', attempts: 2, score: 100, firstBlood: false })],
+          }),
+          row({
+            userId: 2,
+            problems: [cell({ status: 'wrong_answer', attempts: 1, firstBlood: false })],
+          }),
+        ],
+      }),
+    )
+    const wrapper = await mountRanklist()
+
+    expect(wrapper.find('.cell--accepted').text()).toBe('100')
+    expect(wrapper.find('.cell--failed').exists()).toBe(true)
     wrapper.unmount()
   })
 

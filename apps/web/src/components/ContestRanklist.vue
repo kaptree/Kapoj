@@ -45,10 +45,19 @@ onMounted(load)
 function cellText(cell: ContestRankCell | undefined, icpc: boolean): string {
   if (!cell) return ''
   if (icpc) {
-    if (cell.status === 'accepted') return `AC (${cell.attempts})`
+    if (cell.status === 'accepted') return `-${cell.attempts}`
     return cell.attempts > 0 ? `-${cell.attempts}` : ''
   }
   return cell.attempts > 0 ? String(cell.score) : ''
+}
+
+function cellClass(cell: ContestRankCell | undefined) {
+  if (!cell) return {}
+  return {
+    'cell--first': cell.status === 'accepted' && cell.firstBlood,
+    'cell--accepted': cell.status === 'accepted' && !cell.firstBlood,
+    'cell--failed': cell.status !== 'accepted' && cell.attempts > 0,
+  }
 }
 
 function rowValue(row: ContestRankRow): string {
@@ -80,6 +89,11 @@ onBeforeUnmount(() => {
       <div class="ranklist-meta">
         <span class="ranklist-mode">{{ ranklist.mode.toUpperCase() }}</span>
         <span>生成于 {{ formatDateTime(ranklist.generatedAt) }}</span>
+        <span class="ranklist-legend">
+          <span class="legend-item"><i class="legend-swatch legend-swatch--first" />首杀</span>
+          <span class="legend-item"><i class="legend-swatch legend-swatch--accepted" />通过</span>
+          <span class="legend-item"><i class="legend-swatch legend-swatch--failed" />未通过</span>
+        </span>
         <Tag
           v-if="ranklist.selfOnly"
           value="OI 赛时仅显示本人成绩，赛后公布完整榜单"
@@ -126,7 +140,7 @@ onBeforeUnmount(() => {
           <template #body="{ data }">
             <span
               class="cell"
-              :class="{ accepted: data.problems[index]?.status === 'accepted' }"
+              :class="cellClass(data.problems[index])"
               :title="acceptedAt(data, index)"
             >
               {{ cellText(data.problems[index], ranklist.mode === 'icpc') }}
@@ -211,9 +225,62 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
-.cell.accepted {
+.cell--first,
+.cell--accepted,
+.cell--failed {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.cell--first {
   color: var(--kapoj-success);
   font-weight: 700;
+  background: color-mix(in srgb, var(--kapoj-success) 20%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--kapoj-success) 40%, transparent);
+}
+
+.cell--accepted {
+  color: var(--kapoj-success);
+  background: color-mix(in srgb, var(--kapoj-success) 10%, transparent);
+}
+
+.cell--failed {
+  color: var(--kapoj-danger);
+  background: color-mix(in srgb, var(--kapoj-danger) 10%, transparent);
+}
+
+.ranklist-legend {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--kapoj-space-2);
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.legend-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.legend-swatch--first {
+  background: color-mix(in srgb, var(--kapoj-success) 55%, transparent);
+  box-shadow: inset 0 0 0 1px var(--kapoj-success);
+}
+
+.legend-swatch--accepted {
+  background: color-mix(in srgb, var(--kapoj-success) 20%, transparent);
+}
+
+.legend-swatch--failed {
+  background: color-mix(in srgb, var(--kapoj-danger) 20%, transparent);
 }
 
 @media (max-width: 640px) {
