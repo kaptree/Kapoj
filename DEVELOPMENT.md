@@ -3,7 +3,7 @@
 > 本文档基于 `plan.md` 细化，是 kapOJ（Kap Online Judge）平台的详细开发规格说明书。
 > 目标：**打造出最有趣味的 Online Judge 平台**。
 > 文档包含完整的架构设计、数据库设计、模块需求，并为每个模块提供了可直接交给 Codex 的**开发提示词（Prompt）**。
-> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)，前端 UI 迁移见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。当前进度：**M4-2A、M4-2B、M4-2C、M4-3、M4-4、RBAC-D、M5-A、M5-4、M5-5、M5-6、M5-7 与 M5-8 已完成**（M0–M3 已完成；M4 已完成；M5 已完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页、签到、Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线模型、权限、路线/节点 CRUD 与树结构；M4-2B 交付服务端进度计算（AC 事件补算 + 读取补算、完成锁存）与题目下线/删除守卫；M4-2C 交付学习路线前端（列表/树详情/编辑/官方管理页，PrimeVue TreeTable/DataTable，UI-31）；M4-3 交付轻量社交互动（题解点赞、用户关注、站内通知，回复/点赞/关注接入活跃度与共享分，前端点赞按钮/关注 Dialog/通知铃铛/通知页，UI-32，见 4.8）；M4-4 交付 Rating 衰减与赛季重置（`rating.settings.manage` 权限与 Rating 分组、管理设置 API、`/admin/rating` 设置页、月度高分段衰减、赛季软重置、`decay`/`season_reset` 历史与公开赛季接口）；RBAC-A 交付权限目录、内置角色、首次 Seed/旧角色映射、实时 Access 解析、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/`canAny`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化，以及文档、HTTP 冒烟与浏览器 E2E；M5-A 交付 AI 后端基础（多 provider 配置、用户 API key AES-GCM 加密存储、OpenAI 兼容补全/格式化/优化与题目 AI 提示缓存/限流，AI 路由始终挂载、未配置密钥时返回 40002）；M5-5 交付 AI 前端（提交页 AI 补全/格式化/优化工具栏、题目详情 AI 提示、`/settings/ai` AI 配置页与用户菜单入口，见 §6.5）；M5-6 交付 HydroOJ 题包导入（`POST /api/problems/import/hydro`、大小限制/防路径穿越、slug 冲突不覆盖、默认下线、逐题部分成功与整包回滚，见 §7）与题目详情公开创建者摘要（`author{id,username,nickname}`），前端新增 `/problems/import` 导入页、题目列表「导入题包」入口与详情创建者链接。AI 出题造数据（M5-4）已交付：标程 → AI 纯 Python 3 造数据脚本 → judge 沙盒生成输入/输出 → 预览确认入库，见 §6.4；M5-7 证书认证已交付（证书类型/提交/审核/公开验证码核验，见 §5.6）；头像上传（M5-8）已交付（本地存储上传/移除、公开读取、上传优先与外链替换语义，见 §4.1））。前端 UI 已完成 UI-00～UI-20 的 PrimeVue 4 迁移（含 UI-19 题库编辑与 UI-20 异常页）、UI-30（M4-C 排行榜/历史）、UI-31（M4-7 学习路线）、UI-32（M4-3 社交互动）与 RBAC-D 管理后台页面直接实现，Element Plus 依赖与过渡样式已移除；该迁移已提交。题目详情页已改造为「题面 + 提示卡片 + 右侧四资源卡片」，并交付官方题解（创建者编辑 + 金币解锁）、解题思路论坛（帖子/回复/软删除）、提交统计页与关联比赛页，详见 4.3；题目主更新不再写入题解字段，官方题解专用接口是唯一写入口。
+> 开发进度见 [`docs/任务清单.md`](docs/任务清单.md)，每次变更记录见 [`docs/开发日志.md`](docs/开发日志.md)，前端 UI 迁移见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。当前进度：**M4-2A、M4-2B、M4-2C、M4-3、M4-4、RBAC-D、M5-A、M5-4、M5-5、M5-6、M5-7 与 M5-8 已完成**（M0–M3 已完成；M4 已完成；M5 已完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页、签到、Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线模型、权限、路线/节点 CRUD 与树结构；M4-2B 交付服务端进度计算（AC 事件补算 + 读取补算、完成锁存）与题目下线/删除守卫；M4-2C 交付学习路线前端（列表/树详情/编辑/官方管理页，PrimeVue TreeTable/DataTable，UI-31）；M4-3 交付轻量社交互动（题解点赞、用户关注、站内通知，回复/点赞/关注接入活跃度与共享分，前端点赞按钮/关注 Dialog/通知铃铛/通知页，UI-32，见 4.8）；M4-4 交付 Rating 衰减与赛季重置（`rating.settings.manage` 权限与 Rating 分组、管理设置 API、`/admin/rating` 设置页、月度高分段衰减、赛季软重置、`decay`/`season_reset` 历史与公开赛季接口）；RBAC-A 交付权限目录、内置角色、首次 Seed/旧角色映射、实时 Access 解析、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/`canAny`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化，以及文档、HTTP 冒烟与浏览器 E2E；M5-A 交付 AI 后端基础（多 provider 配置、用户 API key AES-GCM 加密存储、OpenAI 兼容补全/格式化/优化与题目 AI 提示缓存/限流，AI 路由始终挂载、未配置密钥时返回 40002）；M5-5 交付 AI 前端（提交页 AI 补全/格式化/优化工具栏、题目详情 AI 提示、`/settings/ai` AI 配置页与用户菜单入口，见 §6.5）；M5-6 交付 HydroOJ 题包导入（`POST /api/problems/import/hydro`、大小限制/防路径穿越、slug 冲突不覆盖、默认下线、逐题部分成功与整包回滚，见 §7）与题目详情公开创建者摘要（`author{id,username,nickname}`），前端新增 `/problems/import` 导入页、题目列表「导入题包」入口与详情创建者链接。AI 出题造数据（M5-4）已交付：标程 → AI 纯 Python 3 造数据脚本 → judge 沙盒生成输入/输出 → 预览确认入库，见 §6.4；M5-7 证书认证已交付（证书类型/提交/审核/公开验证码核验，见 §5.6）；头像上传（M5-8）已交付（本地存储上传/移除、公开读取、上传优先与外链替换语义，见 §4.1）；账号安全已交付（修改密码 + 活跃会话：会话列表/退出其他/退出所有、sessionId/Redis 会话结构、改密限流 42904，见 §4.1））。前端 UI 已完成 UI-00～UI-20 的 PrimeVue 4 迁移（含 UI-19 题库编辑与 UI-20 异常页）、UI-30（M4-C 排行榜/历史）、UI-31（M4-7 学习路线）、UI-32（M4-3 社交互动）与 RBAC-D 管理后台页面直接实现，Element Plus 依赖与过渡样式已移除；该迁移已提交。题目详情页已改造为「题面 + 提示卡片 + 右侧四资源卡片」，并交付官方题解（创建者编辑 + 金币解锁）、解题思路论坛（帖子/回复/软删除）、提交统计页与关联比赛页，详见 4.3；题目主更新不再写入题解字段，官方题解专用接口是唯一写入口。
 
 ---
 
@@ -161,6 +161,7 @@ kapoj/
 | 41300 | 413  | 请求体过大                   |
 | 42901 | 429  | 登录失败次数过多             |
 | 42902 | 429  | 提交过于频繁                 |
+| 42904 | 429  | 修改密码尝试次数过多         |
 | 50000 | 500  | 服务器内部错误               |
 | 50300 | 503  | 依赖服务不可用               |
 
@@ -598,9 +599,28 @@ user_ai_configs (
 | DELETE | /users/me/avatar | 移除头像（登录）                 |
 | GET  | /users/:id/avatar  | 读取上传头像（公开）             |
 | GET  | /users/:id/profile | 查看他人主页                    |
+| PUT  | /users/me/password | 修改密码（登录；校验当前密码）   |
+| GET  | /users/me/sessions | 活跃会话列表（登录）             |
+| DELETE | /users/me/sessions/:id | 退出单个会话（登录）         |
+| POST | /users/me/sessions/logout-others | 退出其他设备（登录）      |
+| POST | /users/me/sessions/logout-all | 退出所有设备（登录）         |
 | GET  | /admin/users       | 用户分页列表（`user.read`，见 4.7） |
 
-**实现状态（M0 ✅）**：上表接口均已实现，完整定义见 `packages/api/openapi.yaml`。
+**实现状态（M0 ✅）**：上表接口均已实现，完整定义见 `packages/api/openapi.yaml`。修改密码与会话管理接口自「账号安全」里程碑（2026-11-09）起提供，见下方「实现状态（账号安全）」。
+
+**会话与修改密码的数据结构（Redis）**：
+
+```text
+refresh:<sha256(token)> = {"userId":1,"sessionId":"<id>"}   TTL=refreshTTL（默认 168h）
+session:<sessionId>      = {"userId":1,"tokenHash":"<hash>","ip":"...","userAgent":"...",
+                            "createdAt":"RFC3339Nano","lastUsedAt":"RFC3339Nano"} TTL=refreshTTL
+user_refresh:<userId>    = SET<hash>       TTL=refreshTTL
+user_sessions:<userId>   = SET<sessionId>  TTL=refreshTTL
+```
+
+- refresh token 仍是不透明随机串，Redis 只存 SHA-256；sessionId 为 16 字节 `crypto/rand` 的 hex（32 字符），公开给本人、不含 token。
+- 刷新在同一 sessionId 内轮换 refresh token（`Rotate`），更新 `tokenHash`/`lastUsedAt`/ip/ua 并滑动重置 TTL；legacy 纯 userID 的旧 `refresh:<hash>` 值在首次刷新时迁移为新会话。
+- `session:*` 只返回 id/ip/userAgent/createdAt/lastUsedAt，绝不返回 token/hash/userId；IP/UA 截断（IP 45、UA 512），仅本人可见，允许为空。
 
 **实现差异**：
 
@@ -617,7 +637,7 @@ user_ai_configs (
 - `GET /users/:id/profile` 不返回邮箱和角色；M3-B 起返回真实的 `equippedBadges`（数组，最多 `KAPOJ_MAX_EQUIPPED_BADGES` 个）与 `equippedTitle`（无装备时为 null），已装备但后来下线的徽章/称号仍展示。
 - M3-C 起个人主页昵称旁用 `IdentityShowcase` 展示装备称号与徽章；用户菜单显示金币余额并提供「装扮管理」入口。金币余额以服务端 `GET /users/me` 为准，购买或装备后刷新。
 - `GET /admin/users` 原为超级管理员的用户分页列表；RBAC-B 起改为 `user.read` 权限（super 绕过），并新增 keyword/status/roleId 筛选，详见 4.7。该接口也用于验收「管理员接口对无权限用户返回 403」。
-- 头像上传已实现（M5-8，见下）；修改密码接口**未实现**。
+- 头像上传已实现（M5-8，见下）；修改密码与会话管理接口也已实现（账号安全，见下）。
 
 **实现状态（RBAC-A，2026-11-06）**
 
@@ -639,6 +659,18 @@ user_ai_configs (
 - 来源语义：上传优先于外链；保存非空 `avatarUrl` 会替换上传头像（清空 `avatar_key`/`avatar_content_type` 并删除旧文件）；保存空 `avatarUrl` 保留已有上传（避免表单把内部 URL 当外链误删）；移除头像清空外链与上传。管理员编辑用户沿用同一语义（非空外链清空 key，空外链保留上传；admin 路径不持有 storage，旧文件删除为 minor）。
 - 公开读取 `GET /api/users/:id/avatar` 无认证，按 `avatar_key` 读取并返回 DB 中的 contentType，响应 `Cache-Control: public, max-age=31536000, immutable`（URL 带 v 缓存破坏）；无上传/文件缺失返回 404。上传/移除仅本人登录可用（401/40001）。
 - 上传失败/DB 失败会清理新文件，旧头像不丢；替换/移除成功后 best-effort 删除旧文件。不新增权限码、不接 MinIO、不提供裁剪/压缩/审核；前端所有 `avatarUrl` 展示位置（UserMenu/UserProfile/榜单/测评/社交）自动使用新头像。
+
+**实现状态（账号安全：修改密码 + 活跃会话 ✅，2026-11-09）**
+
+- **修改密码** `PUT /api/users/me/password`（登录）：请求体 `{currentPassword,newPassword}`。校验当前密码（错误返回 40001「当前密码错误」）；新密码 8–72 字节且不能与当前相同（40001）；成功后 bcrypt 更新 hash 并吊销该用户全部会话，返回 200。前端 `/settings/security` 成功后 Toast 提示并 `auth.clear()` 跳转登录。
+- **限流**：复用 `LoginLimiter`，key 为 `login_fail:password:<userID>`，10 次/5 分钟；每次尝试在校验当前密码前原子计数，超限返回新错误码 42904「修改密码尝试次数过多，请 5 分钟后再试」，成功修改后重置计数；Redis 不可用返回 50300。
+- **会话列表** `GET /api/users/me/sessions`（登录）：返回 `SessionView{id,ip,userAgent,createdAt,lastUsedAt}`（最近使用优先），不含 token/hash/userId。
+- **退出会话**：`DELETE /api/users/me/sessions/:id`（只能退出本人，未知/他人 404，退出当前会话等同退出登录）、`POST /api/users/me/sessions/logout-others`（body `{sessionId}`，保留当前）、`POST /api/users/me/sessions/logout-all`（吊销全部）。
+- **sessionId**：登录/注册/刷新响应（`TokenPair`）带 `sessionId`；刷新在同一会话内轮换，sessionId 不变；前端 `auth` store 持久化 `sessionId`，会话列表用它与当前会话比较来标记「当前设备」。
+- **IP 为 best-effort**：IP 取 `c.ClientIP()`，仅本人可见、作展示用；反向代理部署须配置 Gin `trusted proxies`，否则会显示代理 IP。
+- **改密后 access token 仍有效最长 15 分钟**：改密只吊销全部 refresh token，已签发 access token 在过期前仍可用；前端改密后立即清空并重新登录。
+- **接受边界**：改密先 `RevokeAll` 再 `UpdatePassword`（无 DB/Redis 跨存储事务）；`RevokeAll` 成功但 `UpdatePassword` 失败时，会话已失效而密码未变，用户可用旧密码重新登录。
+- 前端新增 `/settings/security` 账号安全页（PrimeVue 4）：修改密码表单 + 活跃会话 `DataTable`（设备摘要/`当前设备` Tag/IP/创建与最近使用时间），行内「退出此设备」、工具栏「退出其他设备」「退出所有设备」；UserMenu 增加「账号安全」入口。无新权限码、不改 users 表、不新增依赖。
 
 **Codex 提示词（用户与认证）**
 
