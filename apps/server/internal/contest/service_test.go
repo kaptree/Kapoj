@@ -933,3 +933,84 @@ func TestContestCanManageDerivation(t *testing.T) {
 		})
 	}
 }
+
+func TestContestDetailPostContestStats(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	now := time.Now()
+	start := now.Add(-2 * time.Hour)
+	in := baseInput(e)
+	in.StartTime, in.EndTime = start, now.Add(-time.Hour)
+	c, err := e.svc.Create(ctx, manager(), in)
+	require.NoError(t, err)
+	require.NoError(t, e.repo.AddParticipant(ctx, c.ID, userID))
+	require.NoError(t, e.repo.AddParticipant(ctx, c.ID, otherID))
+	require.NoError(t, e.db.Exec(
+		`UPDATE contest_participants SET register_time = ? WHERE contest_id = ?`,
+		start.Add(-time.Minute), c.ID,
+	).Error)
+
+	p := e.problems[0].ID
+	insertRankSubmission(t, e, c.ID, userID, p, "wrong_answer", 0, start.Add(5*time.Minute))
+	insertRankSubmission(t, e, c.ID, userID, p, "accepted", 100, start.Add(10*time.Minute))
+	insertRankSubmission(t, e, c.ID, otherID, p, "wrong_answer", 0, start.Add(6*time.Minute))
+	// pending 不计入
+	require.NoError(t, e.db.Exec(
+		`INSERT INTO submissions (user_id, problem_id, contest_id, language, code, status, created_at)
+		 VALUES (?, ?, ?, 'cpp', 'x', 'pending', ?)`, otherID, p, c.ID, start.Add(7*time.Minute),
+	).Error)
+
+	detail, err := e.svc.Detail(ctx, user(), c.ID)
+	require.NoError(t, err)
+	require.Len(t, detail.Problems, 2)
+	assert.EqualValues(t, 3, detail.Problems[0].SubmitCount,
+		"contest-wide count includes every participant's judged submissions")
+	assert.EqualValues(t, 1, detail.Problems[0].AcceptCount)
+	assert.Equal(t, "accepted", detail.Problems[0].MyStatus)
+	assert.Equal(t, 2, detail.Problems[0].MyAttempts)
+	assert.EqualValues(t, 1000, detail.Problems[0].TimeLimitMS)
+	assert.EqualValues(t, 256, detail.Problems[0].MemoryLimitMB)
+}
+
+func TestContestDetailProblemLockedAndStatsGating(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	endedInput := baseInput(e)
+	endedInput.StartTime, endedInput.EndTime = now.Add(-3*time.Hour), now.Add(-2*time.Hour)
+	ended, err := e.svc.Create(ctx, manager(), endedInput)
+	require.NoError(t, err)
+
+	// The second problem is still held by a running contest, so it stays
+	// locked even though the ended contest itself is over.
+	runningInput := baseInput(e)
+	runningInput.StartTime, runningInput.EndTime = now.Add(-time.Hour), now.Add(time.Hour)
+	runningInput.Problems = []contest.ProblemInput{
+		{ProblemID: e.problems[1].ID, DisplayID: "A", Score: 100},
+	}
+	running, err := e.svc.Create(ctx, manager(), runningInput)
+	require.NoError(t, err)
+
+	detail, err := e.svc.Detail(ctx, user(), ended.ID)
+	require.NoError(t, err)
+	require.Len(t, detail.Problems, 2)
+	assert.False(t, detail.Problems[0].Locked, "the problem is no longer held by any running contest")
+	assert.True(t, detail.Problems[1].Locked, "the problem is still held by a running contest")
+	assert.True(t, detail.Problems[0].IsPublic)
+	assert.EqualValues(t, 0, detail.Problems[0].SubmitCount)
+	assert.EqualValues(t, 0, detail.Problems[0].AcceptCount)
+	assert.Empty(t, detail.Problems[0].MyStatus)
+	assert.Zero(t, detail.Problems[0].MyAttempts)
+
+	// A running contest hides its problems from non-managers before start,
+	// but stats are zero during the contest regardless of visibility.
+	runningDetail, err := e.svc.Detail(ctx, manager(), running.ID)
+	require.NoError(t, err)
+	require.Len(t, runningDetail.Problems, 1)
+	assert.True(t, runningDetail.Problems[0].Locked)
+	assert.EqualValues(t, 0, runningDetail.Problems[0].SubmitCount, "running contests expose no stats")
+	assert.EqualValues(t, 0, runningDetail.Problems[0].AcceptCount)
+	assert.Empty(t, runningDetail.Problems[0].MyStatus)
+	assert.Zero(t, runningDetail.Problems[0].MyAttempts)
+}

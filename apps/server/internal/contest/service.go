@@ -167,6 +167,7 @@ func (s *Service) Detail(ctx context.Context, v Viewer, id int64) (*Detail, erro
 		return nil, err
 	}
 	now := time.Now()
+	status := StatusAt(c.StartTime, c.EndTime, now)
 	rows, err := s.repo.FindProblems(ctx, id)
 	if err != nil {
 		return nil, err
@@ -178,6 +179,46 @@ func (s *Service) Detail(ctx context.Context, v Viewer, id int64) (*Detail, erro
 	problems := make([]ProblemItem, len(rows))
 	for i, row := range rows {
 		problems[i] = toProblemItem(row)
+	}
+	// Locked is relevant before, during and after the contest, so it is
+	// computed independently of the contest status.
+	if len(rows) > 0 {
+		ids := make([]int64, len(rows))
+		for i, row := range rows {
+			ids[i] = row.ProblemID
+		}
+		locked, err := s.repo.LockedProblemIDs(ctx, ids, now)
+		if err != nil {
+			return nil, err
+		}
+		for i, row := range rows {
+			problems[i].Locked = locked[row.ProblemID]
+		}
+		if status == StatusEnded {
+			stats, err := s.repo.ProblemStats(ctx, id)
+			if err != nil {
+				return nil, err
+			}
+			mine := map[int64]UserProblemStat{}
+			if v.UserID != 0 {
+				mine, err = s.repo.UserProblemStats(ctx, id, v.UserID)
+				if err != nil {
+					return nil, err
+				}
+			}
+			for i, row := range rows {
+				stat := stats[row.ProblemID]
+				problems[i].SubmitCount = stat.SubmitCount
+				problems[i].AcceptCount = stat.AcceptCount
+				userStat := mine[row.ProblemID]
+				problems[i].MyAttempts = userStat.Attempts
+				if userStat.Accepted {
+					problems[i].MyStatus = "accepted"
+				} else {
+					problems[i].MyStatus = userStat.LastStatus
+				}
+			}
+		}
 	}
 	registered := false
 	if v.UserID != 0 {

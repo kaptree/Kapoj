@@ -39,8 +39,24 @@ type ListFilter struct {
 
 type ProblemRow struct {
 	ContestProblem
-	ProblemTitle string `gorm:"column:problem_title"`
-	ProblemSlug  string `gorm:"column:problem_slug"`
+	ProblemTitle         string `gorm:"column:problem_title"`
+	ProblemSlug          string `gorm:"column:problem_slug"`
+	ProblemTimeLimitMS   int    `gorm:"column:problem_time_limit_ms"`
+	ProblemMemoryLimitMB int    `gorm:"column:problem_memory_limit_mb"`
+	ProblemIsPublic      bool   `gorm:"column:problem_is_public"`
+}
+
+// ProblemStat 是单场比赛内某题的赛后聚合统计。
+type ProblemStat struct {
+	SubmitCount int `gorm:"column:submit_count"`
+	AcceptCount int `gorm:"column:accept_count"`
+}
+
+// UserProblemStat 是当前用户在单场比赛内某题的个人统计。
+type UserProblemStat struct {
+	Attempts   int
+	Accepted   bool
+	LastStatus string
 }
 
 type ListRow struct {
@@ -66,8 +82,11 @@ type Repository interface {
 	HasSubmissions(ctx context.Context, contestID int64) (bool, error)
 	CanViewProblem(ctx context.Context, userID, problemID int64, now time.Time) (bool, error)
 	IsProblemLocked(ctx context.Context, problemID int64, now time.Time) (bool, error)
+	LockedProblemIDs(ctx context.Context, problemIDs []int64, now time.Time) (map[int64]bool, error)
 	AIBlockedForUser(ctx context.Context, userID, problemID int64, now time.Time) (bool, error)
 	RankSubmissions(ctx context.Context, contestID int64) ([]RankSubmission, error)
+	ProblemStats(ctx context.Context, contestID int64) (map[int64]ProblemStat, error)
+	UserProblemStats(ctx context.Context, contestID, userID int64) (map[int64]UserProblemStat, error)
 	List(ctx context.Context, f ListFilter, offset, limit int) ([]ListRow, int64, error)
 	Delete(ctx context.Context, id int64) error
 
@@ -248,7 +267,10 @@ func (r *gormRepository) List(ctx context.Context, f ListFilter, offset, limit i
 func (r *gormRepository) FindProblems(ctx context.Context, contestID int64) ([]ProblemRow, error) {
 	var rows []ProblemRow
 	err := r.db.WithContext(ctx).Table("contest_problems AS cp").
-		Select("cp.*, p.title AS problem_title, p.slug AS problem_slug").
+		Select(`cp.*, p.title AS problem_title, p.slug AS problem_slug,
+			p.time_limit_ms AS problem_time_limit_ms,
+			p.memory_limit_mb AS problem_memory_limit_mb,
+			p.is_public AS problem_is_public`).
 		Joins("JOIN problems AS p ON p.id = cp.problem_id").
 		Where("cp.contest_id = ?", contestID).
 		Order("cp.sort_order, cp.id").Scan(&rows).Error
@@ -301,6 +323,32 @@ func (r *gormRepository) IsProblemLocked(ctx context.Context, problemID int64, n
 	return locked, err
 }
 
+// LockedProblemIDs returns the subset of problemIDs that still belong to a
+// contest that has not ended yet.
+func (r *gormRepository) LockedProblemIDs(ctx context.Context, problemIDs []int64, now time.Time) (map[int64]bool, error) {
+	locked := make(map[int64]bool, len(problemIDs))
+	if len(problemIDs) == 0 {
+		return locked, nil
+	}
+	type problemIDRow struct {
+		ProblemID int64 `gorm:"column:problem_id"`
+	}
+	var rows []problemIDRow
+	err := r.db.WithContext(ctx).Raw(`
+		SELECT DISTINCT cp.problem_id
+		FROM contest_problems cp
+		JOIN contests c ON c.id = cp.contest_id
+		WHERE cp.problem_id IN (?) AND c.end_time > ?`,
+		problemIDs, now).Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		locked[row.ProblemID] = true
+	}
+	return locked, nil
+}
+
 // AIBlockedForUser reports whether userID is participating in a running contest
 // that contains the problem and has AI assistance disabled.
 func (r *gormRepository) AIBlockedForUser(ctx context.Context, userID, problemID int64, now time.Time) (bool, error) {
@@ -323,6 +371,76 @@ func (r *gormRepository) RankSubmissions(ctx context.Context, contestID int64) (
 		Where("contest_id = ? AND status NOT IN ('pending', 'judging')", contestID).
 		Order("created_at, id").Scan(&rows).Error
 	return rows, err
+}
+
+// ProblemStats aggregates judged submissions for every problem in a contest,
+// using the same participant/register-time/time-window filter as the ranklist.
+func (r *gormRepository) ProblemStats(ctx context.Context, contestID int64) (map[int64]ProblemStat, error) {
+	var rows []struct {
+		ProblemID   int64 `gorm:"column:problem_id"`
+		SubmitCount int   `gorm:"column:submit_count"`
+		AcceptCount int   `gorm:"column:accept_count"`
+	}
+	err := r.db.WithContext(ctx).Raw(`
+		SELECT s.problem_id,
+		       COUNT(*) AS submit_count,
+		       COUNT(DISTINCT s.user_id) FILTER (WHERE s.status = 'accepted') AS accept_count
+		FROM submissions s
+		JOIN contest_participants p
+		  ON p.contest_id = s.contest_id AND p.user_id = s.user_id
+		JOIN contests c ON c.id = s.contest_id
+		WHERE s.contest_id = ?
+		  AND s.status NOT IN ('pending', 'judging')
+		  AND s.created_at >= c.start_time
+		  AND s.created_at < c.end_time
+		  AND s.created_at >= p.register_time
+		GROUP BY s.problem_id`, contestID).Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	stats := make(map[int64]ProblemStat, len(rows))
+	for _, row := range rows {
+		stats[row.ProblemID] = ProblemStat{
+			SubmitCount: row.SubmitCount, AcceptCount: row.AcceptCount,
+		}
+	}
+	return stats, nil
+}
+
+// UserProblemStats aggregates one user's judged submissions per problem in a
+// contest, with the same filter as ProblemStats.
+func (r *gormRepository) UserProblemStats(ctx context.Context, contestID, userID int64) (map[int64]UserProblemStat, error) {
+	var rows []struct {
+		ProblemID int64  `gorm:"column:problem_id"`
+		Status    string `gorm:"column:status"`
+	}
+	err := r.db.WithContext(ctx).Raw(`
+		SELECT s.problem_id, s.status
+		FROM submissions s
+		JOIN contest_participants p
+		  ON p.contest_id = s.contest_id AND p.user_id = s.user_id
+		JOIN contests c ON c.id = s.contest_id
+		WHERE s.contest_id = ?
+		  AND s.user_id = ?
+		  AND s.status NOT IN ('pending', 'judging')
+		  AND s.created_at >= c.start_time
+		  AND s.created_at < c.end_time
+		  AND s.created_at >= p.register_time
+		ORDER BY s.created_at, s.id`, contestID, userID).Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	stats := make(map[int64]UserProblemStat)
+	for _, row := range rows {
+		stat := stats[row.ProblemID]
+		stat.Attempts++
+		if row.Status == "accepted" {
+			stat.Accepted = true
+		}
+		stat.LastStatus = row.Status
+		stats[row.ProblemID] = stat
+	}
+	return stats, nil
 }
 
 func (r *gormRepository) Delete(ctx context.Context, id int64) error {

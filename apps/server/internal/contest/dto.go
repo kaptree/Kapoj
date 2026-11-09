@@ -21,12 +21,20 @@ type ListItem struct {
 }
 
 type ProblemItem struct {
-	ProblemID int64  `json:"problemId"`
-	Title     string `json:"title"`
-	Slug      string `json:"slug"`
-	DisplayID string `json:"displayId"`
-	SortOrder int    `json:"sortOrder"`
-	Score     int    `json:"score"`
+	ProblemID     int64  `json:"problemId"`
+	Title         string `json:"title"`
+	Slug          string `json:"slug"`
+	DisplayID     string `json:"displayId"`
+	SortOrder     int    `json:"sortOrder"`
+	Score         int    `json:"score"`
+	TimeLimitMS   int    `json:"timeLimitMs"`
+	MemoryLimitMB int    `json:"memoryLimitMb"`
+	IsPublic      bool   `json:"isPublic"`
+	Locked        bool   `json:"locked"`
+	SubmitCount   int    `json:"submitCount"`
+	AcceptCount   int    `json:"acceptCount"`
+	MyStatus      string `json:"myStatus"`
+	MyAttempts    int    `json:"myAttempts"`
 }
 
 type Detail struct {
@@ -67,5 +75,7 @@ func toProblemItem(row ProblemRow) ProblemItem {
 	return ProblemItem{
 		ProblemID: row.ProblemID, Title: row.ProblemTitle, Slug: row.ProblemSlug,
 		DisplayID: row.DisplayID, SortOrder: row.SortOrder, Score: row.Score,
+		TimeLimitMS: row.ProblemTimeLimitMS, MemoryLimitMB: row.ProblemMemoryLimitMB,
+		IsPublic: row.ProblemIsPublic,
 	}
 }
