@@ -95,6 +95,7 @@ function detail(overrides: Partial<ContestDetail> = {}): ContestDetail {
         problemId: 1,
         title: 'Two Sum',
         slug: 'two-sum',
+        type: 'traditional',
         displayId: 'A',
         sortOrder: 1,
         score: 100,
@@ -111,6 +112,7 @@ function detail(overrides: Partial<ContestDetail> = {}): ContestDetail {
         problemId: 2,
         title: 'Add Two Numbers',
         slug: 'add-two-numbers',
+        type: 'traditional',
         displayId: 'B',
         sortOrder: 2,
         score: 100,
@@ -158,6 +160,7 @@ function problem(
     problemId: 1,
     title: 'Two Sum',
     slug: 'two-sum',
+    type: 'traditional',
     displayId: 'A',
     sortOrder: 1,
     score: 100,
@@ -548,6 +551,21 @@ describe('ContestDetailView', () => {
     expect(wrapper.find('[data-test="problem-bank-link"]').attributes('href')).toContain(
       '/problems/1',
     )
+    wrapper.unmount()
+  })
+
+  it('shows an objective tag instead of limits for objective problems', async () => {
+    vi.mocked(getContest).mockResolvedValue(
+      detail({
+        status: 'ended',
+        problems: [problem({ type: 'objective' })],
+      }),
+    )
+    const { wrapper } = await mountPage()
+
+    expect(wrapper.text()).toContain('客观题')
+    expect(wrapper.text()).not.toContain('1000 ms')
+    expect(wrapper.text()).not.toContain('256 MB')
     wrapper.unmount()
   })
 

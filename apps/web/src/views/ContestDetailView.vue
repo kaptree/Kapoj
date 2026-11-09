@@ -555,8 +555,11 @@ async function doRemoveAnnouncement(item: AnnouncementItem) {
                 <Column header="限制" style="width: 150px">
                   <template #body="{ data }">
                     <div class="limit-tags">
-                      <Tag :value="`${data.timeLimitMs} ms`" severity="secondary" />
-                      <Tag :value="`${data.memoryLimitMb} MB`" severity="secondary" />
+                      <Tag v-if="data.type === 'objective'" value="客观题" severity="secondary" />
+                      <template v-else>
+                        <Tag :value="`${data.timeLimitMs} ms`" severity="secondary" />
+                        <Tag :value="`${data.memoryLimitMb} MB`" severity="secondary" />
+                      </template>
                     </div>
                   </template>
                 </Column>

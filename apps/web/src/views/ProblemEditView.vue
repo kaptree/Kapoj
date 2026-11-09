@@ -13,6 +13,7 @@ import TabList from 'primevue/tablist'
 import TabPanel from 'primevue/tabpanel'
 import TabPanels from 'primevue/tabpanels'
 import Tabs from 'primevue/tabs'
+import Textarea from 'primevue/textarea'
 import ToggleSwitch from 'primevue/toggleswitch'
 import { useConfirm } from 'primevue/useconfirm'
 import { useToast } from 'primevue/usetoast'
@@ -42,6 +43,7 @@ const TYPE_OPTIONS: { label: string; value: ProblemType }[] = [
   { label: '传统题', value: 'traditional' },
   { label: '特判题', value: 'special' },
   { label: '交互题（暂不评测）', value: 'interactive' },
+  { label: '客观题（直接提交答案）', value: 'objective' },
 ]
 
 const problemId = computed(() =>
@@ -68,6 +70,7 @@ function emptyForm(): FormState {
     samples: [],
     hintMd: '',
     type: 'traditional',
+    answers: [],
     tags: [],
     difficulty: 1,
     timeLimitMs: 1000,
@@ -78,6 +81,7 @@ function emptyForm(): FormState {
 }
 
 const form = reactive<FormState>(emptyForm())
+const answersText = ref('')
 const checkerUploaded = ref(false)
 const published = ref(false)
 const loading = ref(false)
@@ -96,6 +100,7 @@ function fill(p: ProblemDetail) {
     samples: p.samples.map((s) => ({ ...s })),
     hintMd: p.hintMd,
     type: p.type,
+    answers: [...(p.answers ?? [])],
     tags: [...p.tags],
     difficulty: p.difficulty,
     timeLimitMs: p.timeLimitMs,
@@ -103,6 +108,7 @@ function fill(p: ProblemDetail) {
     isPublic: p.isPublic,
     source: p.source,
   })
+  answersText.value = form.answers.join('\n')
   checkerUploaded.value = p.checkerUploaded ?? false
   published.value = p.isPublic
 }
@@ -110,6 +116,7 @@ function fill(p: ProblemDetail) {
 async function load() {
   if (problemId.value === null) {
     Object.assign(form, emptyForm())
+    answersText.value = ''
     checkerUploaded.value = false
     published.value = false
     loadFailed.value = false
@@ -138,6 +145,18 @@ async function load() {
 
 watch(() => route.params.id, load, { immediate: true })
 
+// Answers belong to objective problems only; drop them when switching type so
+// a later save cannot carry stale answers into a code problem.
+watch(
+  () => form.type,
+  (type, previous) => {
+    if (type !== 'objective' && previous === 'objective') {
+      answersText.value = ''
+      form.answers = []
+    }
+  },
+)
+
 function describe(e: unknown, fallback: string) {
   return e instanceof ApiError ? e.message : fallback
 }
@@ -150,6 +169,13 @@ function normalizedForm(): FormState {
       .map((t) => t.trim())
       .filter(Boolean)
       .slice(0, 10),
+    answers:
+      form.type === 'objective'
+        ? answersText.value
+            .split(/\r?\n/)
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : [],
   }
 }
 
@@ -164,7 +190,10 @@ async function save() {
       const created = await createProblem(normalizedForm())
       toast.add({
         severity: 'success',
-        summary: '题目已创建。请上传测试点，再回到这里发布。',
+        summary:
+          form.type === 'objective'
+            ? '题目已创建。请确认正确答案，再回到这里发布。'
+            : '题目已创建。请上传测试点，再回到这里发布。',
         life: 3000,
       })
       await router.replace({ name: 'problem-edit', params: { id: created.id } })
@@ -259,7 +288,11 @@ function remove() {
     <template v-else>
       <Message v-if="error" severity="error" :closable="false">{{ error }}</Message>
       <Message v-if="!isEdit" severity="info" :closable="false">
-        新题目创建后默认不公开。创建后上传测试点，再回到这里发布。
+        {{
+          form.type === 'objective'
+            ? '新题目创建后默认不公开。填写正确答案后回到这里发布。'
+            : '新题目创建后默认不公开。创建后上传测试点，再回到这里发布。'
+        }}
       </Message>
 
       <AppSurface padding="lg">
@@ -295,6 +328,24 @@ function remove() {
               </template>
             </AppFormField>
 
+            <AppFormField
+              v-if="form.type === 'objective'"
+              class="grid-full"
+              label="正确答案"
+              required
+              hint="每行一个可接受答案；判定时忽略首尾空白和大小写"
+            >
+              <template #default="{ id }">
+                <Textarea
+                  :id="id"
+                  v-model="answersText"
+                  data-test="objective-answers"
+                  rows="6"
+                  fluid
+                />
+              </template>
+            </AppFormField>
+
             <AppFormField label="难度">
               <template #default="{ id }">
                 <Select
@@ -307,7 +358,7 @@ function remove() {
               </template>
             </AppFormField>
 
-            <AppFormField label="时间限制">
+            <AppFormField v-if="form.type !== 'objective'" label="时间限制">
               <template #default="{ id }">
                 <div class="unit-row">
                   <InputNumber
@@ -322,7 +373,7 @@ function remove() {
               </template>
             </AppFormField>
 
-            <AppFormField label="内存限制">
+            <AppFormField v-if="form.type !== 'objective'" label="内存限制">
               <template #default="{ id }">
                 <div class="unit-row">
                   <InputNumber
@@ -400,7 +451,11 @@ function remove() {
             <template #default="{ id }">
               <div class="public-row">
                 <ToggleSwitch v-model="form.isPublic" :input-id="id" :disabled="!isEdit" />
-                <span class="unit">发布需要至少 1 个测试点；特判题还需要 checker。</span>
+                <span class="unit">{{
+                  form.type === 'objective'
+                    ? '客观题无需测试点；发布前请确认至少 1 个正确答案。'
+                    : '发布需要至少 1 个测试点；特判题还需要 checker。'
+                }}</span>
               </div>
             </template>
           </AppFormField>
@@ -424,7 +479,7 @@ function remove() {
         </form>
       </AppSurface>
 
-      <AppSurface v-if="isEdit" padding="lg" class="testcases">
+      <AppSurface v-if="isEdit && form.type !== 'objective'" padding="lg" class="testcases">
         <TestcaseManager
           :problem-id="problemId!"
           :type="form.type"
@@ -454,6 +509,10 @@ function remove() {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--kapoj-space-4);
+}
+
+.grid-full {
+  grid-column: 1 / -1;
 }
 
 .unit-row,

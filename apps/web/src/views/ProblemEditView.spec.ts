@@ -333,6 +333,66 @@ describe('ProblemEditView', () => {
     wrapper.unmount()
   })
 
+  it('supports objective answers and hides testcase manager', async () => {
+    vi.mocked(getProblem).mockResolvedValue(detail({ type: 'objective', answers: ['A', 'B'] }))
+    const { wrapper } = await mountView('/problems/1/edit')
+
+    const answers = wrapper.find('[data-test="objective-answers"]')
+    expect(answers.exists()).toBe(true)
+    expect((answers.element as HTMLTextAreaElement).value).toBe('A\nB')
+    expect(wrapper.find('.testcases').exists()).toBe(false)
+    expect(wrapper.findAllComponents(InputNumber)).toHaveLength(0)
+    expect(wrapper.text()).toContain('客观题无需测试点；发布前请确认至少 1 个正确答案。')
+    wrapper.unmount()
+  })
+
+  it('saves objective answers trimmed as a list', async () => {
+    vi.mocked(getProblem).mockResolvedValue(detail({ type: 'objective', answers: ['A', 'B'] }))
+    vi.mocked(updateProblem).mockResolvedValue(detail({ type: 'objective' }))
+    const { wrapper } = await mountView('/problems/1/edit')
+
+    await wrapper.find('[data-test="objective-answers"]').setValue('  A  \n\n b \n')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(updateProblem).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ type: 'objective', answers: ['A', 'b'] }),
+    )
+    wrapper.unmount()
+  })
+
+  it('sends an empty answers list for non-objective problems', async () => {
+    vi.mocked(updateProblem).mockResolvedValue(detail())
+    const { wrapper } = await mountView('/problems/1/edit')
+
+    expect(wrapper.text()).toContain('发布需要至少 1 个测试点；特判题还需要 checker。')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(updateProblem).toHaveBeenCalledWith(1, expect.objectContaining({ answers: [] }))
+    wrapper.unmount()
+  })
+
+  it('clears answers when switching away from objective', async () => {
+    vi.mocked(getProblem).mockResolvedValue(detail({ type: 'objective', answers: ['A'] }))
+    vi.mocked(updateProblem).mockResolvedValue(detail())
+    const { wrapper } = await mountView('/problems/1/edit')
+
+    wrapper.findComponent(SelectButton).vm.$emit('update:modelValue', 'traditional')
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="objective-answers"]').exists()).toBe(false)
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(updateProblem).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ type: 'traditional', answers: [] }),
+    )
+    wrapper.unmount()
+  })
+
   it('resets stale load flags on the create path', async () => {
     // Create path never calls getProblem and clears any leftover load flags.
     const { wrapper } = await mountView('/problems/new')

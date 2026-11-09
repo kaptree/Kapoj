@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
+import Tag from 'primevue/tag'
 import { useToast } from 'primevue/usetoast'
 
 import { getAIHint } from '@/api/ai'
@@ -46,7 +47,12 @@ const aiHintLoading = ref(false)
 const aiHintError = ref('')
 const aiConfigMissing = ref(false)
 
-const typeLabels = { traditional: '传统题', special: '特判题', interactive: '交互题' } as const
+const typeLabels = {
+  traditional: '传统题',
+  special: '特判题',
+  interactive: '交互题',
+  objective: '客观题',
+} as const
 
 let latest = 0
 
@@ -216,7 +222,7 @@ const authorName = computed(() => {
               params: { id: problem?.id ?? 0 },
               query: contestId ? { contestId: String(contestId) } : {},
             }"
-            label="提交代码"
+            :label="problem?.type === 'objective' ? '提交答案' : '提交代码'"
             icon="pi pi-send"
           />
           <Button
@@ -234,10 +240,16 @@ const authorName = computed(() => {
       <div class="meta-bar">
         <AppDifficultyTag :difficulty="problem?.difficulty ?? 0" />
         <span class="type-chip">{{ typeLabels[problem?.type ?? 'traditional'] }}</span>
-        <span class="meta-item">
+        <Tag
+          v-if="problem?.type === 'objective'"
+          value="直接作答"
+          severity="secondary"
+          class="objective-chip"
+        />
+        <span v-if="problem?.type !== 'objective'" class="meta-item">
           <i class="pi pi-clock" aria-hidden="true" /> {{ problem?.timeLimitMs }} ms
         </span>
-        <span class="meta-item">
+        <span v-if="problem?.type !== 'objective'" class="meta-item">
           <i class="pi pi-database" aria-hidden="true" /> {{ problem?.memoryLimitMb }} MB
         </span>
         <span v-if="problem?.source" class="meta-item">来源：{{ problem?.source }}</span>
@@ -521,6 +533,11 @@ const authorName = computed(() => {
   font-size: 11px;
   border: 1px solid color-mix(in srgb, var(--kapoj-info) 32%, transparent);
   border-radius: var(--kapoj-radius-xs);
+}
+
+.objective-chip {
+  padding: 1px 8px;
+  font-size: 11px;
 }
 
 .tag-list {

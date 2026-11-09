@@ -85,6 +85,7 @@ function problemItem(
     problemId,
     title: `Contest Problem ${displayId}`,
     slug: `contest-problem-${displayId.toLowerCase()}`,
+    type: 'traditional',
     displayId,
     sortOrder: displayId.charCodeAt(0) - 64,
     score: 100,
@@ -531,6 +532,39 @@ describe('ProblemDetailView', () => {
     await flushPromises()
 
     expect(wrapper.text()).not.toContain('AI hint text')
+    wrapper.unmount()
+  })
+
+  it('shows objective label and no time/memory limits', async () => {
+    vi.mocked(getProblem).mockResolvedValue(
+      detail(1, { type: 'objective', answers: ['secret-a', 'secret-b'] }),
+    )
+    vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('客观题')
+    expect(wrapper.text()).toContain('直接作答')
+    expect(wrapper.text()).toContain('提交答案')
+    expect(wrapper.text()).not.toContain('提交代码')
+    expect(wrapper.text()).not.toContain('1000 ms')
+    expect(wrapper.text()).not.toContain('256 MB')
+    expect(wrapper.text()).not.toContain('secret-a')
+    expect(wrapper.text()).not.toContain('answers')
+    wrapper.unmount()
+  })
+
+  it('keeps code submission and limits for traditional problems', async () => {
+    vi.mocked(getProblem).mockResolvedValue(detail(1))
+    vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('传统题')
+    expect(wrapper.text()).toContain('提交代码')
+    expect(wrapper.text()).toContain('1000 ms')
+    expect(wrapper.text()).toContain('256 MB')
+    expect(wrapper.text()).not.toContain('直接作答')
     wrapper.unmount()
   })
 
