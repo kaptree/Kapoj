@@ -35,6 +35,7 @@ type AcceptedChecker interface {
 
 type ContestAccess interface {
 	CanViewProblem(ctx context.Context, userID, problemID int64, now time.Time) (bool, error)
+	IsProblemLocked(ctx context.Context, problemID int64, now time.Time) (bool, error)
 }
 
 // Options 配置题目接口的可选依赖。
@@ -170,6 +171,58 @@ func canViewSolution(access *rbac.Access) bool {
 		access.Has(string(rbac.PermProblemCheckerManage))
 }
 
+// currentHas reports whether the current request carries a permission code.
+func currentHas(c *gin.Context, code string) bool {
+	access, ok := middleware.CurrentAccess(c)
+	return ok && access != nil && access.Has(code)
+}
+
+// currentCanManageContest reports whether the current user may edit contests.
+func currentCanManageContest(c *gin.Context) bool {
+	return currentHas(c, string(rbac.PermContestUpdate))
+}
+
+// currentCanViewLockedStats reports whether the current user may see statistics
+// for a problem locked by an unfinished contest.
+func currentCanViewLockedStats(c *gin.Context) bool {
+	return currentHas(c, string(rbac.PermProblemViewHidden)) ||
+		currentHas(c, string(rbac.PermContestUpdate)) || currentIsSuper(c)
+}
+
+// lockedProblemAccess resolves whether a problem is locked by an unfinished
+// contest and, when it is, whether the current request may still reach it.
+// participantAllowed is true for a registered participant of a running contest
+// or, when the problem is not locked at all, for everyone.
+func (h *handler) lockedProblemAccess(c *gin.Context, problemID int64) (locked, participantAllowed, manager bool, err error) {
+	if h.contests == nil {
+		return false, true, false, nil
+	}
+	locked, err = h.contests.IsProblemLocked(c.Request.Context(), problemID, time.Now())
+	if err != nil || !locked {
+		return locked, !locked, false, err
+	}
+	manager = viewer(c).CanViewHidden || currentCanManageContest(c) || currentIsSuper(c)
+	claims, ok := middleware.CurrentClaims(c)
+	if !ok {
+		return true, false, manager, nil
+	}
+	participantAllowed, err = h.contests.CanViewProblem(c.Request.Context(), claims.UserID, problemID, time.Now())
+	return true, participantAllowed, manager, err
+}
+
+// lockedResourceBlocked reports whether a contest-locked problem's solution and
+// discussion resources must look missing to the current request.
+func (h *handler) lockedResourceBlocked(c *gin.Context, problemID int64) (bool, error) {
+	if h.contests == nil {
+		return false, nil
+	}
+	locked, err := h.contests.IsProblemLocked(c.Request.Context(), problemID, time.Now())
+	if err != nil || !locked {
+		return false, err
+	}
+	return !viewer(c).CanViewSolution && !currentIsSuper(c), nil
+}
+
 // pathID reads a positive integer path parameter; anything else is reported
 // as "not found" so malformed ids reveal nothing.
 func pathID(c *gin.Context, name string) (int64, bool) {
@@ -210,6 +263,19 @@ func (h *handler) get(c *gin.Context) {
 		return
 	}
 	v := viewer(c)
+	locked, participantAllowed, manager, err := h.lockedProblemAccess(c, id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	if locked && !manager && !participantAllowed {
+		httpx.Fail(c, httpx.ErrNotFound)
+		return
+	}
+	// 只有真正的参赛者访问才临时放开隐藏题；contest.update 管理员不能借此看原本隐藏题。
+	if locked && participantAllowed && !manager && !v.CanViewHidden {
+		v.CanViewHidden = true
+	}
 	p, err := h.svc.Get(c.Request.Context(), v, id)
 	if err != nil {
 		var appErr *httpx.AppError
@@ -241,6 +307,10 @@ func (h *handler) get(c *gin.Context) {
 			}
 		}
 	}
+	// 比赛锁定期间，题解只对题解管理员或超管开放。
+	if locked && !v.CanViewSolution && !currentIsSuper(c) {
+		includeSolution = false
+	}
 	author, err := h.svc.Author(c.Request.Context(), p.CreatedBy)
 	if err != nil {
 		httpx.Fail(c, err)
@@ -252,6 +322,15 @@ func (h *handler) get(c *gin.Context) {
 func (h *handler) statistics(c *gin.Context) {
 	id, ok := pathID(c, "id")
 	if !ok {
+		return
+	}
+	locked, _, _, err := h.lockedProblemAccess(c, id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	if locked && !currentCanViewLockedStats(c) {
+		httpx.Fail(c, httpx.ErrNotFound)
 		return
 	}
 	st, err := h.svc.Statistics(c.Request.Context(), viewer(c), id)

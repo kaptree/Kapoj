@@ -22,6 +22,15 @@ func (h *handler) listPosts(c *gin.Context) {
 	if !ok {
 		return
 	}
+	blocked, err := h.lockedResourceBlocked(c, id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	if blocked {
+		httpx.Fail(c, httpx.ErrNotFound)
+		return
+	}
 	page, size := httpx.ParsePage(c.Request.URL.RawQuery)
 	result, err := h.discussions.ListPosts(c.Request.Context(), currentUserID(c), id, viewer(c), currentIsSuper(c), isModerator(c), page, size)
 	if err != nil {
@@ -34,6 +43,15 @@ func (h *handler) listPosts(c *gin.Context) {
 func (h *handler) createPost(c *gin.Context) {
 	id, ok := pathID(c, "id")
 	if !ok {
+		return
+	}
+	blocked, err := h.lockedResourceBlocked(c, id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	if blocked {
+		httpx.Fail(c, httpx.ErrNotFound)
 		return
 	}
 	in, ok := httpx.BindJSON[problem.SolutionPostInput](c)
@@ -57,6 +75,15 @@ func (h *handler) getPost(c *gin.Context) {
 	if !ok {
 		return
 	}
+	blocked, err := h.lockedResourceBlocked(c, id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	if blocked {
+		httpx.Fail(c, httpx.ErrNotFound)
+		return
+	}
 	detail, err := h.discussions.GetPost(c.Request.Context(), currentUserID(c), id, postID, viewer(c), currentIsSuper(c), isModerator(c))
 	if err != nil {
 		httpx.Fail(c, err)
@@ -78,6 +105,15 @@ func (h *handler) updatePost(c *gin.Context) {
 	if !ok {
 		return
 	}
+	blocked, err := h.lockedResourceBlocked(c, id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	if blocked {
+		httpx.Fail(c, httpx.ErrNotFound)
+		return
+	}
 	detail, err := h.discussions.UpdatePost(c.Request.Context(), currentUserID(c), id, postID, viewer(c), currentIsSuper(c), isModerator(c), in)
 	if err != nil {
 		httpx.Fail(c, err)
@@ -93,6 +129,15 @@ func (h *handler) deletePost(c *gin.Context) {
 	}
 	postID, ok := pathID(c, "postId")
 	if !ok {
+		return
+	}
+	blocked, err := h.lockedResourceBlocked(c, id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	if blocked {
+		httpx.Fail(c, httpx.ErrNotFound)
 		return
 	}
 	if err := h.discussions.DeletePost(c.Request.Context(), currentUserID(c), id, postID, viewer(c), currentIsSuper(c), isModerator(c)); err != nil {
@@ -114,6 +159,15 @@ func (h *handler) likePost(c *gin.Context) {
 	}
 	postID, ok := pathID(c, "postId")
 	if !ok {
+		return
+	}
+	blocked, err := h.lockedResourceBlocked(c, id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	if blocked {
+		httpx.Fail(c, httpx.ErrNotFound)
 		return
 	}
 	actorID := currentUserID(c)
@@ -141,6 +195,15 @@ func (h *handler) unlikePost(c *gin.Context) {
 	}
 	postID, ok := pathID(c, "postId")
 	if !ok {
+		return
+	}
+	blocked, err := h.lockedResourceBlocked(c, id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	if blocked {
+		httpx.Fail(c, httpx.ErrNotFound)
 		return
 	}
 	actorID := currentUserID(c)
@@ -173,6 +236,15 @@ func (h *handler) createReply(c *gin.Context) {
 	if !ok {
 		return
 	}
+	blocked, err := h.lockedResourceBlocked(c, id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	if blocked {
+		httpx.Fail(c, httpx.ErrNotFound)
+		return
+	}
 	reply, err := h.discussions.CreateReply(c.Request.Context(), currentUserID(c), id, postID, viewer(c), currentIsSuper(c), isModerator(c), in)
 	if err != nil {
 		httpx.Fail(c, err)
@@ -199,6 +271,15 @@ func (h *handler) updateReply(c *gin.Context) {
 	if !ok {
 		return
 	}
+	blocked, err := h.lockedResourceBlocked(c, id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	if blocked {
+		httpx.Fail(c, httpx.ErrNotFound)
+		return
+	}
 	in, ok := httpx.BindJSON[problem.SolutionReplyInput](c)
 	if !ok {
 		return
@@ -222,6 +303,15 @@ func (h *handler) deleteReply(c *gin.Context) {
 	}
 	replyID, ok := pathID(c, "replyId")
 	if !ok {
+		return
+	}
+	blocked, err := h.lockedResourceBlocked(c, id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	if blocked {
+		httpx.Fail(c, httpx.ErrNotFound)
 		return
 	}
 	if err := h.discussions.DeleteReply(c.Request.Context(), currentUserID(c), id, postID, replyID, viewer(c), currentIsSuper(c), isModerator(c)); err != nil {

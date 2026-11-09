@@ -27,6 +27,15 @@ func (h *handler) getOfficialSolution(c *gin.Context) {
 	if !ok {
 		return
 	}
+	blocked, err := h.lockedResourceBlocked(c, id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	if blocked {
+		httpx.Fail(c, httpx.ErrNotFound)
+		return
+	}
 	view, err := h.solutions.Get(c.Request.Context(), currentUserID(c), id, viewer(c), currentIsSuper(c))
 	if err != nil {
 		httpx.Fail(c, err)
@@ -44,6 +53,15 @@ func (h *handler) updateOfficialSolution(c *gin.Context) {
 	if !ok {
 		return
 	}
+	blocked, err := h.lockedResourceBlocked(c, id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	if blocked {
+		httpx.Fail(c, httpx.ErrNotFound)
+		return
+	}
 	view, err := h.solutions.Update(c.Request.Context(), currentUserID(c), id, currentIsSuper(c), in)
 	if err != nil {
 		httpx.Fail(c, err)
@@ -55,6 +73,15 @@ func (h *handler) updateOfficialSolution(c *gin.Context) {
 func (h *handler) purchaseOfficialSolution(c *gin.Context) {
 	id, ok := pathID(c, "id")
 	if !ok {
+		return
+	}
+	blocked, err := h.lockedResourceBlocked(c, id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	if blocked {
+		httpx.Fail(c, httpx.ErrNotFound)
 		return
 	}
 	view, err := h.solutions.Purchase(c.Request.Context(), currentUserID(c), id, viewer(c), currentIsSuper(c))

@@ -567,6 +567,13 @@ func TestHiddenContestProblemVisibleToParticipant(t *testing.T) {
 	assert.NotContains(t, resp["data"].(map[string]any), "solutionCode")
 	w, _ = f.do(http.MethodGet, fmt.Sprintf("/api/problems/%d", p.ID), "", nil)
 	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	require.NoError(t, f.db.Exec(
+		`UPDATE contests SET start_time = ?, end_time = ? WHERE id = ?`,
+		now.Add(-2*time.Hour), now.Add(-time.Hour), c.ID,
+	).Error)
+	w, _ = f.do(http.MethodGet, fmt.Sprintf("/api/problems/%d", p.ID), token, nil)
+	assert.Equal(t, http.StatusNotFound, w.Code, "hidden problem stays hidden after contest")
 }
 
 func TestPublishFlow(t *testing.T) {
@@ -1161,4 +1168,58 @@ func TestSolutionListAndDetailLikeCounts(t *testing.T) {
 	detail := resp["data"].(map[string]any)
 	assert.EqualValues(t, 1, detail["likeCount"])
 	assert.Equal(t, true, detail["likedByMe"])
+}
+
+func TestLockedContestProblemDetailAndResources(t *testing.T) {
+	f := newFx(t)
+	repo := problem.NewGormRepository(f.db)
+	p := &problem.Problem{
+		Title: "Locked", Slug: "locked-resource", StatementMD: "statement",
+		Type: problem.TypeTraditional, Difficulty: 1, TimeLimitMS: 1000, MemoryLimitMB: 256,
+		IsPublic: true, CreatedBy: 1,
+	}
+	require.NoError(t, repo.Create(context.Background(), p))
+	require.NoError(t, repo.AddTestcase(context.Background(), &problem.Testcase{
+		ProblemID: p.ID, InputFile: "a.in", OutputFile: "a.out", Score: 10,
+	}))
+
+	w, reg := f.do(http.MethodPost, "/api/auth/register", "", map[string]string{
+		"username": "lockeduser", "email": "locked@example.com", "password": "correct-horse",
+	})
+	require.Equal(t, http.StatusCreated, w.Code)
+	token := reg["data"].(map[string]any)["accessToken"].(string)
+	var userID int64
+	require.NoError(t, f.db.Raw(`SELECT id FROM users WHERE username = 'lockeduser'`).Scan(&userID).Error)
+
+	now := time.Now()
+	contestRepo := contest.NewGormRepository(f.db)
+	c := &contest.Contest{
+		Title: "Locked contest", StartTime: now.Add(-time.Hour), EndTime: now.Add(time.Hour),
+		Mode: contest.ModeICPC, IsPublic: true, RegisterType: contest.RegisterOpen, CreatedBy: 1,
+	}
+	require.NoError(t, contestRepo.Create(context.Background(), c, []contest.ContestProblem{
+		{ProblemID: p.ID, DisplayID: "A", Score: 100},
+	}))
+	require.NoError(t, contestRepo.AddParticipant(context.Background(), c.ID, userID))
+
+	// 游客与参赛者：赛前/赛中详情行为
+	w, _ = f.do(http.MethodGet, fmt.Sprintf("/api/problems/%d", p.ID), "", nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	w, _ = f.do(http.MethodGet, fmt.Sprintf("/api/problems/%d/statistics", p.ID), token, nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	w, _ = f.do(http.MethodGet, fmt.Sprintf("/api/problems/%d/official-solution", p.ID), token, nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	w, _ = f.do(http.MethodGet, fmt.Sprintf("/api/problems/%d/solutions", p.ID), token, nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	w, _ = f.do(http.MethodGet, fmt.Sprintf("/api/problems/%d", p.ID), token, nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	// 赛后：公开题恢复；隐藏题仍 404
+	require.NoError(t, f.db.Exec(
+		`UPDATE contests SET start_time = ?, end_time = ? WHERE id = ?`,
+		now.Add(-2*time.Hour), now.Add(-time.Hour), c.ID,
+	).Error)
+	w, _ = f.do(http.MethodGet, fmt.Sprintf("/api/problems/%d", p.ID), "", nil)
+	assert.Equal(t, http.StatusOK, w.Code)
 }
