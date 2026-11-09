@@ -27,6 +27,7 @@ type RankCell struct {
 	Attempts   int        `json:"attempts"`
 	AcceptedAt *time.Time `json:"acceptedAt,omitempty"`
 	Score      int        `json:"score"`
+	FirstBlood bool       `json:"firstBlood"`
 }
 
 type RankRow struct {
@@ -130,6 +131,7 @@ func (s *Service) Ranklist(ctx context.Context, v Viewer, id int64) (*Ranklist, 
 		row.Problems = append([]RankCell{}, row.Problems...)
 		rows = append(rows, row)
 	}
+	markFirstBlood(rows)
 	sortRankRows(rows, c.Mode)
 	assignRanks(rows, c.Mode)
 
@@ -230,6 +232,29 @@ func (s *Service) computeScoreBased(
 			if cell.Status == "accepted" {
 				state.row.Solved++
 			}
+		}
+	}
+}
+
+func markFirstBlood(rows []RankRow) {
+	if len(rows) == 0 {
+		return
+	}
+	for idx := range rows[0].Problems {
+		var winner *RankCell
+		var winnerID int64
+		for i := range rows {
+			cell := &rows[i].Problems[idx]
+			if cell.Status != "accepted" || cell.AcceptedAt == nil {
+				continue
+			}
+			if winner == nil || cell.AcceptedAt.Before(*winner.AcceptedAt) ||
+				(cell.AcceptedAt.Equal(*winner.AcceptedAt) && rows[i].UserID < winnerID) {
+				winner, winnerID = cell, rows[i].UserID
+			}
+		}
+		if winner != nil {
+			winner.FirstBlood = true
 		}
 	}
 }

@@ -180,6 +180,50 @@ func TestOIRanklistVisibility(t *testing.T) {
 	assert.Len(t, after.Rows, 2)
 }
 
+func TestRanklistMarksFirstBlood(t *testing.T) {
+	e := newEnv(t)
+	now := time.Now()
+	start := now.Add(-time.Hour)
+	c := rankContest(t, e, contest.ModeICPC, start, now.Add(time.Hour), userID, otherID)
+	p := e.problems[0].ID
+
+	insertRankSubmission(t, e, c.ID, userID, p, "wrong_answer", 0, start.Add(5*time.Minute))
+	insertRankSubmission(t, e, c.ID, userID, p, "accepted", 100, start.Add(10*time.Minute))
+	insertRankSubmission(t, e, c.ID, otherID, p, "accepted", 100, start.Add(15*time.Minute))
+
+	rank, err := e.svc.Ranklist(context.Background(), manager(), c.ID)
+	require.NoError(t, err)
+	byUser := map[int64]contest.RankRow{}
+	for _, row := range rank.Rows {
+		byUser[row.UserID] = row
+	}
+	assert.True(t, byUser[userID].Problems[0].FirstBlood)
+	assert.False(t, byUser[otherID].Problems[0].FirstBlood)
+	// Attempts counts errors before AC (global constraint: 0 errors renders as "-0").
+	assert.Equal(t, 1, byUser[userID].Problems[0].Attempts)
+	assert.Equal(t, 0, byUser[otherID].Problems[0].Attempts)
+}
+
+func TestRanklistFirstBloodTieUsesUserID(t *testing.T) {
+	e := newEnv(t)
+	now := time.Now()
+	start := now.Add(-time.Hour)
+	c := rankContest(t, e, contest.ModeICPC, start, now.Add(time.Hour), userID, otherID)
+	p := e.problems[0].ID
+	at := start.Add(10 * time.Minute)
+	insertRankSubmission(t, e, c.ID, otherID, p, "accepted", 100, at)
+	insertRankSubmission(t, e, c.ID, userID, p, "accepted", 100, at)
+
+	rank, err := e.svc.Ranklist(context.Background(), manager(), c.ID)
+	require.NoError(t, err)
+	byUser := map[int64]contest.RankRow{}
+	for _, row := range rank.Rows {
+		byUser[row.UserID] = row
+	}
+	assert.False(t, byUser[otherID].Problems[0].FirstBlood, "lower user ID wins the tie")
+	assert.True(t, byUser[userID].Problems[0].FirstBlood)
+}
+
 func TestRanklistRequiresContestAccess(t *testing.T) {
 	e := newEnv(t)
 	in := baseInput(e)
