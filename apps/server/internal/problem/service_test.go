@@ -9,11 +9,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
@@ -600,6 +602,43 @@ func TestProblemGuardErrorPropagates(t *testing.T) {
 	in.IsPublic = false
 	_, err = svc.Update(ctx, p.ID, in)
 	require.ErrorIs(t, err, dbErr, "守卫返回的数据库错误必须原样返回")
+}
+
+func TestListHidesContestLockedProblems(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	p := e.create(t, input("locked"))
+	e.addCase(t, p.ID)
+	in := input("locked")
+	in.IsPublic = true
+	_, err := e.svc.Update(ctx, p.ID, in)
+	require.NoError(t, err)
+
+	repo := contest.NewGormRepository(e.db)
+	now := time.Now()
+	c := &contest.Contest{
+		Title: "Lock", StartTime: now.Add(-time.Hour), EndTime: now.Add(time.Hour),
+		Mode: contest.ModeICPC, IsPublic: true, RegisterType: contest.RegisterOpen, CreatedBy: 1,
+	}
+	require.NoError(t, repo.Create(ctx, c, []contest.ContestProblem{
+		{ProblemID: p.ID, DisplayID: "A", Score: 100},
+	}))
+
+	page, err := e.svc.List(ctx, problem.Viewer{}, problem.ListQuery{}, 1, 20)
+	require.NoError(t, err)
+	assert.Zero(t, page.Total, "locked problem must be hidden from the library")
+
+	page, err = e.svc.List(ctx, problem.Viewer{CanViewLocked: true}, problem.ListQuery{}, 1, 20)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, page.Total, "managers can still see public locked problems")
+
+	require.NoError(t, e.db.Exec(
+		`UPDATE contests SET start_time = ?, end_time = ? WHERE id = ?`,
+		now.Add(-2*time.Hour), now.Add(-time.Hour), c.ID,
+	).Error)
+	page, err = e.svc.List(ctx, problem.Viewer{}, problem.ListQuery{}, 1, 20)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, page.Total, "ended contest unlocks a public problem")
 }
 
 func TestStatisticsAcceptRate(t *testing.T) {

@@ -29,6 +29,8 @@ type Filter struct {
 	Tag           string
 	Difficulty    int
 	IncludeHidden bool
+	IncludeLocked bool
+	Now           time.Time
 }
 
 type DeleteResult struct {
@@ -109,6 +111,17 @@ func (r *gormRepository) List(ctx context.Context, f Filter, offset, limit int) 
 	q := r.db.WithContext(ctx).Model(&Problem{})
 	if !f.IncludeHidden {
 		q = q.Where("is_public = ?", true)
+	}
+	if !f.IncludeLocked {
+		now := f.Now
+		if now.IsZero() {
+			now = time.Now()
+		}
+		q = q.Where(`NOT EXISTS (
+			SELECT 1 FROM contest_problems cp
+			JOIN contests c ON c.id = cp.contest_id
+			WHERE cp.problem_id = problems.id AND c.end_time > ?
+		)`, now)
 	}
 	if kw := strings.TrimSpace(f.Keyword); kw != "" {
 		pat := "%" + escapeLike(kw) + "%"

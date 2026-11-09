@@ -153,7 +153,9 @@ func viewer(c *gin.Context) problem.Viewer {
 		return problem.Viewer{}
 	}
 	return problem.Viewer{
-		CanViewHidden:   access.Has(string(rbac.PermProblemViewHidden)),
+		CanViewHidden: access.Has(string(rbac.PermProblemViewHidden)),
+		CanViewLocked: access.Has(string(rbac.PermProblemViewHidden)) ||
+			access.Has(string(rbac.PermContestUpdate)),
 		CanViewSolution: canViewSolution(access),
 	}
 }

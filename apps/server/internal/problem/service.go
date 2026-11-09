@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"time"
 
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
@@ -23,10 +24,12 @@ const (
 
 // Viewer describes who is looking. The zero value is a guest or ordinary
 // user. CanViewHidden grants read access to unpublished problems;
-// CanViewSolution grants read access to the solution fields (solutionMd,
-// solutionCode, checkerUploaded, createdBy).
+// CanViewLocked grants read access to problems locked by an unfinished
+// contest; CanViewSolution grants read access to the solution fields
+// (solutionMd, solutionCode, checkerUploaded, createdBy).
 type Viewer struct {
 	CanViewHidden   bool
+	CanViewLocked   bool
 	CanViewSolution bool
 }
 
@@ -166,6 +169,7 @@ func (s *Service) List(ctx context.Context, v Viewer, q ListQuery, page, size in
 	items, total, err := s.repo.List(ctx, Filter{
 		Keyword: q.Keyword, Tag: q.Tag, Difficulty: q.Difficulty,
 		IncludeHidden: q.IncludeHidden && v.CanViewHidden,
+		IncludeLocked: v.CanViewLocked, Now: time.Now(),
 	}, (page-1)*size, size)
 	if err != nil {
 		return httpx.Page[ListItem]{}, err
