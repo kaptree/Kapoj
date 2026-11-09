@@ -34,6 +34,7 @@ import type {
   AnnouncementItem,
   ContestDetail,
   ContestParticipant,
+  ContestProblemItem,
   ContestStatus,
 } from '@/api/types'
 import ContestRanklist from '@/components/ContestRanklist.vue'
@@ -127,6 +128,7 @@ const problemsEmptyText = computed(() => {
   if (status === 'ended') return '本场比赛没有公开题目。'
   return '暂无题目。'
 })
+const isEnded = computed(() => contest.value?.status === 'ended')
 
 async function loadAnnouncements() {
   announcements.value = await listAnnouncements(contestId.value).catch(() => [])
@@ -204,6 +206,26 @@ function contestTagSeverity(status: ContestStatus): 'success' | 'warn' | 'info' 
   if (status === 'running') return 'success'
   if (status === 'upcoming') return 'warn'
   return 'info'
+}
+
+function problemDetailTo(data: ContestProblemItem) {
+  return {
+    name: 'problem-detail',
+    params: { id: data.problemId },
+    query: isEnded.value ? {} : { contestId: String(contestId.value) },
+  }
+}
+
+function myStatusSeverity(data: ContestProblemItem): 'success' | 'danger' | 'secondary' {
+  if (data.myStatus === 'accepted') return 'success'
+  if (data.myAttempts > 0) return 'danger'
+  return 'secondary'
+}
+
+function myStatusText(data: ContestProblemItem): string {
+  if (data.myStatus === 'accepted') return `已通过 · ${data.myAttempts} 次`
+  if (data.myAttempts > 0) return `未通过 · ${data.myAttempts} 次`
+  return '未提交'
 }
 
 function doRegister() {
@@ -521,15 +543,21 @@ async function doRemoveAnnouncement(item: AnnouncementItem) {
                 <Column header="题目" style="min-width: 220px">
                   <template #body="{ data }">
                     <RouterLink
-                      :to="{
-                        name: 'problem-detail',
-                        params: { id: data.problemId },
-                        query: { contestId: String(contestId) },
-                      }"
+                      v-if="!isEnded || (data.isPublic && !data.locked)"
+                      :to="problemDetailTo(data)"
                       class="problem-link"
                     >
                       {{ data.title }}
                     </RouterLink>
+                    <span v-else class="problem-title-locked">{{ data.title }}</span>
+                  </template>
+                </Column>
+                <Column header="限制" style="width: 150px">
+                  <template #body="{ data }">
+                    <div class="limit-tags">
+                      <Tag :value="`${data.timeLimitMs} ms`" severity="secondary" />
+                      <Tag :value="`${data.memoryLimitMb} MB`" severity="secondary" />
+                    </div>
                   </template>
                 </Column>
                 <Column header="分数" style="width: 80px">
@@ -537,10 +565,36 @@ async function doRemoveAnnouncement(item: AnnouncementItem) {
                     <span class="num">{{ data.score }}</span>
                   </template>
                 </Column>
+                <Column v-if="isEnded" header="本场" style="width: 150px">
+                  <template #body="{ data }">
+                    <span class="num">
+                      提交 {{ data.submitCount }} / 通过 {{ data.acceptCount }}
+                    </span>
+                  </template>
+                </Column>
+                <Column v-if="isEnded" header="我的" style="width: 130px">
+                  <template #body="{ data }">
+                    <Tag :value="myStatusText(data)" :severity="myStatusSeverity(data)" />
+                  </template>
+                </Column>
                 <Column header="操作" style="width: 120px">
                   <template #body="{ data }">
+                    <template v-if="isEnded">
+                      <Tag v-if="!data.isPublic" value="未公开" severity="secondary" />
+                      <Tag v-else-if="data.locked" value="比赛中" severity="warn" />
+                      <Button
+                        v-else
+                        as="router-link"
+                        :to="{ name: 'problem-detail', params: { id: data.problemId } }"
+                        label="题库"
+                        size="small"
+                        text
+                        icon="pi pi-external-link"
+                        data-test="problem-bank-link"
+                      />
+                    </template>
                     <Button
-                      v-if="canSubmit"
+                      v-else-if="canSubmit"
                       label="提交"
                       size="small"
                       text
@@ -838,6 +892,17 @@ async function doRemoveAnnouncement(item: AnnouncementItem) {
 
 .problem-link:hover {
   color: var(--kapoj-primary);
+}
+
+.problem-title-locked {
+  color: var(--kapoj-text-muted);
+  font-weight: 600;
+}
+
+.limit-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kapoj-space-1);
 }
 
 .announcement-head {

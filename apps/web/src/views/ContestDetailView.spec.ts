@@ -83,6 +83,7 @@ function detail(overrides: Partial<ContestDetail> = {}): ContestDetail {
     mode: 'icpc',
     isRated: true,
     isPublic: true,
+    disableAi: true,
     registerType: 'open',
     status: 'running',
     problemCount: 2,
@@ -97,6 +98,14 @@ function detail(overrides: Partial<ContestDetail> = {}): ContestDetail {
         displayId: 'A',
         sortOrder: 1,
         score: 100,
+        timeLimitMs: 1000,
+        memoryLimitMb: 256,
+        isPublic: true,
+        locked: false,
+        submitCount: 0,
+        acceptCount: 0,
+        myStatus: '',
+        myAttempts: 0,
       },
       {
         problemId: 2,
@@ -105,6 +114,14 @@ function detail(overrides: Partial<ContestDetail> = {}): ContestDetail {
         displayId: 'B',
         sortOrder: 2,
         score: 100,
+        timeLimitMs: 1000,
+        memoryLimitMb: 256,
+        isPublic: true,
+        locked: false,
+        submitCount: 0,
+        acceptCount: 0,
+        myStatus: '',
+        myAttempts: 0,
       },
     ],
     canManage: false,
@@ -130,6 +147,28 @@ function participant(overrides: Partial<ContestParticipant> = {}): ContestPartic
     username: 'alice',
     nickname: 'Alice',
     registerTime: iso(-7_200_000),
+    ...overrides,
+  }
+}
+
+function problem(
+  overrides: Partial<ContestDetail['problems'][number]> = {},
+): ContestDetail['problems'][number] {
+  return {
+    problemId: 1,
+    title: 'Two Sum',
+    slug: 'two-sum',
+    displayId: 'A',
+    sortOrder: 1,
+    score: 100,
+    timeLimitMs: 1000,
+    memoryLimitMb: 256,
+    isPublic: true,
+    locked: false,
+    submitCount: 0,
+    acceptCount: 0,
+    myStatus: '',
+    myAttempts: 0,
     ...overrides,
   }
 }
@@ -483,6 +522,65 @@ describe('ContestDetailView', () => {
 
     wrapper.unmount()
     expect(source.close).toHaveBeenCalled()
+  })
+
+  it('shows limits and post-contest stats with problem-bank links', async () => {
+    vi.mocked(getContest).mockResolvedValue(
+      detail({
+        status: 'ended',
+        problems: [
+          problem({
+            submitCount: 12,
+            acceptCount: 3,
+            myStatus: 'accepted',
+            myAttempts: 2,
+          }),
+        ],
+      }),
+    )
+    const { wrapper } = await mountPage()
+
+    expect(wrapper.text()).toContain('1000 ms')
+    expect(wrapper.text()).toContain('256 MB')
+    expect(wrapper.text()).toContain('提交 12 / 通过 3')
+    expect(wrapper.text()).toContain('已通过 · 2 次')
+    expect(wrapper.find('a.problem-link').attributes('href')).toBe('/problems/1')
+    expect(wrapper.find('[data-test="problem-bank-link"]').attributes('href')).toContain(
+      '/problems/1',
+    )
+    wrapper.unmount()
+  })
+
+  it('hides post-contest columns and keeps contest links while running', async () => {
+    vi.mocked(getContest).mockResolvedValue(detail({ status: 'running' }))
+    const { wrapper } = await mountPage()
+
+    expect(wrapper.text()).not.toContain('本场')
+    expect(wrapper.text()).not.toContain('我的')
+    expect(wrapper.find('a.problem-link').attributes('href')).toContain('contestId=5')
+    expect(wrapper.find('[data-test="problem-bank-link"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('disables problem-bank links for hidden or locked problems after the contest', async () => {
+    vi.mocked(getContest).mockResolvedValue(
+      detail({
+        status: 'ended',
+        problems: [
+          problem({ problemId: 1, isPublic: false }),
+          problem({ problemId: 2, title: 'Locked', displayId: 'B', sortOrder: 2, locked: true }),
+        ],
+      }),
+    )
+    const { wrapper } = await mountPage()
+
+    expect(wrapper.text()).toContain('未公开')
+    expect(wrapper.text()).toContain('比赛中')
+    expect(wrapper.find('[data-test="problem-bank-link"]').exists()).toBe(false)
+    const hrefs = wrapper.findAll('a').map((link) => link.attributes('href') ?? '')
+    expect(hrefs.some((href) => href.includes('/problems/1'))).toBe(false)
+    expect(hrefs.some((href) => href.includes('/problems/2'))).toBe(false)
+    wrapper.unmount()
   })
 
   it('shows a not-found state with a way back', async () => {
