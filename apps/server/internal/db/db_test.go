@@ -19,6 +19,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/rating"
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
+	"github.com/kaptree/kapoj/apps/server/internal/site"
 	"github.com/kaptree/kapoj/apps/server/internal/social"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
@@ -327,6 +328,24 @@ func TestMigrateCreatesActivitySchema(t *testing.T) {
 		UserID: userID, Type: "contest", RefID: refID, LikeCount: 0, CreatedAt: time.Now(),
 	}
 	assert.Error(t, g.Create(duplicateItem).Error, "同一 (type, ref_id) 只能有一条共享记录")
+}
+
+func TestMigrateCreatesSiteSchema(t *testing.T) {
+	dsn := os.Getenv("KAPOJ_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("KAPOJ_TEST_DATABASE_URL not set; skipping database test")
+	}
+	g, err := open(dsn, io.Discard)
+	require.NoError(t, err)
+	require.NoError(t, Migrate(g))
+	sqlDB, err := g.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	assert.True(t, g.Migrator().HasTable(&site.Settings{}))
+	assert.True(t, g.Migrator().HasTable(&site.VisitCounter{}))
+	assert.True(t, g.Migrator().HasColumn(&site.Settings{}, "home_json"))
+	assert.True(t, g.Migrator().HasColumn(&site.Settings{}, "footer_police_url"))
 }
 
 func TestMigrateCreatesAvatarColumns(t *testing.T) {

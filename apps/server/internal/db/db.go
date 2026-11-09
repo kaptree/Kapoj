@@ -19,6 +19,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/rating"
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
+	"github.com/kaptree/kapoj/apps/server/internal/site"
 	"github.com/kaptree/kapoj/apps/server/internal/social"
 	"github.com/kaptree/kapoj/apps/server/internal/submission"
 	"github.com/kaptree/kapoj/apps/server/internal/testcasegen"
@@ -66,5 +67,6 @@ func Migrate(g *gorm.DB) error {
 		&ai.Provider{}, &ai.UserConfig{}, &ai.Hint{}, &ai.Settings{},
 		&testcasegen.Generation{}, &testcasegen.GenerationCase{},
 		&certificate.CertificateType{}, &certificate.Certificate{},
+		&site.Settings{}, &site.VisitCounter{},
 	)
 }
