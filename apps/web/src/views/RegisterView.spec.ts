@@ -1,4 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -32,7 +33,9 @@ async function mountRegister() {
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push('/register')
   await router.isReady()
-  const wrapper = mount(RegisterView, { global: { plugins: [router, PrimeVue] } })
+  const wrapper = mount(RegisterView, {
+    global: { plugins: [router, PrimeVue, createPinia()] },
+  })
   return { wrapper, router }
 }
 

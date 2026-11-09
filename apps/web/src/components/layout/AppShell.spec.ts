@@ -1,5 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { h } from 'vue'
+import { createPinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -27,7 +28,7 @@ async function mountShell(props: Record<string, unknown> = {}) {
       default: () => h('div', { class: 'shell-child' }, '内容'),
     },
     global: {
-      plugins: [router, PrimeVue],
+      plugins: [router, PrimeVue, createPinia()],
       stubs: { UserMenu: true, AppThemeToggle: true, NotificationBell: true },
     },
   })

@@ -63,9 +63,7 @@ const pageTitle = computed(() => route.meta.title ?? props.titleFallback)
           :aria-expanded="menuOpen"
           @click="openMenu"
         />
-        <RouterLink to="/" class="app-header__brand" aria-label="kapOJ 首页">
-          kap<strong>OJ</strong>
-        </RouterLink>
+        <AppBrand class="app-header__brand" />
         <div class="app-header__context">
           <span class="app-header__kicker">{{ kicker }}</span>
           <span class="app-header__title">{{ pageTitle }}</span>
@@ -79,6 +77,9 @@ const pageTitle = computed(() => route.meta.title ?? props.titleFallback)
       <main class="app-main">
         <slot />
       </main>
+      <footer v-if="$slots.footer" class="app-footer">
+        <slot name="footer" />
+      </footer>
     </div>
 
     <Drawer
@@ -237,20 +238,8 @@ const pageTitle = computed(() => route.meta.title ?? props.titleFallback)
   background: var(--kapoj-primary-soft);
 }
 
-.app-header__brand {
+.app-header__brand.app-brand {
   display: none;
-  align-items: center;
-  color: var(--kapoj-text);
-  font-family: var(--kapoj-font-mono);
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: -0.04em;
-  text-decoration: none;
-}
-
-.app-header__brand strong {
-  color: var(--kapoj-primary);
-  font-weight: inherit;
 }
 
 .app-main {
@@ -258,6 +247,13 @@ const pageTitle = computed(() => route.meta.title ?? props.titleFallback)
   width: 100%;
   max-width: var(--kapoj-content-max);
   padding: var(--kapoj-space-5);
+  margin: 0 auto;
+}
+
+.app-footer {
+  width: 100%;
+  max-width: var(--kapoj-content-max);
+  padding: 0 var(--kapoj-space-5) var(--kapoj-space-5);
   margin: 0 auto;
 }
 
@@ -275,7 +271,7 @@ const pageTitle = computed(() => route.meta.title ?? props.titleFallback)
   }
 
   .app-menu-toggle,
-  .app-header__brand {
+  .app-header__brand.app-brand {
     display: inline-flex;
   }
 
@@ -291,11 +287,19 @@ const pageTitle = computed(() => route.meta.title ?? props.titleFallback)
   .app-main {
     padding: var(--kapoj-space-4) var(--kapoj-space-3);
   }
+
+  .app-footer {
+    padding: 0 var(--kapoj-space-3) var(--kapoj-space-4);
+  }
 }
 
 @media (max-width: 600px) {
   .app-main {
     padding: var(--kapoj-space-3) var(--kapoj-space-2);
+  }
+
+  .app-footer {
+    padding: 0 var(--kapoj-space-2) var(--kapoj-space-3);
   }
 }
 

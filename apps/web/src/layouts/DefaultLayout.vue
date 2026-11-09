@@ -1,12 +1,19 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 
 import AppShell from '@/components/layout/AppShell.vue'
 import AppNav from '@/components/layout/AppNav.vue'
+import SiteFooter from '@/components/layout/SiteFooter.vue'
+import { useSiteStore } from '@/stores/site'
 
 const route = useRoute()
+const site = useSiteStore()
 const isAuthRoute = computed(() => route.name === 'login' || route.name === 'register')
+
+onMounted(() => {
+  void site.recordVisit()
+})
 </script>
 
 <template>
@@ -15,5 +22,8 @@ const isAuthRoute = computed(() => route.name === 'login' || route.name === 'reg
       <AppNav @navigate="navigate" />
     </template>
     <RouterView />
+    <template #footer>
+      <SiteFooter />
+    </template>
   </AppShell>
 </template>

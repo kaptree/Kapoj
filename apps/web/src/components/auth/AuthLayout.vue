@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useId } from 'vue'
 
+import AppBrand from '@/components/layout/AppBrand.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
 
 withDefaults(
@@ -26,10 +27,7 @@ const titleId = useId()
 <template>
   <div class="auth-layout">
     <aside class="auth-intro">
-      <RouterLink to="/" class="auth-brand" aria-label="kapOJ 首页">
-        <span class="auth-brand__mark" aria-hidden="true">K</span>
-        <span class="auth-brand__name">kap<strong>OJ</strong></span>
-      </RouterLink>
+      <AppBrand class="auth-brand" />
 
       <div class="auth-intro__copy">
         <p class="auth-intro__kicker">KAPOJ // ONLINE JUDGE</p>
@@ -95,43 +93,7 @@ const titleId = useId()
 }
 
 .auth-brand {
-  display: inline-flex;
-  align-items: center;
   align-self: flex-start;
-  gap: var(--kapoj-space-2);
-  color: var(--kapoj-text);
-  text-decoration: none;
-}
-
-.auth-brand:hover {
-  text-decoration: none;
-}
-
-.auth-brand__mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  color: var(--kapoj-bg);
-  font-family: var(--kapoj-font-mono);
-  font-size: 15px;
-  font-weight: 700;
-  background: var(--kapoj-primary);
-  border-radius: var(--kapoj-radius-sm);
-  box-shadow: var(--kapoj-glow-primary);
-}
-
-.auth-brand__name {
-  font-family: var(--kapoj-font-mono);
-  font-size: 19px;
-  font-weight: 700;
-  letter-spacing: -0.04em;
-}
-
-.auth-brand__name strong {
-  color: var(--kapoj-primary);
-  font-weight: inherit;
 }
 
 .auth-intro__copy {

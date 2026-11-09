@@ -6,6 +6,7 @@ import Button from 'primevue/button'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useSiteStore } from '@/stores/site'
 import { formatCoins } from '@/utils/gamification'
 
 interface HomeLink {
@@ -16,60 +17,7 @@ interface HomeLink {
 }
 
 const auth = useAuthStore()
-
-const quickLinks: HomeLink[] = [
-  {
-    to: '/problems',
-    icon: 'pi pi-book',
-    title: '题库',
-    description: '按标签与难度筛选，开始一次练习。',
-  },
-  {
-    to: '/contests',
-    icon: 'pi pi-trophy',
-    title: '比赛',
-    description: '参加 ICPC / IOI / OI 赛制，挑战实时榜单。',
-  },
-  {
-    to: '/leaderboard',
-    icon: 'pi pi-chart-line',
-    title: '排行榜',
-    description: '查看 Rating、活跃度与共享榜，每日签到领金币。',
-  },
-  {
-    to: '/submissions',
-    icon: 'pi pi-list-check',
-    title: '测评记录',
-    description: '查看提交状态、耗时与内存。',
-  },
-]
-
-const growthLinks: HomeLink[] = [
-  {
-    to: '/achievements',
-    icon: 'pi pi-star',
-    title: '成就墙',
-    description: '完成条件，解锁成就与奖励。',
-  },
-  {
-    to: '/tasks',
-    icon: 'pi pi-check-square',
-    title: '任务大厅',
-    description: '领取任务，AC 全部题目赢取金币。',
-  },
-  {
-    to: '/shop/badges',
-    icon: 'pi pi-shop',
-    title: '徽章商城',
-    description: '用金币购买并装备专属徽章。',
-  },
-  {
-    to: '/shop/titles',
-    icon: 'pi pi-crown',
-    title: '称号商店',
-    description: '解锁称号，展示你的竞赛身份。',
-  },
-]
+const site = useSiteStore()
 
 const appearanceLink: HomeLink = {
   to: '/appearance',
@@ -79,7 +27,7 @@ const appearanceLink: HomeLink = {
 }
 
 const visibleGrowthLinks = computed(() =>
-  auth.isLoggedIn ? [...growthLinks, appearanceLink] : growthLinks,
+  auth.isLoggedIn ? [...site.home.growthLinks, appearanceLink] : site.home.growthLinks,
 )
 </script>
 
@@ -87,24 +35,30 @@ const visibleGrowthLinks = computed(() =>
   <div class="home">
     <AppSurface as="section" tone="accent" padding="lg" class="hero" aria-labelledby="home-title">
       <div class="hero__copy">
-        <p class="hero__eyebrow">KAPOJ // ONLINE JUDGE</p>
-        <h1 id="home-title" class="hero__title">欢迎来到 <span>kapOJ</span></h1>
-        <p class="hero__description">
-          题库、比赛、排行榜、成就与任务已经上线。完成成就与任务赚取金币，再用金币购买并装扮徽章和称号。每日签到还能领取活跃度与金币。
+        <p class="hero__eyebrow">{{ site.home.eyebrow }}</p>
+        <h1 id="home-title" class="hero__title">
+          {{ site.home.title
+          }}<span v-if="site.home.titleHighlight">{{ ' ' + site.home.titleHighlight }}</span>
+        </h1>
+        <p v-if="site.home.description" class="hero__description">
+          {{ site.home.description }}
         </p>
         <div class="hero__actions">
           <Button
+            v-if="site.home.primaryCta.title"
             as="router-link"
-            to="/problems"
-            label="开始刷题"
-            icon="pi pi-arrow-right"
-            icon-pos="right"
+            :to="site.home.primaryCta.to"
+            :label="site.home.primaryCta.title"
+            :icon="site.home.primaryCta.icon || undefined"
+            :icon-pos="site.home.primaryCta.iconPos"
           />
           <Button
+            v-if="site.home.secondaryCta.title"
             as="router-link"
-            to="/contests"
-            label="浏览比赛"
-            icon="pi pi-trophy"
+            :to="site.home.secondaryCta.to"
+            :label="site.home.secondaryCta.title"
+            :icon="site.home.secondaryCta.icon || undefined"
+            :icon-pos="site.home.secondaryCta.iconPos"
             severity="secondary"
             outlined
           />
@@ -199,9 +153,9 @@ const visibleGrowthLinks = computed(() =>
     >
       <div>
         <p class="section-eyebrow">GUEST ACCESS</p>
-        <h2 id="home-guest-title" class="guest-strip__title">登录后记录你的成长</h2>
-        <p class="guest-strip__description">
-          保存提交、领取任务、解锁成就，并用金币装扮徽章与称号。
+        <h2 id="home-guest-title" class="guest-strip__title">{{ site.home.guestTitle }}</h2>
+        <p v-if="site.home.guestDescription" class="guest-strip__description">
+          {{ site.home.guestDescription }}
         </p>
       </div>
       <div class="guest-strip__actions">
@@ -210,17 +164,28 @@ const visibleGrowthLinks = computed(() =>
       </div>
     </AppSurface>
 
-    <section class="home-section" aria-labelledby="home-quick-title">
+    <section
+      v-if="site.home.quickLinks.length"
+      class="home-section"
+      aria-labelledby="home-quick-title"
+    >
       <div class="section-head">
         <p class="section-eyebrow">QUICK START</p>
-        <h2 id="home-quick-title" class="section-title">快速开始</h2>
+        <h2 id="home-quick-title" class="section-title">{{ site.home.quickTitle }}</h2>
       </div>
       <div class="card-grid">
-        <RouterLink v-for="link in quickLinks" :key="link.to" :to="link.to" class="card-link">
+        <RouterLink
+          v-for="link in site.home.quickLinks"
+          :key="link.to"
+          :to="link.to"
+          class="card-link"
+        >
           <AppSurface as="article" tone="default" padding="md" interactive class="home-card">
-            <span class="home-card__icon"><i :class="link.icon" aria-hidden="true" /></span>
+            <span v-if="link.icon" class="home-card__icon">
+              <i :class="link.icon" aria-hidden="true" />
+            </span>
             <h3 class="home-card__title">{{ link.title }}</h3>
-            <p class="home-card__description">{{ link.description }}</p>
+            <p v-if="link.description" class="home-card__description">{{ link.description }}</p>
             <span class="home-card__arrow" aria-hidden="true">
               <i class="pi pi-arrow-up-right" />
             </span>
@@ -229,10 +194,14 @@ const visibleGrowthLinks = computed(() =>
       </div>
     </section>
 
-    <section class="home-section" aria-labelledby="home-growth-title">
+    <section
+      v-if="visibleGrowthLinks.length"
+      class="home-section"
+      aria-labelledby="home-growth-title"
+    >
       <div class="section-head">
         <p class="section-eyebrow">GROWTH</p>
-        <h2 id="home-growth-title" class="section-title">成长中心</h2>
+        <h2 id="home-growth-title" class="section-title">{{ site.home.growthTitle }}</h2>
       </div>
       <div class="card-grid">
         <RouterLink
@@ -242,9 +211,11 @@ const visibleGrowthLinks = computed(() =>
           class="card-link"
         >
           <AppSurface as="article" tone="default" padding="md" interactive class="home-card">
-            <span class="home-card__icon"><i :class="link.icon" aria-hidden="true" /></span>
+            <span v-if="link.icon" class="home-card__icon">
+              <i :class="link.icon" aria-hidden="true" />
+            </span>
             <h3 class="home-card__title">{{ link.title }}</h3>
-            <p class="home-card__description">{{ link.description }}</p>
+            <p v-if="link.description" class="home-card__description">{{ link.description }}</p>
             <span class="home-card__arrow" aria-hidden="true">
               <i class="pi pi-arrow-up-right" />
             </span>

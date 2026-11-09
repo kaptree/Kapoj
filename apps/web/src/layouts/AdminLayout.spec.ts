@@ -1,4 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -36,7 +37,7 @@ async function mountLayout() {
   await router.isReady()
   const wrapper = mount(RouterView, {
     global: {
-      plugins: [router, PrimeVue],
+      plugins: [router, PrimeVue, createPinia()],
       stubs: { UserMenu: true, AppThemeToggle: true },
     },
   })

@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { computed, ref, watch } from 'vue'
+
+import { useSiteStore } from '@/stores/site'
+
 withDefaults(
   defineProps<{
     badge?: string
@@ -7,6 +11,17 @@ withDefaults(
   {
     badge: '',
     drawer: false,
+  },
+)
+
+const site = useSiteStore()
+const logoFailed = ref(false)
+const showLogo = computed(() => Boolean(site.logoUrl) && !logoFailed.value)
+
+watch(
+  () => site.logoUrl,
+  () => {
+    logoFailed.value = false
   },
 )
 </script>
@@ -18,8 +33,17 @@ withDefaults(
     :class="{ 'app-brand--drawer': drawer }"
     aria-label="kapOJ 首页"
   >
-    <span class="app-brand__mark" aria-hidden="true">K</span>
-    <span class="app-brand__name">kap<strong>OJ</strong></span>
+    <img
+      v-if="showLogo"
+      class="app-brand__logo"
+      :src="site.logoUrl"
+      alt="kapOJ 首页"
+      @error="logoFailed = true"
+    />
+    <template v-else>
+      <span class="app-brand__mark" aria-hidden="true">K</span>
+      <span class="app-brand__name">kap<strong>OJ</strong></span>
+    </template>
     <span v-if="badge" class="app-brand__badge">{{ badge }}</span>
   </RouterLink>
 </template>
@@ -37,6 +61,18 @@ withDefaults(
 
 .app-brand:hover {
   text-decoration: none;
+}
+
+.app-brand__logo {
+  display: block;
+  width: auto;
+  max-width: 180px;
+  height: 32px;
+  object-fit: contain;
+}
+
+.app-brand--drawer .app-brand__logo {
+  height: 34px;
 }
 
 .app-brand__mark {
