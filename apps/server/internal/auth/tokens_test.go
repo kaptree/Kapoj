@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -123,4 +124,280 @@ func TestRevokeAll(t *testing.T) {
 	uid, err := store.Consume(ctx, other)
 	require.NoError(t, err)
 	assert.Equal(t, int64(8), uid)
+}
+
+func TestIssueConsumeSession(t *testing.T) {
+	_, rdb := newRedis(t)
+	store := NewRefreshStore(rdb, time.Hour)
+	ctx := context.Background()
+
+	meta := SessionMeta{IP: "1.2.3.4", UserAgent: "test-agent"}
+	tok, sid, err := store.IssueWithMeta(ctx, 7, meta)
+	require.NoError(t, err)
+	assert.NotEmpty(t, tok)
+	assert.Len(t, sid, 32) // 16 bytes hex-encoded
+
+	// session record stores meta and timestamps, but the token is only hashed.
+	val, err := rdb.Get(ctx, sessionKey(sid)).Result()
+	require.NoError(t, err)
+	var rec sessionRecord
+	require.NoError(t, json.Unmarshal([]byte(val), &rec))
+	assert.Equal(t, int64(7), rec.UserID)
+	assert.Equal(t, "1.2.3.4", rec.IP)
+	assert.Equal(t, "test-agent", rec.UserAgent)
+	assert.Equal(t, hashToken(tok), rec.TokenHash)
+	assert.NotEmpty(t, rec.CreatedAt)
+	assert.NotEmpty(t, rec.LastUsedAt)
+
+	uid, gotSid, err := store.ConsumeSession(ctx, tok)
+	require.NoError(t, err)
+	assert.Equal(t, int64(7), uid)
+	assert.Equal(t, sid, gotSid)
+
+	// a token can be consumed only once.
+	_, _, err = store.ConsumeSession(ctx, tok)
+	assert.ErrorIs(t, err, ErrInvalidRefresh)
+
+	// the legacy Issue/Consume wrappers still behave.
+	tok2, err := store.Issue(ctx, 8)
+	require.NoError(t, err)
+	uid2, err := store.Consume(ctx, tok2)
+	require.NoError(t, err)
+	assert.Equal(t, int64(8), uid2)
+}
+
+func TestRotateKeepsSession(t *testing.T) {
+	mr, rdb := newRedis(t)
+	store := NewRefreshStore(rdb, time.Hour)
+	ctx := context.Background()
+
+	base := time.Now().Truncate(time.Second)
+	store.now = func() time.Time { return base }
+
+	tok1, sid, err := store.IssueWithMeta(ctx, 7, SessionMeta{IP: "1.1.1.1", UserAgent: "a"})
+	require.NoError(t, err)
+
+	// the service consumes the old token before rotating.
+	uid, gotSid, err := store.ConsumeSession(ctx, tok1)
+	require.NoError(t, err)
+	assert.Equal(t, int64(7), uid)
+	assert.Equal(t, sid, gotSid)
+
+	// advance both the store clock and the Redis clock.
+	store.now = func() time.Time { return base.Add(10 * time.Minute) }
+	mr.FastForward(30 * time.Minute)
+
+	tok2, err := store.Rotate(ctx, 7, sid, SessionMeta{IP: "2.2.2.2", UserAgent: "b"})
+	require.NoError(t, err)
+	assert.NotEqual(t, tok1, tok2)
+
+	// the old token is already invalid.
+	_, err = store.Consume(ctx, tok1)
+	assert.ErrorIs(t, err, ErrInvalidRefresh)
+
+	// the session record was updated with new token hash/meta and lastUsedAt.
+	val, err := rdb.Get(ctx, sessionKey(sid)).Result()
+	require.NoError(t, err)
+	var rec sessionRecord
+	require.NoError(t, json.Unmarshal([]byte(val), &rec))
+	assert.Equal(t, hashToken(tok2), rec.TokenHash)
+	assert.Equal(t, "2.2.2.2", rec.IP)
+	assert.Equal(t, "b", rec.UserAgent)
+	created, err := time.Parse(time.RFC3339Nano, rec.CreatedAt)
+	require.NoError(t, err)
+	lastUsed, err := time.Parse(time.RFC3339Nano, rec.LastUsedAt)
+	require.NoError(t, err)
+	assert.True(t, created.Equal(base))
+	assert.True(t, lastUsed.Equal(base.Add(10*time.Minute)))
+
+	// TTL was reset (sliding window) on the session and both sets. Checked before
+	// consuming tok2, which empties the user_refresh set.
+	assert.Greater(t, mr.TTL(sessionKey(sid)), 50*time.Minute)
+	assert.Greater(t, mr.TTL(userSessionsKey(7)), 50*time.Minute)
+	assert.Greater(t, mr.TTL(userKey(7)), 50*time.Minute)
+
+	// the new token maps to the same session.
+	uid2, sid2, err := store.ConsumeSession(ctx, tok2)
+	require.NoError(t, err)
+	assert.Equal(t, int64(7), uid2)
+	assert.Equal(t, sid, sid2)
+}
+
+func TestListSessions(t *testing.T) {
+	_, rdb := newRedis(t)
+	store := NewRefreshStore(rdb, time.Hour)
+	ctx := context.Background()
+
+	base := time.Now().Truncate(time.Second)
+	store.now = func() time.Time { return base }
+	tokA, sidA, err := store.IssueWithMeta(ctx, 7, SessionMeta{IP: "a", UserAgent: "ua-a"})
+	require.NoError(t, err)
+
+	store.now = func() time.Time { return base.Add(time.Minute) }
+	_, sidB, err := store.IssueWithMeta(ctx, 7, SessionMeta{IP: "b", UserAgent: "ua-b"})
+	require.NoError(t, err)
+
+	list, err := store.List(ctx, 7)
+	require.NoError(t, err)
+	require.Len(t, list, 2)
+
+	// ordered by lastUsedAt desc: the newer session comes first.
+	assert.Equal(t, sidB, list[0].ID)
+	assert.Equal(t, "b", list[0].IP)
+	assert.Equal(t, sidA, list[1].ID)
+	assert.Equal(t, "a", list[1].IP)
+
+	// the view never exposes the token or its hash.
+	for _, si := range list {
+		assert.NotContains(t, si.ID, tokA)
+		assert.NotContains(t, si.ID, hashToken(tokA))
+	}
+
+	// ...but the underlying record still stores the hash for revocation.
+	val, err := rdb.Get(ctx, sessionKey(sidA)).Result()
+	require.NoError(t, err)
+	assert.Contains(t, val, hashToken(tokA))
+
+	// a missing session record is skipped and cleaned from the set.
+	require.NoError(t, rdb.Del(ctx, sessionKey(sidB)).Err())
+	list, err = store.List(ctx, 7)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.Equal(t, sidA, list[0].ID)
+
+	members, err := rdb.SMembers(ctx, userSessionsKey(7)).Result()
+	require.NoError(t, err)
+	assert.NotContains(t, members, sidB)
+}
+
+func TestRevokeSession(t *testing.T) {
+	_, rdb := newRedis(t)
+	store := NewRefreshStore(rdb, time.Hour)
+	ctx := context.Background()
+
+	tokA, sidA, err := store.IssueWithMeta(ctx, 7, SessionMeta{})
+	require.NoError(t, err)
+	tokB, sidB, err := store.IssueWithMeta(ctx, 7, SessionMeta{})
+	require.NoError(t, err)
+	tokOther, _, err := store.IssueWithMeta(ctx, 8, SessionMeta{})
+	require.NoError(t, err)
+
+	// revoking one session leaves the others intact.
+	require.NoError(t, store.RevokeSession(ctx, 7, sidA))
+	_, err = store.Consume(ctx, tokA)
+	assert.ErrorIs(t, err, ErrInvalidRefresh)
+
+	uid, err := store.Consume(ctx, tokB)
+	require.NoError(t, err)
+	assert.Equal(t, int64(7), uid)
+
+	uid, err = store.Consume(ctx, tokOther)
+	require.NoError(t, err)
+	assert.Equal(t, int64(8), uid)
+
+	// unknown session.
+	err = store.RevokeSession(ctx, 7, strings.Repeat("a", 32))
+	assert.ErrorIs(t, err, ErrSessionNotFound)
+
+	// another user's session.
+	err = store.RevokeSession(ctx, 8, sidB)
+	assert.ErrorIs(t, err, ErrSessionNotFound)
+}
+
+func TestRevokeOthersAndAll(t *testing.T) {
+	_, rdb := newRedis(t)
+	store := NewRefreshStore(rdb, time.Hour)
+	ctx := context.Background()
+
+	tokKeep, sidKeep, err := store.IssueWithMeta(ctx, 7, SessionMeta{})
+	require.NoError(t, err)
+	tokOther, _, err := store.IssueWithMeta(ctx, 7, SessionMeta{})
+	require.NoError(t, err)
+
+	require.NoError(t, store.RevokeOthers(ctx, 7, sidKeep))
+
+	_, err = store.Consume(ctx, tokOther)
+	assert.ErrorIs(t, err, ErrInvalidRefresh)
+	uid, err := store.Consume(ctx, tokKeep)
+	require.NoError(t, err)
+	assert.Equal(t, int64(7), uid)
+
+	// RevokeAll clears every session and both sets.
+	tok1, _, err := store.IssueWithMeta(ctx, 7, SessionMeta{})
+	require.NoError(t, err)
+	tok2, _, err := store.IssueWithMeta(ctx, 7, SessionMeta{})
+	require.NoError(t, err)
+
+	require.NoError(t, store.RevokeAll(ctx, 7))
+	_, err = store.Consume(ctx, tok1)
+	assert.ErrorIs(t, err, ErrInvalidRefresh)
+	_, err = store.Consume(ctx, tok2)
+	assert.ErrorIs(t, err, ErrInvalidRefresh)
+
+	members, err := rdb.SMembers(ctx, userSessionsKey(7)).Result()
+	require.NoError(t, err)
+	assert.Empty(t, members)
+	members, err = rdb.SMembers(ctx, userKey(7)).Result()
+	require.NoError(t, err)
+	assert.Empty(t, members)
+}
+
+func TestLegacyRefreshValue(t *testing.T) {
+	_, rdb := newRedis(t)
+	store := NewRefreshStore(rdb, time.Hour)
+	ctx := context.Background()
+
+	// a pre-session refresh token stored as a plain integer userID.
+	token := "legacy-token-value-0123456789"
+	hash := hashToken(token)
+	require.NoError(t, rdb.Set(ctx, tokenKey(hash), "7", time.Hour).Err())
+	require.NoError(t, rdb.SAdd(ctx, userKey(7), hash).Err())
+
+	uid, sid, err := store.ConsumeSession(ctx, token)
+	require.NoError(t, err)
+	assert.Equal(t, int64(7), uid)
+	assert.Empty(t, sid)
+
+	// legacy Consume wrapper also works and removes the hash key.
+	require.NoError(t, rdb.Set(ctx, tokenKey(hash), "7", time.Hour).Err())
+	require.NoError(t, rdb.SAdd(ctx, userKey(7), hash).Err())
+	uid2, err := store.Consume(ctx, token)
+	require.NoError(t, err)
+	assert.Equal(t, int64(7), uid2)
+
+	// issuing a new token after a legacy migration creates a session.
+	tok, sid2, err := store.IssueWithMeta(ctx, 7, SessionMeta{})
+	require.NoError(t, err)
+	assert.NotEmpty(t, tok)
+	assert.Len(t, sid2, 32)
+}
+
+func TestRevokeAllLegacy(t *testing.T) {
+	_, rdb := newRedis(t)
+	store := NewRefreshStore(rdb, time.Hour)
+	ctx := context.Background()
+
+	// a legacy refresh token plus a session token.
+	legacy := "legacy-token-value"
+	legacyHash := hashToken(legacy)
+	require.NoError(t, rdb.Set(ctx, tokenKey(legacyHash), "7", time.Hour).Err())
+	require.NoError(t, rdb.SAdd(ctx, userKey(7), legacyHash).Err())
+
+	tok, _, err := store.IssueWithMeta(ctx, 7, SessionMeta{})
+	require.NoError(t, err)
+
+	require.NoError(t, store.RevokeAll(ctx, 7))
+
+	_, err = store.Consume(ctx, legacy)
+	assert.ErrorIs(t, err, ErrInvalidRefresh)
+	_, err = store.Consume(ctx, tok)
+	assert.ErrorIs(t, err, ErrInvalidRefresh)
+
+	exists, err := rdb.Exists(ctx, tokenKey(legacyHash)).Result()
+	require.NoError(t, err)
+	assert.Zero(t, exists)
+
+	members, err := rdb.SMembers(ctx, userKey(7)).Result()
+	require.NoError(t, err)
+	assert.Empty(t, members)
 }
