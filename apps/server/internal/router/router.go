@@ -131,10 +131,14 @@ func New(d Deps) *gin.Engine {
 	if d.Certificate != nil {
 		certificateapi.RegisterRoutes(public, api, uploads, d.Certificate, certificateapi.Options{RBAC: d.RBAC})
 	}
-	if d.AI != nil {
-		aiapi.RegisterRoutes(api, d.AI, aiapi.Options{RBAC: d.RBAC, Settings: d.AISettings})
-	}
 	contestRepo := contest.NewGormRepository(d.DB)
+	problemRepo := problem.NewGormRepository(d.DB)
+	if d.AI != nil {
+		aiapi.RegisterRoutes(api, d.AI, aiapi.Options{
+			RBAC: d.RBAC, Settings: d.AISettings,
+			ContestAccess: contestRepo, Problems: problemRepo,
+		})
+	}
 	contestSvc := contest.NewService(contestRepo)
 	contestOpts := contestapi.Options{RBAC: d.RBAC}
 	if d.Game != nil {
@@ -145,7 +149,6 @@ func New(d Deps) *gin.Engine {
 		contestOpts.ActivityHook = d.Activity
 	}
 	contestapi.RegisterRoutes(api, contestSvc, contestOpts)
-	problemRepo := problem.NewGormRepository(d.DB)
 	submissionRepo := submission.NewGormRepository(d.DB)
 	var problemSvc *problem.Service
 	if d.Learning != nil {

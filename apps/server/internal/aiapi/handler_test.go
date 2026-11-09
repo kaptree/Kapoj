@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -18,7 +19,9 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/ai"
 	"github.com/kaptree/kapoj/apps/server/internal/aiapi"
 	"github.com/kaptree/kapoj/apps/server/internal/auth"
+	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
+	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
@@ -156,6 +159,96 @@ func TestAIRoutesDisabledReturn404(t *testing.T) {
 		require.Equal(t, http.StatusNotFound, w.Code, "%s %s 应返回 404", rt.method, rt.path)
 		assert.EqualValues(t, 40400, resp["code"], "%s %s", rt.method, rt.path)
 	}
+}
+
+func newAIContestHandler(t *testing.T) (http.Handler, *gorm.DB) {
+	t.Helper()
+	g := testutil.PG(t)
+	require.NoError(t, ai.SeedProviders(context.Background(), g))
+	km, err := ai.NewKeyManager(base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")), "")
+	require.NoError(t, err)
+	svc := ai.NewService(g, km, nil, nil)
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	issuer := auth.NewTokenIssuer(testJWTSecret, 15*time.Minute)
+	api := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(1<<20))
+	aiapi.RegisterRoutes(api, svc, aiapi.Options{
+		ContestAccess: contest.NewGormRepository(g),
+		Problems:      problem.NewGormRepository(g),
+	})
+	return r, g
+}
+
+func TestAIContestGuard(t *testing.T) {
+	h, g := newAIContestHandler(t)
+	uid := createUser(t, g, "aicontest")
+	token := tokenFor(t, uid)
+	prepo := problem.NewGormRepository(g)
+	p := &problem.Problem{
+		Title: "AI Locked", Slug: "ai-locked", StatementMD: "statement",
+		Type: problem.TypeTraditional, Difficulty: 1, TimeLimitMS: 1000, MemoryLimitMB: 256,
+		IsPublic: true, CreatedBy: 1,
+	}
+	require.NoError(t, prepo.Create(context.Background(), p))
+
+	now := time.Now()
+	crepo := contest.NewGormRepository(g)
+	c := &contest.Contest{
+		Title: "AI contest", StartTime: now.Add(-time.Hour), EndTime: now.Add(time.Hour),
+		Mode: contest.ModeICPC, IsPublic: true, RegisterType: contest.RegisterOpen,
+		DisableAI: true, CreatedBy: 1,
+	}
+	require.NoError(t, crepo.Create(context.Background(), c, []contest.ContestProblem{
+		{ProblemID: p.ID, DisplayID: "A", Score: 100},
+	}))
+	require.NoError(t, crepo.AddParticipant(context.Background(), c.ID, uid))
+
+	w, resp := do(t, h, http.MethodPost, "/api/ai/complete", token,
+		fmt.Sprintf(`{"code":"int main(){}","language":"cpp","cursor":0,"problemId":%d}`, p.ID))
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.EqualValues(t, 40302, resp["code"])
+
+	// 关闭开关后不再 40302（后续因未配置模型返回 40001，证明已通过比赛校验）
+	require.NoError(t, g.Exec(`UPDATE contests SET disable_ai = false WHERE id = ?`, c.ID).Error)
+	w, resp = do(t, h, http.MethodPost, "/api/ai/complete", token,
+		fmt.Sprintf(`{"code":"int main(){}","language":"cpp","cursor":0,"problemId":%d}`, p.ID))
+	assert.NotEqual(t, http.StatusForbidden, w.Code)
+	assert.NotEqualValues(t, 40302, resp["code"])
+
+	// 缺少 problemId -> 40001
+	w, resp = do(t, h, http.MethodPost, "/api/ai/format", token, `{"code":"x","language":"cpp"}`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+}
+
+// 未报名用户访问运行中比赛锁定的题目，必须返回 404 而不是暴露题目存在。
+func TestAIContestGuardLockedProblemHidden(t *testing.T) {
+	h, g := newAIContestHandler(t)
+	uid := createUser(t, g, "aioutsider")
+	token := tokenFor(t, uid)
+	prepo := problem.NewGormRepository(g)
+	p := &problem.Problem{
+		Title: "AI Locked Hidden", Slug: "ai-locked-hidden", StatementMD: "statement",
+		Type: problem.TypeTraditional, Difficulty: 1, TimeLimitMS: 1000, MemoryLimitMB: 256,
+		IsPublic: true, CreatedBy: 1,
+	}
+	require.NoError(t, prepo.Create(context.Background(), p))
+
+	now := time.Now()
+	crepo := contest.NewGormRepository(g)
+	c := &contest.Contest{
+		Title: "AI locked contest", StartTime: now.Add(-time.Hour), EndTime: now.Add(time.Hour),
+		Mode: contest.ModeICPC, IsPublic: true, RegisterType: contest.RegisterOpen, CreatedBy: 1,
+	}
+	require.NoError(t, crepo.Create(context.Background(), c, []contest.ContestProblem{
+		{ProblemID: p.ID, DisplayID: "A", Score: 100},
+	}))
+
+	w, resp := do(t, h, http.MethodPost, "/api/ai/hint", token,
+		fmt.Sprintf(`{"problemId":%d}`, p.ID))
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.EqualValues(t, 40400, resp["code"])
 }
 
 func TestAIRoutesEnabledPass(t *testing.T) {

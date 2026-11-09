@@ -19,9 +19,10 @@ const (
 
 // GenerateInput is the shared request body for complete/format/optimize.
 type GenerateInput struct {
-	Code     string `json:"code"`
-	Language string `json:"language"`
-	Cursor   *int   `json:"cursor"`
+	Code      string `json:"code"`
+	Language  string `json:"language"`
+	Cursor    *int   `json:"cursor"`
+	ProblemID int64  `json:"problemId"`
 }
 
 // CompletionResult is the output of Complete.

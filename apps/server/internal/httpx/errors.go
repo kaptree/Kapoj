@@ -22,6 +22,7 @@ var (
 	ErrInvalidCredentials      = newErr(http.StatusUnauthorized, 40101, "账号或密码错误")
 	ErrForbidden               = newErr(http.StatusForbidden, 40300, "没有权限执行此操作")
 	ErrUserBanned              = newErr(http.StatusForbidden, 40301, "账号已被封禁")
+	ErrContestAIDisabled       = newErr(http.StatusForbidden, 40302, "比赛期间已禁用 AI")
 	ErrNotFound                = newErr(http.StatusNotFound, 40400, "资源不存在")
 	ErrUsernameTaken           = newErr(http.StatusConflict, 40901, "用户名已被占用")
 	ErrEmailTaken              = newErr(http.StatusConflict, 40902, "邮箱已被注册")

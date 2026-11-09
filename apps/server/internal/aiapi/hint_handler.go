@@ -6,7 +6,6 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/ai"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
-	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 )
 
 // hint handles POST /api/ai/hint. Auth is enforced by the route; canViewHidden
@@ -22,10 +21,10 @@ func (h *handler) hint(c *gin.Context) {
 	if !ok {
 		return
 	}
-	canViewHidden := false
-	if access, ok := middleware.CurrentAccess(c); ok && access != nil {
-		canViewHidden = access.IsSuper || access.Has(string(rbac.PermProblemViewHidden))
+	if !h.checkContestAI(c, in.ProblemID) {
+		return
 	}
+	canViewHidden := currentCanViewHidden(c)
 	view, err := h.svc.Hint(c.Request.Context(), claims.UserID, in.ProblemID, canViewHidden)
 	if err != nil {
 		httpx.Fail(c, err)

@@ -18,6 +18,9 @@ func (h *handler) complete(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if !h.checkContestAI(c, in.ProblemID) {
+		return
+	}
 	res, err := h.svc.Complete(c.Request.Context(), claims.UserID, in)
 	if err != nil {
 		httpx.Fail(c, err)
@@ -36,6 +39,9 @@ func (h *handler) format(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if !h.checkContestAI(c, in.ProblemID) {
+		return
+	}
 	res, err := h.svc.Format(c.Request.Context(), claims.UserID, in)
 	if err != nil {
 		httpx.Fail(c, err)
@@ -52,6 +58,9 @@ func (h *handler) optimize(c *gin.Context) {
 	}
 	in, ok := httpx.BindJSON[ai.GenerateInput](c)
 	if !ok {
+		return
+	}
+	if !h.checkContestAI(c, in.ProblemID) {
 		return
 	}
 	res, err := h.svc.Optimize(c.Request.Context(), claims.UserID, in)
