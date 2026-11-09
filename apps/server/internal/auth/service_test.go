@@ -512,3 +512,24 @@ func TestLogoutOthersAndAllInvalidateRefresh(t *testing.T) {
 	_, err = svc.Refresh(ctx, third.RefreshToken)
 	assertCode(t, err, 40100)
 }
+
+func TestLogoutOthersRejectsUnknownOrBlankSession(t *testing.T) {
+	svc, _ := newService(t)
+	s := register(t, svc, "alice", "alice@example.com")
+	ctx := context.Background()
+	_, err := svc.Login(ctx, "alice", password)
+	require.NoError(t, err)
+
+	views, err := svc.ListSessions(ctx, s.User.ID)
+	require.NoError(t, err)
+	require.Len(t, views, 2)
+
+	err = svc.LogoutOthers(ctx, s.User.ID, strings.Repeat("a", 32))
+	assertCode(t, err, 40400)
+	err = svc.LogoutOthers(ctx, s.User.ID, "   ")
+	assertCode(t, err, 40001)
+
+	views, err = svc.ListSessions(ctx, s.User.ID)
+	require.NoError(t, err)
+	require.Len(t, views, 2, "invalid keep session must not revoke other sessions")
+}

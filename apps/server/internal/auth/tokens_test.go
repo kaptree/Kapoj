@@ -513,3 +513,70 @@ func TestRevokeAllLegacy(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, members)
 }
+
+func TestRevokeOthersRejectsUnknownKeep(t *testing.T) {
+	_, rdb := newRedis(t)
+	store := NewRefreshStore(rdb, time.Hour)
+	ctx := context.Background()
+
+	tok1, _, err := store.IssueWithMeta(ctx, 7, SessionMeta{})
+	require.NoError(t, err)
+	tok2, _, err := store.IssueWithMeta(ctx, 7, SessionMeta{})
+	require.NoError(t, err)
+
+	err = store.RevokeOthers(ctx, 7, "unknown-session-id")
+	assert.ErrorIs(t, err, ErrSessionNotFound)
+
+	_, err = store.Consume(ctx, tok1)
+	require.NoError(t, err)
+	_, err = store.Consume(ctx, tok2)
+	require.NoError(t, err)
+}
+
+func TestRevokeOthersRejectsOtherUsersKeep(t *testing.T) {
+	_, rdb := newRedis(t)
+	store := NewRefreshStore(rdb, time.Hour)
+	ctx := context.Background()
+
+	_, keepAlice, err := store.IssueWithMeta(ctx, 7, SessionMeta{})
+	require.NoError(t, err)
+	tokBob, _, err := store.IssueWithMeta(ctx, 8, SessionMeta{})
+	require.NoError(t, err)
+
+	err = store.RevokeOthers(ctx, 7, keepAlice)
+	require.NoError(t, err)
+
+	// Bob's session is not Alice's to revoke, and Alice's keep stays valid.
+	_, err = store.Consume(ctx, tokBob)
+	require.NoError(t, err)
+}
+
+func TestRevokeOthersRemovesLegacyTokens(t *testing.T) {
+	_, rdb := newRedis(t)
+	store := NewRefreshStore(rdb, time.Hour)
+	ctx := context.Background()
+
+	keepToken, keepSID, err := store.IssueWithMeta(ctx, 7, SessionMeta{})
+	require.NoError(t, err)
+	otherToken, _, err := store.IssueWithMeta(ctx, 7, SessionMeta{})
+	require.NoError(t, err)
+
+	legacy := "legacy-token-value"
+	legacyHash := hashToken(legacy)
+	require.NoError(t, rdb.Set(ctx, tokenKey(legacyHash), "7", time.Hour).Err())
+	require.NoError(t, rdb.SAdd(ctx, userKey(7), legacyHash).Err())
+
+	require.NoError(t, store.RevokeOthers(ctx, 7, keepSID))
+
+	_, err = store.Consume(ctx, legacy)
+	assert.ErrorIs(t, err, ErrInvalidRefresh)
+	exists, err := rdb.Exists(ctx, tokenKey(legacyHash)).Result()
+	require.NoError(t, err)
+	assert.Zero(t, exists)
+
+	_, err = store.Consume(ctx, otherToken)
+	assert.ErrorIs(t, err, ErrInvalidRefresh)
+	uid, err := store.Consume(ctx, keepToken)
+	require.NoError(t, err)
+	assert.Equal(t, int64(7), uid)
+}

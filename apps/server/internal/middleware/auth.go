@@ -11,8 +11,6 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
 
-const claimsKey = "kapoj.claims"
-
 // Authenticate parses a Bearer access token when one is present. Requests
 // without an Authorization header continue as guests; a header with an
 // invalid token is rejected rather than silently downgraded.
@@ -33,13 +31,13 @@ func Authenticate(issuer *auth.TokenIssuer) gin.HandlerFunc {
 			httpx.Fail(c, httpx.ErrUnauthorized)
 			return
 		}
-		c.Set(claimsKey, claims)
+		c.Set(auth.ClaimsContextKey, claims)
 		c.Next()
 	}
 }
 
 func CurrentClaims(c *gin.Context) (*auth.Claims, bool) {
-	v, ok := c.Get(claimsKey)
+	v, ok := c.Get(auth.ClaimsContextKey)
 	if !ok {
 		return nil, false
 	}

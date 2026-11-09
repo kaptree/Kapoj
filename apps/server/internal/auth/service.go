@@ -279,9 +279,19 @@ func (s *Service) RevokeSession(ctx context.Context, userID int64, sessionID str
 	return err
 }
 
-// LogoutOthers revokes every session except the one to keep.
+// LogoutOthers revokes every session except the one to keep. An empty or
+// unknown/other-user keep session is rejected so a malformed request cannot
+// degrade into "logout all".
 func (s *Service) LogoutOthers(ctx context.Context, userID int64, keepSessionID string) error {
-	return s.refresh.RevokeOthers(ctx, userID, keepSessionID)
+	keep := strings.TrimSpace(keepSessionID)
+	if keep == "" {
+		return httpx.ErrValidation("缺少当前会话 ID")
+	}
+	err := s.refresh.RevokeOthers(ctx, userID, keep)
+	if errors.Is(err, ErrSessionNotFound) {
+		return httpx.ErrNotFound
+	}
+	return err
 }
 
 // LogoutAll revokes every session of the user.

@@ -76,7 +76,7 @@ func authenticateForTest(issuer *TokenIssuer) gin.HandlerFunc {
 			httpx.Fail(c, httpx.ErrUnauthorized)
 			return
 		}
-		c.Set(claimsContextKey, claims)
+		c.Set(ClaimsContextKey, claims)
 		c.Next()
 	}
 }
@@ -317,4 +317,20 @@ func TestSessionMetaTruncatesUserAgentOnRuneBoundary(t *testing.T) {
 	assert.True(t, utf8.ValidString(meta.UserAgent), "truncated UA must be valid UTF-8")
 	assert.NotContains(t, meta.UserAgent, "\uFFFD")
 	assert.Equal(t, strings.Repeat("a", 511), meta.UserAgent)
+}
+
+func TestLogoutOthersRejectsUnknownSession(t *testing.T) {
+	r := newAccountEngine(t)
+	_, resp := postJSON(r, "/api/auth/register", `{"username":"alice","email":"alice@example.com","password":"correct-horse"}`)
+	data := resp["data"].(map[string]any)
+	token := data["accessToken"].(string)
+	postJSON(r, "/api/auth/login", `{"account":"alice","password":"correct-horse"}`)
+
+	w, resp := authJSON(r, http.MethodPost, "/api/users/me/sessions/logout-others", token,
+		`{"sessionId":"unknown-session-id"}`)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.EqualValues(t, 40400, resp["code"])
+
+	_, resp = authJSON(r, http.MethodGet, "/api/users/me/sessions", token, "")
+	assert.Len(t, resp["data"], 2, "unknown keep session must not revoke all sessions")
 }

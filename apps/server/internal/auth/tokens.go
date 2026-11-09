@@ -58,6 +58,10 @@ type sessionRecord struct {
 	LastUsedAt string `json:"lastUsedAt"`
 }
 
+// ClaimsContextKey is the gin context key for *Claims. It is exported so the
+// middleware can set the same key without importing a duplicated literal.
+const ClaimsContextKey = "kapoj.claims"
+
 // Claims identifies the user an access token was issued to.
 type Claims struct {
 	UserID int64
@@ -440,6 +444,20 @@ func (s *RefreshStore) RevokeSession(ctx context.Context, userID int64, sessionI
 // RevokeOthers revokes every session of a user except the one to keep. Stale
 // session IDs are cleaned up along the way.
 func (s *RefreshStore) RevokeOthers(ctx context.Context, userID int64, keepSessionID string) error {
+	if keepSessionID == "" {
+		return ErrSessionNotFound
+	}
+	keep, err := s.getSession(ctx, keepSessionID)
+	if errors.Is(err, ErrSessionNotFound) {
+		return ErrSessionNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if keep.UserID != userID {
+		return ErrSessionNotFound
+	}
+
 	ids, err := s.rdb.SMembers(ctx, userSessionsKey(userID)).Result()
 	if err != nil {
 		return err
@@ -454,6 +472,35 @@ func (s *RefreshStore) RevokeOthers(ctx context.Context, userID int64, keepSessi
 				continue
 			}
 			return err
+		}
+	}
+
+	// Pre-session tokens have no session record; revoke them too so
+	// "logout other devices" does not leave a legacy refresh token usable.
+	hashes, err := s.rdb.SMembers(ctx, userKey(userID)).Result()
+	if err != nil {
+		return err
+	}
+	for _, h := range hashes {
+		val, err := s.rdb.Get(ctx, tokenKey(h)).Result()
+		if errors.Is(err, redis.Nil) {
+			s.rdb.SRem(ctx, userKey(userID), h)
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		_, sid, ok := parseRefreshRecord(val)
+		if !ok {
+			continue
+		}
+		if sid == "" {
+			if err := s.rdb.Del(ctx, tokenKey(h)).Err(); err != nil {
+				return err
+			}
+			if err := s.rdb.SRem(ctx, userKey(userID), h).Err(); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

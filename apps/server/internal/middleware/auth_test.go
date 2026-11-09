@@ -118,3 +118,16 @@ func TestRequireRoleAllowsListedRoleAndSuperAdmin(t *testing.T) {
 		assert.Equal(t, http.StatusNoContent, w.Code, role)
 	}
 }
+
+func TestCurrentClaimsUsesAuthContextKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Set(auth.ClaimsContextKey, &auth.Claims{UserID: 7, Role: user.RoleUser})
+	claims, ok := CurrentClaims(c)
+	require.True(t, ok)
+	assert.Equal(t, int64(7), claims.UserID)
+
+	c2, _ := gin.CreateTestContext(httptest.NewRecorder())
+	_, ok = CurrentClaims(c2)
+	assert.False(t, ok)
+}

@@ -62,10 +62,6 @@ type handler struct {
 	loginHook LoginHook
 }
 
-// claimsContextKey must match middleware.claimsKey; auth cannot import the
-// middleware package without forming an import cycle.
-const claimsContextKey = "kapoj.claims"
-
 // sessionMeta captures the client that a session is created from. The IP and
 // User-Agent are truncated so a malicious client cannot fill Redis with huge
 // values.
@@ -92,7 +88,7 @@ func truncateUTF8(s string, max int) string {
 // currentClaims mirrors middleware.CurrentClaims for use inside the auth
 // package (which cannot import middleware).
 func currentClaims(c *gin.Context) (*Claims, bool) {
-	v, ok := c.Get(claimsContextKey)
+	v, ok := c.Get(ClaimsContextKey)
 	if !ok {
 		return nil, false
 	}
