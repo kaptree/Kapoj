@@ -108,6 +108,7 @@ func apply(p *Problem, in Input) {
 	p.Samples, p.Tags = in.Samples, in.Tags
 	p.HintMD = in.HintMD
 	p.Type, p.Difficulty = in.Type, in.Difficulty
+	p.Answers = in.Answers
 	p.TimeLimitMS, p.MemoryLimitMB = in.TimeLimitMS, in.MemoryLimitMB
 	p.IsPublic, p.Source = in.IsPublic, in.Source
 }

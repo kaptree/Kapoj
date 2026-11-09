@@ -12,10 +12,11 @@ const (
 	TypeTraditional Type = "traditional"
 	TypeSpecial     Type = "special"
 	TypeInteractive Type = "interactive"
+	TypeObjective   Type = "objective"
 )
 
 func (t Type) Valid() bool {
-	return t == TypeTraditional || t == TypeSpecial || t == TypeInteractive
+	return t == TypeTraditional || t == TypeSpecial || t == TypeInteractive || t == TypeObjective
 }
 
 type Sample struct {
@@ -38,6 +39,7 @@ type Problem struct {
 	// 范围 0..1,000,000。仅通过官方题解接口写入。
 	SolutionPriceCoins int64                `gorm:"column:solution_price_coins;not null;default:0"`
 	Type               Type                 `gorm:"size:20;not null;default:traditional"`
+	Answers            dbtypes.List[string] `gorm:"column:answers_json;type:jsonb;not null;default:'[]'"`
 	Tags               dbtypes.List[string] `gorm:"column:tags_json;type:jsonb;not null;default:'[]';index:idx_problems_tags,type:gin"`
 	Difficulty         int                  `gorm:"not null;default:1;index"`
 	TimeLimitMS        int                  `gorm:"column:time_limit_ms;not null;default:1000"`

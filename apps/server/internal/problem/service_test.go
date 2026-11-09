@@ -209,6 +209,25 @@ func TestPublishRequiresTestcase(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestObjectivePublishesWithoutTestcase(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	in := input("objective")
+	in.Type = problem.TypeObjective
+	in.Answers = []string{"A", "B"}
+	in.IsPublic = true
+	p, err := e.svc.Create(ctx, 1, in)
+	require.NoError(t, err)
+	// 新题创建时 isPublic 被忽略；通过 Update 发布
+	in.IsPublic = true
+	_, err = e.svc.Update(ctx, p.ID, in)
+	require.NoError(t, err)
+
+	got, err := e.svc.Get(ctx, problem.Viewer{}, p.ID)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"A", "B"}, []string(got.Answers))
+}
+
 func TestPublishSpecialRequiresChecker(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()

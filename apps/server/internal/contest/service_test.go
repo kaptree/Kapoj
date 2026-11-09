@@ -1014,3 +1014,23 @@ func TestContestDetailProblemLockedAndStatsGating(t *testing.T) {
 	assert.Empty(t, runningDetail.Problems[0].MyStatus)
 	assert.Zero(t, runningDetail.Problems[0].MyAttempts)
 }
+
+func TestProblemItemIncludesType(t *testing.T) {
+	e := newEnv(t)
+	objective := &problem.Problem{
+		Title: "Objective", Slug: "objective", StatementMD: "statement",
+		Type: problem.TypeObjective, Answers: []string{"A"}, Difficulty: 1,
+		TimeLimitMS: 1000, MemoryLimitMB: 256, IsPublic: true, CreatedBy: managerID,
+	}
+	require.NoError(t, e.db.Create(objective).Error)
+
+	in := baseInput(e)
+	in.Problems = []contest.ProblemInput{{ProblemID: objective.ID, DisplayID: "A", Score: 100}}
+	c, err := e.svc.Create(context.Background(), manager(), in)
+	require.NoError(t, err)
+
+	detail, err := e.svc.Detail(context.Background(), user(), c.ID)
+	require.NoError(t, err)
+	require.Len(t, detail.Problems, 1)
+	assert.Equal(t, problem.TypeObjective, detail.Problems[0].Type)
+}

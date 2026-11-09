@@ -111,6 +111,58 @@ func TestUpdatePublishChecksTestcasesUnderLock(t *testing.T) {
 	assert.False(t, got.IsPublic, "a rejected publish must leave the problem hidden")
 }
 
+func TestObjectiveUpdatePersistsAnswersAndSkipsTestcaseCheck(t *testing.T) {
+	repo, _ := setup(t)
+	ctx := context.Background()
+	p := newProblem("objective-store")
+	p.Type = problem.TypeObjective
+	p.Answers = []string{"A", "b"}
+	mustCreate(t, repo, p)
+
+	p.IsPublic = true
+	require.NoError(t, repo.Update(ctx, p), "an objective problem publishes without testcases")
+
+	got, err := repo.FindByID(ctx, p.ID)
+	require.NoError(t, err)
+	assert.True(t, got.IsPublic)
+	assert.Equal(t, []string{"A", "b"}, []string(got.Answers))
+}
+
+func TestNonObjectiveUpdateClearsAnswers(t *testing.T) {
+	repo, _ := setup(t)
+	ctx := context.Background()
+	p := newProblem("answers-clear")
+	p.Answers = []string{"A"}
+	mustCreate(t, repo, p)
+
+	p.Answers = nil
+	p.Type = problem.TypeTraditional
+	require.NoError(t, repo.Update(ctx, p))
+
+	got, err := repo.FindByID(ctx, p.ID)
+	require.NoError(t, err)
+	assert.Empty(t, got.Answers)
+}
+
+func TestObjectiveDeleteTestcaseSkipsLastTestcaseGuard(t *testing.T) {
+	repo, _ := setup(t)
+	ctx := context.Background()
+	p := newProblem("objective-delete")
+	p.Type = problem.TypeObjective
+	p.IsPublic = true
+	mustCreate(t, repo, p)
+	tc := newCase("objective-delete")
+	tc.ProblemID = p.ID
+	require.NoError(t, repo.AddTestcase(ctx, tc))
+
+	_, err := repo.DeleteTestcase(ctx, p.ID, tc.ID)
+	require.NoError(t, err)
+
+	n, err := repo.CountTestcases(ctx, p.ID)
+	require.NoError(t, err)
+	assert.Zero(t, n)
+}
+
 func TestDeleteTestcaseGuardsLastPublicTestcase(t *testing.T) {
 	repo, g := setup(t)
 	ctx := context.Background()

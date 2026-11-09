@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
@@ -19,6 +20,7 @@ type Input struct {
 	Samples        []Sample `json:"samples"`
 	HintMD         string   `json:"hintMd"`
 	Type           Type     `json:"type"`
+	Answers        []string `json:"answers"`
 	Tags           []string `json:"tags"`
 	Difficulty     int      `json:"difficulty"`
 	TimeLimitMS    int      `json:"timeLimitMs"`
@@ -33,6 +35,8 @@ const (
 	maxTags              = 10
 	maxSamples           = 10
 	maxSampleBytes       = 16384
+	maxObjectiveAnswers  = 20
+	maxAnswerChars       = 2000
 )
 
 var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,62}$`)
@@ -79,7 +83,16 @@ func (in Input) Normalize() (Input, error) {
 		in.Type = TypeTraditional
 	}
 	if !in.Type.Valid() {
-		return in, invalid("题目类型必须是 traditional、special 或 interactive")
+		return in, invalid("题目类型必须是 traditional、special、interactive 或 objective")
+	}
+	if in.Type == TypeObjective {
+		answers, err := normalizeObjectiveAnswers(in.Answers)
+		if err != nil {
+			return in, err
+		}
+		in.Answers = answers
+	} else {
+		in.Answers = []string{}
 	}
 	if in.Difficulty < 1 || in.Difficulty > 5 {
 		return in, invalid("难度需为 1–5")
@@ -116,6 +129,34 @@ func (in Input) Normalize() (Input, error) {
 		in.Samples = []Sample{}
 	}
 	return in, nil
+}
+
+// normalizeObjectiveAnswers trims each answer, enforces length and content
+// limits and rejects case-insensitive duplicates.
+func normalizeObjectiveAnswers(answers []string) ([]string, error) {
+	if len(answers) == 0 {
+		return nil, invalid("客观题至少需要 1 个答案")
+	}
+	out := make([]string, 0, len(answers))
+	for _, a := range answers {
+		a = strings.TrimSpace(a)
+		if n := runes(a); n < 1 || n > maxAnswerChars {
+			return nil, invalid("每个答案长度需为 1–%d 个字符", maxAnswerChars)
+		}
+		if strings.IndexFunc(a, unicode.IsControl) >= 0 {
+			return nil, invalid("答案不能包含控制字符")
+		}
+		for _, kept := range out {
+			if strings.EqualFold(kept, a) {
+				return nil, invalid("答案不能重复（不区分大小写）")
+			}
+		}
+		out = append(out, a)
+	}
+	if len(out) > maxObjectiveAnswers {
+		return nil, invalid("答案最多 %d 个", maxObjectiveAnswers)
+	}
+	return out, nil
 }
 
 func normalizeTags(tags []string) ([]string, error) {

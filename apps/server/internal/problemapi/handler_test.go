@@ -265,6 +265,21 @@ func (f *fx) publish(slug string, extra map[string]any) int64 {
 	return id
 }
 
+func (f *fx) createObjectiveProblem(t *testing.T, slug string, answers []string) int64 {
+	t.Helper()
+	b := body(slug)
+	b["type"] = "objective"
+	b["answers"] = answers
+	w, resp := f.do(http.MethodPost, "/api/problems", f.token("problem_admin"), b)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	id := idOf(resp)
+
+	b["isPublic"] = true
+	w, _ = f.do(http.MethodPut, fmt.Sprintf("/api/problems/%d", id), f.token("problem_admin"), b)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	return id
+}
+
 func path(format string, args ...any) string { return fmt.Sprintf(format, args...) }
 
 func TestWriteEndpointsRequireProblemAdmin(t *testing.T) {
@@ -1304,4 +1319,29 @@ func TestLockedContestProblemManagerAccess(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, solutions(contestMgr, public.ID))
 	assert.Equal(t, http.StatusOK, officialSolution(super, public.ID))
 	assert.Equal(t, http.StatusOK, solutions(super, public.ID))
+}
+
+func TestObjectiveAnswersOnlyForEditors(t *testing.T) {
+	f := newFx(t)
+	id := f.createObjectiveProblem(t, "objective-answer", []string{"A", "B"})
+	admin := f.token("problem_admin")
+
+	w, resp := f.do(http.MethodGet, path("/api/problems/%d", id), "", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.NotContains(t, resp["data"].(map[string]any), "answers")
+
+	w, resp = f.do(http.MethodGet, path("/api/problems/%d", id), admin, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, []any{"A", "B"}, resp["data"].(map[string]any)["answers"])
+}
+
+func TestObjectiveAnswersHiddenFromTestcaseManagers(t *testing.T) {
+	f := newFx(t)
+	id := f.createObjectiveProblem(t, "objective-answer-tc", []string{"C"})
+	f.createRole("testcase_only", rbac.PermProblemTestcaseManage)
+	tok := f.userWithRole("testcase_only")
+
+	w, resp := f.do(http.MethodGet, path("/api/problems/%d", id), tok, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.NotContains(t, resp["data"].(map[string]any), "answers")
 }

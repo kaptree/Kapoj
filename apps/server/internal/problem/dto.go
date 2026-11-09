@@ -33,11 +33,12 @@ type DetailDTO struct {
 	// creator (created_by <= 0) or the user no longer exists.
 	Author *AuthorSummary `json:"author,omitempty"`
 
-	SolutionPriceCoins int64   `json:"solutionPriceCoins"`
-	SolutionMD         *string `json:"solutionMd,omitempty"`
-	SolutionCode       *string `json:"solutionCode,omitempty"`
-	CheckerUploaded    *bool   `json:"checkerUploaded,omitempty"`
-	CreatedBy          *int64  `json:"createdBy,omitempty"`
+	SolutionPriceCoins int64     `json:"solutionPriceCoins"`
+	SolutionMD         *string   `json:"solutionMd,omitempty"`
+	SolutionCode       *string   `json:"solutionCode,omitempty"`
+	CheckerUploaded    *bool     `json:"checkerUploaded,omitempty"`
+	CreatedBy          *int64    `json:"createdBy,omitempty"`
+	Answers            *[]string `json:"answers,omitempty"`
 }
 
 type TestcaseDTO struct {
@@ -62,7 +63,7 @@ func ToListItem(p *Problem) ListItem {
 	}
 }
 
-func ToDetail(p *Problem, includeSolution bool, author *AuthorSummary) DetailDTO {
+func ToDetail(p *Problem, includeSolution, includeAnswer bool, author *AuthorSummary) DetailDTO {
 	samples := []Sample(p.Samples)
 	if samples == nil {
 		samples = []Sample{}
@@ -81,6 +82,13 @@ func ToDetail(p *Problem, includeSolution bool, author *AuthorSummary) DetailDTO
 		uploaded := p.CheckerPath != ""
 		d.SolutionMD, d.SolutionCode = &p.SolutionMD, &p.SolutionCode
 		d.CheckerUploaded, d.CreatedBy = &uploaded, &p.CreatedBy
+	}
+	if includeAnswer {
+		answers := []string(p.Answers)
+		if answers == nil {
+			answers = []string{}
+		}
+		d.Answers = &answers
 	}
 	return d
 }

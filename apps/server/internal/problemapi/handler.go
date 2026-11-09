@@ -311,12 +311,17 @@ func (h *handler) get(c *gin.Context) {
 	if locked && !v.CanViewSolution && !currentIsSuper(c) {
 		includeSolution = false
 	}
+	// 正确答案只对题目编辑者或超管开放，题解/测试数据权限都不够。
+	includeAnswer := false
+	if access, ok := middleware.CurrentAccess(c); ok && access != nil {
+		includeAnswer = access.IsSuper || access.Has(string(rbac.PermProblemUpdate))
+	}
 	author, err := h.svc.Author(c.Request.Context(), p.CreatedBy)
 	if err != nil {
 		httpx.Fail(c, err)
 		return
 	}
-	httpx.OK(c, problem.ToDetail(p, includeSolution, author))
+	httpx.OK(c, problem.ToDetail(p, includeSolution, includeAnswer, author))
 }
 
 func (h *handler) statistics(c *gin.Context) {
@@ -352,7 +357,7 @@ func (h *handler) create(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
-	httpx.Created(c, problem.ToDetail(p, true, nil))
+	httpx.Created(c, problem.ToDetail(p, true, true, nil))
 }
 
 func (h *handler) update(c *gin.Context) {
@@ -378,7 +383,7 @@ func (h *handler) update(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
-	httpx.OK(c, problem.ToDetail(p, true, nil))
+	httpx.OK(c, problem.ToDetail(p, true, true, nil))
 }
 
 func (h *handler) delete(c *gin.Context) {

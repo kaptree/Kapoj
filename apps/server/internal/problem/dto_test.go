@@ -30,7 +30,7 @@ func keys(t *testing.T, v any) map[string]any {
 }
 
 func TestDetailDTOHidesManagerFields(t *testing.T) {
-	user := keys(t, ToDetail(fullProblem(), false, nil))
+	user := keys(t, ToDetail(fullProblem(), false, false, nil))
 	for _, k := range []string{"solutionMd", "solutionCode", "checkerUploaded", "createdBy", "checkerPath", "checker_path"} {
 		assert.NotContains(t, user, k, "non-managers must not see %s", k)
 	}
@@ -39,7 +39,7 @@ func TestDetailDTOHidesManagerFields(t *testing.T) {
 	assert.EqualValues(t, 3, user["id"])
 	assert.NotContains(t, user, "checkerPath")
 
-	mgr := keys(t, ToDetail(fullProblem(), true, nil))
+	mgr := keys(t, ToDetail(fullProblem(), true, true, nil))
 	assert.Equal(t, "secret idea", mgr["solutionMd"])
 	assert.Equal(t, "secret code", mgr["solutionCode"])
 	assert.Equal(t, true, mgr["checkerUploaded"])
@@ -50,7 +50,7 @@ func TestDetailDTOHidesManagerFields(t *testing.T) {
 func TestDetailDTOManagerEmptyValuesStillPresent(t *testing.T) {
 	p := fullProblem()
 	p.SolutionMD, p.SolutionCode, p.CheckerPath = "", "", ""
-	mgr := keys(t, ToDetail(p, true, nil))
+	mgr := keys(t, ToDetail(p, true, true, nil))
 	assert.Contains(t, mgr, "solutionMd")
 	assert.Contains(t, mgr, "solutionCode")
 	assert.Equal(t, false, mgr["checkerUploaded"])
@@ -69,20 +69,35 @@ func TestDTOArraysNeverNull(t *testing.T) {
 	p := &Problem{ID: 1}
 	for name, m := range map[string]map[string]any{
 		"list":   keys(t, ToListItem(p)),
-		"detail": keys(t, ToDetail(p, false, nil)),
+		"detail": keys(t, ToDetail(p, false, false, nil)),
 	} {
 		assert.Equal(t, []any{}, m["tags"], name)
 	}
-	assert.Equal(t, []any{}, keys(t, ToDetail(p, false, nil))["samples"])
+	assert.Equal(t, []any{}, keys(t, ToDetail(p, false, false, nil))["samples"])
+}
+
+func TestDetailDTOAnswersOnlyWhenIncluded(t *testing.T) {
+	p := fullProblem()
+	p.Answers = []string{"A", "B"}
+
+	assert.NotContains(t, keys(t, ToDetail(p, false, false, nil)), "answers",
+		"answers are hidden when not explicitly included")
+
+	d := keys(t, ToDetail(p, false, true, nil))
+	assert.Equal(t, []any{"A", "B"}, d["answers"])
+
+	p.Answers = nil
+	d = keys(t, ToDetail(p, false, true, nil))
+	assert.Equal(t, []any{}, d["answers"], "included answers are never null")
 }
 
 func TestDetailAuthorOptional(t *testing.T) {
 	author := &AuthorSummary{ID: 9, Username: "alice", Nickname: "Alice"}
-	with := keys(t, ToDetail(fullProblem(), false, author))
+	with := keys(t, ToDetail(fullProblem(), false, false, author))
 	assert.Equal(t, map[string]any{
 		"id": float64(9), "username": "alice", "nickname": "Alice",
 	}, with["author"], "author is public and carries only id/username/nickname")
 
-	without := keys(t, ToDetail(fullProblem(), false, nil))
+	without := keys(t, ToDetail(fullProblem(), false, false, nil))
 	assert.NotContains(t, without, "author", "a nil author omits the key entirely")
 }

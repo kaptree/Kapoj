@@ -1,6 +1,10 @@
 package contest
 
-import "time"
+import (
+	"time"
+
+	"github.com/kaptree/kapoj/apps/server/internal/problem"
+)
 
 type ListItem struct {
 	ID               int64        `json:"id"`
@@ -21,20 +25,21 @@ type ListItem struct {
 }
 
 type ProblemItem struct {
-	ProblemID     int64  `json:"problemId"`
-	Title         string `json:"title"`
-	Slug          string `json:"slug"`
-	DisplayID     string `json:"displayId"`
-	SortOrder     int    `json:"sortOrder"`
-	Score         int    `json:"score"`
-	TimeLimitMS   int    `json:"timeLimitMs"`
-	MemoryLimitMB int    `json:"memoryLimitMb"`
-	IsPublic      bool   `json:"isPublic"`
-	Locked        bool   `json:"locked"`
-	SubmitCount   int    `json:"submitCount"`
-	AcceptCount   int    `json:"acceptCount"`
-	MyStatus      string `json:"myStatus"`
-	MyAttempts    int    `json:"myAttempts"`
+	ProblemID     int64        `json:"problemId"`
+	Title         string       `json:"title"`
+	Slug          string       `json:"slug"`
+	Type          problem.Type `json:"type"`
+	DisplayID     string       `json:"displayId"`
+	SortOrder     int          `json:"sortOrder"`
+	Score         int          `json:"score"`
+	TimeLimitMS   int          `json:"timeLimitMs"`
+	MemoryLimitMB int          `json:"memoryLimitMb"`
+	IsPublic      bool         `json:"isPublic"`
+	Locked        bool         `json:"locked"`
+	SubmitCount   int          `json:"submitCount"`
+	AcceptCount   int          `json:"acceptCount"`
+	MyStatus      string       `json:"myStatus"`
+	MyAttempts    int          `json:"myAttempts"`
 }
 
 type Detail struct {
@@ -74,6 +79,7 @@ func toListItem(c Contest, problems, participants int64, registered bool, now ti
 func toProblemItem(row ProblemRow) ProblemItem {
 	return ProblemItem{
 		ProblemID: row.ProblemID, Title: row.ProblemTitle, Slug: row.ProblemSlug,
+		Type:      problem.Type(row.ProblemType),
 		DisplayID: row.DisplayID, SortOrder: row.SortOrder, Score: row.Score,
 		TimeLimitMS: row.ProblemTimeLimitMS, MemoryLimitMB: row.ProblemMemoryLimitMB,
 		IsPublic: row.ProblemIsPublic,

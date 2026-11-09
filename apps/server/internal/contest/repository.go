@@ -41,6 +41,7 @@ type ProblemRow struct {
 	ContestProblem
 	ProblemTitle         string `gorm:"column:problem_title"`
 	ProblemSlug          string `gorm:"column:problem_slug"`
+	ProblemType          string `gorm:"column:problem_type"`
 	ProblemTimeLimitMS   int    `gorm:"column:problem_time_limit_ms"`
 	ProblemMemoryLimitMB int    `gorm:"column:problem_memory_limit_mb"`
 	ProblemIsPublic      bool   `gorm:"column:problem_is_public"`
@@ -268,6 +269,7 @@ func (r *gormRepository) FindProblems(ctx context.Context, contestID int64) ([]P
 	var rows []ProblemRow
 	err := r.db.WithContext(ctx).Table("contest_problems AS cp").
 		Select(`cp.*, p.title AS problem_title, p.slug AS problem_slug,
+			p.type AS problem_type,
 			p.time_limit_ms AS problem_time_limit_ms,
 			p.memory_limit_mb AS problem_memory_limit_mb,
 			p.is_public AS problem_is_public`).

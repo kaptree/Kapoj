@@ -70,7 +70,7 @@ func NewGormRepository(db *gorm.DB) Repository { return &gormRepository{db: db} 
 
 var editableColumns = []string{
 	"title", "slug", "statement_md", "input_format_md", "output_format_md",
-	"samples_json", "hint_md", "type",
+	"samples_json", "hint_md", "type", "answers_json",
 	"tags_json", "difficulty", "time_limit_ms", "memory_limit_mb",
 	"is_public", "source", "updated_at",
 }
@@ -155,13 +155,16 @@ func (r *gormRepository) Update(ctx context.Context, p *Problem) error {
 		}
 		// Publishing is checked under the same row lock as the write, so a
 		// concurrent testcase deletion cannot leave a public problem empty.
+		// Objective problems are answered directly, so they need no testcases.
 		if p.IsPublic {
-			var n int64
-			if err := tx.Model(&Testcase{}).Where("problem_id = ?", p.ID).Count(&n).Error; err != nil {
-				return err
-			}
-			if n == 0 {
-				return ErrPublishNeedsTestcase
+			if p.Type != TypeObjective {
+				var n int64
+				if err := tx.Model(&Testcase{}).Where("problem_id = ?", p.ID).Count(&n).Error; err != nil {
+					return err
+				}
+				if n == 0 {
+					return ErrPublishNeedsTestcase
+				}
 			}
 			if p.Type == TypeSpecial && current.CheckerPath == "" {
 				return ErrPublishNeedsChecker
@@ -280,7 +283,7 @@ func (r *gormRepository) DeleteTestcase(ctx context.Context, problemID, id int64
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var p Problem
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Select("id", "is_public").First(&p, problemID).Error; err != nil {
+			Select("id", "type", "is_public").First(&p, problemID).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("problem_id = ? AND id = ?", problemID, id).First(&tc).Error; err != nil {
@@ -289,7 +292,7 @@ func (r *gormRepository) DeleteTestcase(ctx context.Context, problemID, id int64
 			}
 			return err
 		}
-		if p.IsPublic {
+		if p.IsPublic && p.Type != TypeObjective {
 			var n int64
 			if err := tx.Model(&Testcase{}).Where("problem_id = ?", problemID).Count(&n).Error; err != nil {
 				return err

@@ -156,6 +156,56 @@ func TestNormalizeTags(t *testing.T) {
 	assertInvalid(t, in, "long tag")
 }
 
+func TestObjectiveAnswersNormalize(t *testing.T) {
+	in := validInput()
+	in.Type = TypeObjective
+	in.Answers = []string{"  A  ", "b", " C "}
+	got, err := in.Normalize()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"A", "b", "C"}, got.Answers)
+
+	in.Answers = []string{"A", " a "}
+	assertInvalid(t, in, "case-insensitive duplicate")
+}
+
+func TestNonObjectiveClearsAnswers(t *testing.T) {
+	in := validInput()
+	in.Answers = []string{"A"}
+	got, err := in.Normalize()
+	require.NoError(t, err)
+	assert.Empty(t, got.Answers)
+}
+
+func TestObjectiveAnswersValidation(t *testing.T) {
+	tooMany := make([]string, 21)
+	for i := range tooMany {
+		tooMany[i] = string(rune('a' + i))
+	}
+	cases := map[string][]string{
+		"empty":        nil,
+		"blank":        {"   "},
+		"too long":     {strings.Repeat("a", 2001)},
+		"control char": {"A\x00B"},
+		"too many":     tooMany,
+	}
+	for name, answers := range cases {
+		in := validInput()
+		in.Type = TypeObjective
+		in.Answers = answers
+		assertInvalid(t, in, name)
+	}
+
+	in := validInput()
+	in.Type = TypeObjective
+	in.Answers = tooMany[:20]
+	_, err := in.Normalize()
+	assert.NoError(t, err, "20 answers are allowed")
+
+	in.Answers = []string{strings.Repeat("a", 2000), "b"}
+	_, err = in.Normalize()
+	assert.NoError(t, err, "2000-character answers are allowed")
+}
+
 func TestNormalizeSamples(t *testing.T) {
 	in := validInput()
 	in.Samples = make([]Sample, 10)
