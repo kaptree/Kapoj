@@ -613,7 +613,7 @@ Expected: FAIL，store/组件不存在。
 `stores/site.ts`：
 
 - 默认常量与后端一致（当前首页文案）。
-- `ensureLoaded` 使用单一 in-flight promise；成功设置 `config`，失败保持 `config=null`，可稍后重试。
+- `ensureLoaded` 使用单一 in-flight promise；成功设置 `config`，失败保持 `config=null`，可稍后重试。对 `quickLinks`/`growthLinks` 做 `?? []` 归一化，避免旧数据或异常 PUT 的 `null` 破坏列表渲染。
 - `recordVisit` 用 `sessionStorage['kapoj:site-visited']`；先检查，成功/失败后处理标记；成功时更新 `config.visitCount`。
 - `watch(faviconUrl, applyFavicon, { immediate: true })`；无 favicon 时 href `/favicon.svg`。
 
@@ -701,7 +701,7 @@ Expected: FAIL。
   - 品牌：Logo/favicon 预览；`input type=file` 隐藏 + Button trigger；`accept="image/png,image/jpeg,image/webp,image/gif"`；上传后 `view = result`；移除确认；显示大小/格式提示。
   - 首页：欢迎区字段；CTA 字段；卡片编辑器（`LinkEditor` 局部组件或内联 `v-for`）：icon `Select` 预设、title/description/to `InputText`、上移/下移/删除/添加；`saveHome()` → `updateAdminSiteHome(homeForm)`。
   - 页脚：ICP/公安/链接/版权/自定义说明 `Textarea`；`DatePicker` 绑定 `startedAt`；`ToggleSwitch` 显示访问量；只读 `view.runningDays`/`view.visitCount`；`saveFooter()` → `updateAdminSiteFooter({...footerForm, startedAt: toISOString})`。
-  - 前端校验：标题必填、链接 `/` 开头、图标/URL 格式；服务端错误 Toast。
+  - 前端校验：标题必填、链接 `/` 开头、图标/URL 格式；CTA 标题额外限制 20 字符（共享 schema 的 40 仅为卡片上限，服务端仍按用途校验）；服务端错误 Toast。
   - 使用 `AppPageHeader`、`AppSurface`、`AppFormField`、`Button`、`InputText`、`Textarea`、`DatePicker`、`ToggleSwitch`、`Select`、`Tag`、`Message`。
 - `AdminNav.vue`：新增 `siteItem`（`/admin/site`，`pi pi-image` 或 `pi pi-desktop`，label `站点设置`）；在 `groups` 中当 `auth.can(PERM.site.settings.manage)` 时加入新分组 `{key:'site', label:'站点', items:[siteItem]}`（放在内容/系统分组之后或之前均可，保持当前顺序风格）。
 - `router/index.ts`：admin children 加：
