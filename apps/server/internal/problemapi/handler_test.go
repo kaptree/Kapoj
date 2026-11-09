@@ -1223,3 +1223,85 @@ func TestLockedContestProblemDetailAndResources(t *testing.T) {
 	w, _ = f.do(http.MethodGet, fmt.Sprintf("/api/problems/%d", p.ID), "", nil)
 	assert.Equal(t, http.StatusOK, w.Code)
 }
+
+func TestLockedContestProblemManagerAccess(t *testing.T) {
+	f := newFx(t)
+	repo := problem.NewGormRepository(f.db)
+	newProblem := func(title, slug string, isPublic bool) *problem.Problem {
+		p := &problem.Problem{
+			Title: title, Slug: slug, StatementMD: "statement",
+			Type: problem.TypeTraditional, Difficulty: 1, TimeLimitMS: 1000, MemoryLimitMB: 256,
+			IsPublic: isPublic, CreatedBy: 1,
+		}
+		require.NoError(t, repo.Create(context.Background(), p))
+		require.NoError(t, repo.AddTestcase(context.Background(), &problem.Testcase{
+			ProblemID: p.ID, InputFile: "a.in", OutputFile: "a.out", Score: 10,
+		}))
+		return p
+	}
+	public := newProblem("Locked public", "locked-manager-public", true)
+	hidden := newProblem("Locked hidden", "locked-manager-hidden", false)
+
+	now := time.Now()
+	contestRepo := contest.NewGormRepository(f.db)
+	c := &contest.Contest{
+		Title: "Manager contest", StartTime: now.Add(-time.Hour), EndTime: now.Add(time.Hour),
+		Mode: contest.ModeICPC, IsPublic: true, RegisterType: contest.RegisterOpen, CreatedBy: 1,
+	}
+	require.NoError(t, contestRepo.Create(context.Background(), c, []contest.ContestProblem{
+		{ProblemID: public.ID, DisplayID: "A", Score: 100},
+		{ProblemID: hidden.ID, DisplayID: "B", Score: 100},
+	}))
+
+	f.createRole("view_hidden_only", rbac.PermProblemViewHidden)
+	f.createRole("contest_manager_only", rbac.PermContestUpdate)
+	viewHidden := f.userWithRole("view_hidden_only")
+	contestMgr := f.userWithRole("contest_manager_only")
+	super := f.token("super_admin")
+
+	status := func(tok, url string) int {
+		w, _ := f.do(http.MethodGet, url, tok, nil)
+		return w.Code
+	}
+	detail := func(tok string, id int64) int {
+		return status(tok, fmt.Sprintf("/api/problems/%d", id))
+	}
+	statistics := func(tok string, id int64) int {
+		return status(tok, fmt.Sprintf("/api/problems/%d/statistics", id))
+	}
+	officialSolution := func(tok string, id int64) int {
+		return status(tok, fmt.Sprintf("/api/problems/%d/official-solution", id))
+	}
+	solutions := func(tok string, id int64) int {
+		return status(tok, fmt.Sprintf("/api/problems/%d/solutions", id))
+	}
+
+	// (a) view_hidden、contest.update 与 super 都能读锁定公开题的详情与统计。
+	for _, tc := range []struct{ name, token string }{
+		{"view_hidden", viewHidden},
+		{"contest.update", contestMgr},
+		{"super", super},
+	} {
+		assert.Equal(t, http.StatusOK, detail(tc.token, public.ID), tc.name+" detail")
+		assert.Equal(t, http.StatusOK, statistics(tc.token, public.ID), tc.name+" statistics")
+	}
+
+	// (b) 仅有 contest.update 的管理员不能借比赛权限看原本隐藏的题。
+	assert.Equal(t, http.StatusNotFound, detail(contestMgr, hidden.ID))
+	assert.Equal(t, http.StatusNotFound, statistics(contestMgr, hidden.ID))
+
+	// view_hidden 与 super 仍可读隐藏题及其统计。
+	for _, tc := range []struct{ name, token string }{
+		{"view_hidden", viewHidden},
+		{"super", super},
+	} {
+		assert.Equal(t, http.StatusOK, detail(tc.token, hidden.ID), tc.name+" hidden detail")
+		assert.Equal(t, http.StatusOK, statistics(tc.token, hidden.ID), tc.name+" hidden statistics")
+	}
+
+	// manager 标记只放开题目与统计，不等于题解查看权限。
+	assert.Equal(t, http.StatusNotFound, officialSolution(contestMgr, public.ID))
+	assert.Equal(t, http.StatusNotFound, solutions(contestMgr, public.ID))
+	assert.Equal(t, http.StatusOK, officialSolution(super, public.ID))
+	assert.Equal(t, http.StatusOK, solutions(super, public.ID))
+}
