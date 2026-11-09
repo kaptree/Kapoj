@@ -14,6 +14,7 @@ import type { AIConfigView, ContestDetail, ProblemDetail } from '@/api/types'
 import SubmitView from './SubmitView.vue'
 
 const toast = vi.hoisted(() => ({ add: vi.fn() }))
+const auth = vi.hoisted(() => ({ can: vi.fn<(code: string) => boolean>(() => false) }))
 const editorMock = vi.hoisted(() => ({
   getCursorByteOffset: vi.fn(),
   insertAtCursor: vi.fn(),
@@ -36,6 +37,9 @@ vi.mock('@/api/ai', () => ({
   completeCode: vi.fn(),
   formatCode: vi.fn(),
   optimizeCode: vi.fn(),
+}))
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => auth,
 }))
 vi.mock('@/components/MarkdownView.vue', () => ({
   default: {
@@ -112,6 +116,30 @@ function aiConfig(overrides: Partial<AIConfigView> = {}): AIConfigView {
   }
 }
 
+function contestDetail(overrides: Partial<ContestDetail> = {}): ContestDetail {
+  return {
+    id: 5,
+    title: 'Weekly',
+    descriptionMd: '',
+    startTime: '2026-01-01T00:00:00Z',
+    endTime: '2026-01-01T02:00:00Z',
+    mode: 'icpc',
+    isRated: false,
+    isPublic: true,
+    disableAi: false,
+    registerType: 'open',
+    status: 'ended',
+    problemCount: 0,
+    participantCount: 0,
+    registered: true,
+    canManage: false,
+    serverTime: '2026-01-01T03:00:00Z',
+    createdAt: '2025-12-01T00:00:00Z',
+    problems: [],
+    ...overrides,
+  }
+}
+
 const routes = [
   { path: '/problems/:id/submit', name: 'problem-submit', component: { template: '<div />' } },
   { path: '/submissions', name: 'submissions', component: { template: '<div />' } },
@@ -153,6 +181,8 @@ beforeEach(() => {
   localStorage.clear()
   document.body.innerHTML = ''
   toast.add.mockReset()
+  auth.can.mockReset()
+  auth.can.mockReturnValue(false)
   vi.mocked(getProblem).mockReset()
   vi.mocked(getContest).mockReset()
   vi.mocked(createSubmission).mockReset()
@@ -163,7 +193,7 @@ beforeEach(() => {
   editorMock.getCursorByteOffset.mockReset()
   editorMock.insertAtCursor.mockReset()
   vi.mocked(getProblem).mockResolvedValue(detail(1))
-  vi.mocked(getContest).mockResolvedValue({ title: 'Weekly' } as unknown as ContestDetail)
+  vi.mocked(getContest).mockResolvedValue(contestDetail())
   vi.mocked(createSubmission).mockResolvedValue({ id: 42, status: 'pending' })
   vi.mocked(getAIConfig).mockResolvedValue(aiConfig())
 })
@@ -318,6 +348,7 @@ describe('SubmitView', () => {
       code: 'int main() {}',
       language: 'cpp',
       cursor: 7,
+      problemId: 1,
     })
     expect(editorMock.insertAtCursor).toHaveBeenCalledWith(' return 0;')
     expect(editor(wrapper).props('modelValue')).toBe('int main() {} return 0;')
@@ -332,7 +363,11 @@ describe('SubmitView', () => {
     await aiButton(wrapper, 'AI 格式化')!.trigger('click')
     await flushPromises()
 
-    expect(formatCode).toHaveBeenCalledWith({ code: 'int  main()  {}', language: 'cpp' })
+    expect(formatCode).toHaveBeenCalledWith({
+      code: 'int  main()  {}',
+      language: 'cpp',
+      problemId: 1,
+    })
     // Preview only — the draft must not change yet.
     expect(editor(wrapper).props('modelValue')).toBe('int  main()  {}')
     expect(document.querySelector('.p-dialog')!.textContent).toContain('int main() {}')
@@ -355,7 +390,11 @@ describe('SubmitView', () => {
     await aiButton(wrapper, 'AI 优化')!.trigger('click')
     await flushPromises()
 
-    expect(optimizeCode).toHaveBeenCalledWith({ code: 'int main() {}', language: 'cpp' })
+    expect(optimizeCode).toHaveBeenCalledWith({
+      code: 'int main() {}',
+      language: 'cpp',
+      problemId: 1,
+    })
     expect(document.querySelector('.p-dialog')!.textContent).toContain('使用 const')
     expect(document.querySelector('.p-dialog')!.textContent).toContain('int main() { return 0; }')
     expect(editor(wrapper).props('modelValue')).toBe('int main() {}')
@@ -364,6 +403,75 @@ describe('SubmitView', () => {
     await flushPromises()
 
     expect(editor(wrapper).props('modelValue')).toBe('int main() { return 0; }')
+    wrapper.unmount()
+  })
+
+  it('disables AI during a running contest that has disableAi set', async () => {
+    vi.mocked(getContest).mockResolvedValue(contestDetail({ status: 'running', disableAi: true }))
+    const { wrapper } = await mountPage('/problems/1/submit?contestId=5')
+
+    expect(getContest).toHaveBeenCalledWith(5)
+    expect(wrapper.find('[data-test="contest-ai-banner"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('比赛期间已禁用 AI，管理员可在比赛设置中调整。')
+    expect(wrapper.find('[data-test="ai-complete-button"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-test="ai-format-button"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-test="ai-optimize-button"]').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('keeps AI enabled for contest admins when disableAi is set', async () => {
+    auth.can.mockReturnValue(true)
+    vi.mocked(getContest).mockResolvedValue(contestDetail({ status: 'running', disableAi: true }))
+    const { wrapper } = await mountPage('/problems/1/submit?contestId=5')
+
+    expect(wrapper.find('[data-test="contest-ai-banner"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="ai-format-button"]').attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('keeps AI enabled after the contest has ended', async () => {
+    vi.mocked(getContest).mockResolvedValue(contestDetail({ status: 'ended', disableAi: true }))
+    const { wrapper } = await mountPage('/problems/1/submit?contestId=5')
+
+    expect(wrapper.find('[data-test="contest-ai-banner"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="ai-format-button"]').attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('sends problemId to AI endpoints', async () => {
+    localStorage.setItem('kapoj:code:practice:1:cpp', 'int main() {}')
+    vi.mocked(completeCode).mockResolvedValue({ completion: 'x' })
+    vi.mocked(formatCode).mockResolvedValue({ code: 'int main() {}\n' })
+    vi.mocked(optimizeCode).mockResolvedValue({
+      suggestions: 'ok',
+      code: 'int main() { return 0; }',
+    })
+    const { wrapper } = await mountPage()
+
+    await aiButton(wrapper, 'AI 补全')!.trigger('click')
+    await flushPromises()
+    await aiButton(wrapper, 'AI 格式化')!.trigger('click')
+    await flushPromises()
+    await aiButton(wrapper, 'AI 优化')!.trigger('click')
+    await flushPromises()
+
+    expect(completeCode).toHaveBeenCalledWith(expect.objectContaining({ problemId: 1 }))
+    expect(formatCode).toHaveBeenCalledWith(expect.objectContaining({ problemId: 1 }))
+    expect(optimizeCode).toHaveBeenCalledWith(expect.objectContaining({ problemId: 1 }))
+    wrapper.unmount()
+  })
+
+  it('maps 40302 to the contest AI disabled toast', async () => {
+    localStorage.setItem('kapoj:code:practice:1:cpp', 'int main() {}')
+    vi.mocked(completeCode).mockRejectedValueOnce(new ApiError(403, 40302, '比赛期间已禁用 AI'))
+    const { wrapper } = await mountPage()
+
+    await aiButton(wrapper, 'AI 补全')!.trigger('click')
+    await flushPromises()
+
+    expect(toast.add).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'warn', summary: '比赛期间已禁用 AI' }),
+    )
     wrapper.unmount()
   })
 

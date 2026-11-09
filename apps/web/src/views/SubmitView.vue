@@ -12,7 +12,7 @@ import { getContest } from '@/api/contests'
 import { ApiError } from '@/api/http'
 import { getProblem } from '@/api/problems'
 import { createSubmission } from '@/api/submissions'
-import type { AIConfigView, ProblemDetail, SubmissionLanguage } from '@/api/types'
+import type { AIConfigView, ContestDetail, ProblemDetail, SubmissionLanguage } from '@/api/types'
 import CodeEditor from '@/components/CodeEditor.vue'
 import MarkdownView from '@/components/MarkdownView.vue'
 import AppDifficultyTag from '@/components/ui/AppDifficultyTag.vue'
@@ -20,12 +20,15 @@ import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
+import { PERM } from '@/permissions'
+import { useAuthStore } from '@/stores/auth'
 import { useTheme } from '@/theme/theme'
 import { languageLabel, monacoLanguage, SUBMISSION_LANGUAGES } from '@/utils/submission'
 
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
+const auth = useAuthStore()
 const { isDark } = useTheme()
 
 const problemId = computed(() => Number(route.params.id))
@@ -43,7 +46,8 @@ const draftProblemId = problemId.value
 const draftContestId = contestId.value
 
 const problem = ref<ProblemDetail | null>(null)
-const contestTitle = ref('')
+const contest = ref<ContestDetail | null>(null)
+const contestTitle = computed(() => contest.value?.title ?? '')
 const loading = ref(false)
 const submitting = ref(false)
 const error = ref('')
@@ -94,13 +98,20 @@ const optimizeSuggestions = ref('')
 
 const aiConfigured = computed(() => aiConfig.value?.configured === true)
 const aiKeyConfigured = computed(() => aiConfig.value?.keyConfigured === true)
+const contestAIDisabled = computed(
+  () =>
+    contest.value?.status === 'running' &&
+    contest.value.disableAi &&
+    !auth.can(PERM.contest.update),
+)
 const aiButtonsDisabled = computed(
   () =>
     aiBusy.value !== null ||
     !aiAvailable.value ||
     aiLoadFailed.value ||
     !aiKeyConfigured.value ||
-    !aiConfigured.value,
+    !aiConfigured.value ||
+    contestAIDisabled.value,
 )
 const showKeyMissingBanner = computed(
   () =>
@@ -127,6 +138,10 @@ function byteLength(value: string): number {
 
 function handleAIError(e: unknown) {
   if (e instanceof ApiError) {
+    if (e.code === 40302) {
+      toast.add({ severity: 'warn', summary: '比赛期间已禁用 AI', life: 4000 })
+      return
+    }
     if (e.code === 40002) {
       aiConfig.value = {
         configured: false,
@@ -201,7 +216,12 @@ async function runComplete() {
   const cursor = editorRef.value?.getCursorByteOffset() ?? byteLength(source)
   aiBusy.value = 'complete'
   try {
-    const result = await completeCode({ code: source, language: language.value, cursor })
+    const result = await completeCode({
+      code: source,
+      language: language.value,
+      cursor,
+      problemId: problemId.value,
+    })
     const completion = result.completion
     if (!completion || !completion.trim()) {
       toast.add({ severity: 'info', summary: '没有可插入的补全', life: 3000 })
@@ -220,7 +240,11 @@ async function runFormat() {
   const source = code.value
   aiBusy.value = 'format'
   try {
-    const result = await formatCode({ code: source, language: language.value })
+    const result = await formatCode({
+      code: source,
+      language: language.value,
+      problemId: problemId.value,
+    })
     if (result.code === source) {
       toast.add({ severity: 'info', summary: '代码已是格式化状态', life: 3000 })
       return
@@ -244,7 +268,11 @@ async function runOptimize() {
   const source = code.value
   aiBusy.value = 'optimize'
   try {
-    const result = await optimizeCode({ code: source, language: language.value })
+    const result = await optimizeCode({
+      code: source,
+      language: language.value,
+      problemId: problemId.value,
+    })
     optimizeSuggestions.value = result.suggestions
     optimizePreview.value = result.code
     optimizeDialogVisible.value = true
@@ -325,15 +353,19 @@ onMounted(async () => {
     })
   }
 
-  const titlePromise =
+  const contestPromise =
     contestId.value > 0
       ? getContest(contestId.value)
-          .then((c) => c.title)
-          .catch(() => '')
-      : Promise.resolve('')
+          .then((c) => {
+            contest.value = c
+          })
+          .catch(() => {
+            contest.value = null
+          })
+      : Promise.resolve()
 
   await loadProblem()
-  contestTitle.value = await titlePromise
+  await contestPromise
 })
 
 async function submit() {
@@ -426,6 +458,14 @@ async function submit() {
       </div>
 
       <AppSurface padding="lg" class="editor-card">
+        <Message
+          v-if="contestAIDisabled"
+          data-test="contest-ai-banner"
+          severity="warn"
+          :closable="false"
+        >
+          比赛期间已禁用 AI，管理员可在比赛设置中调整。
+        </Message>
         <div class="editor-toolbar">
           <div class="language-field">
             <label class="field-label" for="submission-language">语言</label>
@@ -445,6 +485,7 @@ async function submit() {
               icon="pi pi-sparkles"
               size="small"
               text
+              data-test="ai-complete-button"
               :loading="aiBusy === 'complete'"
               :disabled="aiButtonsDisabled"
               @click="runComplete"
@@ -455,6 +496,7 @@ async function submit() {
               icon="pi pi-sparkles"
               size="small"
               text
+              data-test="ai-format-button"
               :loading="aiBusy === 'format'"
               :disabled="aiButtonsDisabled"
               @click="runFormat"
@@ -465,6 +507,7 @@ async function submit() {
               icon="pi pi-sparkles"
               size="small"
               text
+              data-test="ai-optimize-button"
               :loading="aiBusy === 'optimize'"
               :disabled="aiButtonsDisabled"
               @click="runOptimize"
