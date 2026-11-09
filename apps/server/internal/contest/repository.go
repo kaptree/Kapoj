@@ -65,6 +65,8 @@ type Repository interface {
 	FindProblem(ctx context.Context, contestID, problemID int64) (*ContestProblem, error)
 	HasSubmissions(ctx context.Context, contestID int64) (bool, error)
 	CanViewProblem(ctx context.Context, userID, problemID int64, now time.Time) (bool, error)
+	IsProblemLocked(ctx context.Context, problemID int64, now time.Time) (bool, error)
+	AIBlockedForUser(ctx context.Context, userID, problemID int64, now time.Time) (bool, error)
 	RankSubmissions(ctx context.Context, contestID int64) ([]RankSubmission, error)
 	List(ctx context.Context, f ListFilter, offset, limit int) ([]ListRow, int64, error)
 	Delete(ctx context.Context, id int64) error
@@ -86,9 +88,19 @@ type gormRepository struct{ db *gorm.DB }
 func NewGormRepository(db *gorm.DB) Repository { return &gormRepository{db: db} }
 
 func (r *gormRepository) Create(ctx context.Context, c *Contest, problems []ContestProblem) error {
+	disableAI := c.DisableAI
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(c).Error; err != nil {
 			return err
+		}
+		if !disableAI {
+			// GORM 对带 default 标签的字段会用默认值替换零值，导致显式传入的
+			// false 被写成 true；这里显式写回调用方请求的值。
+			if err := tx.Model(&Contest{}).Where("id = ?", c.ID).
+				UpdateColumn("disable_ai", false).Error; err != nil {
+				return err
+			}
+			c.DisableAI = false
 		}
 		for i := range problems {
 			problems[i].ContestID = c.ID
@@ -262,7 +274,7 @@ func (r *gormRepository) HasSubmissions(ctx context.Context, contestID int64) (b
 }
 
 // CanViewProblem reports whether userID may open a hidden problem because they
-// are registered in a contest that contains it and has already started.
+// are registered in a contest that contains it and is currently running.
 func (r *gormRepository) CanViewProblem(ctx context.Context, userID, problemID int64, now time.Time) (bool, error) {
 	var ok bool
 	err := r.db.WithContext(ctx).Raw(`
@@ -270,9 +282,38 @@ func (r *gormRepository) CanViewProblem(ctx context.Context, userID, problemID i
 			SELECT 1 FROM contest_participants cp
 			JOIN contest_problems cpb ON cpb.contest_id = cp.contest_id
 			JOIN contests c ON c.id = cp.contest_id
-			WHERE cp.user_id = ? AND cpb.problem_id = ? AND c.start_time <= ?
-		)`, userID, problemID, now).Scan(&ok).Error
+			WHERE cp.user_id = ? AND cpb.problem_id = ?
+			  AND c.start_time <= ? AND c.end_time > ?
+		)`, userID, problemID, now, now).Scan(&ok).Error
 	return ok, err
+}
+
+// IsProblemLocked reports whether a problem belongs to a contest that has not
+// ended yet; upcoming and running contests both keep their problems locked.
+func (r *gormRepository) IsProblemLocked(ctx context.Context, problemID int64, now time.Time) (bool, error) {
+	var locked bool
+	err := r.db.WithContext(ctx).Raw(`
+		SELECT EXISTS(
+			SELECT 1 FROM contest_problems cpb
+			JOIN contests c ON c.id = cpb.contest_id
+			WHERE cpb.problem_id = ? AND c.end_time > ?
+		)`, problemID, now).Scan(&locked).Error
+	return locked, err
+}
+
+// AIBlockedForUser reports whether userID is participating in a running contest
+// that contains the problem and has AI assistance disabled.
+func (r *gormRepository) AIBlockedForUser(ctx context.Context, userID, problemID int64, now time.Time) (bool, error) {
+	var blocked bool
+	err := r.db.WithContext(ctx).Raw(`
+		SELECT EXISTS(
+			SELECT 1 FROM contest_participants cp
+			JOIN contest_problems cpb ON cpb.contest_id = cp.contest_id
+			JOIN contests c ON c.id = cp.contest_id
+			WHERE cp.user_id = ? AND cpb.problem_id = ?
+			  AND c.disable_ai = true AND c.start_time <= ? AND c.end_time > ?
+		)`, userID, problemID, now, now).Scan(&blocked).Error
+	return blocked, err
 }
 
 func (r *gormRepository) RankSubmissions(ctx context.Context, contestID int64) ([]RankSubmission, error) {

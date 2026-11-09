@@ -79,11 +79,15 @@ func (s *Service) Create(ctx context.Context, v Viewer, in Input) (*Contest, err
 	if in.RegisterType == RegisterInvite && in.InviteCode == "" {
 		return nil, invalid("邀请码报名必须设置邀请码")
 	}
+	disableAI := true
+	if in.DisableAI != nil {
+		disableAI = *in.DisableAI
+	}
 	c := &Contest{
 		Title: in.Title, DescriptionMD: in.DescriptionMD,
 		StartTime: in.StartTime, EndTime: in.EndTime, Mode: in.Mode,
-		IsRated: in.IsRated, IsPublic: in.IsPublic, RegisterType: in.RegisterType,
-		CreatedBy: v.UserID,
+		IsRated: in.IsRated, IsPublic: in.IsPublic, DisableAI: disableAI,
+		RegisterType: in.RegisterType, CreatedBy: v.UserID,
 	}
 	if c.PasswordHash, err = hash(in.Password); err != nil {
 		return nil, err
@@ -138,6 +142,9 @@ func (s *Service) Update(ctx context.Context, v Viewer, id int64, in Input) (*Co
 	c.Title, c.DescriptionMD = in.Title, in.DescriptionMD
 	c.StartTime, c.EndTime, c.Mode = in.StartTime, in.EndTime, in.Mode
 	c.IsRated, c.IsPublic, c.RegisterType = in.IsRated, in.IsPublic, in.RegisterType
+	if in.DisableAI != nil {
+		c.DisableAI = *in.DisableAI
+	}
 	if in.Password != "" {
 		if c.PasswordHash, err = hash(in.Password); err != nil {
 			return nil, err

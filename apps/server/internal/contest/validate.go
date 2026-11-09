@@ -24,6 +24,7 @@ type Input struct {
 	Mode          Mode           `json:"mode"`
 	IsRated       bool           `json:"isRated"`
 	IsPublic      bool           `json:"isPublic"`
+	DisableAI     *bool          `json:"disableAi"`
 	RegisterType  RegisterType   `json:"registerType"`
 	Password      string         `json:"password"`
 	InviteCode    string         `json:"inviteCode"`

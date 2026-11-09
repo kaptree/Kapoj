@@ -787,6 +787,126 @@ func TestContestVisibilityUsesViewHidden(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestProblemLockUsesUnfinishedContests(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	now := time.Now()
+	p := e.problems[0].ID
+
+	in := baseInput(e)
+	in.StartTime, in.EndTime = now.Add(time.Hour), now.Add(2*time.Hour)
+	c, err := e.svc.Create(ctx, manager(), in)
+	require.NoError(t, err)
+
+	locked, err := e.repo.IsProblemLocked(ctx, p, now)
+	require.NoError(t, err)
+	assert.True(t, locked, "upcoming contest must lock")
+
+	// 第二场未结束比赛继续锁定
+	in2 := baseInput(e)
+	in2.StartTime, in2.EndTime = now.Add(-time.Minute), now.Add(3*time.Hour)
+	_, err = e.svc.Create(ctx, manager(), in2)
+	require.NoError(t, err)
+	locked, err = e.repo.IsProblemLocked(ctx, p, now)
+	require.NoError(t, err)
+	assert.True(t, locked)
+
+	// 两场都结束后解锁
+	require.NoError(t, e.db.Exec(
+		`UPDATE contests SET end_time = ? WHERE id = ?`, now.Add(-time.Minute), c.ID,
+	).Error)
+	require.NoError(t, e.db.Exec(
+		`UPDATE contests SET end_time = ? WHERE id <> ?`, now.Add(-time.Minute), c.ID,
+	).Error)
+	locked, err = e.repo.IsProblemLocked(ctx, p, now)
+	require.NoError(t, err)
+	assert.False(t, locked)
+}
+
+func TestCanViewProblemOnlyWhileRunning(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	now := time.Now()
+	p := e.problems[0].ID
+	in := baseInput(e)
+	c, err := e.svc.Create(ctx, manager(), in)
+	require.NoError(t, err)
+	require.NoError(t, e.repo.AddParticipant(ctx, c.ID, userID))
+
+	ok, err := e.repo.CanViewProblem(ctx, userID, p, now)
+	require.NoError(t, err)
+	assert.True(t, ok)
+
+	require.NoError(t, e.db.Exec(
+		`UPDATE contests SET start_time = ?, end_time = ? WHERE id = ?`,
+		now.Add(-2*time.Hour), now.Add(-time.Hour), c.ID,
+	).Error)
+	ok, err = e.repo.CanViewProblem(ctx, userID, p, now)
+	require.NoError(t, err)
+	assert.False(t, ok, "ended contests must not keep hidden-problem access")
+}
+
+func TestAIBlockedForParticipant(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	now := time.Now()
+	p := e.problems[0].ID
+	in := baseInput(e)
+	c, err := e.svc.Create(ctx, manager(), in)
+	require.NoError(t, err)
+	require.NoError(t, e.repo.AddParticipant(ctx, c.ID, userID))
+
+	blocked, err := e.repo.AIBlockedForUser(ctx, userID, p, now)
+	require.NoError(t, err)
+	assert.True(t, blocked, "default disable_ai must block participants")
+
+	blocked, err = e.repo.AIBlockedForUser(ctx, otherID, p, now)
+	require.NoError(t, err)
+	assert.False(t, blocked, "non-participants are not blocked by this contest")
+
+	require.NoError(t, e.db.Exec(`UPDATE contests SET disable_ai = false WHERE id = ?`, c.ID).Error)
+	blocked, err = e.repo.AIBlockedForUser(ctx, userID, p, now)
+	require.NoError(t, err)
+	assert.False(t, blocked)
+}
+
+func TestContestDisableAIDefaultAndUpdate(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	c, err := e.svc.Create(ctx, manager(), baseInput(e))
+	require.NoError(t, err)
+	assert.True(t, c.DisableAI)
+
+	in := baseInput(e)
+	in.DisableAI = boolPtr(false)
+	updated, err := e.svc.Update(ctx, manager(), c.ID, in)
+	require.NoError(t, err)
+	assert.False(t, updated.DisableAI)
+
+	in.DisableAI = nil
+	kept, err := e.svc.Update(ctx, manager(), c.ID, in)
+	require.NoError(t, err)
+	assert.False(t, kept.DisableAI, "omitted update keeps existing value")
+}
+
+func TestCreateContestWithDisableAIFalse(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	in := baseInput(e)
+	in.DisableAI = boolPtr(false)
+	c, err := e.svc.Create(ctx, manager(), in)
+	require.NoError(t, err)
+	assert.False(t, c.DisableAI)
+
+	var stored bool
+	require.NoError(t, e.db.Raw(
+		`SELECT disable_ai FROM contests WHERE id = ?`, c.ID,
+	).Scan(&stored).Error)
+	assert.False(t, stored, "explicit disableAi=false must persist")
+}
+
+func boolPtr(v bool) *bool { return &v }
+
 func TestContestCanManageDerivation(t *testing.T) {
 	e := newEnv(t)
 	c, err := e.svc.Create(context.Background(), manager(), baseInput(e))

@@ -145,6 +145,7 @@ func TestMigrateCreatesRatingSchema(t *testing.T) {
 	assert.True(t, g.Migrator().HasIndex(&rating.RatingHistory{}, "uniq_rating_history_user_period"))
 	assert.True(t, g.Migrator().HasColumn(&rating.RatingHistory{}, "period_key"))
 	assert.True(t, g.Migrator().HasColumn(&contest.Contest{}, "rating_settled_at"))
+	assert.True(t, g.Migrator().HasColumn(&contest.Contest{}, "disable_ai"))
 
 	userID := time.Now().UnixNano()
 	t.Cleanup(func() {

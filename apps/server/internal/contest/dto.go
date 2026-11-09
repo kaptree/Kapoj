@@ -11,6 +11,7 @@ type ListItem struct {
 	Mode             Mode         `json:"mode"`
 	IsRated          bool         `json:"isRated"`
 	IsPublic         bool         `json:"isPublic"`
+	DisableAI        bool         `json:"disableAi"`
 	RegisterType     RegisterType `json:"registerType"`
 	Status           Status       `json:"status"`
 	ProblemCount     int64        `json:"problemCount"`
@@ -55,7 +56,8 @@ func toListItem(c Contest, problems, participants int64, registered bool, now ti
 	return ListItem{
 		ID: c.ID, Title: c.Title, DescriptionMD: c.DescriptionMD,
 		StartTime: c.StartTime, EndTime: c.EndTime, Mode: c.Mode,
-		IsRated: c.IsRated, IsPublic: c.IsPublic, RegisterType: c.RegisterType,
+		IsRated: c.IsRated, IsPublic: c.IsPublic, DisableAI: c.DisableAI,
+		RegisterType: c.RegisterType,
 		Status:       StatusAt(c.StartTime, c.EndTime, now),
 		ProblemCount: problems, ParticipantCount: participants, Registered: registered, CreatedAt: c.CreatedAt,
 	}
