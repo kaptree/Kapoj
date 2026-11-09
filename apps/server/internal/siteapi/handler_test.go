@@ -203,7 +203,7 @@ func TestSiteWriteAudit(t *testing.T) {
 	require.NoError(t, f.db.Where("action = ? AND target_type = ?",
 		"site.settings.manage", "site_settings").Order("id DESC").First(&settingsAudit).Error)
 	assert.NotZero(t, settingsAudit.ActorID)
-	assert.Equal(t, "更新首页内容", settingsAudit.Summary)
+	assert.Equal(t, "修改首页内容", settingsAudit.Summary)
 
 	w, _ = f.multipart("/api/admin/site/logo", token, pngBytes(t))
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())

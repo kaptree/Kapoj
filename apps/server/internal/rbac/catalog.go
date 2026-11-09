@@ -123,7 +123,7 @@ var permissionCatalog = []PermissionDef{
 
 	{Code: PermCertificateManage, Name: "管理证书", GroupName: PermissionGroupCertificate, Description: "审核证书认证并维护证书类型"},
 
-	{Code: PermSiteSettingsManage, Name: "管理站点设置", GroupName: PermissionGroupSite, Description: "编辑首页内容、页脚、Logo 与站点图标"},
+	{Code: PermSiteSettingsManage, Name: "管理站点设置", GroupName: PermissionGroupSite, Description: "编辑站点品牌、首页内容与页脚"},
 }
 
 // PermissionCodes 是按目录顺序排列的全部权限码。

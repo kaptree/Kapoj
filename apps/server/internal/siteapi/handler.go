@@ -81,7 +81,7 @@ func (h *handler) updateHome(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
-	h.recordAudit(c, rbac.AuditTargetSiteSettings, "更新首页内容")
+	h.recordAudit(c, rbac.AuditTargetSiteSettings, "修改首页内容")
 	httpx.OK(c, view)
 }
 
@@ -95,7 +95,7 @@ func (h *handler) updateFooter(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
-	h.recordAudit(c, rbac.AuditTargetSiteSettings, "更新站点页脚")
+	h.recordAudit(c, rbac.AuditTargetSiteSettings, "修改页脚内容")
 	httpx.OK(c, view)
 }
 
@@ -144,7 +144,7 @@ func (h *handler) deleteLogo(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
-	h.recordAudit(c, rbac.AuditTargetSiteAsset, "删除站点 Logo")
+	h.recordAudit(c, rbac.AuditTargetSiteAsset, "移除站点 Logo")
 	httpx.OK(c, view)
 }
 
@@ -154,7 +154,7 @@ func (h *handler) deleteFavicon(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
-	h.recordAudit(c, rbac.AuditTargetSiteAsset, "删除站点图标")
+	h.recordAudit(c, rbac.AuditTargetSiteAsset, "移除站点图标")
 	httpx.OK(c, view)
 }
 
