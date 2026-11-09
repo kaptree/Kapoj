@@ -69,13 +69,33 @@ func (p *Pipeline) Run(ctx context.Context, submissionID int64) error {
 	if err != nil {
 		return fmt.Errorf("claim submission: %w", err)
 	}
+	p.publish(ctx, sub.ID)
+
+	if prob.Type == "objective" {
+		accepted := false
+		user := strings.TrimSpace(sub.Answer)
+		for _, answer := range prob.Answers {
+			if strings.EqualFold(user, strings.TrimSpace(answer)) {
+				accepted = true
+				break
+			}
+		}
+		status := model.StatusWrongAnswer
+		score := 0
+		if accepted {
+			status, score = model.StatusAccepted, 100
+		}
+		return p.finish(ctx, sub, db.FinishInput{
+			Status: status, Score: score, Cases: []model.JudgeCaseResult{},
+		})
+	}
+
 	if len(cases) == 0 {
 		return errors.New("problem has no testcases")
 	}
 	if !sub.Language.Valid() {
 		return fmt.Errorf("unsupported language %q", sub.Language)
 	}
-	p.publish(ctx, sub.ID)
 
 	work, err := os.MkdirTemp("", "kapoj-judge-*")
 	if err != nil {

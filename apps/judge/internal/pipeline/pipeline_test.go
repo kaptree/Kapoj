@@ -358,3 +358,57 @@ func TestPipelineMissingTestcaseFileIsSystemError(t *testing.T) {
 	got, _ := e.repo.FindByID(context.Background(), sub)
 	assert.Equal(t, model.StatusJudging, got.Status)
 }
+
+func submissionResult(t *testing.T, pool *pgxpool.Pool, submissionID int64) (model.Status, int) {
+	t.Helper()
+	var status string
+	var score int
+	require.NoError(t, pool.QueryRow(context.Background(),
+		`SELECT status, score FROM submissions WHERE id = $1`, submissionID).Scan(&status, &score))
+	return model.Status(status), score
+}
+
+func TestObjectiveSubmission(t *testing.T) {
+	e := newEnv(t, "objective")
+	problem := testutil.InsertObjectiveProblem(t, e.pool, []string{"A", "hello world"})
+	sub := testutil.InsertObjectiveSubmission(t, e.pool, e.userID, problem, " a ", "pending")
+
+	require.NoError(t, e.pipe.Run(context.Background(), sub))
+
+	status, score := submissionResult(t, e.pool, sub)
+	assert.Equal(t, model.StatusAccepted, status)
+	assert.Equal(t, 100, score)
+	assert.Equal(t, 1, acceptCount(t, e.pool, problem))
+	assert.Empty(t, e.sb.compiles, "objective submissions must not compile")
+	assert.Empty(t, e.sb.runs, "objective submissions must not run in the sandbox")
+	assert.Equal(t, []int64{sub, sub}, e.pub.ids, "judging and terminal states are published")
+	require.Len(t, e.game.events, 1, "accepted objective submissions publish a game event")
+
+	var (
+		timeMS, memKB int
+		raw           []byte
+	)
+	require.NoError(t, e.pool.QueryRow(context.Background(),
+		`SELECT time_used_ms, memory_used_kb, judge_result_json FROM submissions WHERE id = $1`, sub).
+		Scan(&timeMS, &memKB, &raw))
+	assert.Zero(t, timeMS)
+	assert.Zero(t, memKB)
+	assert.JSONEq(t, "[]", string(raw))
+}
+
+func TestObjectiveSubmissionWrongAnswer(t *testing.T) {
+	e := newEnv(t, "objective")
+	problem := testutil.InsertObjectiveProblem(t, e.pool, []string{"A", "hello world"})
+	sub := testutil.InsertObjectiveSubmission(t, e.pool, e.userID, problem, "B", "pending")
+
+	require.NoError(t, e.pipe.Run(context.Background(), sub))
+
+	status, score := submissionResult(t, e.pool, sub)
+	assert.Equal(t, model.StatusWrongAnswer, status)
+	assert.Zero(t, score)
+	assert.Zero(t, acceptCount(t, e.pool, problem))
+	assert.Empty(t, e.sb.compiles, "objective submissions must not compile")
+	assert.Empty(t, e.sb.runs, "objective submissions must not run in the sandbox")
+	assert.Empty(t, e.game.events, "wrong answers publish no game event")
+	assert.Equal(t, []int64{sub, sub}, e.pub.ids, "judging and terminal states are published")
+}

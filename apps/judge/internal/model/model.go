@@ -52,6 +52,7 @@ type Submission struct {
 	ProblemID    int64
 	Language     Language
 	Code         string
+	Answer       string
 	Status       Status
 	ErrorMessage string
 	CreatedAt    time.Time
@@ -64,6 +65,7 @@ type Problem struct {
 	TimeLimitMS   int
 	MemoryLimitMB int
 	CheckerPath   string
+	Answers       []string
 }
 
 type Testcase struct {

@@ -59,8 +59,8 @@ func (r *Repository) Claim(ctx context.Context, id int64) (*model.Submission, *m
 	err := r.pool.QueryRow(ctx, `
 		UPDATE submissions SET status = 'judging'
 		WHERE id = $1 AND status IN ('pending', 'judging')
-		RETURNING id, user_id, problem_id, language, code, status`, id,
-	).Scan(&sub.ID, &sub.UserID, &sub.ProblemID, &language, &sub.Code, &status)
+		RETURNING id, user_id, problem_id, language, code, answer, status`, id,
+	).Scan(&sub.ID, &sub.UserID, &sub.ProblemID, &language, &sub.Code, &sub.Answer, &status)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil, nil, ErrSkip
 	}
@@ -71,12 +71,21 @@ func (r *Repository) Claim(ctx context.Context, id int64) (*model.Submission, *m
 	sub.Status = model.Status(status)
 
 	var p model.Problem
+	var answersJSON []byte
 	err = r.pool.QueryRow(ctx, `
-		SELECT id, type, time_limit_ms, memory_limit_mb, checker_path
+		SELECT id, type, time_limit_ms, memory_limit_mb, checker_path, answers_json
 		FROM problems WHERE id = $1`, sub.ProblemID,
-	).Scan(&p.ID, &p.Type, &p.TimeLimitMS, &p.MemoryLimitMB, &p.CheckerPath)
+	).Scan(&p.ID, &p.Type, &p.TimeLimitMS, &p.MemoryLimitMB, &p.CheckerPath, &answersJSON)
 	if err != nil {
 		return nil, nil, nil, err
+	}
+	if len(answersJSON) > 0 {
+		if err := json.Unmarshal(answersJSON, &p.Answers); err != nil {
+			return nil, nil, nil, err
+		}
+	}
+	if p.Answers == nil {
+		p.Answers = []string{}
 	}
 
 	rows, err := r.pool.Query(ctx, `

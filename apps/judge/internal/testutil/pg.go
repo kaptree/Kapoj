@@ -3,6 +3,7 @@ package testutil
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"testing"
 	"time"
@@ -46,6 +47,7 @@ CREATE TABLE IF NOT EXISTS problems (
   time_limit_ms int NOT NULL DEFAULT 1000,
   memory_limit_mb int NOT NULL DEFAULT 256,
   checker_path varchar(255) NOT NULL DEFAULT '',
+  answers_json jsonb NOT NULL DEFAULT '[]',
   is_public boolean NOT NULL DEFAULT false,
   submit_count int NOT NULL DEFAULT 0,
   accept_count int NOT NULL DEFAULT 0,
@@ -73,6 +75,7 @@ CREATE TABLE IF NOT EXISTS submissions (
   contest_id bigint,
   language varchar(20) NOT NULL,
   code text NOT NULL,
+  answer text NOT NULL DEFAULT '',
   status varchar(30) NOT NULL DEFAULT 'pending',
   time_used_ms int NOT NULL DEFAULT 0,
   memory_used_kb int NOT NULL DEFAULT 0,
@@ -109,6 +112,10 @@ CREATE TABLE IF NOT EXISTS testcase_generation_cases (
   output_size bigint NOT NULL DEFAULT 0,
   CONSTRAINT uniq_generation_cases_order UNIQUE (generation_id, sort_order)
 )`)
+	// Older test databases may predate the objective columns; keep the
+	// CREATE TABLE above as the source of truth for fresh databases.
+	mustExec(t, pool, `ALTER TABLE problems ADD COLUMN IF NOT EXISTS answers_json jsonb NOT NULL DEFAULT '[]'`)
+	mustExec(t, pool, `ALTER TABLE submissions ADD COLUMN IF NOT EXISTS answer text NOT NULL DEFAULT ''`)
 	mustExec(t, pool, `TRUNCATE testcase_generation_cases, testcase_generations, submissions, problem_testcases, problems, users RESTART IDENTITY CASCADE`)
 	return pool
 }
@@ -142,6 +149,24 @@ func InsertProblem(t *testing.T, pool *pgxpool.Pool, typ string, timeLimitMS, me
 	return id
 }
 
+// InsertObjectiveProblem creates an objective problem with the accepted answers.
+func InsertObjectiveProblem(t *testing.T, pool *pgxpool.Pool, answers []string) int64 {
+	t.Helper()
+	if answers == nil {
+		answers = []string{}
+	}
+	raw, err := json.Marshal(answers)
+	require.NoError(t, err)
+	var id int64
+	err = pool.QueryRow(context.Background(),
+		`INSERT INTO problems (title, slug, statement_md, type, difficulty, time_limit_ms, memory_limit_mb, checker_path, answers_json, is_public, created_by, created_at, updated_at)
+		 VALUES ('Objective', 'objective', 's', 'objective', 1, 1000, 256, '', $1::jsonb, true, 1, now(), now()) RETURNING id`,
+		string(raw),
+	).Scan(&id)
+	require.NoError(t, err)
+	return id
+}
+
 func InsertTestcase(t *testing.T, pool *pgxpool.Pool, problemID int64, input, output string, score, order int) int64 {
 	t.Helper()
 	var id int64
@@ -166,6 +191,19 @@ func InsertSubmissionAt(t *testing.T, pool *pgxpool.Pool, userID, problemID int6
 		`INSERT INTO submissions (user_id, problem_id, language, code, status, created_at)
 		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
 		userID, problemID, language, code, status, created,
+	).Scan(&id)
+	require.NoError(t, err)
+	return id
+}
+
+// InsertObjectiveSubmission creates an objective submission carrying an answer.
+func InsertObjectiveSubmission(t *testing.T, pool *pgxpool.Pool, userID, problemID int64, answer, status string) int64 {
+	t.Helper()
+	var id int64
+	err := pool.QueryRow(context.Background(),
+		`INSERT INTO submissions (user_id, problem_id, language, code, answer, status, created_at)
+		 VALUES ($1, $2, 'answer', '', $3, $4, now()) RETURNING id`,
+		userID, problemID, answer, status,
 	).Scan(&id)
 	require.NoError(t, err)
 	return id
