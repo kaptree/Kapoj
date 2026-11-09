@@ -227,6 +227,7 @@ func TestSiteUploadAndVisitHTTP(t *testing.T) {
 	w, resp = f.do(http.MethodPost, "/api/site/visit", "", nil)
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.EqualValues(t, 1, resp["data"].(map[string]any)["visitCount"])
-	_, resp = f.do(http.MethodPost, "/api/site/visit", "", nil)
+	w, resp = f.do(http.MethodPost, "/api/site/visit", "", nil)
+	require.Equal(t, http.StatusOK, w.Code)
 	assert.EqualValues(t, 2, resp["data"].(map[string]any)["visitCount"])
 }
