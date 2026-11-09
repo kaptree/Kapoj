@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -188,6 +189,11 @@ func (s *Service) RefreshWithMeta(ctx context.Context, refreshToken string, meta
 		refresh, sessionID, err = s.refresh.IssueWithMeta(ctx, userID, meta)
 	} else {
 		refresh, err = s.refresh.Rotate(ctx, userID, sessionID, meta)
+		if errors.Is(err, ErrSessionNotFound) {
+			// The session was revoked (tombstoned) between consuming the token
+			// and rotating it; do not resurrect it.
+			return nil, httpx.ErrUnauthorized
+		}
 	}
 	if err != nil {
 		return nil, err
@@ -243,7 +249,9 @@ func (s *Service) ChangePassword(ctx context.Context, userID int64, in ChangePas
 		return err
 	}
 	if err := s.limiter.Reset(ctx, key); err != nil {
-		return err
+		// The password change already succeeded; a limiter cleanup failure must
+		// not turn it into a 500. The counter expires on its own.
+		slog.Warn("failed to reset password limiter after password change", "user_id", userID, "err", err)
 	}
 	return nil
 }

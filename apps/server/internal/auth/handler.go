@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"log/slog"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -73,11 +74,19 @@ func sessionMeta(c *gin.Context) SessionMeta {
 	if len(ip) > 45 {
 		ip = ip[:45]
 	}
-	ua := c.Request.UserAgent()
-	if len(ua) > 512 {
-		ua = ua[:512]
-	}
+	ua := truncateUTF8(c.Request.UserAgent(), 512)
 	return SessionMeta{IP: ip, UserAgent: ua}
+}
+
+// truncateUTF8 returns at most max bytes of s without splitting a UTF-8 rune.
+// Invalid byte sequences (including a rune cut in half by the limit) are
+// dropped, so a stored User-Agent never ends in replacement characters.
+func truncateUTF8(s string, max int) string {
+	s = strings.ToValidUTF8(s, "")
+	if len(s) <= max {
+		return s
+	}
+	return strings.ToValidUTF8(s[:max], "")
 }
 
 // currentClaims mirrors middleware.CurrentClaims for use inside the auth
@@ -213,6 +222,10 @@ func (h *handler) revokeSession(c *gin.Context) {
 func (h *handler) logoutOthers(c *gin.Context) {
 	req, ok := httpx.BindJSON[logoutOthersRequest](c)
 	if !ok {
+		return
+	}
+	if strings.TrimSpace(req.SessionID) == "" {
+		httpx.Fail(c, httpx.ErrValidation("缺少当前会话 ID"))
 		return
 	}
 	claims, _ := currentClaims(c)

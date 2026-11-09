@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -230,8 +231,10 @@ func TestSessionEndpoints(t *testing.T) {
 	data := resp["data"].(map[string]any)
 	tokenA := data["accessToken"].(string)
 	sessionA := data["sessionId"].(string)
+	refreshA := data["refreshToken"].(string)
 
-	postJSON(r, "/api/auth/login", `{"account":"alice","password":"correct-horse"}`)
+	_, loginResp := postJSON(r, "/api/auth/login", `{"account":"alice","password":"correct-horse"}`)
+	refreshB := loginResp["data"].(map[string]any)["refreshToken"].(string)
 
 	// Unauthenticated.
 	w, _ := authJSON(r, http.MethodGet, "/api/users/me/sessions", "", "")
@@ -249,6 +252,10 @@ func TestSessionEndpoints(t *testing.T) {
 		assert.NotContains(t, m, "accessToken")
 		assert.NotContains(t, m, "tokenHash")
 		assert.NotContains(t, m, "userId")
+	}
+	// The raw response must not carry either refresh token or its hash.
+	for _, secret := range []string{refreshA, refreshB, hashToken(refreshA), hashToken(refreshB)} {
+		assert.NotContains(t, w.Body.String(), secret)
 	}
 
 	// Deleting another user's session is a 404.
@@ -277,4 +284,37 @@ func TestSessionEndpoints(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	_, resp = authJSON(r, http.MethodGet, "/api/users/me/sessions", tokenA, "")
 	assert.Empty(t, resp["data"])
+}
+
+func TestLogoutOthersRequiresSessionID(t *testing.T) {
+	r := newAccountEngine(t)
+	_, resp := postJSON(r, "/api/auth/register", `{"username":"alice","email":"alice@example.com","password":"correct-horse"}`)
+	data := resp["data"].(map[string]any)
+	token := data["accessToken"].(string)
+
+	postJSON(r, "/api/auth/login", `{"account":"alice","password":"correct-horse"}`)
+
+	for _, body := range []string{`{}`, `{"sessionId":""}`, `{"sessionId":"   "}`} {
+		w, resp := authJSON(r, http.MethodPost, "/api/users/me/sessions/logout-others", token, body)
+		assert.Equal(t, http.StatusBadRequest, w.Code, body)
+		assert.EqualValues(t, 40001, resp["code"], body)
+	}
+
+	// A missing sessionId must not fall back to revoking every session.
+	_, resp = authJSON(r, http.MethodGet, "/api/users/me/sessions", token, "")
+	assert.Len(t, resp["data"], 2)
+}
+
+func TestSessionMetaTruncatesUserAgentOnRuneBoundary(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	// 511 ASCII bytes + a 3-byte rune crosses the 512-byte limit mid-rune.
+	c.Request.Header.Set("User-Agent", strings.Repeat("a", 511)+"字")
+
+	meta := sessionMeta(c)
+	assert.LessOrEqual(t, len(meta.UserAgent), 512)
+	assert.True(t, utf8.ValidString(meta.UserAgent), "truncated UA must be valid UTF-8")
+	assert.NotContains(t, meta.UserAgent, "\uFFFD")
+	assert.Equal(t, strings.Repeat("a", 511), meta.UserAgent)
 }

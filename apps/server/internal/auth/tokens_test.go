@@ -108,6 +108,23 @@ func TestRevoke(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInvalidRefresh)
 }
 
+// TestRevokeMissingSessionIsSuccess covers a logout racing another revoke: the
+// refresh token is consumed but the session record is already gone.
+func TestRevokeMissingSessionIsSuccess(t *testing.T) {
+	_, rdb := newRedis(t)
+	store := NewRefreshStore(rdb, time.Hour)
+	ctx := context.Background()
+
+	tok, sid, err := store.IssueWithMeta(ctx, 7, SessionMeta{})
+	require.NoError(t, err)
+	require.NoError(t, rdb.Del(ctx, sessionKey(sid)).Err())
+
+	assert.NoError(t, store.Revoke(ctx, tok))
+	exists, err := rdb.Exists(ctx, tokenKey(hashToken(tok))).Result()
+	require.NoError(t, err)
+	assert.Zero(t, exists)
+}
+
 func TestRevokeAll(t *testing.T) {
 	_, rdb := newRedis(t)
 	store := NewRefreshStore(rdb, time.Hour)
@@ -224,7 +241,7 @@ func TestRotateKeepsSession(t *testing.T) {
 }
 
 func TestListSessions(t *testing.T) {
-	_, rdb := newRedis(t)
+	mr, rdb := newRedis(t)
 	store := NewRefreshStore(rdb, time.Hour)
 	ctx := context.Background()
 
@@ -252,6 +269,14 @@ func TestListSessions(t *testing.T) {
 		assert.NotContains(t, si.ID, tokA)
 		assert.NotContains(t, si.ID, hashToken(tokA))
 	}
+
+	// List must not extend session TTLs (no sliding on read).
+	ttlBeforeSession := mr.TTL(sessionKey(sidA))
+	ttlBeforeSet := mr.TTL(userSessionsKey(7))
+	_, err = store.List(ctx, 7)
+	require.NoError(t, err)
+	assert.Equal(t, ttlBeforeSession, mr.TTL(sessionKey(sidA)))
+	assert.Equal(t, ttlBeforeSet, mr.TTL(userSessionsKey(7)))
 
 	// ...but the underlying record still stores the hash for revocation.
 	val, err := rdb.Get(ctx, sessionKey(sidA)).Result()
@@ -302,6 +327,93 @@ func TestRevokeSession(t *testing.T) {
 	// another user's session.
 	err = store.RevokeSession(ctx, 8, sidB)
 	assert.ErrorIs(t, err, ErrSessionNotFound)
+}
+
+// TestRevokeSessionBlocksRotate covers the revoke/rotate TOCTOU: a refresh may
+// have consumed its token and be about to rotate when the session is revoked.
+// The tombstone must make that rotation fail without recreating any keys.
+func TestRevokeSessionBlocksRotate(t *testing.T) {
+	mr, rdb := newRedis(t)
+	store := NewRefreshStore(rdb, time.Hour)
+	ctx := context.Background()
+
+	tok, sid, err := store.IssueWithMeta(ctx, 7, SessionMeta{})
+	require.NoError(t, err)
+
+	// A refresh consumes the old token before rotating.
+	_, gotSid, err := store.ConsumeSession(ctx, tok)
+	require.NoError(t, err)
+	require.Equal(t, sid, gotSid)
+
+	require.NoError(t, store.RevokeSession(ctx, 7, sid))
+
+	// The tombstone lasts as long as a refresh token could.
+	assert.Greater(t, mr.TTL(revokedSessionKey(sid)), 50*time.Minute)
+
+	keysBefore := mr.Keys()
+	_, err = store.Rotate(ctx, 7, sid, SessionMeta{UserAgent: "resurrect"})
+	assert.ErrorIs(t, err, ErrSessionNotFound)
+	assert.ElementsMatch(t, keysBefore, mr.Keys(), "a rejected rotate must not write anything")
+
+	exists, err := rdb.Exists(ctx, sessionKey(sid)).Result()
+	require.NoError(t, err)
+	assert.Zero(t, exists)
+	members, err := rdb.SMembers(ctx, userSessionsKey(7)).Result()
+	require.NoError(t, err)
+	assert.NotContains(t, members, sid)
+	hashes, err := rdb.SMembers(ctx, userKey(7)).Result()
+	require.NoError(t, err)
+	assert.Empty(t, hashes)
+}
+
+// TestRotateRefusesTombstonedSession exercises the Lua guard directly: the
+// session record still exists (as a stale Rotate may have just read), but the
+// tombstone makes the rotation a no-op.
+func TestRotateRefusesTombstonedSession(t *testing.T) {
+	mr, rdb := newRedis(t)
+	store := NewRefreshStore(rdb, time.Hour)
+	ctx := context.Background()
+
+	tok, sid, err := store.IssueWithMeta(ctx, 7, SessionMeta{})
+	require.NoError(t, err)
+	original, err := rdb.Get(ctx, sessionKey(sid)).Result()
+	require.NoError(t, err)
+
+	// A revoke lands while a rotate has already read the session record.
+	require.NoError(t, rdb.Set(ctx, revokedSessionKey(sid), "1", time.Hour).Err())
+
+	keysBefore := mr.Keys()
+	_, err = store.Rotate(ctx, 7, sid, SessionMeta{UserAgent: "resurrect"})
+	assert.ErrorIs(t, err, ErrSessionNotFound)
+	assert.ElementsMatch(t, keysBefore, mr.Keys(), "a rejected rotate must not write anything")
+
+	// The stale record itself was not overwritten.
+	after, err := rdb.Get(ctx, sessionKey(sid)).Result()
+	require.NoError(t, err)
+	assert.Equal(t, original, after)
+	assert.Contains(t, after, hashToken(tok))
+}
+
+// TestRevokeAllBlocksRotate verifies RevokeAll uses the same per-session
+// tombstone guard as RevokeSession.
+func TestRevokeAllBlocksRotate(t *testing.T) {
+	_, rdb := newRedis(t)
+	store := NewRefreshStore(rdb, time.Hour)
+	ctx := context.Background()
+
+	tok, sid, err := store.IssueWithMeta(ctx, 7, SessionMeta{})
+	require.NoError(t, err)
+	_, _, err = store.ConsumeSession(ctx, tok)
+	require.NoError(t, err)
+
+	require.NoError(t, store.RevokeAll(ctx, 7))
+
+	_, err = store.Rotate(ctx, 7, sid, SessionMeta{})
+	assert.ErrorIs(t, err, ErrSessionNotFound)
+
+	exists, err := rdb.Exists(ctx, sessionKey(sid)).Result()
+	require.NoError(t, err)
+	assert.Zero(t, exists)
 }
 
 func TestRevokeOthersAndAll(t *testing.T) {

@@ -358,7 +358,7 @@ onMounted(() => {
         v-else-if="sessions.length === 0"
         icon="pi pi-mobile"
         title="暂无活跃会话"
-        description="当前没有其他活跃会话。"
+        description="登录其他设备后，会话会显示在这里。"
       />
 
       <DataTable

@@ -129,6 +129,52 @@ func tokenKey(hash string) string         { return "refresh:" + hash }
 func userKey(userID int64) string         { return fmt.Sprintf("user_refresh:%d", userID) }
 func sessionKey(id string) string         { return "session:" + id }
 func userSessionsKey(userID int64) string { return fmt.Sprintf("user_sessions:%d", userID) }
+func revokedSessionKey(id string) string  { return "revoked_session:" + id }
+
+// revokeSessionScript atomically tombstones a session and deletes its record,
+// refresh token and set memberships. The tombstone is written before the
+// delete, so a concurrent Rotate (also a script, hence serialized) either runs
+// first and is then cleaned up, or runs afterwards and refuses to write.
+//
+// KEYS: 1 revoked_session, 2 session, 3 user_refresh, 4 user_sessions
+// ARGV: 1 userID, 2 sessionID, 3 refresh key prefix, 4 tombstone TTL in ms
+var revokeSessionScript = redis.NewScript(`
+local raw = redis.call('GET', KEYS[2])
+if not raw then return -1 end
+local rec = cjson.decode(raw)
+if tonumber(rec.userId) ~= tonumber(ARGV[1]) then return -2 end
+redis.call('SET', KEYS[1], '1', 'PX', ARGV[4])
+redis.call('DEL', KEYS[2], ARGV[3] .. rec.tokenHash)
+redis.call('SREM', KEYS[3], rec.tokenHash)
+redis.call('SREM', KEYS[4], ARGV[2])
+return 1
+`)
+
+// rotateSessionScript rotates a refresh token inside an existing session, but
+// only when the session still exists and has not been tombstoned by a
+// concurrent revoke.
+//
+// KEYS: 1 revoked_session, 2 session, 3 new refresh token, 4 user_refresh,
+//
+//	5 user_sessions
+//
+// ARGV: 1 userID, 2 new hash, 3 session JSON, 4 refresh JSON, 5 TTL in ms,
+//
+//	6 sessionID
+var rotateSessionScript = redis.NewScript(`
+if redis.call('EXISTS', KEYS[1]) == 1 then return -1 end
+local raw = redis.call('GET', KEYS[2])
+if not raw then return -2 end
+local rec = cjson.decode(raw)
+if tonumber(rec.userId) ~= tonumber(ARGV[1]) then return -2 end
+redis.call('SET', KEYS[3], ARGV[4], 'PX', ARGV[5])
+redis.call('SET', KEYS[2], ARGV[3], 'PX', ARGV[5])
+redis.call('SADD', KEYS[4], ARGV[2])
+redis.call('PEXPIRE', KEYS[4], ARGV[5])
+redis.call('SADD', KEYS[5], ARGV[6])
+redis.call('PEXPIRE', KEYS[5], ARGV[5])
+return 1
+`)
 
 func newToken() (string, error) {
 	buf := make([]byte, 32)
@@ -278,15 +324,26 @@ func (s *RefreshStore) Rotate(ctx context.Context, userID int64, sessionID strin
 		return "", err
 	}
 
-	pipe := s.rdb.TxPipeline()
-	pipe.Set(ctx, tokenKey(hash), refresh, s.ttl)
-	pipe.Set(ctx, sessionKey(sessionID), session, s.ttl)
-	pipe.SAdd(ctx, userKey(userID), hash)
-	pipe.Expire(ctx, userKey(userID), s.ttl)
-	pipe.SAdd(ctx, userSessionsKey(userID), sessionID)
-	pipe.Expire(ctx, userSessionsKey(userID), s.ttl)
-	if _, err := pipe.Exec(ctx); err != nil {
+	res, err := rotateSessionScript.Run(ctx, s.rdb,
+		[]string{
+			revokedSessionKey(sessionID),
+			sessionKey(sessionID),
+			tokenKey(hash),
+			userKey(userID),
+			userSessionsKey(userID),
+		},
+		strconv.FormatInt(userID, 10),
+		hash,
+		string(session),
+		string(refresh),
+		s.ttl.Milliseconds(),
+		sessionID,
+	).Int()
+	if err != nil {
 		return "", err
+	}
+	if res != 1 {
+		return "", ErrSessionNotFound
 	}
 	return token, nil
 }
@@ -354,23 +411,30 @@ func (s *RefreshStore) getSession(ctx context.Context, id string) (*sessionRecor
 	return &rec, nil
 }
 
-// RevokeSession removes a single session and its refresh token. It verifies the
-// session belongs to the given user.
+// RevokeSession atomically tombstones and removes a single session and its
+// refresh token. It verifies the session belongs to the given user. The
+// tombstone (TTL = refresh TTL) prevents a concurrent Rotate from recreating
+// the session after its record was deleted.
 func (s *RefreshStore) RevokeSession(ctx context.Context, userID int64, sessionID string) error {
-	rec, err := s.getSession(ctx, sessionID)
+	res, err := revokeSessionScript.Run(ctx, s.rdb,
+		[]string{
+			revokedSessionKey(sessionID),
+			sessionKey(sessionID),
+			userKey(userID),
+			userSessionsKey(userID),
+		},
+		strconv.FormatInt(userID, 10),
+		sessionID,
+		"refresh:",
+		s.ttl.Milliseconds(),
+	).Int()
 	if err != nil {
 		return err
 	}
-	if rec.UserID != userID {
+	if res != 1 {
 		return ErrSessionNotFound
 	}
-
-	pipe := s.rdb.TxPipeline()
-	pipe.Del(ctx, sessionKey(sessionID), tokenKey(rec.TokenHash))
-	pipe.SRem(ctx, userKey(userID), rec.TokenHash)
-	pipe.SRem(ctx, userSessionsKey(userID), sessionID)
-	_, err = pipe.Exec(ctx)
-	return err
+	return nil
 }
 
 // RevokeOthers revokes every session of a user except the one to keep. Stale
@@ -397,7 +461,8 @@ func (s *RefreshStore) RevokeOthers(ctx context.Context, userID int64, keepSessi
 
 // Revoke invalidates a single refresh token, idempotently. It revokes the whole
 // session when the token is session-backed; legacy tokens are already removed
-// by ConsumeSession.
+// by ConsumeSession. A session that disappeared between consume and revoke is
+// treated as already revoked.
 func (s *RefreshStore) Revoke(ctx context.Context, token string) error {
 	userID, sessionID, err := s.ConsumeSession(ctx, token)
 	if errors.Is(err, ErrInvalidRefresh) {
@@ -407,29 +472,36 @@ func (s *RefreshStore) Revoke(ctx context.Context, token string) error {
 		return err
 	}
 	if sessionID != "" {
-		return s.RevokeSession(ctx, userID, sessionID)
+		err = s.RevokeSession(ctx, userID, sessionID)
+		if errors.Is(err, ErrSessionNotFound) {
+			return nil
+		}
+		return err
 	}
 	return nil
 }
 
 // RevokeAll invalidates every refresh token and session issued to a user, e.g.
-// after a password change. It also clears legacy refresh hashes.
+// after a password change. Each session is revoked through the same atomic
+// tombstone guard as RevokeSession; legacy refresh hashes are then removed.
 func (s *RefreshStore) RevokeAll(ctx context.Context, userID int64) error {
-	hashes, err := s.rdb.SMembers(ctx, userKey(userID)).Result()
-	if err != nil {
-		return err
-	}
 	sessionIDs, err := s.rdb.SMembers(ctx, userSessionsKey(userID)).Result()
 	if err != nil {
 		return err
 	}
+	for _, id := range sessionIDs {
+		if err := s.RevokeSession(ctx, userID, id); err != nil && !errors.Is(err, ErrSessionNotFound) {
+			return err
+		}
+	}
 
+	hashes, err := s.rdb.SMembers(ctx, userKey(userID)).Result()
+	if err != nil {
+		return err
+	}
 	keys := []string{userKey(userID), userSessionsKey(userID)}
 	for _, h := range hashes {
 		keys = append(keys, tokenKey(h))
-	}
-	for _, id := range sessionIDs {
-		keys = append(keys, sessionKey(id))
 	}
 	return s.rdb.Del(ctx, keys...).Err()
 }

@@ -616,11 +616,13 @@ session:<sessionId>      = {"userId":1,"tokenHash":"<hash>","ip":"...","userAgen
                             "createdAt":"RFC3339Nano","lastUsedAt":"RFC3339Nano"} TTL=refreshTTL
 user_refresh:<userId>    = SET<hash>       TTL=refreshTTL
 user_sessions:<userId>   = SET<sessionId>  TTL=refreshTTL
+revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻止并发 Rotate 复活）
 ```
 
 - refresh token 仍是不透明随机串，Redis 只存 SHA-256；sessionId 为 16 字节 `crypto/rand` 的 hex（32 字符），公开给本人、不含 token。
 - 刷新在同一 sessionId 内轮换 refresh token（`Rotate`），更新 `tokenHash`/`lastUsedAt`/ip/ua 并滑动重置 TTL；legacy 纯 userID 的旧 `refresh:<hash>` 值在首次刷新时迁移为新会话。
-- `session:*` 只返回 id/ip/userAgent/createdAt/lastUsedAt，绝不返回 token/hash/userId；IP/UA 截断（IP 45、UA 512），仅本人可见，允许为空。
+- API 的 `SessionView` 只返回 id/ip/userAgent/createdAt/lastUsedAt，绝不返回 token/hash/userId；Redis 内部 `session:<id>` 记录为吊销保存 `userId` 与 `tokenHash`（token 本身只存 SHA-256）。IP/UA 截断（IP 45、UA 512，UA 按 UTF-8 边界截断），仅本人可见，允许为空。
+- `RevokeSession`/`RevokeAll`/`RevokeOthers` 使用 Lua 脚本原子地写 `revoked_session:<id>` 墓碑（TTL=refreshTTL）并删除会话/refresh token/集合成员；`Rotate` 在同一脚本内检查墓碑与记录存在性，已吊销会话不会被并发刷新复活。
 
 **实现差异**：
 
@@ -670,6 +672,7 @@ user_sessions:<userId>   = SET<sessionId>  TTL=refreshTTL
 - **IP 为 best-effort**：IP 取 `c.ClientIP()`，仅本人可见、作展示用；反向代理部署须配置 Gin `trusted proxies`，否则会显示代理 IP。
 - **改密后 access token 仍有效最长 15 分钟**：改密只吊销全部 refresh token，已签发 access token 在过期前仍可用；前端改密后立即清空并重新登录。
 - **接受边界**：改密先 `RevokeAll` 再 `UpdatePassword`（无 DB/Redis 跨存储事务）；`RevokeAll` 成功但 `UpdatePassword` 失败时，会话已失效而密码未变，用户可用旧密码重新登录。
+- **过渡期边界**：`logout-others` 仅吊销 `user_sessions:<uid>` 中的会话，不清理 legacy `user_refresh:<uid>` 里无 session 的旧 refresh token（该类 token 首次刷新会迁移为新会话）；`logout-all` 与改密仍会清理 legacy token。
 - 前端新增 `/settings/security` 账号安全页（PrimeVue 4）：修改密码表单 + 活跃会话 `DataTable`（设备摘要/`当前设备` Tag/IP/创建与最近使用时间），行内「退出此设备」、工具栏「退出其他设备」「退出所有设备」；UserMenu 增加「账号安全」入口。无新权限码、不改 users 表、不新增依赖。
 
 **Codex 提示词（用户与认证）**

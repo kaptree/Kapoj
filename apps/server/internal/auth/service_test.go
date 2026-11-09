@@ -41,6 +41,17 @@ func newServiceWithRedis(t *testing.T) (*Service, user.Repository, *redis.Client
 	return svc, repo, rdb
 }
 
+// failingPasswordRepo wraps a repository and fails UpdatePassword, simulating a
+// database error after RevokeAll succeeded.
+type failingPasswordRepo struct {
+	user.Repository
+	err error
+}
+
+func (r *failingPasswordRepo) UpdatePassword(context.Context, int64, string) error {
+	return r.err
+}
+
 func register(t *testing.T, svc *Service, username, email string) *Session {
 	t.Helper()
 	s, err := svc.Register(context.Background(), RegisterInput{Username: username, Email: email, Password: password})
@@ -342,6 +353,39 @@ func TestChangePassword(t *testing.T) {
 	assertCode(t, err, 40100)
 }
 
+// TestChangePasswordUpdateFailureKeepsOldPassword covers the spec-required
+// failure mode: RevokeAll succeeds but UpdatePassword fails. Sessions stay
+// revoked and the old password hash/login continues to work.
+func TestChangePasswordUpdateFailureKeepsOldPassword(t *testing.T) {
+	_, rdb := newRedis(t)
+	mem := user.NewMemoryRepository()
+	repo := &failingPasswordRepo{Repository: mem, err: errors.New("database down")}
+	svc := NewService(repo,
+		NewTokenIssuer(testSecret, 15*time.Minute),
+		NewRefreshStore(rdb, time.Hour),
+		NewLoginLimiter(rdb))
+	ctx := context.Background()
+
+	s := register(t, svc, "alice", "alice@example.com")
+	oldHash := s.User.PasswordHash
+
+	err := svc.ChangePassword(ctx, s.User.ID, ChangePasswordInput{CurrentPassword: password, NewPassword: "new-password-1"})
+	require.Error(t, err)
+
+	u, err := mem.FindByID(ctx, s.User.ID)
+	require.NoError(t, err)
+	assert.Equal(t, oldHash, u.PasswordHash, "password hash must be unchanged")
+
+	// Sessions were revoked before the failed update.
+	_, err = svc.Refresh(ctx, s.RefreshToken)
+	assertCode(t, err, 40100)
+
+	// The old password still logs in.
+	s2, err := svc.Login(ctx, "alice", password)
+	require.NoError(t, err)
+	assert.NotEmpty(t, s2.SessionID)
+}
+
 func TestChangePasswordTooManyAttempts(t *testing.T) {
 	svc, _ := newService(t)
 	s := register(t, svc, "alice", "alice@example.com")
@@ -435,4 +479,36 @@ func TestLogoutRevokesCurrentSession(t *testing.T) {
 	views, err = svc.ListSessions(ctx, s.User.ID)
 	require.NoError(t, err)
 	assert.Empty(t, views)
+}
+
+func TestRefreshAfterRevokeSessionFails(t *testing.T) {
+	svc, _ := newService(t)
+	s := register(t, svc, "alice", "alice@example.com")
+	ctx := context.Background()
+
+	require.NoError(t, svc.RevokeSession(ctx, s.User.ID, s.SessionID))
+
+	_, err := svc.Refresh(ctx, s.RefreshToken)
+	assertCode(t, err, 40100)
+}
+
+func TestLogoutOthersAndAllInvalidateRefresh(t *testing.T) {
+	svc, _ := newService(t)
+	keep := register(t, svc, "alice", "alice@example.com")
+	ctx := context.Background()
+
+	other, err := svc.Login(ctx, "alice", password)
+	require.NoError(t, err)
+
+	require.NoError(t, svc.LogoutOthers(ctx, keep.User.ID, keep.SessionID))
+	_, err = svc.Refresh(ctx, other.RefreshToken)
+	assertCode(t, err, 40100)
+	_, err = svc.Refresh(ctx, keep.RefreshToken)
+	require.NoError(t, err, "the kept session stays usable")
+
+	third, err := svc.Login(ctx, "alice", password)
+	require.NoError(t, err)
+	require.NoError(t, svc.LogoutAll(ctx, keep.User.ID))
+	_, err = svc.Refresh(ctx, third.RefreshToken)
+	assertCode(t, err, 40100)
 }
