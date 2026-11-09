@@ -2721,6 +2721,193 @@ paths:
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
+  /site:
+    get:
+      summary: 公开站点配置（游客可访问）
+      description: 返回 Logo/favicon 地址、首页内容、页脚、运行起始日/天数与访问量；不返回存储键、编辑人等内部字段。
+      responses:
+        '200':
+          description: 公开站点配置
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SitePublicResponse' }
+  /site/logo:
+    get:
+      summary: 读取站点 Logo（公开）
+      description: 未上传时返回 404；URL 带 v 参数破坏缓存，响应可长缓存。
+      responses:
+        '200':
+          description: 原始图片，最大 2 MiB
+          headers:
+            Cache-Control:
+              schema: { type: string }
+              description: public, max-age=31536000, immutable
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+            image/jpeg:
+              schema: { type: string, format: binary }
+            image/webp:
+              schema: { type: string, format: binary }
+            image/gif:
+              schema: { type: string, format: binary }
+        '404': { $ref: '#/components/responses/Error' }
+  /site/favicon:
+    get:
+      summary: 读取站点 favicon（公开）
+      description: 未上传时返回 404；URL 带 v 参数破坏缓存，响应可长缓存。
+      responses:
+        '200':
+          description: 原始图片，最大 1 MiB
+          headers:
+            Cache-Control:
+              schema: { type: string }
+              description: public, max-age=31536000, immutable
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+            image/jpeg:
+              schema: { type: string, format: binary }
+            image/webp:
+              schema: { type: string, format: binary }
+            image/gif:
+              schema: { type: string, format: binary }
+        '404': { $ref: '#/components/responses/Error' }
+  /site/visit:
+    post:
+      summary: 记录一次站点访问（公开）
+      description: 访问量 +1 并返回最新计数；无需登录。
+      responses:
+        '200':
+          description: 最新访问量
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteVisitResponse' }
+  /admin/site:
+    get:
+      summary: 站点管理视图（site.settings.manage）
+      description: 与公开视图结构一致，额外用于管理页读取原始页脚字段、访问量与运行天数。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 站点管理视图
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteAdminResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /admin/site/home:
+    put:
+      summary: 更新首页内容（site.settings.manage）
+      description: '请求体为完整的 SiteHomeContent（非 {home: ...} 包装）；返回最新管理视图。'
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SiteHomeContent' }
+      responses:
+        '200':
+          description: 更新后的管理视图
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteAdminResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /admin/site/footer:
+    put:
+      summary: 更新页脚与运行起始日（site.settings.manage）
+      description: 更新 ICP/公安备案、版权、自定义说明、运行起始日与访问量开关；返回最新管理视图。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SiteFooterInput' }
+      responses:
+        '200':
+          description: 更新后的管理视图
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteAdminResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /admin/site/logo:
+    post:
+      summary: 上传或替换站点 Logo（site.settings.manage；multipart）
+      description: |
+        file 字段支持 PNG、JPEG、WebP、GIF，且不超过 2 MiB；保存后返回最新管理视图。
+        缺少文件、格式或大小非法返回 40001。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '200':
+          description: 上传后的管理视图
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteAdminResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+    delete:
+      summary: 移除站点 Logo（site.settings.manage）
+      description: 无 Logo 时幂等成功；返回最新管理视图。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 移除后的管理视图
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteAdminResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /admin/site/favicon:
+    post:
+      summary: 上传或替换站点 favicon（site.settings.manage；multipart）
+      description: |
+        file 字段支持 PNG、JPEG、WebP、GIF，且不超过 1 MiB；保存后返回最新管理视图。
+        缺少文件、格式或大小非法返回 40001。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '200':
+          description: 上传后的管理视图
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteAdminResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+    delete:
+      summary: 移除站点 favicon（site.settings.manage）
+      description: 无 favicon 时幂等成功；返回最新管理视图。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 移除后的管理视图
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteAdminResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
 components:
   securitySchemes:
     bearer:
@@ -5110,3 +5297,101 @@ components:
           required: [data]
           properties:
             data: { $ref: '#/components/schemas/PublicCertificateView' }
+    SiteLink:
+      type: object
+      description: 首页可编辑的卡片或 CTA；icon 为 PrimeIcons 类名，to 仅允许站内绝对路径。
+      required: [icon, title, to]
+      properties:
+        icon: { type: string, pattern: '^pi pi-' }
+        iconPos: { type: string, enum: [left, right], default: left, description: CTA 使用；普通卡片忽略 }
+        title: { type: string, maxLength: 40 }
+        description: { type: string, maxLength: 120 }
+        to: { type: string, pattern: '^/' }
+    SiteHomeContent:
+      type: object
+      description: 首页结构化内容，存储在 site_settings.home_json。
+      required: [eyebrow, title, titleHighlight, description, primaryCta, secondaryCta, quickTitle, quickLinks, growthTitle, growthLinks, guestTitle, guestDescription]
+      properties:
+        eyebrow: { type: string, maxLength: 40 }
+        title: { type: string, maxLength: 60 }
+        titleHighlight: { type: string, maxLength: 30 }
+        description: { type: string, maxLength: 300 }
+        primaryCta: { $ref: '#/components/schemas/SiteLink' }
+        secondaryCta: { $ref: '#/components/schemas/SiteLink' }
+        quickTitle: { type: string, maxLength: 20 }
+        quickLinks:
+          type: array
+          maxItems: 8
+          items: { $ref: '#/components/schemas/SiteLink' }
+        growthTitle: { type: string, maxLength: 20 }
+        growthLinks:
+          type: array
+          maxItems: 8
+          items: { $ref: '#/components/schemas/SiteLink' }
+        guestTitle: { type: string, maxLength: 60 }
+        guestDescription: { type: string, maxLength: 300 }
+    SiteFooterView:
+      type: object
+      description: 页脚公开读取模型；不暴露存储键与编辑人。
+      required: [icpNumber, policeNumber, policeUrl, copyright, text, showVisits]
+      properties:
+        icpNumber: { type: string, maxLength: 100, description: ICP 备案号；空表示未配置 }
+        policeNumber: { type: string, maxLength: 100, description: 公安备案号；空表示未配置 }
+        policeUrl: { type: string, maxLength: 500, description: 公安备案链接；空或 https:// 开头 }
+        copyright: { type: string, maxLength: 200 }
+        text: { type: string, maxLength: 1000, description: 自定义说明，保留换行 }
+        showVisits: { type: boolean, description: 仅控制页脚是否显示访问量，不停止计数 }
+    SitePublicView:
+      type: object
+      description: 公开站点配置。
+      required: [logoUrl, faviconUrl, home, footer, startedAt, runningDays, visitCount]
+      properties:
+        logoUrl: { type: string, description: 空表示未上传；非空时带 ?v=<unix> 版本参数 }
+        faviconUrl: { type: string, description: 空表示未上传；非空时带 ?v=<unix> 版本参数 }
+        home: { $ref: '#/components/schemas/SiteHomeContent' }
+        footer: { $ref: '#/components/schemas/SiteFooterView' }
+        startedAt: { type: string, format: date-time, description: 站点运行起始日（UTC） }
+        runningDays: { type: integer, description: 'max(0, floor((now - startedAt)/24h))' }
+        visitCount: { type: integer, format: int64 }
+    SiteAdminView:
+      description: 管理视图；与公开视图结构一致，管理页借此读取页脚原始字段、访问量与运行天数。
+      allOf:
+        - $ref: '#/components/schemas/SitePublicView'
+    SiteFooterInput:
+      type: object
+      description: 页脚更新请求体。
+      required: [icpNumber, policeNumber, policeUrl, copyright, text, startedAt, showVisits]
+      properties:
+        icpNumber: { type: string, maxLength: 100 }
+        policeNumber: { type: string, maxLength: 100 }
+        policeUrl: { type: string, maxLength: 500, description: 空或 https:// 开头 }
+        copyright: { type: string, maxLength: 200 }
+        text: { type: string, maxLength: 1000 }
+        startedAt: { type: string, format: date-time, description: 必填，不能晚于当前时间 + 1 天；保存为 UTC }
+        showVisits: { type: boolean }
+    SiteVisitResult:
+      type: object
+      required: [visitCount]
+      properties:
+        visitCount: { type: integer, format: int64 }
+    SitePublicResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/SitePublicView' }
+    SiteAdminResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/SiteAdminView' }
+    SiteVisitResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/SiteVisitResult' }

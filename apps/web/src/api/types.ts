@@ -151,6 +151,12 @@ export type CertificateView = Schemas['CertificateView']
 export type AdminCertificateView = Schemas['AdminCertificateView']
 export type PublicCertificateView = Schemas['PublicCertificateView']
 export type CertificateReviewInput = Schemas['CertificateReviewInput']
+export type SiteLink = Schemas['SiteLink']
+export type SiteHomeContent = Schemas['SiteHomeContent']
+export type SiteFooterView = Schemas['SiteFooterView']
+export type SitePublicView = Schemas['SitePublicView']
+export type SiteAdminView = Schemas['SiteAdminView']
+export type SiteFooterInput = Schemas['SiteFooterInput']
 
 export interface Page<T> {
   total: number

@@ -6391,6 +6391,457 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/site": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 公开站点配置（游客可访问）
+         * @description 返回 Logo/favicon 地址、首页内容、页脚、运行起始日/天数与访问量；不返回存储键、编辑人等内部字段。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 公开站点配置 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SitePublicResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/site/logo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 读取站点 Logo（公开）
+         * @description 未上传时返回 404；URL 带 v 参数破坏缓存，响应可长缓存。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 原始图片，最大 2 MiB */
+                200: {
+                    headers: {
+                        /** @description public, max-age=31536000, immutable */
+                        "Cache-Control"?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "image/png": string;
+                        "image/jpeg": string;
+                        "image/webp": string;
+                        "image/gif": string;
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/site/favicon": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 读取站点 favicon（公开）
+         * @description 未上传时返回 404；URL 带 v 参数破坏缓存，响应可长缓存。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 原始图片，最大 1 MiB */
+                200: {
+                    headers: {
+                        /** @description public, max-age=31536000, immutable */
+                        "Cache-Control"?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "image/png": string;
+                        "image/jpeg": string;
+                        "image/webp": string;
+                        "image/gif": string;
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/site/visit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 记录一次站点访问（公开）
+         * @description 访问量 +1 并返回最新计数；无需登录。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 最新访问量 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SiteVisitResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/site": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 站点管理视图（site.settings.manage）
+         * @description 与公开视图结构一致，额外用于管理页读取原始页脚字段、访问量与运行天数。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 站点管理视图 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SiteAdminResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/site/home": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 更新首页内容（site.settings.manage）
+         * @description 请求体为完整的 SiteHomeContent（非 {home: ...} 包装）；返回最新管理视图。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SiteHomeContent"];
+                };
+            };
+            responses: {
+                /** @description 更新后的管理视图 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SiteAdminResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/site/footer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 更新页脚与运行起始日（site.settings.manage）
+         * @description 更新 ICP/公安备案、版权、自定义说明、运行起始日与访问量开关；返回最新管理视图。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SiteFooterInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的管理视图 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SiteAdminResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/site/logo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 上传或替换站点 Logo（site.settings.manage；multipart）
+         * @description file 字段支持 PNG、JPEG、WebP、GIF，且不超过 2 MiB；保存后返回最新管理视图。
+         *     缺少文件、格式或大小非法返回 40001。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "multipart/form-data": {
+                        /** Format: binary */
+                        file: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 上传后的管理视图 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SiteAdminResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        /**
+         * 移除站点 Logo（site.settings.manage）
+         * @description 无 Logo 时幂等成功；返回最新管理视图。
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 移除后的管理视图 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SiteAdminResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/site/favicon": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 上传或替换站点 favicon（site.settings.manage；multipart）
+         * @description file 字段支持 PNG、JPEG、WebP、GIF，且不超过 1 MiB；保存后返回最新管理视图。
+         *     缺少文件、格式或大小非法返回 40001。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "multipart/form-data": {
+                        /** Format: binary */
+                        file: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 上传后的管理视图 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SiteAdminResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        /**
+         * 移除站点 favicon（site.settings.manage）
+         * @description 无 favicon 时幂等成功；返回最新管理视图。
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 移除后的管理视图 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SiteAdminResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -8286,6 +8737,96 @@ export interface components {
         };
         PublicCertificateResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["PublicCertificateView"];
+        };
+        /** @description 首页可编辑的卡片或 CTA；icon 为 PrimeIcons 类名，to 仅允许站内绝对路径。 */
+        SiteLink: {
+            icon: string;
+            /**
+             * @description CTA 使用；普通卡片忽略
+             * @default left
+             * @enum {string}
+             */
+            iconPos: "left" | "right";
+            title: string;
+            description?: string;
+            to: string;
+        };
+        /** @description 首页结构化内容，存储在 site_settings.home_json。 */
+        SiteHomeContent: {
+            eyebrow: string;
+            title: string;
+            titleHighlight: string;
+            description: string;
+            primaryCta: components["schemas"]["SiteLink"];
+            secondaryCta: components["schemas"]["SiteLink"];
+            quickTitle: string;
+            quickLinks: components["schemas"]["SiteLink"][];
+            growthTitle: string;
+            growthLinks: components["schemas"]["SiteLink"][];
+            guestTitle: string;
+            guestDescription: string;
+        };
+        /** @description 页脚公开读取模型；不暴露存储键与编辑人。 */
+        SiteFooterView: {
+            /** @description ICP 备案号；空表示未配置 */
+            icpNumber: string;
+            /** @description 公安备案号；空表示未配置 */
+            policeNumber: string;
+            /** @description 公安备案链接；空或 https:// 开头 */
+            policeUrl: string;
+            copyright: string;
+            /** @description 自定义说明，保留换行 */
+            text: string;
+            /** @description 仅控制页脚是否显示访问量，不停止计数 */
+            showVisits: boolean;
+        };
+        /** @description 公开站点配置。 */
+        SitePublicView: {
+            /** @description 空表示未上传；非空时带 ?v=<unix> 版本参数 */
+            logoUrl: string;
+            /** @description 空表示未上传；非空时带 ?v=<unix> 版本参数 */
+            faviconUrl: string;
+            home: components["schemas"]["SiteHomeContent"];
+            footer: components["schemas"]["SiteFooterView"];
+            /**
+             * Format: date-time
+             * @description 站点运行起始日（UTC）
+             */
+            startedAt: string;
+            /** @description max(0, floor((now - startedAt)/24h)) */
+            runningDays: number;
+            /** Format: int64 */
+            visitCount: number;
+        };
+        /** @description 管理视图；与公开视图结构一致，管理页借此读取页脚原始字段、访问量与运行天数。 */
+        SiteAdminView: components["schemas"]["SitePublicView"];
+        /** @description 页脚更新请求体。 */
+        SiteFooterInput: {
+            icpNumber: string;
+            policeNumber: string;
+            /** @description 空或 https:// 开头 */
+            policeUrl: string;
+            copyright: string;
+            text: string;
+            /**
+             * Format: date-time
+             * @description 必填，不能晚于当前时间 + 1 天；保存为 UTC
+             */
+            startedAt: string;
+            showVisits: boolean;
+        };
+        SiteVisitResult: {
+            /** Format: int64 */
+            visitCount: number;
+        };
+        SitePublicResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["SitePublicView"];
+        };
+        SiteAdminResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["SiteAdminView"];
+        };
+        SiteVisitResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["SiteVisitResult"];
         };
     };
     responses: {
