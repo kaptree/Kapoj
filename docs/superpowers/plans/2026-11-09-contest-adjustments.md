@@ -1480,6 +1480,8 @@ corepack pnpm --filter web build
 
 Expected: 全部通过。
 
+在 `build` 前先修复剩余的类型 fixture：`apps/web/src/views/ContestEditView.spec.ts` 的 `ContestProblemItem` 补 `timeLimitMs`、`memoryLimitMb`、`isPublic`、`locked`、`submitCount`、`acceptCount`、`myStatus`、`myAttempts`。这是 Task 8 生成必填字段后遗留的唯一已知类型错误。
+
 - [ ] **Step 3: Real smoke with local server**
 
 1. 重建并重启本地 server（沿用现有 `kapoj-run` 目录和 env），确认 `/health` 200。
