@@ -6962,6 +6962,7 @@ export interface components {
             problemId: number;
             title: string;
             slug: string;
+            type: components["schemas"]["ProblemType"];
             displayId: string;
             sortOrder: number;
             score: number;
@@ -7304,7 +7305,7 @@ export interface components {
             data: components["schemas"]["AdminStats"];
         };
         /** @enum {string} */
-        ProblemType: "traditional" | "special" | "interactive";
+        ProblemType: "traditional" | "special" | "interactive" | "objective";
         Sample: {
             input: string;
             output: string;
@@ -7319,6 +7320,8 @@ export interface components {
             samples?: components["schemas"]["Sample"][];
             hintMd?: string;
             type?: components["schemas"]["ProblemType"];
+            /** @description 客观题的标准答案；非客观题会被清空，客观题缺少答案时报错 */
+            answers?: string[];
             tags?: string[];
             difficulty: number;
             /** @description 0 表示默认 1000 */
@@ -7340,6 +7343,8 @@ export interface components {
             samples: components["schemas"]["Sample"][];
             hintMd: string;
             type: components["schemas"]["ProblemType"];
+            /** @description 客观题的标准答案；可选以兼容旧客户端；非客观题会被清空，客观题缺少答案时报错 */
+            answers?: string[];
             tags: string[];
             difficulty: number;
             /** @description 0 表示默认 1000 */
@@ -7373,6 +7378,8 @@ export interface components {
             outputFormatMd: string;
             samples: components["schemas"]["Sample"][];
             hintMd: string;
+            /** @description 仅题目编辑者（problem.update）可见 */
+            answers?: string[];
             /**
              * Format: int64
              * @description 官方题解解锁价格（金币），0 表示所有人免费；对所有可读题目始终返回，不受题解访问状态影响
@@ -7417,7 +7424,7 @@ export interface components {
             ids: number[];
         };
         /** @enum {string} */
-        SubmissionLanguage: "c" | "cpp" | "python3" | "java" | "go";
+        SubmissionLanguage: "c" | "cpp" | "python3" | "java" | "go" | "answer";
         /** @enum {string} */
         SubmissionStatus: "pending" | "judging" | "accepted" | "wrong_answer" | "time_limit_exceeded" | "memory_limit_exceeded" | "runtime_error" | "compile_error" | "system_error";
         CreateSubmissionRequest: {
@@ -7428,9 +7435,12 @@ export interface components {
              * @description 0 表示练习提交；大于 0 时必须是已报名且进行中的比赛（拥有 contest.update 可免报名测试）
              */
             contestId?: number;
-            language: components["schemas"]["SubmissionLanguage"];
-            /** @description 按 UTF-8 字节数不超过 64 KiB */
-            code: string;
+            /** @description 代码题必填；客观题忽略 */
+            language?: components["schemas"]["SubmissionLanguage"];
+            /** @description 代码题必填，按 UTF-8 字节数不超过 64 KiB；客观题忽略 */
+            code?: string;
+            /** @description 客观题必填；代码题忽略 */
+            answer?: string;
         };
         SubmissionCreated: {
             /** Format: int64 */
@@ -7476,6 +7486,10 @@ export interface components {
             /** @description 比赛进行中对他人的提交不返回；本人、拥有 submission.view_live_contest 者或赛后恢复 */
             code?: string;
             codeHidden: boolean;
+            /** @description 客观题提交的答案，仅本人或拥有实时比赛查看权限者可见；代码题为空 */
+            answer?: string;
+            /** @description 答案是否因权限被隐藏 */
+            answerHidden: boolean;
             errorMessage?: string;
             judgeResult: components["schemas"]["SubmissionJudgeCase"][];
         };

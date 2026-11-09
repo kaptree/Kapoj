@@ -3048,11 +3048,12 @@ components:
                 registered: { type: boolean }
     ContestProblemItem:
       type: object
-      required: [problemId, title, slug, displayId, sortOrder, score, timeLimitMs, memoryLimitMb, isPublic, locked, submitCount, acceptCount, myStatus, myAttempts]
+      required: [problemId, title, slug, type, displayId, sortOrder, score, timeLimitMs, memoryLimitMb, isPublic, locked, submitCount, acceptCount, myStatus, myAttempts]
       properties:
         problemId: { type: integer, format: int64 }
         title: { type: string }
         slug: { type: string }
+        type: { $ref: '#/components/schemas/ProblemType' }
         displayId: { type: string }
         sortOrder: { type: integer }
         score: { type: integer }
@@ -3481,7 +3482,7 @@ components:
             data: { $ref: '#/components/schemas/AdminStats' }
     ProblemType:
       type: string
-      enum: [traditional, special, interactive]
+      enum: [traditional, special, interactive, objective]
     Sample:
       type: object
       required: [input, output]
@@ -3500,6 +3501,7 @@ components:
         samples: { type: array, maxItems: 10, items: { $ref: '#/components/schemas/Sample' } }
         hintMd: { type: string, maxLength: 50000 }
         type: { $ref: '#/components/schemas/ProblemType' }
+        answers: { type: array, maxItems: 20, items: { type: string, maxLength: 2000 }, description: 客观题的标准答案；非客观题会被清空，客观题缺少答案时报错 }
         tags: { type: array, maxItems: 10, items: { type: string, minLength: 1, maxLength: 20 } }
         difficulty: { type: integer, minimum: 1, maximum: 5 }
         timeLimitMs: { type: integer, minimum: 100, maximum: 10000, description: 0 表示默认 1000 }
@@ -3533,6 +3535,7 @@ components:
         samples: { type: array, maxItems: 10, items: { $ref: '#/components/schemas/Sample' } }
         hintMd: { type: string, maxLength: 50000 }
         type: { $ref: '#/components/schemas/ProblemType' }
+        answers: { type: array, maxItems: 20, items: { type: string, maxLength: 2000 }, description: 客观题的标准答案；可选以兼容旧客户端；非客观题会被清空，客观题缺少答案时报错 }
         tags: { type: array, maxItems: 10, items: { type: string, minLength: 1, maxLength: 20 } }
         difficulty: { type: integer, minimum: 1, maximum: 5 }
         timeLimitMs: { type: integer, minimum: 100, maximum: 10000, description: 0 表示默认 1000 }
@@ -3567,6 +3570,7 @@ components:
             outputFormatMd: { type: string }
             samples: { type: array, items: { $ref: '#/components/schemas/Sample' } }
             hintMd: { type: string }
+            answers: { type: array, items: { type: string }, description: 仅题目编辑者（problem.update）可见 }
             solutionPriceCoins: { type: integer, format: int64, description: 官方题解解锁价格（金币），0 表示所有人免费；对所有可读题目始终返回，不受题解访问状态影响 }
             solutionMd: { type: string, description: 拥有题目管理权限（problem.update/delete/publish/testcase.manage/checker.manage）或本人已通过该题时可见 }
             solutionCode: { type: string, description: 拥有题目管理权限或本人已通过该题时可见 }
@@ -3603,7 +3607,7 @@ components:
         ids: { type: array, items: { type: integer, format: int64 } }
     SubmissionLanguage:
       type: string
-      enum: [c, cpp, python3, java, go]
+      enum: [c, cpp, python3, java, go, answer]
     SubmissionStatus:
       type: string
       enum:
@@ -3618,12 +3622,13 @@ components:
         - system_error
     CreateSubmissionRequest:
       type: object
-      required: [problemId, language, code]
+      required: [problemId]
       properties:
         problemId: { type: integer, format: int64, minimum: 1 }
         contestId: { type: integer, format: int64, minimum: 0, description: 0 表示练习提交；大于 0 时必须是已报名且进行中的比赛（拥有 contest.update 可免报名测试） }
-        language: { $ref: '#/components/schemas/SubmissionLanguage' }
-        code: { type: string, minLength: 1, maxLength: 65536, description: 按 UTF-8 字节数不超过 64 KiB }
+        language: { $ref: '#/components/schemas/SubmissionLanguage', description: 代码题必填；客观题忽略 }
+        code: { type: string, minLength: 1, maxLength: 65536, description: 代码题必填，按 UTF-8 字节数不超过 64 KiB；客观题忽略 }
+        answer: { type: string, maxLength: 2000, description: 客观题必填；代码题忽略 }
     SubmissionCreated:
       type: object
       required: [id, status]
@@ -3687,10 +3692,12 @@ components:
       allOf:
         - $ref: '#/components/schemas/SubmissionListItem'
         - type: object
-          required: [codeHidden, judgeResult]
+          required: [codeHidden, answerHidden, judgeResult]
           properties:
             code: { type: string, description: 比赛进行中对他人的提交不返回；本人、拥有 submission.view_live_contest 者或赛后恢复 }
             codeHidden: { type: boolean }
+            answer: { type: string, description: 客观题提交的答案，仅本人或拥有实时比赛查看权限者可见；代码题为空 }
+            answerHidden: { type: boolean, description: 答案是否因权限被隐藏 }
             errorMessage: { type: string }
             judgeResult:
               type: array
