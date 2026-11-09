@@ -17,11 +17,12 @@ export const AUTH_STORAGE_KEY = 'kapoj.auth'
 interface Persisted {
   accessToken: string | null
   refreshToken: string | null
+  sessionId: string | null
   user: Me | null
 }
 
 function load(): Persisted {
-  const empty = { accessToken: null, refreshToken: null, user: null }
+  const empty = { accessToken: null, refreshToken: null, sessionId: null, user: null }
   try {
     const raw = localStorage.getItem(AUTH_STORAGE_KEY)
     return raw ? { ...empty, ...(JSON.parse(raw) as Persisted) } : empty
@@ -34,6 +35,7 @@ export const useAuthStore = defineStore('auth', () => {
   const initial = load()
   const accessToken = ref<string | null>(initial.accessToken)
   const refreshToken = ref<string | null>(initial.refreshToken)
+  const sessionId = ref<string | null>(initial.sessionId)
   const user = ref<Me | null>(initial.user)
 
   const isLoggedIn = computed(() => accessToken.value !== null)
@@ -59,6 +61,7 @@ export const useAuthStore = defineStore('auth', () => {
       const next = load()
       accessToken.value = next.accessToken
       refreshToken.value = next.refreshToken
+      sessionId.value = next.sessionId
       user.value = next.user
     })
   }
@@ -67,6 +70,7 @@ export const useAuthStore = defineStore('auth', () => {
     const data: Persisted = {
       accessToken: accessToken.value,
       refreshToken: refreshToken.value,
+      sessionId: sessionId.value,
       user: user.value,
     }
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(data))
@@ -75,6 +79,7 @@ export const useAuthStore = defineStore('auth', () => {
   function setTokens(pair: TokenPair) {
     accessToken.value = pair.accessToken
     refreshToken.value = pair.refreshToken
+    if (pair.sessionId) sessionId.value = pair.sessionId
     persist()
   }
 
@@ -107,6 +112,7 @@ export const useAuthStore = defineStore('auth', () => {
   function clear() {
     accessToken.value = null
     refreshToken.value = null
+    sessionId.value = null
     user.value = null
     localStorage.removeItem(AUTH_STORAGE_KEY)
   }
@@ -141,6 +147,7 @@ export const useAuthStore = defineStore('auth', () => {
   return {
     accessToken,
     refreshToken,
+    sessionId,
     user,
     isLoggedIn,
     isSuperAdmin,

@@ -51,33 +51,45 @@ describe('auth store', () => {
     const store = useAuthStore()
     expect(store.isLoggedIn).toBe(false)
     expect(store.user).toBeNull()
+    expect(store.sessionId).toBeNull()
   })
 
   it('persists a session and restores it in a new store', () => {
-    useAuthStore().setSession({ accessToken: 'a', refreshToken: 'r', user: me })
+    useAuthStore().setSession({ accessToken: 'a', refreshToken: 'r', sessionId: 's1', user: me })
 
     setActivePinia(createPinia())
     const restored = useAuthStore()
     expect(restored.isLoggedIn).toBe(true)
     expect(restored.accessToken).toBe('a')
     expect(restored.refreshToken).toBe('r')
+    expect(restored.sessionId).toBe('s1')
     expect(restored.user?.username).toBe('alice')
   })
 
-  it('setTokens keeps the user', () => {
+  it('setTokens keeps the user and updates the session id', () => {
     const store = useAuthStore()
-    store.setSession({ accessToken: 'a', refreshToken: 'r', user: me })
-    store.setTokens({ accessToken: 'a2', refreshToken: 'r2' })
+    store.setSession({ accessToken: 'a', refreshToken: 'r', sessionId: 's1', user: me })
+    store.setTokens({ accessToken: 'a2', refreshToken: 'r2', sessionId: 's2' })
     expect(store.accessToken).toBe('a2')
+    expect(store.sessionId).toBe('s2')
     expect(store.user?.id).toBe(1)
     expect(JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY)!).refreshToken).toBe('r2')
+    expect(JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY)!).sessionId).toBe('s2')
   })
 
-  it('clear removes everything', () => {
+  it('setTokens keeps the previous session id when the new pair has an empty one', () => {
     const store = useAuthStore()
-    store.setSession({ accessToken: 'a', refreshToken: 'r', user: me })
+    store.setSession({ accessToken: 'a', refreshToken: 'r', sessionId: 's1', user: me })
+    store.setTokens({ accessToken: 'a2', refreshToken: 'r2', sessionId: '' })
+    expect(store.sessionId).toBe('s1')
+  })
+
+  it('clear removes everything including the session id', () => {
+    const store = useAuthStore()
+    store.setSession({ accessToken: 'a', refreshToken: 'r', sessionId: 's1', user: me })
     store.clear()
     expect(store.isLoggedIn).toBe(false)
+    expect(store.sessionId).toBeNull()
     expect(localStorage.getItem(AUTH_STORAGE_KEY)).toBeNull()
   })
 
@@ -89,16 +101,23 @@ describe('auth store', () => {
 
   it('follows changes made by another tab', () => {
     const store = useAuthStore()
-    store.setSession({ accessToken: 'a', refreshToken: 'r', user: me })
+    store.setSession({ accessToken: 'a', refreshToken: 'r', sessionId: 's1', user: me })
 
-    const rotated = JSON.stringify({ accessToken: 'a2', refreshToken: 'r2', user: me })
+    const rotated = JSON.stringify({
+      accessToken: 'a2',
+      refreshToken: 'r2',
+      sessionId: 's2',
+      user: me,
+    })
     localStorage.setItem(AUTH_STORAGE_KEY, rotated)
     window.dispatchEvent(new StorageEvent('storage', { key: AUTH_STORAGE_KEY, newValue: rotated }))
     expect(store.refreshToken).toBe('r2')
+    expect(store.sessionId).toBe('s2')
 
     localStorage.removeItem(AUTH_STORAGE_KEY)
     window.dispatchEvent(new StorageEvent('storage', { key: AUTH_STORAGE_KEY, newValue: null }))
     expect(store.isLoggedIn).toBe(false)
+    expect(store.sessionId).toBeNull()
   })
 
   it('can/canAny respects permissions and super admin', () => {
@@ -106,6 +125,7 @@ describe('auth store', () => {
     store.setSession({
       accessToken: 'a',
       refreshToken: 'r',
+      sessionId: 's1',
       user: { ...me, permissions: ['problem.update', 'contest.create'] },
     })
 
@@ -124,14 +144,19 @@ describe('auth store', () => {
   it('treats a stale cache without permissions as empty', () => {
     const store = useAuthStore()
     const stale = { ...me, permissions: undefined as unknown as string[] }
-    store.setSession({ accessToken: 'a', refreshToken: 'r', user: stale })
+    store.setSession({ accessToken: 'a', refreshToken: 'r', sessionId: 's1', user: stale })
     expect(store.can('problem.update')).toBe(false)
     expect(store.canAny(['problem.update'])).toBe(false)
   })
 
-  it('login refreshes Me after establishing the session', async () => {
+  it('login persists the session id and refreshes Me after establishing the session', async () => {
     const store = useAuthStore()
-    authApi.login.mockResolvedValue({ accessToken: 'a', refreshToken: 'r', user: me })
+    authApi.login.mockResolvedValue({
+      accessToken: 'a',
+      refreshToken: 'r',
+      sessionId: 's1',
+      user: me,
+    })
     usersApi.getMe.mockResolvedValue({ ...me, permissions: ['problem.create'] })
 
     await store.login({ account: 'alice', password: 'secret' })
@@ -139,28 +164,41 @@ describe('auth store', () => {
     expect(authApi.login).toHaveBeenCalledWith({ account: 'alice', password: 'secret' })
     expect(usersApi.getMe).toHaveBeenCalledTimes(1)
     expect(store.isLoggedIn).toBe(true)
+    expect(store.sessionId).toBe('s1')
     expect(store.user?.permissions).toEqual(['problem.create'])
   })
 
   it('register refreshes Me after establishing the session', async () => {
     const store = useAuthStore()
-    authApi.register.mockResolvedValue({ accessToken: 'a', refreshToken: 'r', user: me })
+    authApi.register.mockResolvedValue({
+      accessToken: 'a',
+      refreshToken: 'r',
+      sessionId: 's1',
+      user: me,
+    })
     usersApi.getMe.mockResolvedValue({ ...me, isSuperAdmin: true })
 
     await store.register({ username: 'alice', email: 'a@b.c', password: 'secret' })
 
     expect(usersApi.getMe).toHaveBeenCalledTimes(1)
+    expect(store.sessionId).toBe('s1')
     expect(store.user?.isSuperAdmin).toBe(true)
   })
 
   it('keeps the session when the Me refresh fails', async () => {
     const store = useAuthStore()
-    authApi.login.mockResolvedValue({ accessToken: 'a', refreshToken: 'r', user: me })
+    authApi.login.mockResolvedValue({
+      accessToken: 'a',
+      refreshToken: 'r',
+      sessionId: 's1',
+      user: me,
+    })
     usersApi.getMe.mockRejectedValue(new Error('boom'))
 
     await store.login({ account: 'alice', password: 'secret' })
 
     expect(store.isLoggedIn).toBe(true)
+    expect(store.sessionId).toBe('s1')
     expect(store.user?.username).toBe('alice')
   })
 
@@ -169,6 +207,7 @@ describe('auth store', () => {
     store.setSession({
       accessToken: 'a',
       refreshToken: 'r',
+      sessionId: 's1',
       user: {
         ...me,
         roles: [{ id: 1, code: 'content_admin', name: '内容管理员' }],
@@ -193,6 +232,7 @@ describe('auth store', () => {
     store.setSession({
       accessToken: 'a',
       refreshToken: 'r',
+      sessionId: 's1',
       user: {
         ...me,
         roles: [{ id: 1, code: 'content_admin', name: '内容管理员' }],

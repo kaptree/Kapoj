@@ -133,6 +133,87 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/MeResponse' }
         '401': { $ref: '#/components/responses/Error' }
+  /users/me/password:
+    put:
+      summary: 修改当前用户密码（登录）
+      description: >-
+        校验当前密码；新密码 8–72 字节且不能与当前相同；成功后吊销全部会话并要求重新登录。
+        按用户限流 10 次/5 分钟，超限返回 42904，Redis 不可用返回 503。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangePasswordInput' }
+      responses:
+        '200':
+          description: 已修改
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /users/me/sessions:
+    get:
+      summary: 列出当前用户的活跃会话（登录）
+      description: 返回会话 ID、IP、User-Agent、创建与最近使用时间；不返回 token/hash。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 会话列表（最近使用优先）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionsResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /users/me/sessions/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    delete:
+      summary: 退出单个会话（登录）
+      description: 只能退出本人会话；退出当前会话等同退出登录；未知/他人会话返回 404。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 已退出
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /users/me/sessions/logout-others:
+    post:
+      summary: 退出其他设备（登录）；保留指定 sessionId
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LogoutOthersInput' }
+      responses:
+        '200':
+          description: 已退出其他设备
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /users/me/sessions/logout-all:
+    post:
+      summary: 退出所有设备（登录）
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 已退出所有设备
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
   /users/{id}/avatar:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
@@ -2850,10 +2931,11 @@ components:
         avatarUrl: { type: string, maxLength: 512 }
     TokenPair:
       type: object
-      required: [accessToken, refreshToken]
+      required: [accessToken, refreshToken, sessionId]
       properties:
         accessToken: { type: string }
         refreshToken: { type: string }
+        sessionId: { type: string, description: 当前会话 ID；用于标记当前设备与退出其他设备 }
     Me:
       type: object
       description: 登录/注册响应中的 user 权限字段可能为空；前端登录后应调用 GET /users/me 获取最新角色与权限。
@@ -2923,6 +3005,36 @@ components:
           required: [user]
           properties:
             user: { $ref: '#/components/schemas/Me' }
+    ChangePasswordInput:
+      type: object
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword: { type: string }
+        newPassword: { type: string, minLength: 8, maxLength: 72, description: 按字节计 }
+    LogoutOthersInput:
+      type: object
+      required: [sessionId]
+      properties:
+        sessionId: { type: string, description: 要保留的当前会话 ID }
+    SessionView:
+      type: object
+      description: 活跃会话视图；不含 token/hash/用户 ID。
+      required: [id, ip, userAgent, createdAt, lastUsedAt]
+      properties:
+        id: { type: string }
+        ip: { type: string }
+        userAgent: { type: string }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time }
+    SessionsResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items: { $ref: '#/components/schemas/SessionView' }
     Envelope:
       type: object
       required: [code, message]

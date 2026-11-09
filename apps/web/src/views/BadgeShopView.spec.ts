@@ -134,7 +134,7 @@ async function mountPage(loggedIn = true, coins = 500) {
   setActivePinia(pinia)
   const auth = useAuthStore()
   if (loggedIn) {
-    auth.setTokens({ accessToken: 'access', refreshToken: 'refresh' })
+    auth.setTokens({ accessToken: 'access', refreshToken: 'refresh', sessionId: 's1' })
     auth.setUser(me(coins))
   }
   const wrapper = mount(BadgeShopView, {

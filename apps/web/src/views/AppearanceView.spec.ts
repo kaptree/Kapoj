@@ -170,7 +170,7 @@ async function mountPage() {
   const pinia = createPinia()
   setActivePinia(pinia)
   const auth = useAuthStore()
-  auth.setTokens({ accessToken: 'access', refreshToken: 'refresh' })
+  auth.setTokens({ accessToken: 'access', refreshToken: 'refresh', sessionId: 's1' })
   auth.setUser(me())
   const fetchMe = vi.spyOn(auth, 'fetchMe').mockResolvedValue()
   const wrapper = mount(AppearanceView, {

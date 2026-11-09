@@ -65,7 +65,7 @@ async function mountPage(path = '/tasks', loggedIn = true) {
   setActivePinia(pinia)
   const auth = useAuthStore()
   if (loggedIn) {
-    auth.setTokens({ accessToken: 'access', refreshToken: 'refresh' })
+    auth.setTokens({ accessToken: 'access', refreshToken: 'refresh', sessionId: 's1' })
   }
   const wrapper = mount(TasksView, { global: { plugins: [router, PrimeVue, pinia] } })
   await flushPromises()

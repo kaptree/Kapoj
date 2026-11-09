@@ -38,7 +38,7 @@ async function mountPage(permissions: string[], isSuperAdmin = false) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const auth = useAuthStore()
-  auth.setTokens({ accessToken: 'access', refreshToken: 'refresh' })
+  auth.setTokens({ accessToken: 'access', refreshToken: 'refresh', sessionId: 's1' })
   auth.setUser(me(permissions, isSuperAdmin))
   const wrapper = mount(GamificationAdminView, {
     global: {

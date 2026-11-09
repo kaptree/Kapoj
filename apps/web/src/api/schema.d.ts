@@ -307,6 +307,221 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/me/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 修改当前用户密码（登录）
+         * @description 校验当前密码；新密码 8–72 字节且不能与当前相同；成功后吊销全部会话并要求重新登录。 按用户限流 10 次/5 分钟，超限返回 42904，Redis 不可用返回 503。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ChangePasswordInput"];
+                };
+            };
+            responses: {
+                /** @description 已修改 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                429: components["responses"]["Error"];
+                503: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/me/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 列出当前用户的活跃会话（登录）
+         * @description 返回会话 ID、IP、User-Agent、创建与最近使用时间；不返回 token/hash。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 会话列表（最近使用优先） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SessionsResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                503: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/me/sessions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * 退出单个会话（登录）
+         * @description 只能退出本人会话；退出当前会话等同退出登录；未知/他人会话返回 404。
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已退出 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+                503: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/me/sessions/logout-others": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 退出其他设备（登录）；保留指定 sessionId */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["LogoutOthersInput"];
+                };
+            };
+            responses: {
+                /** @description 已退出其他设备 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                503: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/me/sessions/logout-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 退出所有设备（登录） */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已退出所有设备 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                503: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users/{id}/avatar": {
         parameters: {
             query?: never;
@@ -6359,6 +6574,8 @@ export interface components {
         TokenPair: {
             accessToken: string;
             refreshToken: string;
+            /** @description 当前会话 ID；用于标记当前设备与退出其他设备 */
+            sessionId: string;
         };
         /** @description 登录/注册响应中的 user 权限字段可能为空；前端登录后应调用 GET /users/me 获取最新角色与权限。 */
         Me: {
@@ -6412,6 +6629,28 @@ export interface components {
         };
         Session: components["schemas"]["TokenPair"] & {
             user: components["schemas"]["Me"];
+        };
+        ChangePasswordInput: {
+            currentPassword: string;
+            /** @description 按字节计 */
+            newPassword: string;
+        };
+        LogoutOthersInput: {
+            /** @description 要保留的当前会话 ID */
+            sessionId: string;
+        };
+        /** @description 活跃会话视图；不含 token/hash/用户 ID。 */
+        SessionView: {
+            id: string;
+            ip: string;
+            userAgent: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            lastUsedAt: string;
+        };
+        SessionsResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["SessionView"][];
         };
         Envelope: {
             code: number;

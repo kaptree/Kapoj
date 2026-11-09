@@ -36,6 +36,7 @@ const routes = [
   { path: '/users/:id', name: 'user-profile', component: { template: '<div />' } },
   { path: '/appearance', name: 'appearance', component: { template: '<div />' } },
   { path: '/settings/profile', name: 'profile-edit', component: { template: '<div />' } },
+  { path: '/settings/security', name: 'security-settings', component: { template: '<div />' } },
   { path: '/settings/ai', name: 'ai-settings', component: { template: '<div />' } },
   {
     path: '/settings/certificates',
@@ -128,6 +129,30 @@ describe('UserMenu', () => {
     aiItem?.command?.({} as never)
     await flushPromises()
     expect(router.currentRoute.value.name).toBe('ai-settings')
+  })
+
+  it('shows the 账号安全 menu item for logged-in users and navigates to it', async () => {
+    auth.isLoggedIn = true
+    auth.user = loggedInUser()
+    const { wrapper, router } = await mountMenu()
+
+    const model = wrapper.findComponent(Menu).props('model') as MenuItem[]
+    const securityItem = model.find((item) => item.label === '账号安全')
+    expect(securityItem).toBeDefined()
+    expect(securityItem?.icon).toBe('pi pi-lock')
+
+    securityItem?.command?.({} as never)
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe('security-settings')
+  })
+
+  it('does not show the 账号安全 entry to guests', async () => {
+    auth.isLoggedIn = false
+    auth.user = null
+    const { wrapper } = await mountMenu()
+
+    expect(wrapper.findComponent(Menu).exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('账号安全')
   })
 
   it('does not show the AI 设置 entry to guests', async () => {

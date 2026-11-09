@@ -164,7 +164,7 @@ describe('createHttp', () => {
       adapter: (c) => {
         if (c.url === '/auth/refresh') {
           // Another tab already rotated the refresh token and stored the new pair.
-          h.setTokens({ accessToken: 'tab-access', refreshToken: 'tab-refresh' })
+          h.setTokens({ accessToken: 'tab-access', refreshToken: 'tab-refresh', sessionId: 's1' })
           return respond(c, 401, { code: 40100, message: 'reused', data: null })
         }
         if (c.headers.Authorization === 'Bearer tab-access') {

@@ -43,6 +43,12 @@ export const router = createRouter({
           meta: { requiresAuth: true, title: '编辑资料' },
         },
         {
+          path: 'settings/security',
+          name: 'security-settings',
+          component: () => import('@/views/SecuritySettingsView.vue'),
+          meta: { requiresAuth: true, title: '账号安全' },
+        },
+        {
           path: 'settings/ai',
           name: 'ai-settings',
           component: () => import('@/views/AiSettingsView.vue'),
