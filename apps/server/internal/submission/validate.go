@@ -50,7 +50,7 @@ func (in Input) ValidateForProblem(t problem.Type) (Input, error) {
 		in.Language, in.Code = LanguageAnswer, ""
 		return in, nil
 	}
-	if !in.Language.Valid() {
+	if in.Language == LanguageAnswer || !in.Language.Valid() {
 		return in, httpx.ErrValidation("语言必须是 c、cpp、python3、java 或 go")
 	}
 	if strings.TrimSpace(in.Code) == "" {

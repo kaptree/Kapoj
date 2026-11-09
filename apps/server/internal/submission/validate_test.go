@@ -65,6 +65,14 @@ func TestValidateForTraditionalRejects(t *testing.T) {
 	}
 }
 
+func TestValidateForTraditionalRejectsAnswerLanguage(t *testing.T) {
+	in := submission.Input{ProblemID: 1, Language: submission.LanguageAnswer, Code: "int main() {}"}
+	in, err := in.Normalize()
+	require.NoError(t, err)
+	_, err = in.ValidateForProblem(problem.TypeTraditional)
+	assertCode(t, err, 40001)
+}
+
 func TestValidateForTraditionalAllowsExactCodeLimit(t *testing.T) {
 	in := validInput()
 	in.Code = strings.Repeat("x", 65536)
