@@ -26,6 +26,7 @@ type Submission struct {
 	ContestID    *int64                        `gorm:"index:idx_submissions_contest_user,priority:1"`
 	Language     Language                      `gorm:"size:20;not null"`
 	Code         string                        `gorm:"type:text;not null"`
+	Answer       string                        `gorm:"type:text;not null;default:''"`
 	Status       Status                        `gorm:"size:30;not null;default:pending;index:idx_submissions_problem_status,priority:2"`
 	TimeUsedMS   int                           `gorm:"column:time_used_ms;not null;default:0"`
 	MemoryUsedKB int                           `gorm:"column:memory_used_kb;not null;default:0"`

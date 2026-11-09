@@ -48,11 +48,13 @@ const (
 	LanguagePython3 Language = "python3"
 	LanguageJava    Language = "java"
 	LanguageGo      Language = "go"
+	// LanguageAnswer marks an objective submission whose payload is Input.Answer.
+	LanguageAnswer Language = "answer"
 )
 
 func (l Language) Valid() bool {
 	switch l {
-	case LanguageC, LanguageCPP, LanguagePython3, LanguageJava, LanguageGo:
+	case LanguageC, LanguageCPP, LanguagePython3, LanguageJava, LanguageGo, LanguageAnswer:
 		return true
 	default:
 		return false

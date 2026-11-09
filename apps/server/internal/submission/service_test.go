@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
+	"github.com/kaptree/kapoj/apps/server/internal/dbtypes"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/submission"
@@ -181,6 +182,26 @@ func TestCreateIncrementsSubmitCountAndEnqueues(t *testing.T) {
 	require.NoError(t, e.db.Model(&problem.Problem{}).Where("id = ?", p.ID).
 		Select("submit_count").Scan(&count).Error)
 	assert.Equal(t, 1, count)
+}
+
+func TestCreateObjectiveSubmission(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	createUser(t, e.db, 2)
+	p := e.createProblem(t, &problem.Problem{
+		Title: "Objective", Slug: "objective", StatementMD: "s",
+		Type: problem.TypeObjective, Answers: dbtypes.List[string]{"A", "B"},
+		Difficulty: 1, TimeLimitMS: 1000, MemoryLimitMB: 256, IsPublic: true, CreatedBy: 1,
+	}, 0)
+
+	sub, err := e.svc.Create(ctx, submission.Viewer{UserID: 2}, 2, submission.Input{
+		ProblemID: p.ID, Answer: " a ",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, submission.LanguageAnswer, sub.Language)
+	assert.Equal(t, "a", sub.Answer)
+	assert.Empty(t, sub.Code)
+	assert.Contains(t, e.queue.ids, sub.ID)
 }
 
 func TestCreateIsRateLimitedBeforeInsert(t *testing.T) {

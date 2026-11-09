@@ -43,6 +43,8 @@ type Detail struct {
 	ListItem
 	Code         string            `json:"code,omitempty"`
 	CodeHidden   bool              `json:"codeHidden"`
+	Answer       string            `json:"answer,omitempty"`
+	AnswerHidden bool              `json:"answerHidden"`
 	ErrorMessage string            `json:"errorMessage,omitempty"`
 	JudgeResult  []JudgeCaseResult `json:"judgeResult"`
 }

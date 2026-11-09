@@ -117,8 +117,14 @@ func (s *Service) Detail(ctx context.Context, v Viewer, id int64) (*Detail, erro
 		return nil, httpx.ErrNotFound
 	}
 	detail := &Detail{
-		ListItem: toListItem(*row), Code: row.Code, ErrorMessage: row.ErrorMessage,
+		ListItem: toListItem(*row), Code: row.Code, Answer: row.Answer, ErrorMessage: row.ErrorMessage,
 		JudgeResult: append([]JudgeCaseResult{}, row.JudgeResult...),
+	}
+	// Answers are never public: only the owner or a live-contest viewer can read
+	// them, regardless of contest state or verdict.
+	if row.Language == LanguageAnswer && v.UserID != row.UserID && !v.CanViewLiveContest {
+		detail.Answer = ""
+		detail.AnswerHidden = true
 	}
 	if contestProtected(*row, v, time.Now()) {
 		detail.Code = ""
@@ -156,6 +162,10 @@ func (s *Service) Create(ctx context.Context, v Viewer, userID int64, in Input) 
 		if errors.Is(err, problem.ErrNotFound) {
 			return nil, httpx.ErrNotFound
 		}
+		return nil, err
+	}
+	in, err = in.ValidateForProblem(p.Type)
+	if err != nil {
 		return nil, err
 	}
 	var contestID *int64
@@ -204,18 +214,23 @@ func (s *Service) Create(ctx context.Context, v Viewer, userID int64, in Input) 
 	if !p.IsPublic && !v.CanViewHiddenProblems && contestID == nil {
 		return nil, httpx.ErrNotFound
 	}
-	if p.Type == problem.TypeInteractive {
-		return nil, httpx.ErrValidation("交互题暂不支持评测")
-	}
-	if p.Type == problem.TypeSpecial && p.CheckerPath == "" {
-		return nil, httpx.ErrValidation("题目缺少 checker，暂不能提交")
-	}
-	n, err := s.problems.CountTestcases(ctx, p.ID)
-	if err != nil {
-		return nil, err
-	}
-	if n == 0 {
-		return nil, httpx.ErrValidation("题目还没有测试点")
+	if p.Type == problem.TypeObjective {
+		// Objective submissions are graded from their answer; they need no
+		// testcases, checker or interactive runner.
+	} else {
+		if p.Type == problem.TypeInteractive {
+			return nil, httpx.ErrValidation("交互题暂不支持评测")
+		}
+		if p.Type == problem.TypeSpecial && p.CheckerPath == "" {
+			return nil, httpx.ErrValidation("题目缺少 checker，暂不能提交")
+		}
+		n, err := s.problems.CountTestcases(ctx, p.ID)
+		if err != nil {
+			return nil, err
+		}
+		if n == 0 {
+			return nil, httpx.ErrValidation("题目还没有测试点")
+		}
 	}
 	if s.limiter != nil {
 		allowed, err := s.limiter.Allow(ctx, userID)
@@ -229,7 +244,7 @@ func (s *Service) Create(ctx context.Context, v Viewer, userID int64, in Input) 
 
 	sub := &Submission{
 		UserID: userID, ProblemID: p.ID, ContestID: contestID,
-		Language: in.Language, Code: in.Code,
+		Language: in.Language, Code: in.Code, Answer: in.Answer,
 		Status: StatusPending, JudgeResult: dbtypes.List[JudgeCaseResult]{},
 	}
 	if err := s.repo.Create(ctx, sub); err != nil {

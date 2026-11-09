@@ -190,6 +190,46 @@ func TestDetailVisibility(t *testing.T) {
 	assertCode(t, err, 40400)
 }
 
+func TestSubmissionAnswerVisibility(t *testing.T) {
+	e := newRecordsEnv(t)
+	now := time.Now()
+	contest := insertContest(t, e.db, now.Add(-time.Hour), now.Add(time.Hour))
+	contestSub := insertRecord(t, e.db, e.alice, e.problem1.ID, "answer", "", "accepted", &contest, now)
+	require.NoError(t, e.db.Exec(`UPDATE submissions SET answer = 'choice-a' WHERE id = ?`, contestSub).Error)
+
+	own, err := e.svc.Detail(context.Background(), submission.Viewer{UserID: e.alice}, contestSub)
+	require.NoError(t, err)
+	assert.Equal(t, "choice-a", own.Answer)
+	assert.False(t, own.AnswerHidden)
+
+	other, err := e.svc.Detail(context.Background(), submission.Viewer{UserID: e.bob}, contestSub)
+	require.NoError(t, err)
+	assert.Empty(t, other.Answer)
+	assert.True(t, other.AnswerHidden)
+
+	admin, err := e.svc.Detail(context.Background(), submission.Viewer{UserID: e.bob, CanViewLiveContest: true}, contestSub)
+	require.NoError(t, err)
+	assert.Equal(t, "choice-a", admin.Answer)
+	assert.False(t, admin.AnswerHidden)
+
+	// 比赛结束后答案仍然只对本人和 view_live_contest 可见。
+	ended := insertContest(t, e.db, now.Add(-2*time.Hour), now.Add(-time.Hour))
+	endedSub := insertRecord(t, e.db, e.alice, e.problem1.ID, "answer", "", "accepted", &ended, now.Add(-90*time.Minute))
+	require.NoError(t, e.db.Exec(`UPDATE submissions SET answer = 'choice-b' WHERE id = ?`, endedSub).Error)
+	after, err := e.svc.Detail(context.Background(), submission.Viewer{UserID: e.bob}, endedSub)
+	require.NoError(t, err)
+	assert.Empty(t, after.Answer)
+	assert.True(t, after.AnswerHidden)
+
+	// 非比赛提交同样不公开答案。
+	practiceSub := insertRecord(t, e.db, e.alice, e.problem1.ID, "answer", "", "accepted", nil, now)
+	require.NoError(t, e.db.Exec(`UPDATE submissions SET answer = 'choice-c' WHERE id = ?`, practiceSub).Error)
+	practice, err := e.svc.Detail(context.Background(), submission.Viewer{UserID: e.bob}, practiceSub)
+	require.NoError(t, err)
+	assert.Empty(t, practice.Answer)
+	assert.True(t, practice.AnswerHidden)
+}
+
 func TestListHidesContestDetailsWhileRunning(t *testing.T) {
 	e := newRecordsEnv(t)
 	now := time.Now()
