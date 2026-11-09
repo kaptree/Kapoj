@@ -305,6 +305,38 @@ func TestContestHiddenProblemVisibleToParticipant(t *testing.T) {
 	assertCode(t, err, 40400)
 }
 
+func TestLockedProblemRequiresContestSubmission(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	createUser(t, e.db, 2)
+	p := e.createProblem(t, publicProblem("locked-submit"), 1)
+
+	now := time.Now()
+	c := &contest.Contest{
+		Title: "Locked submit", StartTime: now.Add(-time.Hour), EndTime: now.Add(time.Hour),
+		Mode: contest.ModeICPC, IsPublic: true, RegisterType: contest.RegisterOpen, CreatedBy: 1,
+	}
+	require.NoError(t, e.contests.Create(ctx, c, []contest.ContestProblem{
+		{ProblemID: p.ID, DisplayID: "A", Score: 100},
+	}))
+	require.NoError(t, e.contests.AddParticipant(ctx, c.ID, 2))
+
+	_, err := e.svc.Create(ctx, submission.Viewer{UserID: 2}, 2, codeInput(p.ID, "int main(){}"))
+	assertCode(t, err, 40400)
+
+	in := codeInput(p.ID, "int main(){}")
+	in.ContestID = c.ID
+	_, err = e.svc.Create(ctx, submission.Viewer{UserID: 2}, 2, in)
+	require.NoError(t, err)
+
+	require.NoError(t, e.db.Exec(
+		`UPDATE contests SET start_time = ?, end_time = ? WHERE id = ?`,
+		now.Add(-2*time.Hour), now.Add(-time.Hour), c.ID,
+	).Error)
+	_, err = e.svc.Create(ctx, submission.Viewer{UserID: 2}, 2, codeInput(p.ID, "int main(){}"))
+	require.NoError(t, err, "ended contest unlocks ordinary submission")
+}
+
 func TestCreateEnqueueFailureMarksSystemError(t *testing.T) {
 	e := newEnv(t)
 	p := e.createProblem(t, publicProblem("queue"), 1)

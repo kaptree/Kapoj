@@ -39,6 +39,7 @@ type ContestLookup interface {
 	FindByID(ctx context.Context, id int64) (*contest.Contest, error)
 	IsParticipant(ctx context.Context, contestID, userID int64) (bool, error)
 	FindProblem(ctx context.Context, contestID, problemID int64) (*contest.ContestProblem, error)
+	IsProblemLocked(ctx context.Context, problemID int64, now time.Time) (bool, error)
 }
 
 type Enqueuer interface {
@@ -190,6 +191,15 @@ func (s *Service) Create(ctx context.Context, v Viewer, userID int64, in Input) 
 		}
 		id := c.ID
 		contestID = &id
+	}
+	if contestID == nil && !v.CanViewHiddenProblems && !v.CanManageContest {
+		locked, err := s.contests.IsProblemLocked(ctx, p.ID, time.Now())
+		if err != nil {
+			return nil, err
+		}
+		if locked {
+			return nil, httpx.ErrNotFound
+		}
 	}
 	if !p.IsPublic && !v.CanViewHiddenProblems && contestID == nil {
 		return nil, httpx.ErrNotFound
