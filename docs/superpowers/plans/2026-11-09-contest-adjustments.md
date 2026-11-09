@@ -666,7 +666,7 @@ func TestContestDetailPostContestStats(t *testing.T) {
 	detail, err := e.svc.Detail(ctx, user(), c.ID)
 	require.NoError(t, err)
 	require.Len(t, detail.Problems, 2)
-	assert.EqualValues(t, 2, detail.Problems[0].SubmitCount)
+	assert.EqualValues(t, 3, detail.Problems[0].SubmitCount)
 	assert.EqualValues(t, 1, detail.Problems[0].AcceptCount)
 	assert.Equal(t, "accepted", detail.Problems[0].MyStatus)
 	assert.Equal(t, 2, detail.Problems[0].MyAttempts)
