@@ -440,4 +440,30 @@ describe('AdminAiView', () => {
     )
     wrapper.unmount()
   })
+
+  it('clears a stale one-time key when reset fails', async () => {
+    auth.can.mockImplementation((code) => code === PERM.ai.settings.manage)
+    vi.mocked(getAdminAIKey).mockResolvedValue(
+      keyView({ configured: false, source: 'none', masked: '', fingerprint: '' }),
+    )
+    vi.mocked(generateAdminAIKey).mockResolvedValue(generateResult({ key: 'OLDSECRET' }))
+    vi.mocked(resetAdminAIKey).mockRejectedValue(new ApiError(500, 50000, '重置失败'))
+
+    const wrapper = await mountPage()
+    await buttons(wrapper, '自动生成密钥')[0]!.trigger('click')
+    await flushPromises()
+    expect((wrapper.find('input[readonly]').element as HTMLInputElement).value).toBe('OLDSECRET')
+
+    await wrapper.find('[data-test="reset-ai-key"]').trigger('click')
+    await flushPromises()
+    const options = confirm.require.mock.calls[0]![0] as { accept?: () => void }
+    options.accept?.()
+    await flushPromises()
+
+    expect(wrapper.find('input[readonly]').exists()).toBe(false)
+    expect(toast.add).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'error', summary: '重置失败' }),
+    )
+    wrapper.unmount()
+  })
 })

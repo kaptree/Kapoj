@@ -188,6 +188,7 @@ function confirmResetKey() {
 
 async function doResetKey() {
   keySaving.value = true
+  generatedKey.value = ''
   try {
     const result = await resetAdminAIKey()
     key.value = result

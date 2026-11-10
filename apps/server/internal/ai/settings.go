@@ -38,7 +38,7 @@ type SettingsService struct {
 	keys    *KeyManager
 	keyFile string
 
-	// keyMu 串行化密钥轮换（GenerateKey/SetKey），避免并发轮换交错导致
+	// keyMu 串行化密钥轮换（GenerateKey/SetKey/ResetKey），避免并发轮换交错导致
 	// 文件/内存密钥/数据库指纹三者不一致。
 	keyMu sync.Mutex
 }
