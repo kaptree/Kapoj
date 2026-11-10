@@ -62,10 +62,12 @@ describe('CodeEditor', () => {
       destroy: vi.fn(),
     }
     editor.createCodeEditor.mockReturnValue(handle)
-    const wrapper = mount(CodeEditor, { props: { modelValue: 'same' } })
+    const wrapper = mount(CodeEditor, { props: { modelValue: 'initial' } })
 
     await wrapper.setProps({ modelValue: 'same' })
 
+    // The watcher must have run, but the handle already holds the same text.
+    expect(handle.getValue).toHaveBeenCalled()
     expect(handle.setValue).not.toHaveBeenCalled()
   })
 
