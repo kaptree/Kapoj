@@ -2,7 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
 import Select from 'primevue/select'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
 import { completeCode, formatCode, getAIConfig, optimizeCode } from '@/api/ai'
@@ -19,6 +19,23 @@ const editorMock = vi.hoisted(() => ({
   getCursorByteOffset: vi.fn(),
   insertAtCursor: vi.fn(),
 }))
+// The editor is dynamically imported by the view. Holding the module factory
+// keeps that chunk pending so a test can observe the loading skeleton.
+const editorLoad = vi.hoisted(() => {
+  const state = {
+    gate: null as Promise<void> | null,
+    release: () => {},
+    hold() {
+      let resolve!: () => void
+      state.gate = new Promise<void>((r) => (resolve = r))
+      state.release = () => {
+        state.gate = null
+        resolve()
+      }
+    },
+  }
+  return state
+})
 
 vi.mock('primevue/usetoast', () => ({
   useToast: () => toast,
@@ -48,37 +65,41 @@ vi.mock('@/components/MarkdownView.vue', () => ({
     template: '<div class="md-stub">{{ source }}</div>',
   },
 }))
-vi.mock('@/components/CodeEditor.vue', () => ({
-  default: {
-    name: 'CodeEditor',
-    props: {
-      modelValue: { type: String, default: '' },
-      language: { type: String },
-      height: { type: String },
-      readonly: { type: Boolean },
-    },
-    emits: ['update:modelValue'],
-    setup(
-      props: { modelValue: string },
-      {
-        emit,
-        expose,
-      }: {
-        emit: (event: 'update:modelValue', value: string) => void
-        expose: (exposed: Record<string, unknown>) => void
+vi.mock('@/components/CodeEditor.vue', async () => {
+  if (editorLoad.gate) await editorLoad.gate
+  return {
+    __esModule: true,
+    default: {
+      name: 'CodeEditor',
+      props: {
+        modelValue: { type: String, default: '' },
+        language: { type: String },
+        height: { type: String },
+        readonly: { type: Boolean },
       },
-    ) {
-      expose({
-        getCursorByteOffset: () => editorMock.getCursorByteOffset(),
-        insertAtCursor: (text: string) => {
-          editorMock.insertAtCursor(text)
-          emit('update:modelValue', props.modelValue + text)
+      emits: ['update:modelValue'],
+      setup(
+        props: { modelValue: string },
+        {
+          emit,
+          expose,
+        }: {
+          emit: (event: 'update:modelValue', value: string) => void
+          expose: (exposed: Record<string, unknown>) => void
         },
-      })
+      ) {
+        expose({
+          getCursorByteOffset: () => editorMock.getCursorByteOffset(),
+          insertAtCursor: (text: string) => {
+            editorMock.insertAtCursor(text)
+            emit('update:modelValue', props.modelValue + text)
+          },
+        })
+      },
+      template: '<div class="code-editor-stub">{{ modelValue }}</div>',
     },
-    template: '<div class="code-editor-stub">{{ modelValue }}</div>',
-  },
-}))
+  }
+})
 
 function detail(id: number, overrides: Partial<ProblemDetail> = {}): ProblemDetail {
   return {
@@ -199,7 +220,39 @@ beforeEach(() => {
   vi.mocked(getAIConfig).mockResolvedValue(aiConfig())
 })
 
+afterEach(() => {
+  // A failed assertion must not leave the dynamic import blocked for the rest
+  // of the file.
+  editorLoad.release()
+})
+
 describe('SubmitView', () => {
+  it('renders the page form and skeleton before the editor chunk resolves', async () => {
+    editorLoad.hold()
+    const { wrapper } = await mountPage()
+
+    expect(editor(wrapper).exists()).toBe(false)
+    const skeleton = wrapper.find('[data-test="code-editor-skeleton"]')
+    expect(skeleton.exists()).toBe(true)
+    expect(skeleton.attributes('aria-busy')).toBe('true')
+    expect(skeleton.attributes('style')).toContain('height: 520px')
+    // Editor props must not leak onto the placeholder DOM.
+    expect(skeleton.attributes()).not.toHaveProperty('language')
+    expect(skeleton.attributes()).not.toHaveProperty('modelvalue')
+    expect(wrapper.text()).toContain('Problem 1')
+    expect(wrapper.findComponent(Select).exists()).toBe(true)
+    const submit = submitButton(wrapper)
+    expect(submit).toBeTruthy()
+    expect((submit!.element as HTMLButtonElement).disabled).toBe(false)
+
+    editorLoad.release()
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="code-editor-skeleton"]').exists()).toBe(false)
+    expect(editor(wrapper).exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('loads language drafts and switches the editor language', async () => {
     localStorage.setItem('kapoj:code:practice:1:cpp', 'int main() {}')
     localStorage.setItem('kapoj:code:practice:1:python3', 'print(1)')

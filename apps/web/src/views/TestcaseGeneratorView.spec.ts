@@ -19,6 +19,23 @@ import TestcaseGeneratorView from './TestcaseGeneratorView.vue'
 
 const toast = vi.hoisted(() => ({ add: vi.fn() }))
 const confirm = vi.hoisted(() => ({ require: vi.fn() }))
+// The editor is dynamically imported by the view. Holding the module factory
+// keeps that chunk pending so a test can observe the loading skeleton.
+const editorLoad = vi.hoisted(() => {
+  const state = {
+    gate: null as Promise<void> | null,
+    release: () => {},
+    hold() {
+      let resolve!: () => void
+      state.gate = new Promise<void>((r) => (resolve = r))
+      state.release = () => {
+        state.gate = null
+        resolve()
+      }
+    },
+  }
+  return state
+})
 
 vi.mock('primevue/usetoast', () => ({ useToast: () => toast }))
 vi.mock('primevue/useconfirm', () => ({ useConfirm: () => confirm }))
@@ -29,19 +46,23 @@ vi.mock('@/api/problems', () => ({
   confirmTestcaseGeneration: vi.fn(),
   discardTestcaseGeneration: vi.fn(),
 }))
-vi.mock('@/components/CodeEditor.vue', () => ({
-  default: {
-    name: 'CodeEditor',
-    props: {
-      modelValue: { type: String, default: '' },
-      language: { type: String },
-      height: { type: String },
-      readonly: { type: Boolean },
+vi.mock('@/components/CodeEditor.vue', async () => {
+  if (editorLoad.gate) await editorLoad.gate
+  return {
+    __esModule: true,
+    default: {
+      name: 'CodeEditor',
+      props: {
+        modelValue: { type: String, default: '' },
+        language: { type: String },
+        height: { type: String },
+        readonly: { type: Boolean },
+      },
+      emits: ['update:modelValue'],
+      template: '<div class="code-editor-stub">{{ modelValue }}</div>',
     },
-    emits: ['update:modelValue'],
-    template: '<div class="code-editor-stub">{{ modelValue }}</div>',
-  },
-}))
+  }
+})
 
 function genView(overrides: Partial<TestcaseGenerationView> = {}): TestcaseGenerationView {
   return {
@@ -108,9 +129,32 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers()
+  // A failed assertion must not leave the dynamic import blocked for the rest
+  // of the file.
+  editorLoad.release()
 })
 
 describe('TestcaseGeneratorView', () => {
+  it('renders the form and skeleton before the editor chunk resolves', async () => {
+    editorLoad.hold()
+    const { wrapper } = await mountPage()
+
+    expect(editor(wrapper).exists()).toBe(false)
+    const skeleton = wrapper.find('[data-test="code-editor-skeleton"]')
+    expect(skeleton.exists()).toBe(true)
+    expect(skeleton.attributes('aria-busy')).toBe('true')
+    expect(skeleton.attributes('style')).toContain('height: 320px')
+    expect(wrapper.findComponent(Select).exists()).toBe(true)
+    expect(buttonByLabel(wrapper, '生成数据')).toBeTruthy()
+
+    editorLoad.release()
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="code-editor-skeleton"]').exists()).toBe(false)
+    expect(editor(wrapper).exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('defaults to cpp language and count 5', async () => {
     const { wrapper } = await mountPage()
 

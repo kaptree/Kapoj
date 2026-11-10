@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Button from 'primevue/button'
 import Column from 'primevue/column'
@@ -26,12 +26,19 @@ import type {
   TestcaseGenerationStatus,
   TestcaseGenerationView,
 } from '@/api/types'
-import CodeEditor from '@/components/CodeEditor.vue'
+import CodeEditorSkeleton from '@/components/CodeEditorSkeleton.vue'
 import AppFormField from '@/components/ui/AppFormField.vue'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
 import { formatBytes } from '@/utils/format'
 import { editorLanguage, SUBMISSION_LANGUAGES } from '@/utils/submission'
+
+// Load the CodeMirror bundle only when this page renders, after the form.
+const CodeEditor = defineAsyncComponent({
+  loader: () => import('@/components/CodeEditor.vue'),
+  loadingComponent: CodeEditorSkeleton,
+  delay: 0,
+})
 
 const route = useRoute()
 const router = useRouter()
@@ -491,6 +498,7 @@ const previewTitle = computed(() => (previewKind.value === 'input' ? '输入预�
 }
 
 .testgen-editor {
+  min-height: 320px;
   overflow: hidden;
   border: 1px solid var(--kapoj-border);
   border-radius: var(--kapoj-radius-sm);

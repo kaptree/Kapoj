@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import {
+  computed,
+  defineAsyncComponent,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+  watch,
+} from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
@@ -14,7 +22,7 @@ import { ApiError } from '@/api/http'
 import { getProblem } from '@/api/problems'
 import { createSubmission } from '@/api/submissions'
 import type { AIConfigView, ContestDetail, ProblemDetail } from '@/api/types'
-import CodeEditor from '@/components/CodeEditor.vue'
+import CodeEditorSkeleton from '@/components/CodeEditorSkeleton.vue'
 import MarkdownView from '@/components/MarkdownView.vue'
 import AppDifficultyTag from '@/components/ui/AppDifficultyTag.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
@@ -30,6 +38,14 @@ import {
   SUBMISSION_LANGUAGES,
   type CodeSubmissionLanguage,
 } from '@/utils/submission'
+
+// Load the CodeMirror bundle only when the submit page renders, after the
+// problem header and form. The skeleton keeps the editor slot at a fixed size.
+const CodeEditor = defineAsyncComponent({
+  loader: () => import('@/components/CodeEditor.vue'),
+  loadingComponent: CodeEditorSkeleton,
+  delay: 0,
+})
 
 const route = useRoute()
 const router = useRouter()
@@ -92,7 +108,12 @@ const code = computed({
 
 const MAX_CODE_BYTES = 65536
 
-const editorRef = ref<InstanceType<typeof CodeEditor>>()
+interface CodeEditorInstance {
+  getCursorByteOffset(): number
+  insertAtCursor(text: string): void
+}
+
+const editorRef = ref<CodeEditorInstance | null>(null)
 
 const aiConfig = ref<AIConfigView | null>(null)
 const aiAvailable = ref(true)
@@ -824,6 +845,7 @@ async function submit() {
 }
 
 .editor-wrap {
+  min-height: 520px;
   overflow: hidden;
   border: 1px solid var(--kapoj-border);
   border-radius: var(--kapoj-radius-sm);
