@@ -13,6 +13,7 @@ import {
   generateAdminAIKey,
   getAdminAIKey,
   getAdminAISettings,
+  resetAdminAIKey,
   setAdminAIKey,
   updateAdminAISettings,
 } from '@/api/admin'
@@ -173,6 +174,44 @@ async function doGenerate() {
   }
 }
 
+function confirmResetKey() {
+  confirm.require({
+    header: '清除旧密钥并生成新密钥',
+    message:
+      '将删除所有用户已保存的 AI API Key，并生成新的平台加密密钥。此操作不可撤销，用户需要重新填写自己的 API Key。',
+    icon: 'pi pi-exclamation-triangle',
+    acceptLabel: '清除并生成',
+    rejectLabel: '取消',
+    accept: () => void doResetKey(),
+  })
+}
+
+async function doResetKey() {
+  keySaving.value = true
+  try {
+    const result = await resetAdminAIKey()
+    key.value = result
+    generatedKey.value = result.key
+    manualKey.value = ''
+    await refreshSettings()
+    toast.add({
+      severity: 'success',
+      summary: '旧密钥已清除',
+      detail: '新密钥已生成；请立即备份，用户需重新填写 AI API Key',
+      life: 4000,
+    })
+  } catch (e) {
+    toast.add({
+      severity: 'error',
+      summary: '重置失败',
+      detail: e instanceof ApiError ? e.message : '重置密钥失败，请稍后再试',
+      life: 4000,
+    })
+  } finally {
+    keySaving.value = false
+  }
+}
+
 function confirmSaveManual() {
   const value = manualKey.value.trim()
   if (value === '') {
@@ -316,7 +355,18 @@ onMounted(() => {
                 :loading="keySaving"
                 @click="confirmGenerate"
               />
+              <Button
+                type="button"
+                label="清除旧密钥并生成新密钥"
+                icon="pi pi-trash"
+                severity="danger"
+                outlined
+                :loading="keySaving"
+                data-test="reset-ai-key"
+                @click="confirmResetKey"
+              />
             </div>
+            <p class="key-actions__hint">旧密钥丢失时使用此操作；会删除所有用户已保存的 AI Key。</p>
 
             <form class="admin-ai__form" @submit.prevent="confirmSaveManual">
               <AppFormField
@@ -462,6 +512,13 @@ onMounted(() => {
 .key-actions {
   display: flex;
   gap: var(--kapoj-space-2);
+  flex-wrap: wrap;
+}
+
+.key-actions__hint {
+  margin: 0;
+  color: var(--kapoj-text-muted);
+  font-size: 11px;
 }
 
 .generated-key {
@@ -482,6 +539,10 @@ onMounted(() => {
 
 @media (max-width: 640px) {
   .admin-ai__actions :deep(.p-button) {
+    width: 100%;
+  }
+
+  .key-actions :deep(.p-button) {
     width: 100%;
   }
 

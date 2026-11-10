@@ -9,6 +9,7 @@ import {
   generateAdminAIKey,
   getAdminAIKey,
   getAdminAISettings,
+  resetAdminAIKey,
   setAdminAIKey,
   updateAdminAISettings,
 } from '@/api/admin'
@@ -33,6 +34,7 @@ vi.mock('@/api/admin', () => ({
   getAdminAIKey: vi.fn(),
   generateAdminAIKey: vi.fn(),
   setAdminAIKey: vi.fn(),
+  resetAdminAIKey: vi.fn(),
 }))
 
 function settingsView(overrides: Partial<AdminAISettingsView> = {}): AdminAISettingsView {
@@ -84,6 +86,7 @@ beforeEach(() => {
   vi.mocked(getAdminAIKey).mockReset()
   vi.mocked(generateAdminAIKey).mockReset()
   vi.mocked(setAdminAIKey).mockReset()
+  vi.mocked(resetAdminAIKey).mockReset()
   vi.mocked(getAdminAISettings).mockResolvedValue(settingsView())
   vi.mocked(getAdminAIKey).mockResolvedValue(keyView())
 })
@@ -346,6 +349,95 @@ describe('AdminAiView', () => {
     await flushPromises()
     expect(getAdminAIKey).toHaveBeenCalledTimes(2)
     expect(wrapper.text()).toContain('已配置（文件）')
+    wrapper.unmount()
+  })
+
+  it('shows the destructive reset action for file/none sources', async () => {
+    auth.can.mockImplementation((code) => code === PERM.ai.settings.manage)
+
+    const fileWrapper = await mountPage()
+    expect(fileWrapper.find('[data-test="reset-ai-key"]').exists()).toBe(true)
+    fileWrapper.unmount()
+
+    vi.mocked(getAdminAIKey).mockResolvedValue(
+      keyView({ configured: false, source: 'none', masked: '', fingerprint: '' }),
+    )
+    const noneWrapper = await mountPage()
+    expect(noneWrapper.find('[data-test="reset-ai-key"]').exists()).toBe(true)
+    noneWrapper.unmount()
+  })
+
+  it('hides the reset action for env source', async () => {
+    auth.can.mockImplementation((code) => code === PERM.ai.settings.manage)
+    vi.mocked(getAdminAIKey).mockResolvedValue(
+      keyView({ configured: true, source: 'env', masked: 'env…1234', fingerprint: 'fp' }),
+    )
+    const wrapper = await mountPage()
+
+    expect(wrapper.find('[data-test="reset-ai-key"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('confirms before resetting and shows the one-time key', async () => {
+    auth.can.mockImplementation((code) => code === PERM.ai.settings.manage)
+    vi.mocked(getAdminAIKey).mockResolvedValue(keyView({ configured: true, source: 'file' }))
+    vi.mocked(resetAdminAIKey).mockResolvedValue(generateResult({ key: 'NEWSECRET' }))
+
+    const wrapper = await mountPage()
+    await wrapper.find('[data-test="reset-ai-key"]').trigger('click')
+    await flushPromises()
+
+    expect(confirm.require).toHaveBeenCalledTimes(1)
+    expect(resetAdminAIKey).not.toHaveBeenCalled()
+
+    const options = confirm.require.mock.calls[0]![0] as { accept?: () => void }
+    options.accept?.()
+    await flushPromises()
+
+    expect(resetAdminAIKey).toHaveBeenCalledTimes(1)
+    const input = wrapper.find('input[readonly]')
+    expect(input.exists()).toBe(true)
+    expect((input.element as HTMLInputElement).value).toBe('NEWSECRET')
+    expect(toast.add).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'success', summary: '旧密钥已清除' }),
+    )
+    expect(getAdminAISettings).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
+  it('cancels reset without calling the API', async () => {
+    auth.can.mockImplementation((code) => code === PERM.ai.settings.manage)
+    vi.mocked(getAdminAIKey).mockResolvedValue(keyView({ configured: true, source: 'file' }))
+
+    const wrapper = await mountPage()
+    await wrapper.find('[data-test="reset-ai-key"]').trigger('click')
+    await flushPromises()
+
+    expect(confirm.require).toHaveBeenCalledTimes(1)
+    expect(resetAdminAIKey).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('shows an error toast when reset fails', async () => {
+    auth.can.mockImplementation((code) => code === PERM.ai.settings.manage)
+    vi.mocked(getAdminAIKey).mockResolvedValue(keyView({ configured: true, source: 'file' }))
+    vi.mocked(resetAdminAIKey).mockRejectedValue(new ApiError(500, 50000, '重置失败'))
+
+    const wrapper = await mountPage()
+    await wrapper.find('[data-test="reset-ai-key"]').trigger('click')
+    await flushPromises()
+
+    const options = confirm.require.mock.calls[0]![0] as { accept?: () => void }
+    options.accept?.()
+    await flushPromises()
+
+    expect(toast.add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'error',
+        summary: '重置失败',
+        detail: expect.stringContaining('重置失败'),
+      }),
+    )
     wrapper.unmount()
   })
 })
