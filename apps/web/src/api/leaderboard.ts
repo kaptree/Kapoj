@@ -8,6 +8,7 @@ import type {
   RatingLeaderboardPage,
   RatingSeasonView,
   SharingLeaderboardRow,
+  WealthLeaderboardRow,
 } from './types'
 
 interface PageQuery {
@@ -25,6 +26,9 @@ export const listActivityLeaderboard = (q: PageQuery) =>
 
 export const listSharingLeaderboard = (q: PageQuery) =>
   http.get<Page<SharingLeaderboardRow>>('/leaderboard/sharing', { params: pageParams(q) })
+
+export const listWealthLeaderboard = (q: PageQuery) =>
+  http.get<Page<WealthLeaderboardRow>>('/leaderboard/wealth', { params: pageParams(q) })
 
 export const getRatingHistory = (userId: number, q: PageQuery) =>
   http.get<RatingHistoryPage>(`/users/${userId}/rating-history`, { params: pageParams(q) })

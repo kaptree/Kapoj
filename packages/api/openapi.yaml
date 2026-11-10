@@ -400,6 +400,20 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SharingLeaderboardPageResponse' }
+  /leaderboard/wealth:
+    get:
+      summary: 富豪排行榜（公开）
+      description: 只包含状态为 active 且金币余额 > 0 的用户，按当前金币余额倒序、用户 ID 升序；榜单行附带已装备徽章/称号。游客可访问。
+      security: [{}, { bearer: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: 富豪排行榜分页
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WealthLeaderboardPageResponse' }
   /activity/summary:
     get:
       summary: 我的活跃度摘要（登录）
@@ -4515,6 +4529,25 @@ components:
           allOf:
             - $ref: '#/components/schemas/EquippedTitle'
           description: 已装备称号；无装备时为 null
+    WealthLeaderboardRow:
+      type: object
+      required: [rank, userId, username, nickname, score, equippedBadges, equippedTitle]
+      properties:
+        rank: { type: integer, minimum: 1 }
+        userId: { type: integer, format: int64 }
+        username: { type: string }
+        nickname: { type: string }
+        score: { type: integer, format: int64, description: 当前金币余额 }
+        equippedBadges:
+          type: array
+          description: 已装备徽章；无装备时为空数组
+          items: { $ref: '#/components/schemas/EquippedBadge' }
+        equippedTitle:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/EquippedTitle'
+          description: 已装备称号；无装备时为 null
     ActivityLeaderboardPage:
       type: object
       required: [total, items]
@@ -4527,6 +4560,12 @@ components:
       properties:
         total: { type: integer, format: int64 }
         items: { type: array, items: { $ref: '#/components/schemas/SharingLeaderboardRow' } }
+    WealthLeaderboardPage:
+      type: object
+      required: [total, items]
+      properties:
+        total: { type: integer, format: int64 }
+        items: { type: array, items: { $ref: '#/components/schemas/WealthLeaderboardRow' } }
     ActivitySignInResult:
       type: object
       required: [awarded, activityPoints, coins, date]
@@ -4556,6 +4595,13 @@ components:
           required: [data]
           properties:
             data: { $ref: '#/components/schemas/SharingLeaderboardPage' }
+    WealthLeaderboardPageResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/WealthLeaderboardPage' }
     ActivitySignInResponse:
       allOf:
         - $ref: '#/components/schemas/Envelope'

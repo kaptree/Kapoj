@@ -1034,6 +1034,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/leaderboard/wealth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 富豪排行榜（公开）
+         * @description 只包含状态为 active 且金币余额 > 0 的用户，按当前金币余额倒序、用户 ID 升序；榜单行附带已装备徽章/称号。游客可访问。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    page_size?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 富豪排行榜分页 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WealthLeaderboardPageResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/activity/summary": {
         parameters: {
             query?: never;
@@ -8126,6 +8168,22 @@ export interface components {
             /** @description 已装备称号；无装备时为 null */
             equippedTitle: components["schemas"]["EquippedTitle"] | null;
         };
+        WealthLeaderboardRow: {
+            rank: number;
+            /** Format: int64 */
+            userId: number;
+            username: string;
+            nickname: string;
+            /**
+             * Format: int64
+             * @description 当前金币余额
+             */
+            score: number;
+            /** @description 已装备徽章；无装备时为空数组 */
+            equippedBadges: components["schemas"]["EquippedBadge"][];
+            /** @description 已装备称号；无装备时为 null */
+            equippedTitle: components["schemas"]["EquippedTitle"] | null;
+        };
         ActivityLeaderboardPage: {
             /** Format: int64 */
             total: number;
@@ -8135,6 +8193,11 @@ export interface components {
             /** Format: int64 */
             total: number;
             items: components["schemas"]["SharingLeaderboardRow"][];
+        };
+        WealthLeaderboardPage: {
+            /** Format: int64 */
+            total: number;
+            items: components["schemas"]["WealthLeaderboardRow"][];
         };
         ActivitySignInResult: {
             /** @description 本次是否为当日首次签到 */
@@ -8167,6 +8230,9 @@ export interface components {
         };
         SharingLeaderboardPageResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["SharingLeaderboardPage"];
+        };
+        WealthLeaderboardPageResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["WealthLeaderboardPage"];
         };
         ActivitySignInResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["ActivitySignInResult"];
