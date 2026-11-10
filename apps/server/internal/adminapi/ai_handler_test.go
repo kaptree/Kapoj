@@ -277,3 +277,97 @@ func TestAdminAIKeyManualAndEnvReadonly(t *testing.T) {
 		assert.EqualValues(t, 40001, resp["code"])
 	})
 }
+
+func TestAdminAIKeyResetAndAudit(t *testing.T) {
+	f, keyFile := newAIKeyFixture(t, "")
+	_, tok := f.user(t, "ai_key_reset_super", rbac.RoleCodeSuperAdmin)
+
+	// 先生成旧密钥，再用它写入一条用户配置。
+	w, resp := f.do(http.MethodPost, "/api/admin/ai/key/generate", tok, "")
+	requireStatus(t, w, resp, http.StatusOK)
+	oldKey, ok := dataMap(t, resp)["key"].(string)
+	require.True(t, ok)
+
+	oldEnc, err := ai.NewEncryptor(oldKey)
+	require.NoError(t, err)
+	ct, err := oldEnc.Encrypt("sk-user-secret")
+	require.NoError(t, err)
+	require.NoError(t, f.db.Create(&ai.UserConfig{
+		UserID: 1, Provider: "deepseek", ModelName: "m",
+		APIKeyEncrypted: ct, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}).Error)
+
+	// 重置：200，返回一次性 32 字节新密钥。
+	w, resp = f.do(http.MethodPost, "/api/admin/ai/key/reset", tok, "")
+	requireStatus(t, w, resp, http.StatusOK)
+	data := dataMap(t, resp)
+	assert.Equal(t, true, data["configured"])
+	assert.Equal(t, "file", data["source"])
+	newKey, ok := data["key"].(string)
+	require.True(t, ok, "重置接口应一次性返回 key")
+	raw, err := base64.StdEncoding.DecodeString(newKey)
+	require.NoError(t, err)
+	assert.Len(t, raw, 32)
+
+	// 用户配置全部清除。
+	var count int64
+	require.NoError(t, f.db.Model(&ai.UserConfig{}).Count(&count).Error)
+	assert.Zero(t, count)
+
+	// 文件内容为新密钥。
+	fileData, err := os.ReadFile(keyFile)
+	require.NoError(t, err)
+	assert.Equal(t, newKey, strings.TrimSpace(string(fileData)))
+	assert.NoFileExists(t, keyFile+".bak")
+
+	// 审计 action/target/summary（不含密钥）。
+	var logs []rbac.AdminAuditLog
+	require.NoError(t, f.db.Where("action = ?", rbac.AuditActionAISettingsManage).
+		Order("id").Find(&logs).Error)
+	require.Len(t, logs, 2, "生成与重置各一条审计")
+	resetLog := logs[1]
+	assert.Equal(t, rbac.AuditTargetAIKey, resetLog.TargetType)
+	assert.Nil(t, resetLog.TargetID, "targetID 应为 0（无具体记录）")
+	assert.Contains(t, resetLog.Summary, "清除旧密钥并生成新密钥")
+	assert.NotContains(t, resetLog.Summary, newKey)
+}
+
+func TestAdminAIKeyResetEnvReadonly(t *testing.T) {
+	envKey := base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))
+	f, _ := newAIKeyFixture(t, envKey)
+	_, tok := f.user(t, "ai_key_reset_env_super", rbac.RoleCodeSuperAdmin)
+
+	require.NoError(t, f.db.Create(&ai.UserConfig{
+		UserID: 1, Provider: "p", ModelName: "m",
+		APIKeyEncrypted: "v1:AAAA", CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}).Error)
+
+	// env 来源只读 -> 40001，用户配置保留。
+	w, resp := f.do(http.MethodPost, "/api/admin/ai/key/reset", tok, "")
+	requireStatus(t, w, resp, http.StatusBadRequest)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	var count int64
+	require.NoError(t, f.db.Model(&ai.UserConfig{}).Count(&count).Error)
+	assert.Equal(t, int64(1), count)
+}
+
+func TestAdminAIKeyResetPermission(t *testing.T) {
+	f, _ := newAIKeyFixture(t, "")
+
+	// 未登录 401。
+	w, resp := f.do(http.MethodPost, "/api/admin/ai/key/reset", "", "")
+	requireStatus(t, w, resp, http.StatusUnauthorized)
+	assert.EqualValues(t, 40100, resp["code"])
+
+	// 无 ai.settings.manage（content_admin）403。
+	_, contentTok := f.user(t, "ai_key_reset_content", rbac.RoleCodeContentAdmin)
+	w, resp = f.do(http.MethodPost, "/api/admin/ai/key/reset", contentTok, "")
+	requireStatus(t, w, resp, http.StatusForbidden)
+	assert.EqualValues(t, 40300, resp["code"])
+
+	// super_admin 200。
+	_, superTok := f.user(t, "ai_key_reset_perm_super", rbac.RoleCodeSuperAdmin)
+	w, resp = f.do(http.MethodPost, "/api/admin/ai/key/reset", superTok, "")
+	requireStatus(t, w, resp, http.StatusOK)
+}

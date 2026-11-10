@@ -75,6 +75,25 @@ func (h *handler) generateAIKey(c *gin.Context) {
 	httpx.OK(c, result)
 }
 
+// resetAIKey 处理 POST /admin/ai/key/reset，删除所有用户 AI 配置并生成新密钥；
+// 完整密钥仅在响应中一次性返回。
+func (h *handler) resetAIKey(c *gin.Context) {
+	actor := auditActor(c)
+	result, err := h.ai.ResetKey(c.Request.Context(), actor.ActorID, func(tx *gorm.DB) error {
+		return rbac.WriteAuditTx(
+			tx, actor,
+			rbac.AuditActionAISettingsManage,
+			rbac.AuditTargetAIKey, 0,
+			"清除旧密钥并生成新密钥",
+		)
+	})
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, result)
+}
+
 // setAIKey 处理 PUT /admin/ai/key，手动填写密钥并保存；已有密钥时轮换。
 func (h *handler) setAIKey(c *gin.Context) {
 	in, ok := httpx.BindJSON[ai.KeyInput](c)

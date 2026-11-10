@@ -53,6 +53,7 @@ func RegisterRoutes(api gin.IRouter, s *rbac.Service, opts ...Options) {
 		api.PUT("/admin/ai/settings", append(requirePermission(s, string(rbac.PermAISettingsManage)), h.updateAISettings)...)
 		api.GET("/admin/ai/key", append(requirePermission(s, string(rbac.PermAISettingsManage)), h.getAIKey)...)
 		api.POST("/admin/ai/key/generate", append(requirePermission(s, string(rbac.PermAISettingsManage)), h.generateAIKey)...)
+		api.POST("/admin/ai/key/reset", append(requirePermission(s, string(rbac.PermAISettingsManage)), h.resetAIKey)...)
 		api.PUT("/admin/ai/key", append(requirePermission(s, string(rbac.PermAISettingsManage)), h.setAIKey)...)
 	}
 }

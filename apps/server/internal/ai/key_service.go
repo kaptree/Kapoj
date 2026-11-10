@@ -54,7 +54,7 @@ func (s *SettingsService) GenerateKey(ctx context.Context, actorID int64, audit 
 	if err != nil {
 		return nil, err
 	}
-	view, err := s.rotate(ctx, actorID, raw, audit)
+	view, err := s.rotate(ctx, actorID, raw, audit, keepUserConfigs)
 	if err != nil {
 		return nil, err
 	}
@@ -63,17 +63,40 @@ func (s *SettingsService) GenerateKey(ctx context.Context, actorID int64, audit 
 
 // SetKey 校验并保存手动填写的密钥；已有密钥时执行轮换重加密。
 func (s *SettingsService) SetKey(ctx context.Context, actorID int64, raw string, audit func(*gorm.DB) error) (*KeyView, error) {
-	return s.rotate(ctx, actorID, raw, audit)
+	return s.rotate(ctx, actorID, raw, audit, keepUserConfigs)
 }
 
-// rotate 是生成与手动保存共享的实现：
+// ResetKey 删除所有用户 AI 配置并用新的随机密钥替换平台密钥。
+// 用于旧密钥丢失后的恢复；不保留旧密文。
+func (s *SettingsService) ResetKey(ctx context.Context, actorID int64, audit func(*gorm.DB) error) (*KeyGenerateResult, error) {
+	raw, err := generateKeyBase64()
+	if err != nil {
+		return nil, err
+	}
+	view, err := s.rotate(ctx, actorID, raw, audit, purgeUserConfigs)
+	if err != nil {
+		return nil, err
+	}
+	return &KeyGenerateResult{KeyView: *view, Key: raw}, nil
+}
+
+// keyRotationMode 区分轮换时是否保留用户配置：生成/手动保存保留并重加密，
+// 重置则全部清除。
+type keyRotationMode bool
+
+const (
+	keepUserConfigs  keyRotationMode = true
+	purgeUserConfigs keyRotationMode = false
+)
+
+// rotate 是生成、手动保存与重置共享的实现：
 //
 //  1. env 来源只读；
 //  2. 校验新密钥（base64/32 字节）；
-//  3. 无旧密钥且存在用户配置 → 拒绝破坏性覆盖；
-//  4. 写密钥文件（备份旧文件）→ DB 事务（重加密配置 + 指纹 + 审计）→
+//  3. 仅保留模式：无旧密钥且存在用户配置 → 拒绝破坏性覆盖；
+//  4. 写密钥文件（备份旧文件）→ DB 事务（重加密或清除配置 + 指纹 + 审计）→
 //     成功删除备份并切换内存密钥，失败恢复备份/回滚。
-func (s *SettingsService) rotate(ctx context.Context, actorID int64, raw string, audit func(*gorm.DB) error) (*KeyView, error) {
+func (s *SettingsService) rotate(ctx context.Context, actorID int64, raw string, audit func(*gorm.DB) error, mode keyRotationMode) (*KeyView, error) {
 	s.keyMu.Lock()
 	defer s.keyMu.Unlock()
 
@@ -95,7 +118,7 @@ func (s *SettingsService) rotate(ctx context.Context, actorID int64, raw string,
 		return nil, err
 	}
 	hasOld := s.keys.Configured()
-	if cfgCount > 0 && !hasOld {
+	if mode == keepUserConfigs && cfgCount > 0 && !hasOld {
 		return nil, httpx.ErrValidation("存在无法解密的用户 AI 配置，请先恢复旧密钥")
 	}
 
@@ -111,8 +134,12 @@ func (s *SettingsService) rotate(ctx context.Context, actorID int64, raw string,
 		if err := ensureSettings(tx); err != nil {
 			return err
 		}
-		if err := s.reencryptConfigs(tx, newEnc); err != nil {
-			return err
+		if mode == keepUserConfigs {
+			if err := s.reencryptConfigs(tx, newEnc); err != nil {
+				return err
+			}
+		} else if err := tx.Where("1 = 1").Delete(&UserConfig{}).Error; err != nil {
+			return fmt.Errorf("ai: purge user configs: %w", err)
 		}
 		if err := tx.Model(&Settings{}).Where("id = ?", settingsID).Updates(map[string]any{
 			"key_fingerprint": fingerprint,

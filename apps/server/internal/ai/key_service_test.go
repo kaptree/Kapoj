@@ -369,3 +369,157 @@ func TestKeyRotationConcurrent(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "sk-secret", plain)
 }
+
+func TestKeyResetPurgesUserConfigs(t *testing.T) {
+	g := testutil.PG(t)
+	ctx := context.Background()
+	file := filepath.Join(t.TempDir(), "ai.key")
+
+	oldKey := b64Key(strings.Repeat("o", 32))
+	require.NoError(t, os.WriteFile(file, []byte(oldKey+"\n"), 0o600))
+	svc := newKeySettingsService(t, g, "", file)
+
+	oldEnc, err := ai.NewEncryptor(oldKey)
+	require.NoError(t, err)
+	ct, err := oldEnc.Encrypt("sk-old-secret")
+	require.NoError(t, err)
+	require.NoError(t, g.Create(&ai.UserConfig{
+		UserID: 1, Provider: "deepseek", ModelName: "m",
+		APIKeyEncrypted: ct, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}).Error)
+
+	// 关闭 AI，验证重置不会改变 enabled。
+	require.NoError(t, g.Create(&ai.Settings{
+		ID: 1, Enabled: true, UpdatedAt: time.Now().UTC(),
+	}).Error)
+	require.NoError(t, g.Model(&ai.Settings{}).Where("id = ?", 1).Update("enabled", false).Error)
+
+	res, err := svc.ResetKey(ctx, 42, nil)
+	require.NoError(t, err)
+
+	raw, err := base64.StdEncoding.DecodeString(res.Key)
+	require.NoError(t, err)
+	assert.Len(t, raw, 32)
+
+	// 所有用户配置被清除，旧密文不留存。
+	var count int64
+	require.NoError(t, g.Model(&ai.UserConfig{}).Count(&count).Error)
+	assert.Zero(t, count)
+
+	// 文件内容为新密钥、0600，备份已删除。
+	data, err := os.ReadFile(file)
+	require.NoError(t, err)
+	assert.Equal(t, res.Key, strings.TrimSpace(string(data)))
+	info, err := os.Stat(file)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	assert.NoFileExists(t, file+".bak")
+
+	// 内存密钥切换到新密钥。
+	view := svc.KeyView()
+	assert.True(t, view.Configured)
+	assert.Equal(t, "file", view.Source)
+	assert.Equal(t, sha256Hex(res.Key), view.Fingerprint)
+
+	// 指纹已持久化，enabled 保持原值。
+	var s ai.Settings
+	require.NoError(t, g.First(&s, 1).Error)
+	assert.Equal(t, sha256Hex(res.Key), s.KeyFingerprint)
+	assert.False(t, s.Enabled)
+}
+
+func TestKeyResetWithoutOldKey(t *testing.T) {
+	g := testutil.PG(t)
+	ctx := context.Background()
+	file := filepath.Join(t.TempDir(), "ai.key")
+	svc := newKeySettingsService(t, g, "", file)
+	assert.Equal(t, "none", svc.KeyView().Source)
+
+	// 旧密钥丢失，配置只剩无法解密的密文。
+	require.NoError(t, g.Create(&ai.UserConfig{
+		UserID: 1, Provider: "p", ModelName: "m",
+		APIKeyEncrypted: "v1:AAAA", CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}).Error)
+
+	res, err := svc.ResetKey(ctx, 42, nil)
+	require.NoError(t, err)
+
+	var count int64
+	require.NoError(t, g.Model(&ai.UserConfig{}).Count(&count).Error)
+	assert.Zero(t, count)
+
+	data, err := os.ReadFile(file)
+	require.NoError(t, err)
+	assert.Equal(t, res.Key, strings.TrimSpace(string(data)))
+
+	view := svc.KeyView()
+	assert.True(t, view.Configured)
+	assert.Equal(t, "file", view.Source)
+	assert.Equal(t, sha256Hex(res.Key), view.Fingerprint)
+}
+
+func TestKeyResetEnvReadOnly(t *testing.T) {
+	g := testutil.PG(t)
+	ctx := context.Background()
+	file := filepath.Join(t.TempDir(), "ai.key")
+	envKey := b64Key(strings.Repeat("e", 32))
+	svc := newKeySettingsService(t, g, envKey, file)
+
+	require.NoError(t, g.Create(&ai.UserConfig{
+		UserID: 1, Provider: "p", ModelName: "m",
+		APIKeyEncrypted: "v1:AAAA", CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}).Error)
+	before := svc.KeyView()
+
+	res, err := svc.ResetKey(ctx, 42, nil)
+	require.Nil(t, res)
+	assertValidationCode(t, err, 40001)
+
+	// 用户配置、密钥文件与内存指纹均不变。
+	var count int64
+	require.NoError(t, g.Model(&ai.UserConfig{}).Count(&count).Error)
+	assert.Equal(t, int64(1), count)
+	assert.NoFileExists(t, file)
+	assert.Equal(t, before, svc.KeyView())
+}
+
+func TestKeyResetAuditFailureRestores(t *testing.T) {
+	g := testutil.PG(t)
+	ctx := context.Background()
+	file := filepath.Join(t.TempDir(), "ai.key")
+
+	oldKey := b64Key(strings.Repeat("o", 32))
+	require.NoError(t, os.WriteFile(file, []byte(oldKey+"\n"), 0o600))
+	svc := newKeySettingsService(t, g, "", file)
+
+	oldEnc, err := ai.NewEncryptor(oldKey)
+	require.NoError(t, err)
+	ct, err := oldEnc.Encrypt("sk-keep")
+	require.NoError(t, err)
+	require.NoError(t, g.Create(&ai.UserConfig{
+		UserID: 1, Provider: "p", ModelName: "m",
+		APIKeyEncrypted: ct, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}).Error)
+
+	_, err = svc.ResetKey(ctx, 42, func(tx *gorm.DB) error {
+		return errors.New("audit boom")
+	})
+	require.Error(t, err)
+
+	// 文件恢复为旧密钥，备份不存在。
+	data, err := os.ReadFile(file)
+	require.NoError(t, err)
+	assert.Equal(t, oldKey, strings.TrimSpace(string(data)))
+	assert.NoFileExists(t, file+".bak")
+
+	// 配置未被删除，旧密文仍可解密。
+	var cfg ai.UserConfig
+	require.NoError(t, g.First(&cfg).Error)
+	assert.Equal(t, ct, cfg.APIKeyEncrypted)
+	plain, err := oldEnc.Decrypt(cfg.APIKeyEncrypted)
+	require.NoError(t, err)
+	assert.Equal(t, "sk-keep", plain)
+
+	// 内存密钥仍为旧密钥。
+	assert.Equal(t, sha256Hex(oldKey), svc.KeyView().Fingerprint)
+}
