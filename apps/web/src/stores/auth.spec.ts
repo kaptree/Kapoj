@@ -202,6 +202,24 @@ describe('auth store', () => {
     expect(store.user?.username).toBe('alice')
   })
 
+  it('only applies the latest fetchMe response', async () => {
+    const store = useAuthStore()
+    let resolveFirst!: (value: Me) => void
+    let resolveSecond!: (value: Me) => void
+    usersApi.getMe
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveFirst = resolve)))
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveSecond = resolve)))
+
+    const first = store.fetchMe()
+    const second = store.fetchMe()
+    resolveSecond({ ...me, nickname: 'Second' })
+    await second
+    resolveFirst({ ...me, nickname: 'First' })
+    await first
+
+    expect(store.user?.nickname).toBe('Second')
+  })
+
   it('updateProfile preserves roles/permissions/isSuperAdmin', async () => {
     const store = useAuthStore()
     store.setSession({

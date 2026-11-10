@@ -31,6 +31,11 @@ function load(): Persisted {
   }
 }
 
+// Responses to overlapping fetchMe calls can arrive out of order (for example a
+// login-triggered refresh racing the sign-in refresh). Only the newest request
+// is allowed to write the user.
+let fetchMeSeq = 0
+
 export const useAuthStore = defineStore('auth', () => {
   const initial = load()
   const accessToken = ref<string | null>(initial.accessToken)
@@ -136,7 +141,10 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function fetchMe() {
-    setUser(await usersApi.getMe())
+    const seq = ++fetchMeSeq
+    const next = await usersApi.getMe()
+    if (seq !== fetchMeSeq) return
+    setUser(next)
   }
 
   /** Saves the profile while preserving the current RBAC fields. */
