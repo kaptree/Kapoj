@@ -282,6 +282,8 @@ describe('LeaderboardView', () => {
     expect(text).toContain('提交代码 +2')
     expect(text).toContain('每日上限')
     expect(text).not.toContain('累计上限')
+    expect(text).toContain('定期衰减')
+    expect(text).toContain('软重置')
     expect(text).toContain('取消点赞')
     expect(text).toContain('点赞者')
   })
