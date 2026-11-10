@@ -25,8 +25,8 @@ import { PERM } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useTheme } from '@/theme/theme'
 import {
+  editorLanguage,
   languageLabel,
-  monacoLanguage,
   SUBMISSION_LANGUAGES,
   type CodeSubmissionLanguage,
 } from '@/utils/submission'
@@ -616,7 +616,7 @@ async function submit() {
             <CodeEditor
               ref="editorRef"
               v-model="code"
-              :language="monacoLanguage(language)"
+              :language="editorLanguage(language)"
               height="520px"
             />
           </div>

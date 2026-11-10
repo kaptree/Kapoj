@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
-import { monaco } from '@/monaco'
+import { createCodeEditor, type CodeEditorHandle } from '@/editor'
+import { utf8Offset } from '@/utils/text'
 
 const props = withDefaults(
   defineProps<{
@@ -15,22 +16,16 @@ const props = withDefaults(
 const emit = defineEmits<{ (e: 'update:modelValue', value: string): void }>()
 
 const host = ref<HTMLElement>()
-let editor: ReturnType<typeof monaco.editor.create> | undefined
+let editor: CodeEditorHandle | undefined
 
 onMounted(() => {
   if (!host.value) return
-  editor = monaco.editor.create(host.value, {
+  editor = createCodeEditor(host.value, {
     value: props.modelValue,
     language: props.language,
-    theme: 'vs-dark',
-    readOnly: props.readonly,
-    automaticLayout: true,
-    minimap: { enabled: false },
-    fontSize: 14,
-    scrollBeyondLastLine: false,
-    tabSize: 4,
+    readonly: props.readonly,
+    onChange: (value) => emit('update:modelValue', value),
   })
-  editor.onDidChangeModelContent(() => emit('update:modelValue', editor!.getValue()))
 })
 
 watch(
@@ -43,44 +38,24 @@ watch(
 watch(
   () => props.language,
   (language) => {
-    const model = editor?.getModel()
-    if (model) monaco.editor.setModelLanguage(model, language)
+    editor?.setLanguage(language)
   },
 )
 
 onBeforeUnmount(() => {
-  editor?.dispose()
+  editor?.destroy()
   editor = undefined
 })
 
 /** UTF-8 byte offset of the cursor, or the end of the code when unavailable. */
 function getCursorByteOffset(): number {
-  if (!editor) return new TextEncoder().encode(props.modelValue).length
-  const position = editor.getPosition()
-  const model = editor.getModel()
-  if (!position || !model) return new TextEncoder().encode(props.modelValue).length
-  const offset = model.getOffsetAt(position)
-  return new TextEncoder().encode(model.getValue().slice(0, offset)).length
+  if (!editor) return utf8Offset(props.modelValue, props.modelValue.length)
+  return editor.getCursorByteOffset()
 }
 
 /** Inserts text at the current cursor and focuses the editor. */
 function insertAtCursor(text: string) {
-  if (!editor) return
-  const position = editor.getPosition()
-  const model = editor.getModel()
-  if (!position || !model) return
-  editor.executeEdits('ai-insert', [
-    {
-      range: {
-        startLineNumber: position.lineNumber,
-        startColumn: position.column,
-        endLineNumber: position.lineNumber,
-        endColumn: position.column,
-      },
-      text,
-    },
-  ])
-  editor.focus()
+  editor?.insertAtCursor(text)
 }
 
 defineExpose({ getCursorByteOffset, insertAtCursor })

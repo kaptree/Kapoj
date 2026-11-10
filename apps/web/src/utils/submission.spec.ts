@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  editorLanguage,
   languageLabel,
-  monacoLanguage,
   statusLabel,
   statusTagType,
   SUBMISSION_LANGUAGE_FILTERS,
@@ -22,15 +22,16 @@ describe('submission utils', () => {
     expect(statusTagType('time_limit_exceeded')).toBe('warning')
   })
 
-  it('maps languages to labels and Monaco ids', () => {
+  it('maps languages to labels and editor ids', () => {
     for (const language of SUBMISSION_LANGUAGES) {
       expect(languageLabel(language.value)).toBe(language.label)
     }
     expect(languageLabel('cpp')).toBe('C++')
-    expect(monacoLanguage('cpp')).toBe('cpp')
-    expect(monacoLanguage('c')).toBe('cpp')
-    expect(monacoLanguage('python3')).toBe('python')
-    expect(monacoLanguage('java')).toBe('java')
+    expect(editorLanguage('cpp')).toBe('cpp')
+    expect(editorLanguage('c')).toBe('cpp')
+    expect(editorLanguage('python3')).toBe('python')
+    expect(editorLanguage('java')).toBe('java')
+    expect(editorLanguage('go')).toBe('go')
   })
 
   it('labels objective answers without offering answer as a code language', () => {

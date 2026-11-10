@@ -60,8 +60,8 @@ export function languageLabel(language: SubmissionLanguage): string {
   return languageLabels.get(language) ?? language
 }
 
-/** Maps a submission language to Monaco's language id. */
-export function monacoLanguage(language: SubmissionLanguage): string {
+/** Maps a submission language to the editor language id. */
+export function editorLanguage(language: SubmissionLanguage): string {
   if (language === 'cpp' || language === 'c') return 'cpp'
   if (language === 'python3') return 'python'
   return language

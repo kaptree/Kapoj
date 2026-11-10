@@ -31,7 +31,7 @@ import AppFormField from '@/components/ui/AppFormField.vue'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
 import { formatBytes } from '@/utils/format'
-import { monacoLanguage, SUBMISSION_LANGUAGES } from '@/utils/submission'
+import { editorLanguage, SUBMISSION_LANGUAGES } from '@/utils/submission'
 
 const route = useRoute()
 const router = useRouter()
@@ -347,7 +347,7 @@ const previewTitle = computed(() => (previewKind.value === 'input' ? '输入预�
 
         <AppFormField label="标程源码" required hint="按 UTF-8 字节数不超过 64 KiB">
           <div class="testgen-editor">
-            <CodeEditor v-model="sourceCode" :language="monacoLanguage(language)" height="320px" />
+            <CodeEditor v-model="sourceCode" :language="editorLanguage(language)" height="320px" />
           </div>
         </AppFormField>
 
