@@ -11,6 +11,22 @@ async function render(source: string) {
 }
 
 describe('MarkdownView', () => {
+  it('shows a skeleton while the renderer loads', async () => {
+    // This must stay the first test in the file: once the async component has
+    // resolved, later mounts render the content directly.
+    const wrapper = mount(MarkdownView, { props: { source: 'marker' }, attachTo: document.body })
+
+    const skeleton = wrapper.find('[data-test="markdown-view-skeleton"]')
+    expect(skeleton.exists()).toBe(true)
+    expect(skeleton.attributes('aria-busy')).toBe('true')
+
+    await vi.waitFor(() => expect(wrapper.find('.markdown-view').exists()).toBe(true), {
+      timeout: 3000,
+    })
+    expect(wrapper.find('[data-test="markdown-view-skeleton"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('renders markdown', async () => {
     const w = await render('**bold** marker\n\n- a\n- b')
     expect(w.find('strong').text()).toBe('bold')
@@ -42,14 +58,35 @@ describe('MarkdownView', () => {
 
   it('applies the requested preview theme', async () => {
     const light = await render('marker')
-    expect(light.classes()).toContain('markdown-view--light')
+    const lightRoot = light.find('.markdown-view')
+    expect(lightRoot.exists()).toBe(true)
+    expect(lightRoot.classes()).toContain('markdown-view--light')
 
     const dark = mount(MarkdownView, {
       props: { source: 'marker', theme: 'dark' },
       attachTo: document.body,
     })
-    expect(dark.classes()).toContain('markdown-view--dark')
+    await vi.waitFor(() => expect(dark.find('.markdown-view').exists()).toBe(true), {
+      timeout: 3000,
+    })
+    expect(dark.find('.markdown-view').classes()).toContain('markdown-view--dark')
     dark.unmount()
+  })
+
+  it('forwards classes from the caller to the rendered root', async () => {
+    const wrapper = mount(MarkdownView, {
+      props: { source: 'marker' },
+      attrs: { class: 'caller-owned' },
+      attachTo: document.body,
+    })
+    await vi.waitFor(() => expect(wrapper.find('.markdown-view').exists()).toBe(true), {
+      timeout: 3000,
+    })
+
+    const classes = wrapper.find('.markdown-view').classes()
+    expect(classes).toContain('caller-owned')
+    expect(classes).toContain('markdown-view--light')
+    wrapper.unmount()
   })
 
   it('never loads third-party scripts or styles', async () => {

@@ -537,6 +537,28 @@ describe('SubmitView', () => {
     wrapper.unmount()
   })
 
+  it('does not render the optimize markdown preview until the dialog opens', async () => {
+    localStorage.setItem('kapoj:code:practice:1:cpp', 'int main() {}')
+    vi.mocked(optimizeCode).mockResolvedValue({
+      suggestions: '# 优化建议\n- 使用 const',
+      code: 'int main() { return 0; }',
+    })
+    const { wrapper } = await mountPage()
+
+    expect(wrapper.find('.md-stub').exists()).toBe(false)
+    expect(document.querySelector('.md-stub')).toBeNull()
+
+    await aiButton(wrapper, 'AI 优化')!.trigger('click')
+    await flushPromises()
+
+    const dialog = document.querySelector('.p-dialog')!
+    const markdown = dialog.querySelector('.md-stub')
+    expect(markdown).not.toBeNull()
+    expect(markdown!.textContent).toContain('使用 const')
+    expect(dialog.textContent).toContain('int main() { return 0; }')
+    wrapper.unmount()
+  })
+
   it('previews and applies optimized code/suggestions', async () => {
     localStorage.setItem('kapoj:code:practice:1:cpp', 'int main() {}')
     vi.mocked(optimizeCode).mockResolvedValue({

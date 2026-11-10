@@ -682,7 +682,11 @@ async function submit() {
         :draggable="false"
         :style="{ width: 'min(92vw, 720px)' }"
       >
-        <MarkdownView :source="optimizeSuggestions" :theme="isDark ? 'dark' : 'light'" />
+        <MarkdownView
+          v-if="optimizeDialogVisible"
+          :source="optimizeSuggestions"
+          :theme="isDark ? 'dark' : 'light'"
+        />
         <pre class="ai-preview">{{ optimizePreview }}</pre>
         <template #footer>
           <Button label="取消" severity="secondary" text @click="optimizeDialogVisible = false" />
