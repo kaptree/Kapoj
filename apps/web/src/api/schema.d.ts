@@ -1509,6 +1509,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/ai/key/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 清除旧密钥并生成新密钥（ai.settings.manage）
+         * @description 删除所有用户已保存的 AI 配置（provider/model/API Key），替换平台加密密钥并生成 32 字节随机新密钥。旧密钥丢失后的恢复入口；不可撤销，用户需重新填写 API Key。 环境变量来源时返回 40001。完整密钥仅在响应中一次性返回。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 重置后的密钥状态与一次性完整密钥 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AIKeyGenerateResultResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                500: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/permissions": {
         parameters: {
             query?: never;

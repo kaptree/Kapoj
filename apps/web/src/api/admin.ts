@@ -53,6 +53,9 @@ export const getAdminAIKey = () => http.get<AIKeyView>('/admin/ai/key')
 /** Generate and persist a new AI encryption key; the full key is returned once for backup (ai.settings.manage). */
 export const generateAdminAIKey = () => http.post<AIKeyGenerateResult>('/admin/ai/key/generate')
 
+/** Delete all user AI configs and replace the platform key with a new random key (ai.settings.manage). */
+export const resetAdminAIKey = () => http.post<AIKeyGenerateResult>('/admin/ai/key/reset')
+
 /** Manually set the AI encryption key, rotating (and re-encrypting user keys) if one exists (ai.settings.manage). */
 export const setAdminAIKey = (input: AIKeyInput) => http.put<AIKeyView>('/admin/ai/key', input)
 

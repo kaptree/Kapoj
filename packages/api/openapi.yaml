@@ -589,6 +589,24 @@ paths:
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
         '500': { $ref: '#/components/responses/Error' }
+  /admin/ai/key/reset:
+    post:
+      summary: 清除旧密钥并生成新密钥（ai.settings.manage）
+      description: >-
+        删除所有用户已保存的 AI 配置（provider/model/API Key），替换平台加密密钥并生成
+        32 字节随机新密钥。旧密钥丢失后的恢复入口；不可撤销，用户需重新填写 API Key。
+        环境变量来源时返回 40001。完整密钥仅在响应中一次性返回。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 重置后的密钥状态与一次性完整密钥
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AIKeyGenerateResultResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '500': { $ref: '#/components/responses/Error' }
   /admin/permissions:
     get:
       summary: 权限目录（role.read）
