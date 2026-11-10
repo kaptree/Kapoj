@@ -52,6 +52,49 @@ func (s *Service) SharingLeaderboard(ctx context.Context, page, size int) (httpx
 	)
 }
 
+// WealthLeaderboard returns one page of active users with a positive coin
+// balance ordered by balance desc and user id asc. Score is the current coin
+// balance. It is a real-time query: balances change too often to cache.
+func (s *Service) WealthLeaderboard(ctx context.Context, page, size int) (httpx.Page[LeaderboardRow], error) {
+	page, size = normalizePage(page, size)
+
+	var total int64
+	if err := s.db.WithContext(ctx).Raw(
+		`SELECT COUNT(*) FROM users WHERE status = ? AND coins > 0`, "active",
+	).Scan(&total).Error; err != nil {
+		return httpx.Page[LeaderboardRow]{}, err
+	}
+
+	var rows []struct {
+		UserID   int64  `gorm:"column:user_id"`
+		Username string `gorm:"column:username"`
+		Nickname string `gorm:"column:nickname"`
+		Score    int64  `gorm:"column:score"`
+	}
+	offset := (page - 1) * size
+	if err := s.db.WithContext(ctx).Raw(`
+		SELECT id AS user_id, username, nickname, coins AS score
+		FROM users
+		WHERE status = ? AND coins > 0
+		ORDER BY coins DESC, id ASC
+		LIMIT ? OFFSET ?`, "active", size, offset,
+	).Scan(&rows).Error; err != nil {
+		return httpx.Page[LeaderboardRow]{}, err
+	}
+
+	items := make([]LeaderboardRow, len(rows))
+	for i, row := range rows {
+		items[i] = LeaderboardRow{
+			Rank:     offset + i + 1,
+			UserID:   row.UserID,
+			Username: row.Username,
+			Nickname: row.Nickname,
+			Score:    row.Score,
+		}
+	}
+	return httpx.Page[LeaderboardRow]{Total: total, Items: items}, nil
+}
+
 // leaderboard caches base rows under a versioned key for 60 seconds. The
 // version is bumped after every committed activity/shared-item write. Redis
 // failures (including redis.Nil) fall back to the database so a cache outage

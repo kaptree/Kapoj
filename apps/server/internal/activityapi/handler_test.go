@@ -264,6 +264,75 @@ func TestActivityLeaderboardsPublicAndEquippedIdentity(t *testing.T) {
 	assert.EqualValues(t, plain, items[0].(map[string]any)["userId"])
 }
 
+func TestWealthLeaderboardPublicAndEquippedIdentity(t *testing.T) {
+	f := newFx(t)
+	decorated := f.user("decorated", "active")
+	plain := f.user("plain", "active")
+	banned := f.user("banned", "banned")
+	zero := f.user("zero", "active")
+	for userID, coins := range map[int64]int{
+		decorated: 500,
+		plain:     120,
+		banned:    999,
+		zero:      0,
+	} {
+		require.NoError(t, f.db.Exec(`UPDATE users SET coins = ? WHERE id = ?`, coins, userID).Error)
+	}
+	require.NoError(t, f.db.Exec(
+		`INSERT INTO badges (id, name, description, image_url, price_coins, category, is_limited, stock, sort_order, is_active, created_at, updated_at)
+		 VALUES (7, '早鸟', '', '/api/badges/7/image', 0, '其他', false, 0, 1, true, now(), now())`,
+	).Error)
+	require.NoError(t, f.db.Exec(
+		`INSERT INTO user_badges (user_id, badge_id, is_equipped, purchased_at) VALUES (?, 7, true, now())`,
+		decorated,
+	).Error)
+	require.NoError(t, f.db.Exec(
+		`INSERT INTO titles (id, name, color, unlock_condition_type, unlock_condition_json, price_coins, sort_order, is_active, created_at, updated_at)
+		 VALUES (9, '卷王', '#7C3AED', 'rating', '{"rating":1}', 0, 1, true, now(), now())`,
+	).Error)
+	require.NoError(t, f.db.Exec(
+		`INSERT INTO user_titles (user_id, title_id, is_equipped, unlocked_at, purchased_at) VALUES (?, 9, true, now(), now())`,
+		decorated,
+	).Error)
+
+	w, resp := f.do(http.MethodGet, "/api/leaderboard/wealth", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	total, items := pageData(t, resp)
+	assert.EqualValues(t, 2, total, "banned and zero-balance users are excluded")
+	require.Len(t, items, 2)
+
+	row := items[0].(map[string]any)
+	assert.EqualValues(t, 1, row["rank"])
+	assert.EqualValues(t, decorated, row["userId"])
+	assert.EqualValues(t, 500, row["score"], "score is the current coin balance")
+	badges := row["equippedBadges"].([]any)
+	require.Len(t, badges, 1)
+	assert.EqualValues(t, 7, badges[0].(map[string]any)["id"])
+	title := row["equippedTitle"].(map[string]any)
+	assert.EqualValues(t, 9, title["id"])
+	assert.NotContains(t, row, "level")
+	assert.NotContains(t, row, "email")
+	assert.NotContains(t, row, "role")
+
+	second := items[1].(map[string]any)
+	assert.EqualValues(t, 2, second["rank"])
+	assert.EqualValues(t, plain, second["userId"])
+	assert.EqualValues(t, 120, second["score"])
+
+	for _, item := range items {
+		assert.NotEqual(t, banned, item.(map[string]any)["userId"])
+		assert.NotEqual(t, zero, item.(map[string]any)["userId"])
+	}
+
+	w, resp = f.do(http.MethodGet, "/api/leaderboard/wealth?page=2&page_size=1", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	total, items = pageData(t, resp)
+	assert.EqualValues(t, 2, total)
+	require.Len(t, items, 1)
+	assert.EqualValues(t, 2, items[0].(map[string]any)["rank"])
+	assert.EqualValues(t, plain, items[0].(map[string]any)["userId"])
+}
+
 func TestActivityLeaderboardRedisDownStillOK(t *testing.T) {
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr(), MaxRetries: -1})

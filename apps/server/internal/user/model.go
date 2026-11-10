@@ -33,9 +33,9 @@ type User struct {
 	AvatarContentType string    `gorm:"size:100;not null;default:''"`
 	Role              Role      `gorm:"size:20;not null;default:user"`
 	Rating            int       `gorm:"not null;default:1500"`
-	Coins             int64     `gorm:"not null;default:0;check:chk_users_coins_non_negative,coins >= 0"`
+	Coins             int64     `gorm:"not null;default:0;check:chk_users_coins_non_negative,coins >= 0;index:idx_users_status_coins,priority:2"`
 	Bio               string    `gorm:"size:800;not null;default:''"`
-	Status            Status    `gorm:"size:20;not null;default:active"`
+	Status            Status    `gorm:"size:20;not null;default:active;index:idx_users_status_coins,priority:1"`
 	CreatedAt         time.Time `gorm:"type:timestamptz;not null"`
 	UpdatedAt         time.Time `gorm:"type:timestamptz;not null"`
 }

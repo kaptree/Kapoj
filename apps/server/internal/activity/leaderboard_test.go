@@ -23,6 +23,11 @@ func seedLeaderboardUser(t *testing.T, e *activityEnv, id int64, username, statu
 	).Error)
 }
 
+func setLeaderboardCoins(t *testing.T, e *activityEnv, userID, coins int64) {
+	t.Helper()
+	require.NoError(t, e.db.Exec(`UPDATE users SET coins = ? WHERE id = ?`, coins, userID).Error)
+}
+
 func seedActivityLog(t *testing.T, e *activityEnv, userID int64, action activity.Action, refID int64, points int) {
 	t.Helper()
 	require.NoError(t, e.db.Create(&activity.ActivityLog{
@@ -119,10 +124,57 @@ func TestSharingLeaderboardFromSharedItems(t *testing.T) {
 	assert.NotNil(t, empty.Items, "an empty page must serialize as []")
 }
 
+func TestWealthLeaderboardOrderAndPagination(t *testing.T) {
+	e := newActivityEnv(t)
+	seedLeaderboardUser(t, e, 2, "rich2", "active")
+	seedLeaderboardUser(t, e, 3, "rich3", "active")
+	seedLeaderboardUser(t, e, 4, "rich4", "active")
+	seedLeaderboardUser(t, e, 5, "zero", "active")
+	seedLeaderboardUser(t, e, 6, "banned", "banned")
+	setLeaderboardCoins(t, e, 2, 300)
+	setLeaderboardCoins(t, e, 3, 300)
+	setLeaderboardCoins(t, e, 4, 120)
+	setLeaderboardCoins(t, e, 5, 0)
+	setLeaderboardCoins(t, e, 6, 999)
+	ctx := context.Background()
+
+	first, err := e.svc.WealthLeaderboard(ctx, 1, 2)
+	require.NoError(t, err)
+	assert.EqualValues(t, 3, first.Total, "zero-balance and banned users are excluded")
+	require.Len(t, first.Items, 2)
+	assert.Equal(t, 1, first.Items[0].Rank)
+	assert.Equal(t, int64(2), first.Items[0].UserID)
+	assert.EqualValues(t, 300, first.Items[0].Score, "score is the current coin balance")
+	assert.Equal(t, 2, first.Items[1].Rank)
+	assert.Equal(t, int64(3), first.Items[1].UserID, "ties break by user id ascending")
+	assert.EqualValues(t, 300, first.Items[1].Score)
+
+	second, err := e.svc.WealthLeaderboard(ctx, 2, 2)
+	require.NoError(t, err)
+	require.Len(t, second.Items, 1)
+	assert.Equal(t, 3, second.Items[0].Rank)
+	assert.Equal(t, int64(4), second.Items[0].UserID)
+	assert.EqualValues(t, 120, second.Items[0].Score)
+
+	empty, err := e.svc.WealthLeaderboard(ctx, 3, 2)
+	require.NoError(t, err)
+	assert.EqualValues(t, 3, empty.Total)
+	assert.Empty(t, empty.Items)
+	assert.NotNil(t, empty.Items, "an empty page must serialize as []")
+
+	for _, items := range [][]activity.LeaderboardRow{first.Items, second.Items, empty.Items} {
+		for _, item := range items {
+			assert.NotEqual(t, int64(5), item.UserID, "zero-balance users must not appear")
+			assert.NotEqual(t, int64(6), item.UserID, "banned users must not appear")
+		}
+	}
+}
+
 func TestLeaderboardHugePageClamps(t *testing.T) {
 	e := newActivityEnv(t)
 	seedActivityLog(t, e, testUserID, activity.ActionContestJoin, 900, 10)
 	seedSharedItem(t, e, testUserID, "contest", 901, 0)
+	setLeaderboardCoins(t, e, testUserID, 10)
 	ctx := context.Background()
 
 	activityPage, err := e.svc.ActivityLeaderboard(ctx, math.MaxInt, 100)
@@ -136,6 +188,12 @@ func TestLeaderboardHugePageClamps(t *testing.T) {
 	assert.EqualValues(t, 1, sharingPage.Total)
 	assert.Empty(t, sharingPage.Items)
 	assert.NotNil(t, sharingPage.Items, "an empty page must serialize as []")
+
+	wealthPage, err := e.svc.WealthLeaderboard(ctx, math.MaxInt, 100)
+	require.NoError(t, err, "an overflowing page must be clamped instead of failing the query")
+	assert.EqualValues(t, 1, wealthPage.Total)
+	assert.Empty(t, wealthPage.Items)
+	assert.NotNil(t, wealthPage.Items, "an empty page must serialize as []")
 }
 
 func TestLeaderboardCacheVersionAndFallback(t *testing.T) {

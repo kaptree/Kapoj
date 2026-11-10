@@ -32,6 +32,7 @@ func RegisterRoutes(r gin.IRouter, s *activity.Service, opts ...Options) {
 	}
 	r.GET("/leaderboard/activity", h.activityLeaderboard)
 	r.GET("/leaderboard/sharing", h.sharingLeaderboard)
+	r.GET("/leaderboard/wealth", h.wealthLeaderboard)
 	r.GET("/activity/summary", middleware.RequireAuth(), h.summary)
 	r.POST("/activity/signin", middleware.RequireAuth(), h.signIn)
 }
@@ -55,6 +56,10 @@ func (h *handler) activityLeaderboard(c *gin.Context) {
 
 func (h *handler) sharingLeaderboard(c *gin.Context) {
 	h.leaderboard(c, h.svc.SharingLeaderboard)
+}
+
+func (h *handler) wealthLeaderboard(c *gin.Context) {
+	h.leaderboard(c, h.svc.WealthLeaderboard)
 }
 
 func (h *handler) leaderboard(
