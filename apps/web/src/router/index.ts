@@ -1,6 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
-import AdminLayout from '@/layouts/AdminLayout.vue'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import { ADMIN_ACCESS_PERMISSIONS, GAMIFICATION_MANAGE_PERMISSIONS, PERM } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
@@ -260,7 +259,7 @@ export const router = createRouter({
     },
     {
       path: '/admin',
-      component: AdminLayout,
+      component: () => import('@/layouts/AdminLayout.vue'),
       meta: {
         requiresAuth: true,
         anyPermission: ADMIN_ACCESS_PERMISSIONS,
