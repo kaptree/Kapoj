@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
+import Button from 'primevue/button'
 import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
+import Dialog from 'primevue/dialog'
 import Message from 'primevue/message'
 import Paginator from 'primevue/paginator'
 import Tab from 'primevue/tab'
@@ -43,6 +45,14 @@ interface BoardDef {
   unit: string
   emptyTitle: string
   emptyDescription: string
+}
+
+interface RulesSection {
+  key: BoardKey
+  label: string
+  accent: string
+  icon: string
+  items: string[]
 }
 
 /** Cards and full tables share one row shape; only Rating rows carry a level. */
@@ -114,6 +124,67 @@ const boardDefs: BoardDef[] = [
     emptyDescription: '创建或克隆比赛、题解被点赞即可获得贡献分。',
   },
 ]
+
+/**
+ * Scoring rules mirror the backend award table. Contribution is a current
+ * balance: unlikes and deleted solution posts can lower it, so the copy must
+ * never describe it as a lifetime total.
+ */
+const rulesSections: RulesSection[] = [
+  {
+    key: 'rating',
+    label: 'Rating 榜',
+    accent: '#22d3ee',
+    icon: 'pi pi-star',
+    items: [
+      '初始 Rating 为 1500。',
+      'Rated 比赛采用 Elo v1 计分，K = 32。',
+      '单场比赛的 Rating 变动最多 ±100。',
+      '赛季结束时按设置进行衰减或软重置。',
+    ],
+  },
+  {
+    key: 'activity',
+    label: '活跃榜',
+    accent: '#34d399',
+    icon: 'pi pi-bolt',
+    items: [
+      '提交代码 +2，累计上限 40。',
+      '参加比赛 +10，累计上限 50。',
+      '每日签到 +5，每天仅一次。',
+      '题解回复 +3，累计上限 20。',
+      '点赞题解 +1 记点赞者，累计上限 20。',
+      '关注用户 +2，累计上限 20。',
+    ],
+  },
+  {
+    key: 'wealth',
+    label: '富豪榜',
+    accent: '#fbbf24',
+    icon: 'pi pi-wallet',
+    items: [
+      '按当前金币余额排名，而不是历史累计获得。',
+      '每日签到、成就、任务与活动可获得金币。',
+      '购买徽章、称号等会直接扣除余额。',
+      '仅展示状态正常且余额大于 0 的用户。',
+    ],
+  },
+  {
+    key: 'contribution',
+    label: '贡献榜',
+    accent: '#a78bfa',
+    icon: 'pi pi-heart',
+    items: [
+      '创建或克隆比赛 +20。',
+      '题解被点赞 +5，记给题解作者。',
+      '取消点赞会扣回 5 分；删除题解会移除该题解带来的贡献。',
+      '删除比赛不会扣回创建时获得的 +20。',
+      '贡献分是当前值而非累计值，可能因取消点赞或删除题解而下降。',
+    ],
+  },
+]
+
+const rulesVisible = ref(false)
 
 function createState(): RowState {
   return {
@@ -293,7 +364,17 @@ watch(activeTab, (key) => {
       eyebrow="RANKS // HALL OF FAME"
       title="排行榜"
       description="四榜同辉：Rating、活跃、富豪与贡献总览，点击卡片查看完整排名。"
-    />
+    >
+      <template #actions>
+        <Button
+          data-test="rules-button"
+          label="计分规则"
+          icon="pi pi-question-circle"
+          outlined
+          @click="rulesVisible = true"
+        />
+      </template>
+    </AppPageHeader>
 
     <p v-if="season" class="season-banner" aria-label="当前赛季">
       当前赛季 {{ season.name }} · 下次重置 {{ nextResetDate }}
@@ -520,6 +601,37 @@ watch(activeTab, (key) => {
         </TabPanels>
       </Tabs>
     </AppSurface>
+
+    <Dialog
+      v-model:visible="rulesVisible"
+      modal
+      header="四榜计分规则"
+      data-test="rules-dialog"
+      class="rules-dialog"
+      :draggable="false"
+    >
+      <div class="rules-sections">
+        <section
+          v-for="section in rulesSections"
+          :key="section.key"
+          class="rules-section"
+          :style="{ '--rule-accent': section.accent }"
+        >
+          <header class="rules-section__head">
+            <span class="rules-section__icon" aria-hidden="true">
+              <i :class="section.icon" />
+            </span>
+            <h3 class="rules-section__title">{{ section.label }}</h3>
+          </header>
+          <ul class="rules-section__items">
+            <li v-for="item in section.items" :key="item">{{ item }}</li>
+          </ul>
+        </section>
+      </div>
+      <template #footer>
+        <Button label="知道了" icon="pi pi-check" @click="rulesVisible = false" />
+      </template>
+    </Dialog>
   </div>
 </template>
 
@@ -956,6 +1068,79 @@ watch(activeTab, (key) => {
 .pager {
   align-self: flex-end;
   margin-top: var(--kapoj-space-3);
+}
+
+/* Scoring rules dialog (teleported, so the shell width is global). */
+:global(.rules-dialog) {
+  width: min(92vw, 720px);
+}
+
+.rules-sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kapoj-space-3);
+}
+
+.rules-section {
+  --rule-accent: var(--kapoj-primary);
+
+  padding: var(--kapoj-space-3) var(--kapoj-space-4);
+  background: color-mix(in srgb, var(--rule-accent) 7%, var(--kapoj-surface));
+  border: 1px solid color-mix(in srgb, var(--rule-accent) 22%, var(--kapoj-border));
+  border-left: 3px solid var(--rule-accent);
+  border-radius: var(--kapoj-radius-md);
+}
+
+.rules-section__head {
+  display: flex;
+  align-items: center;
+  gap: var(--kapoj-space-2);
+}
+
+.rules-section__icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  color: var(--rule-accent);
+  font-size: 0.8rem;
+  background: color-mix(in srgb, var(--rule-accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--rule-accent) 32%, transparent);
+  border-radius: var(--kapoj-radius-sm);
+}
+
+.rules-section__title {
+  margin: 0;
+  color: var(--kapoj-text);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.rules-section__items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 1.15rem;
+  margin: var(--kapoj-space-2) 0 0;
+  color: var(--kapoj-text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+}
+
+.rules-section__items li::marker {
+  color: var(--rule-accent);
+}
+
+@media (max-width: 640px) {
+  :global(.rules-dialog) {
+    width: 100%;
+  }
+
+  .rules-section {
+    padding: var(--kapoj-space-3);
+  }
 }
 
 @media (max-width: 1199px) {

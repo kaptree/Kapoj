@@ -2,7 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
 import Paginator from 'primevue/paginator'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '@/api/http'
 import {
@@ -117,6 +117,10 @@ beforeEach(() => {
   // jsdom does not implement scrollIntoView.
   scrollIntoView = vi.fn()
   Element.prototype.scrollIntoView = scrollIntoView as unknown as Element['scrollIntoView']
+})
+
+afterEach(() => {
+  document.body.innerHTML = ''
 })
 
 describe('LeaderboardView', () => {
@@ -256,5 +260,26 @@ describe('LeaderboardView', () => {
     expect(text).not.toContain('今日已签到')
     expect(text).not.toContain('登录后签到领金币')
     expect(text).not.toContain('登录 / 注册')
+  })
+
+  it('opens the four-board scoring rules dialog', async () => {
+    const wrapper = await mountPage()
+    await wrapper.find('[data-test="rules-button"]').trigger('click')
+    await flushPromises()
+
+    expect(document.querySelector('[data-test="rules-dialog"]')).not.toBeNull()
+    const text = document.body.textContent ?? ''
+    expect(text).toContain('四榜计分规则')
+    expect(text).toContain('Rating 榜')
+    expect(text).toContain('活跃榜')
+    expect(text).toContain('富豪榜')
+    expect(text).toContain('贡献榜')
+    expect(text).toContain('+2')
+    expect(text).toContain('+10')
+    expect(text).toContain('+3')
+    expect(text).toContain('+1')
+    expect(text).toContain('+20')
+    expect(text).toContain('取消点赞')
+    expect(text).toContain('点赞者')
   })
 })
