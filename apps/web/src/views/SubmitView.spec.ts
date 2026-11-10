@@ -227,7 +227,9 @@ afterEach(() => {
 })
 
 describe('SubmitView', () => {
-  it('renders the page form and skeleton before the editor chunk resolves', async () => {
+  it('renders the form and skeleton, and AI falls back safely, before the editor chunk resolves', async () => {
+    localStorage.setItem('kapoj:code:practice:1:cpp', 'int main() {}')
+    vi.mocked(completeCode).mockResolvedValue({ completion: ' return 0;' })
     editorLoad.hold()
     const { wrapper } = await mountPage()
 
@@ -244,6 +246,22 @@ describe('SubmitView', () => {
     const submit = submitButton(wrapper)
     expect(submit).toBeTruthy()
     expect((submit!.element as HTMLButtonElement).disabled).toBe(false)
+
+    // The template ref points at the skeleton while loading, so AI must not
+    // assume the editor methods exist.
+    await aiButton(wrapper, 'AI 补全')!.trigger('click')
+    await flushPromises()
+
+    expect(completeCode).toHaveBeenCalledWith({
+      code: 'int main() {}',
+      language: 'cpp',
+      cursor: 13,
+      problemId: 1,
+    })
+    expect(editorMock.getCursorByteOffset).not.toHaveBeenCalled()
+    expect(editorMock.insertAtCursor).not.toHaveBeenCalled()
+    expect(toast.add).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }))
+    expect(editor(wrapper).exists()).toBe(false)
 
     editorLoad.release()
     await flushPromises()

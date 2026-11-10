@@ -166,6 +166,23 @@ function byteLength(value: string): number {
   return new TextEncoder().encode(value).length
 }
 
+/**
+ * While the async editor loads, its template ref points at the skeleton, which
+ * has no editor methods. Fall back to the end of the code in that window.
+ */
+function getEditorCursorOffset(): number {
+  const editor = editorRef.value
+  if (!editor || typeof editor.getCursorByteOffset !== 'function') return byteLength(code.value)
+  return editor.getCursorByteOffset()
+}
+
+/** Insert at the cursor only once the real editor is mounted. */
+function insertAtEditorCursor(text: string) {
+  const editor = editorRef.value
+  if (!editor || typeof editor.insertAtCursor !== 'function') return
+  editor.insertAtCursor(text)
+}
+
 function handleAIError(e: unknown) {
   if (e instanceof ApiError) {
     if (e.code === 40302) {
@@ -243,7 +260,7 @@ async function loadAIConfig() {
 async function runComplete() {
   if (guardCodeTooLarge()) return
   const source = code.value
-  const cursor = editorRef.value?.getCursorByteOffset() ?? byteLength(source)
+  const cursor = getEditorCursorOffset()
   aiBusy.value = 'complete'
   try {
     const result = await completeCode({
@@ -257,7 +274,7 @@ async function runComplete() {
       toast.add({ severity: 'info', summary: '没有可插入的补全', life: 3000 })
       return
     }
-    editorRef.value?.insertAtCursor(completion)
+    insertAtEditorCursor(completion)
   } catch (e) {
     handleAIError(e)
   } finally {
