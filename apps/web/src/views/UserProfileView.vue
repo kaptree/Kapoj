@@ -7,8 +7,9 @@ import { useToast } from 'primevue/usetoast'
 
 import { ApiError } from '@/api/http'
 import { followUser, getUserSocial, unfollowUser } from '@/api/social'
-import { getProfile } from '@/api/users'
-import type { Profile, SocialView } from '@/api/types'
+import { getProfile, getUserActivity } from '@/api/users'
+import type { Profile, SocialView, UserActivity } from '@/api/types'
+import ContributionGrid from '@/components/profile/ContributionGrid.vue'
 import FollowListDialog from '@/components/social/FollowListDialog.vue'
 import IdentityShowcase from '@/components/IdentityShowcase.vue'
 import RatingHistoryCard from '@/components/RatingHistoryCard.vue'
@@ -24,12 +25,16 @@ const auth = useAuthStore()
 const toast = useToast()
 const profile = ref<Profile | null>(null)
 const social = ref<SocialView | null>(null)
+const activity = ref<UserActivity | null>(null)
 const error = ref('')
 const loading = ref(false)
+const activityLoading = ref(false)
+const activityError = ref('')
 const avatarFailed = ref(false)
 const followBusy = ref(false)
 const followDialogOpen = ref(false)
 const followDialogTab = ref<'followers' | 'following'>('followers')
+let latestLoad = 0
 
 const initial = computed(() => {
   const name = profile.value?.nickname || profile.value?.username || '?'
@@ -49,29 +54,56 @@ const isLoggedIn = computed(() => auth.isLoggedIn)
 const loginTarget = computed(() => ({ name: 'login', query: { redirect: route.fullPath } }))
 const followLabel = computed(() => (social.value?.isFollowing ? '已关注' : '关注'))
 
+async function loadActivity(id: string, seq: number) {
+  activityLoading.value = true
+  activityError.value = ''
+  try {
+    const data = await getUserActivity(id)
+    if (seq !== latestLoad) return
+    activity.value = data
+  } catch (e) {
+    if (seq !== latestLoad) return
+    activity.value = null
+    activityError.value = e instanceof ApiError ? e.message : '代码提交贡献加载失败，请稍后再试'
+  } finally {
+    if (seq === latestLoad) activityLoading.value = false
+  }
+}
+
 async function loadProfile(id: string) {
+  const seq = ++latestLoad
   loading.value = true
   error.value = ''
   profile.value = null
   social.value = null
+  activity.value = null
+  activityError.value = ''
   avatarFailed.value = false
+  void loadActivity(id, seq)
   try {
     const [profileData, socialData] = await Promise.all([
       getProfile(id),
       getUserSocial(id).catch(() => null),
     ])
+    if (seq !== latestLoad) return
     profile.value = profileData
     social.value = socialData
   } catch (e) {
+    if (seq !== latestLoad) return
     error.value = e instanceof ApiError && e.code === 40400 ? '用户不存在' : '加载失败，请稍后再试'
   } finally {
-    loading.value = false
+    if (seq === latestLoad) loading.value = false
   }
 }
 
 function retry() {
   const id = route.params.id
   if (typeof id === 'string') void loadProfile(id)
+}
+
+function retryActivity() {
+  const id = route.params.id
+  if (typeof id === 'string') void loadActivity(id, latestLoad)
 }
 
 function openFollowList(tab: 'followers' | 'following') {
@@ -137,82 +169,126 @@ watch(
 
     <AppErrorState v-else-if="error" :description="error" @retry="retry" />
 
-    <AppSurface v-else-if="profile" padding="lg" class="profile-surface">
-      <div class="profile-head">
-        <Avatar
-          :image="!avatarFailed && profile.avatarUrl ? profile.avatarUrl : undefined"
-          :label="!avatarFailed && profile.avatarUrl ? undefined : initial"
-          size="xlarge"
-          shape="circle"
-          class="profile-avatar"
-          :aria-label="`用户头像：${profile.nickname}`"
-          @error="avatarFailed = true"
-        />
-        <div class="profile-identity">
-          <IdentityShowcase
-            :badges="profile.equippedBadges"
-            :title="profile.equippedTitle"
-            size="small"
+    <template v-else-if="profile">
+      <AppSurface padding="lg" class="profile-surface">
+        <div class="profile-head">
+          <Avatar
+            :image="!avatarFailed && profile.avatarUrl ? profile.avatarUrl : undefined"
+            :label="!avatarFailed && profile.avatarUrl ? undefined : initial"
+            size="xlarge"
+            shape="circle"
+            class="profile-avatar"
+            :aria-label="`用户头像：${profile.nickname}`"
+            @error="avatarFailed = true"
           />
-          <p class="profile-bio" :class="{ muted: !profile.bio }">
-            {{ profile.bio || '这个人还没有写简介。' }}
-          </p>
+          <div class="profile-identity">
+            <IdentityShowcase
+              :badges="profile.equippedBadges"
+              :title="profile.equippedTitle"
+              size="small"
+            />
+            <p class="profile-bio" :class="{ muted: !profile.bio }">
+              {{ profile.bio || '这个人还没有写简介。' }}
+            </p>
+          </div>
         </div>
-      </div>
 
-      <div class="social-row">
-        <button
-          type="button"
-          class="social-stat social-stat--followers"
-          @click="openFollowList('followers')"
-        >
-          <span class="social-stat__num">{{ social?.followersCount ?? 0 }}</span>
-          <span class="social-stat__label">粉丝</span>
-        </button>
-        <button
-          type="button"
-          class="social-stat social-stat--following"
-          @click="openFollowList('following')"
-        >
-          <span class="social-stat__num">{{ social?.followingCount ?? 0 }}</span>
-          <span class="social-stat__label">关注</span>
-        </button>
-        <template v-if="!isSelf">
-          <Button
-            v-if="isLoggedIn"
-            :label="followLabel"
-            :icon="social?.isFollowing ? 'pi pi-user-minus' : 'pi pi-user-plus'"
-            :severity="social?.isFollowing ? 'secondary' : 'primary'"
-            :outlined="social?.isFollowing"
-            :loading="followBusy"
-            class="follow-button"
-            @click="toggleFollow"
-          />
-          <Button
-            v-else
-            label="登录后关注"
-            icon="pi pi-sign-in"
-            class="follow-button"
-            @click="goLogin"
-          />
-        </template>
-      </div>
+        <div class="social-row">
+          <button
+            type="button"
+            class="social-stat social-stat--followers"
+            @click="openFollowList('followers')"
+          >
+            <span class="social-stat__num">{{ social?.followersCount ?? 0 }}</span>
+            <span class="social-stat__label">粉丝</span>
+          </button>
+          <button
+            type="button"
+            class="social-stat social-stat--following"
+            @click="openFollowList('following')"
+          >
+            <span class="social-stat__num">{{ social?.followingCount ?? 0 }}</span>
+            <span class="social-stat__label">关注</span>
+          </button>
+          <template v-if="!isSelf">
+            <Button
+              v-if="isLoggedIn"
+              :label="followLabel"
+              :icon="social?.isFollowing ? 'pi pi-user-minus' : 'pi pi-user-plus'"
+              :severity="social?.isFollowing ? 'secondary' : 'primary'"
+              :outlined="social?.isFollowing"
+              :loading="followBusy"
+              class="follow-button"
+              @click="toggleFollow"
+            />
+            <Button
+              v-else
+              label="登录后关注"
+              icon="pi pi-sign-in"
+              class="follow-button"
+              @click="goLogin"
+            />
+          </template>
+        </div>
 
-      <dl class="profile-stats">
-        <div>
-          <dt>Rating</dt>
-          <dd class="num">{{ profile.rating }}</dd>
+        <dl class="profile-stats">
+          <div class="career-card" data-test="career-card">
+            <dt>提交 / 通过</dt>
+            <dd class="career-card__values">
+              <span class="career-card__metric">
+                <strong class="num">{{ activity?.submissionCount ?? '—' }}</strong>
+                <span class="career-card__label">提交总数</span>
+              </span>
+              <span class="career-card__metric">
+                <strong class="num">{{ activity?.acceptedProblemCount ?? '—' }}</strong>
+                <span class="career-card__label">通过题数</span>
+              </span>
+            </dd>
+          </div>
+          <div>
+            <dt>Rating</dt>
+            <dd class="num">{{ profile.rating }}</dd>
+          </div>
+          <div>
+            <dt>金币</dt>
+            <dd class="num">{{ profile.coins }}</dd>
+          </div>
+          <div>
+            <dt>注册时间</dt>
+            <dd>{{ registrationDate }}</dd>
+          </div>
+        </dl>
+      </AppSurface>
+
+      <div class="profile-body">
+        <div class="profile-main">
+          <AppSurface padding="lg" class="profile-card">
+            <ContributionGrid v-if="activity" :activity="activity" />
+            <AppLoadingState v-else-if="activityLoading" label="正在加载代码提交贡献图" />
+            <AppErrorState
+              v-else-if="activityError"
+              data-test="activity-error"
+              title="贡献图加载失败"
+              :description="activityError"
+              @retry="retryActivity"
+            />
+          </AppSurface>
+
+          <RatingHistoryCard :user-id="profile.id" :rating="profile.rating" />
         </div>
-        <div>
-          <dt>金币</dt>
-          <dd class="num">{{ profile.coins }}</dd>
-        </div>
-        <div>
-          <dt>注册时间</dt>
-          <dd>{{ registrationDate }}</dd>
-        </div>
-      </dl>
-    </AppSurface>
+
+        <aside class="profile-aside" data-test="profile-aside">
+          <AppSurface padding="lg" class="profile-aside__card" data-test="evaluation-slot">
+            <h2 class="profile-aside__title">词云评价</h2>
+            <p class="profile-aside__hint">评价功能即将上线。</p>
+          </AppSurface>
+          <AppSurface padding="lg" class="profile-aside__card" data-test="certificate-slot">
+            <h2 class="profile-aside__title">荣誉证书</h2>
+            <p class="profile-aside__hint">证书展示即将上线。</p>
+          </AppSurface>
+        </aside>
+      </div>
+    </template>
 
     <FollowListDialog
       v-if="profile"
@@ -220,8 +296,6 @@ watch(
       :user-id="profile.id"
       :initial-tab="followDialogTab"
     />
-
-    <RatingHistoryCard v-if="profile" :user-id="profile.id" :rating="profile.rating" />
   </div>
 </template>
 
@@ -230,7 +304,7 @@ watch(
   display: flex;
   flex-direction: column;
   gap: var(--kapoj-space-4);
-  max-width: 720px;
+  max-width: var(--kapoj-content-max);
 }
 
 .profile-surface {
@@ -313,7 +387,7 @@ watch(
 
 .profile-stats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: 1.25fr repeat(3, minmax(0, 1fr));
   gap: var(--kapoj-space-3);
   padding-top: var(--kapoj-space-4);
   margin: 0;
@@ -347,13 +421,93 @@ watch(
   font-weight: 600;
 }
 
+.career-card__values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kapoj-space-2) var(--kapoj-space-4);
+  align-items: flex-end;
+}
+
+.career-card__metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.career-card__metric strong {
+  font-size: 1.5rem;
+  line-height: 1.1;
+}
+
+.career-card__label {
+  color: var(--kapoj-text-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.profile-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: var(--kapoj-space-4);
+  align-items: start;
+}
+
+.profile-main,
+.profile-aside {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kapoj-space-4);
+  min-width: 0;
+}
+
+.profile-card {
+  min-width: 0;
+}
+
+.profile-aside__title {
+  margin: 0;
+  color: var(--kapoj-text);
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.profile-aside__hint {
+  margin: var(--kapoj-space-2) 0 0;
+  color: var(--kapoj-text-muted);
+  font-size: 0.8125rem;
+}
+
+@media (max-width: 900px) {
+  .profile-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .profile-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .career-card {
+    grid-column: span 2;
+  }
+}
+
 @media (max-width: 520px) {
   .profile-head {
     flex-direction: column;
   }
+}
 
+@media (max-width: 420px) {
   .profile-stats {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .career-card {
+    grid-column: auto;
   }
 }
 </style>

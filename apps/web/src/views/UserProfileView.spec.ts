@@ -8,8 +8,8 @@ import { nextTick } from 'vue'
 import { ApiError } from '@/api/http'
 import { getRatingHistory } from '@/api/leaderboard'
 import { followUser, getUserSocial, unfollowUser } from '@/api/social'
-import { getProfile } from '@/api/users'
-import type { Profile } from '@/api/types'
+import { getProfile, getUserActivity } from '@/api/users'
+import type { Profile, UserActivity } from '@/api/types'
 import UserProfileView from './UserProfileView.vue'
 
 const auth = vi.hoisted(() => ({ isLoggedIn: true, user: null as { id: number } | null }))
@@ -20,6 +20,7 @@ vi.mock('primevue/usetoast', () => ({ useToast: () => toast }))
 
 vi.mock('@/api/users', () => ({
   getProfile: vi.fn(),
+  getUserActivity: vi.fn(),
 }))
 
 vi.mock('@/api/leaderboard', () => ({
@@ -47,6 +48,20 @@ function profile(overrides: Partial<Profile> = {}): Profile {
     equippedBadges: [{ id: 1, name: '早鸟', imageUrl: '' }],
     equippedTitle: { id: 1, name: '卷王', color: '#7C3AED' },
     createdAt: '2026-01-01T00:00:00Z',
+    ...overrides,
+  }
+}
+
+function activity(overrides: Partial<UserActivity> = {}): UserActivity {
+  return {
+    submissionCount: 321,
+    acceptedProblemCount: 210,
+    contributionTotal: 96,
+    startDate: '2025-11-13',
+    endDate: '2026-11-12',
+    currentStreak: 4,
+    longestStreak: 18,
+    days: [],
     ...overrides,
   }
 }
@@ -81,6 +96,8 @@ beforeEach(() => {
   toast.add.mockReset()
   vi.mocked(getProfile).mockReset()
   vi.mocked(getProfile).mockResolvedValue(profile())
+  vi.mocked(getUserActivity).mockReset()
+  vi.mocked(getUserActivity).mockResolvedValue(activity())
   vi.mocked(getRatingHistory).mockReset()
   vi.mocked(getRatingHistory).mockResolvedValue({ total: 0, items: [] })
   vi.mocked(getUserSocial).mockReset()
@@ -109,6 +126,71 @@ describe('UserProfileView', () => {
     expect(wrapper.text()).toContain('注册时间')
     expect(wrapper.text()).toContain(new Date('2026-01-01T00:00:00Z').toLocaleDateString('zh-CN'))
     expect(wrapper.findComponent(Avatar).props('label')).toBe('A')
+    wrapper.unmount()
+  })
+
+  it('renders the activity stats before Rating and the contribution grid', async () => {
+    const { wrapper } = await mountPage('/users/7')
+
+    expect(getUserActivity).toHaveBeenCalledWith('7')
+    const labels = wrapper.findAll('.profile-stats dt').map((label) => label.text())
+    expect(labels[0]).toContain('提交')
+    expect(labels[1]).toBe('Rating')
+    expect(labels[2]).toBe('金币')
+    expect(labels[3]).toBe('注册时间')
+
+    const career = wrapper.get('[data-test="career-card"]')
+    expect(career.text()).toContain('提交总数')
+    expect(career.text()).toContain('321')
+    expect(career.text()).toContain('通过题数')
+    expect(career.text()).toContain('210')
+    expect(wrapper.text()).toContain('代码提交贡献图')
+    expect(wrapper.text()).toContain('过去一年 96 次代码提交')
+    wrapper.unmount()
+  })
+
+  it('renders the two-column body with evaluation and certificate placeholders', async () => {
+    const { wrapper } = await mountPage('/users/7')
+
+    const body = wrapper.get('.profile-body')
+    expect(body.find('.profile-main').exists()).toBe(true)
+    expect(body.find('[data-test="profile-aside"]').exists()).toBe(true)
+
+    const main = body.get('.profile-main').text()
+    expect(main).toContain('代码提交贡献图')
+    expect(main).toContain('Rating 历史')
+
+    expect(wrapper.get('[data-test="evaluation-slot"]').text()).toContain('词云评价')
+    expect(wrapper.get('[data-test="certificate-slot"]').text()).toContain('荣誉证书')
+    wrapper.unmount()
+  })
+
+  it('keeps the profile, social and rating history when activity fails', async () => {
+    vi.mocked(getUserActivity).mockRejectedValue(new ApiError(500, 50000, '服务器错误'))
+    vi.mocked(getUserSocial).mockResolvedValue({
+      followersCount: 12,
+      followingCount: 5,
+      isFollowing: false,
+    })
+    const { wrapper } = await mountPage('/users/7')
+
+    expect(wrapper.text()).toContain('Alice')
+    expect(wrapper.text()).toContain('12')
+    expect(wrapper.text()).toContain('Rating 历史')
+    expect(wrapper.find('[data-test="activity-error"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('服务器错误')
+
+    vi.mocked(getUserActivity).mockResolvedValue(activity())
+    const retry = wrapper
+      .findAll('[data-test="activity-error"] button')
+      .find((item) => item.text().trim() === '重试')
+    expect(retry).toBeTruthy()
+    await retry!.trigger('click')
+    await flushPromises()
+
+    expect(getUserActivity).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[data-test="activity-error"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('过去一年 96 次代码提交')
     wrapper.unmount()
   })
 
