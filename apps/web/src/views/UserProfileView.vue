@@ -10,6 +10,7 @@ import { followUser, getUserSocial, unfollowUser } from '@/api/social'
 import { getProfile, getUserActivity } from '@/api/users'
 import type { Profile, SocialView, UserActivity } from '@/api/types'
 import ContributionGrid from '@/components/profile/ContributionGrid.vue'
+import ProfileCertificatesCard from '@/components/profile/ProfileCertificatesCard.vue'
 import ProfileEvaluationCard from '@/components/profile/ProfileEvaluationCard.vue'
 import FollowListDialog from '@/components/social/FollowListDialog.vue'
 import IdentityShowcase from '@/components/IdentityShowcase.vue'
@@ -284,10 +285,11 @@ watch(
             class="profile-aside__card"
             data-test="evaluation-slot"
           />
-          <AppSurface padding="lg" class="profile-aside__card" data-test="certificate-slot">
-            <h2 class="profile-aside__title">荣誉证书</h2>
-            <p class="profile-aside__hint">证书展示即将上线。</p>
-          </AppSurface>
+          <ProfileCertificatesCard
+            :target-user-id="profile.id"
+            class="profile-aside__card"
+            data-test="certificate-slot"
+          />
         </aside>
       </div>
     </template>
@@ -465,20 +467,6 @@ watch(
 
 .profile-card {
   min-width: 0;
-}
-
-.profile-aside__title {
-  margin: 0;
-  color: var(--kapoj-text);
-  font-size: 1.05rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-
-.profile-aside__hint {
-  margin: var(--kapoj-space-2) 0 0;
-  color: var(--kapoj-text-muted);
-  font-size: 0.8125rem;
 }
 
 @media (max-width: 900px) {

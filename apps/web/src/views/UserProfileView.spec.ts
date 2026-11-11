@@ -78,6 +78,12 @@ const EvaluationCardStub = {
   template: '<div data-test="evaluation-slot">{{ targetUserId }}</div>',
 }
 
+const CertificateCardStub = {
+  name: 'ProfileCertificatesCard',
+  props: ['targetUserId'],
+  template: '<div data-test="certificate-slot">证书 {{ targetUserId }}</div>',
+}
+
 async function mountPage(path = '/users/7') {
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push(path)
@@ -85,7 +91,11 @@ async function mountPage(path = '/users/7') {
   const wrapper = mount(UserProfileView, {
     global: {
       plugins: [router, PrimeVue],
-      stubs: { FollowListDialog: true, ProfileEvaluationCard: EvaluationCardStub },
+      stubs: {
+        FollowListDialog: true,
+        ProfileEvaluationCard: EvaluationCardStub,
+        ProfileCertificatesCard: CertificateCardStub,
+      },
     },
   })
   await flushPromises()
@@ -172,7 +182,7 @@ describe('UserProfileView', () => {
       'certificate-slot',
     ])
     expect(wrapper.get('[data-test="evaluation-slot"]').text()).toBe('7')
-    expect(wrapper.get('[data-test="certificate-slot"]').text()).toContain('荣誉证书')
+    expect(wrapper.get('[data-test="certificate-slot"]').text()).toBe('证书 7')
     wrapper.unmount()
   })
 
