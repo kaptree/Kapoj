@@ -54,8 +54,9 @@ const hasMore = computed(
   () => pageData.value !== null && pageData.value.items.length < pageData.value.total,
 )
 const submitLabel = computed(() => (myEvaluation.value ? '更新评价' : '发布评价'))
-const contentLength = computed(() => Array.from(myContent.value).length)
-const canSubmit = computed(() => myContent.value.trim().length > 0 && !saving.value)
+const normalizedContent = computed(() => myContent.value.replace(/[\r\n\t]+/g, ' '))
+const contentLength = computed(() => Array.from(normalizedContent.value).length)
+const canSubmit = computed(() => normalizedContent.value.trim().length > 0 && !saving.value)
 
 function message(e: unknown, fallback: string): string {
   return e instanceof ApiError ? e.message : fallback
@@ -140,7 +141,8 @@ function loadMore() {
 }
 
 async function submit() {
-  const content = myContent.value.trim()
+  // The API rejects newlines and tabs, so the multiline editor normalizes them.
+  const content = normalizedContent.value.trim()
   if (!content || saving.value) return
   const updating = myEvaluation.value !== null
   saving.value = true

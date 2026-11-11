@@ -197,6 +197,25 @@ describe('ProfileEvaluationCard', () => {
     wrapper.unmount()
   })
 
+  it('normalizes newlines and tabs to spaces before saving', async () => {
+    auth.isLoggedIn = true
+    auth.user = { id: 9 }
+    vi.mocked(listUserEvaluations).mockResolvedValue(page({ canEvaluate: true }))
+
+    const wrapper = await mountCard()
+    await wrapper.get('textarea').setValue('大佬\n代码清晰\t')
+    expect(wrapper.get('.evaluation-form__counter').text()).toBe('8/40')
+
+    await wrapper.get('.evaluation-form__submit').trigger('click')
+    await flushPromises()
+
+    expect(saveMyEvaluation).toHaveBeenCalledWith(TARGET_ID, '大佬 代码清晰')
+    const saved = vi.mocked(saveMyEvaluation).mock.calls[0][1]
+    expect(saved).not.toMatch(/[\r\n\t]/)
+
+    wrapper.unmount()
+  })
+
   it('prefills an existing evaluation and labels the action as an update', async () => {
     auth.isLoggedIn = true
     auth.user = { id: 9 }
