@@ -37,6 +37,8 @@ type Repository interface {
 	List(ctx context.Context, f ListFilter, offset, limit int) ([]ListRow, int64, error)
 	FindDetail(ctx context.Context, id int64) (*DetailRow, error)
 	HasAccepted(ctx context.Context, userID, problemID int64) (bool, error)
+	CountUserActivity(ctx context.Context, userID int64) (total, accepted int64, err error)
+	ListCodeSubmissionTimes(ctx context.Context, userID int64, since time.Time) ([]time.Time, error)
 }
 
 type gormRepository struct{ db *gorm.DB }
@@ -171,6 +173,34 @@ func (r *gormRepository) HasAccepted(ctx context.Context, userID, problemID int6
 		userID, problemID,
 	).Scan(&ok).Error
 	return ok, err
+}
+
+// CountUserActivity returns the user's total submission count and the number
+// of distinct problems with at least one accepted submission. Objective
+// answers are submissions too, so they are included in both figures.
+func (r *gormRepository) CountUserActivity(ctx context.Context, userID int64) (total, accepted int64, err error) {
+	var row struct {
+		Total    int64
+		Accepted int64
+	}
+	err = r.db.WithContext(ctx).Raw(
+		`SELECT COUNT(*) AS total,
+		        COUNT(DISTINCT problem_id) FILTER (WHERE status = 'accepted') AS accepted
+		   FROM submissions
+		  WHERE user_id = ?`, userID,
+	).Scan(&row).Error
+	return row.Total, row.Accepted, err
+}
+
+// ListCodeSubmissionTimes returns created_at for all code submissions since
+// since. Objective answer submissions are excluded from the contribution graph.
+func (r *gormRepository) ListCodeSubmissionTimes(ctx context.Context, userID int64, since time.Time) ([]time.Time, error) {
+	times := make([]time.Time, 0)
+	err := r.db.WithContext(ctx).Model(&Submission{}).
+		Where("user_id = ? AND language <> ? AND created_at >= ?", userID, LanguageAnswer, since).
+		Order("created_at").
+		Pluck("created_at", &times).Error
+	return times, err
 }
 
 func mapErr(err error) error {

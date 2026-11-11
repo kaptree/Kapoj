@@ -105,7 +105,6 @@ func New(d Deps) *gin.Engine {
 	if d.Game != nil {
 		userOpts.IdentityLookup = d.Game
 	}
-	userapi.RegisterRoutes(api, userSvc, userOpts)
 	userapi.RegisterAvatarRoutes(public, uploads, userSvc)
 	if d.RBAC != nil {
 		adminapi.RegisterRoutes(api, d.RBAC, adminapi.Options{Game: d.Game, Rating: d.Rating, AI: d.AISettings})
@@ -179,6 +178,10 @@ func New(d Deps) *gin.Engine {
 		submission.NewRedisLimiter(d.Redis, d.Config.SubmitCooldown),
 		submissionevents.NewRedisPublisher(d.Redis),
 	)
+	// Profile activity needs submissionSvc, so user routes are mounted here
+	// rather than next to the other user services above.
+	userOpts.Activity = submissionSvc
+	userapi.RegisterRoutes(api, userSvc, userOpts)
 	streamer := submissionevents.NewRedisStreamer(d.Redis)
 	submissionOpts := submissionapi.Options{RBAC: d.RBAC}
 	if d.Game != nil {

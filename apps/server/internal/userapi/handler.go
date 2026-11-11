@@ -14,6 +14,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
+	"github.com/kaptree/kapoj/apps/server/internal/submission"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
 
@@ -22,10 +23,16 @@ type IdentityLookup interface {
 	Identities(ctx context.Context, userIDs []int64) (map[int64]gamification.Identity, error)
 }
 
+// ActivityLookup 读取用户活动统计与贡献日历；由 submission.Service 实现。
+type ActivityLookup interface {
+	UserActivity(ctx context.Context, userID int64) (*submission.UserActivity, error)
+}
+
 // Options 配置用户接口的可选依赖。
 type Options struct {
 	IdentityLookup IdentityLookup
 	RBAC           *rbac.Service
+	Activity       ActivityLookup
 }
 
 // RegisterRoutes mounts user endpoints. The router must already run
@@ -35,10 +42,12 @@ func RegisterRoutes(r gin.IRouter, s *user.Service, opts ...Options) {
 	if len(opts) > 0 {
 		h.identities = opts[0].IdentityLookup
 		h.rbac = opts[0].RBAC
+		h.activity = opts[0].Activity
 	}
 	r.GET("/users/me", middleware.RequireAuth(), h.getMe)
 	r.PUT("/users/me", middleware.RequireAuth(), h.updateMe)
 	r.GET("/users/:id/profile", h.profile)
+	r.GET("/users/:id/activity", h.userActivity)
 }
 
 // RegisterAvatarRoutes mounts avatar upload/delete (authenticated) and the
@@ -55,6 +64,7 @@ type handler struct {
 	svc        *user.Service
 	identities IdentityLookup
 	rbac       *rbac.Service
+	activity   ActivityLookup
 }
 
 func (h *handler) getMe(c *gin.Context) {
@@ -129,6 +139,28 @@ func (h *handler) profile(c *gin.Context) {
 		}
 	}
 	httpx.OK(c, profile)
+}
+
+func (h *handler) userActivity(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		httpx.Fail(c, httpx.ErrNotFound)
+		return
+	}
+	if _, err := h.svc.Profile(c.Request.Context(), id); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	if h.activity == nil {
+		httpx.Fail(c, httpx.ErrInternal)
+		return
+	}
+	activity, err := h.activity.UserActivity(c.Request.Context(), id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, activity)
 }
 
 func (h *handler) uploadAvatar(c *gin.Context) {

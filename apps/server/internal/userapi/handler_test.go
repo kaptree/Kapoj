@@ -24,6 +24,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
+	"github.com/kaptree/kapoj/apps/server/internal/submission"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
@@ -46,6 +47,17 @@ func (f *fakeIdentityLookup) Identities(_ context.Context, userIDs []int64) (map
 		}
 	}
 	return out, nil
+}
+
+type fakeActivityLookup struct {
+	activity *submission.UserActivity
+	err      error
+	calls    []int64
+}
+
+func (f *fakeActivityLookup) UserActivity(_ context.Context, userID int64) (*submission.UserActivity, error) {
+	f.calls = append(f.calls, userID)
+	return f.activity, f.err
 }
 
 type fixture struct {
@@ -226,6 +238,53 @@ func TestProfileNotFound(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, w.Code, path)
 		assert.EqualValues(t, 40400, resp["code"], path)
 	}
+}
+
+func TestUserActivityIsPublicAndReturnsCalendar(t *testing.T) {
+	lookup := &fakeActivityLookup{activity: &submission.UserActivity{
+		SubmissionCount:      12,
+		AcceptedProblemCount: 5,
+		ContributionTotal:    9,
+		StartDate:            "2025-11-13",
+		EndDate:              "2026-11-12",
+		CurrentStreak:        2,
+		LongestStreak:        4,
+		Days: []submission.ActivityDay{
+			{Date: "2025-11-13", Count: 0},
+			{Date: "2026-11-12", Count: 3},
+		},
+	}}
+	f := setupWithOptions(t, Options{Activity: lookup})
+	u, _ := f.register(t, "alice")
+
+	w, resp := f.do(http.MethodGet, fmt.Sprintf("/api/users/%d/activity", u.ID), "", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data := resp["data"].(map[string]any)
+	assert.EqualValues(t, 12, data["submissionCount"])
+	assert.EqualValues(t, 5, data["acceptedProblemCount"])
+	assert.EqualValues(t, 9, data["contributionTotal"])
+	assert.Equal(t, "2025-11-13", data["startDate"])
+	assert.Equal(t, "2026-11-12", data["endDate"])
+	assert.EqualValues(t, 2, data["currentStreak"])
+	assert.EqualValues(t, 4, data["longestStreak"])
+
+	days := data["days"].([]any)
+	require.Len(t, days, 2)
+	assert.Equal(t, "2025-11-13", days[0].(map[string]any)["date"])
+	assert.EqualValues(t, 3, days[1].(map[string]any)["count"])
+
+	assert.Equal(t, []int64{u.ID}, lookup.calls)
+}
+
+func TestUserActivityNotFound(t *testing.T) {
+	lookup := &fakeActivityLookup{}
+	f := setupWithOptions(t, Options{Activity: lookup})
+	for _, path := range []string{"/api/users/999/activity", "/api/users/abc/activity", "/api/users/-1/activity"} {
+		w, resp := f.do(http.MethodGet, path, "", "")
+		assert.Equal(t, http.StatusNotFound, w.Code, path)
+		assert.EqualValues(t, 40400, resp["code"], path)
+	}
+	assert.Empty(t, lookup.calls)
 }
 
 func grantMeTestRole(t *testing.T, g *gorm.DB, userID int64, roleCode string) {
