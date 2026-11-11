@@ -26,6 +26,7 @@ type Repository interface {
 	UpdateCertificateImage(ctx context.Context, id int64, key, contentType string) error
 	DeleteCertificate(ctx context.Context, id int64) error
 	ListMine(ctx context.Context, userID int64, offset, limit int) ([]Certificate, int64, error)
+	ListApprovedByUser(ctx context.Context, userID int64, limit int) ([]Certificate, int64, error)
 	ListAdmin(ctx context.Context, filter AdminFilter, offset, limit int) ([]adminCertificateRow, int64, error)
 	Review(ctx context.Context, id int64, status Status, reason string, verifyCode *string, reviewedBy int64, now time.Time) (bool, error)
 	FindByVerifyCode(ctx context.Context, code string) (*Certificate, string, error)
@@ -138,6 +139,22 @@ func (r *GormRepository) ListMine(ctx context.Context, userID int64, offset, lim
 	}
 	var certs []Certificate
 	if err := q.Order("submitted_at DESC, id DESC").Offset(offset).Limit(limit).Find(&certs).Error; err != nil {
+		return nil, 0, err
+	}
+	return certs, total, nil
+}
+
+// ListApprovedByUser 返回某用户已通过的证书，按审核时间倒序、id 倒序，并返回
+// 全部已通过证书总数（不受 limit 影响）。
+func (r *GormRepository) ListApprovedByUser(ctx context.Context, userID int64, limit int) ([]Certificate, int64, error) {
+	q := r.db.WithContext(ctx).Model(&Certificate{}).
+		Where("user_id = ? AND status = ?", userID, StatusApproved)
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var certs []Certificate
+	if err := q.Order("reviewed_at DESC, id DESC").Limit(limit).Find(&certs).Error; err != nil {
 		return nil, 0, err
 	}
 	return certs, total, nil

@@ -33,6 +33,9 @@ const (
 	verifyCodeRandLen     = 8
 	maxVerifyCodeAttempts = 5
 	maxRejectReasonLength = 500
+
+	// maxProfileCertificates 是公开主页证书列表的条数上限（也是默认值）。
+	maxProfileCertificates = 50
 )
 
 // Service 是证书领域服务。store 用于保存证书图片；genCode 为验证码生成器，
@@ -257,6 +260,35 @@ func (s *Service) ListMine(ctx context.Context, userID int64, page, size int) (*
 		items = append(items, toCertificateView(c))
 	}
 	return &httpx.Page[CertificateView]{Total: total, Items: items}, nil
+}
+
+// ListApprovedByUser 返回用户公开主页上的已通过证书摘要，按审核时间倒序、
+// id 倒序。limit<=0 或超过 50 时按 50 处理；返回的 total 是全部已通过证书数。
+func (s *Service) ListApprovedByUser(ctx context.Context, userID int64, limit int) ([]ProfileCertificateView, int64, error) {
+	if userID <= 0 {
+		return nil, 0, httpx.ErrNotFound
+	}
+	if limit <= 0 || limit > maxProfileCertificates {
+		limit = maxProfileCertificates
+	}
+	certs, total, err := s.repo.ListApprovedByUser(ctx, userID, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	items := make([]ProfileCertificateView, 0, len(certs))
+	for _, c := range certs {
+		v := ProfileCertificateView{
+			ID:         c.ID,
+			Type:       c.CertificateTypeName,
+			Level:      c.Level,
+			ApprovedAt: c.ReviewedAt,
+		}
+		if c.VerifyCode != nil {
+			v.VerifyCode = *c.VerifyCode
+		}
+		items = append(items, v)
+	}
+	return items, total, nil
 }
 
 // ListAdmin 返回管理员审核列表，按提交时间倒序。status 为空表示不筛选（全部），

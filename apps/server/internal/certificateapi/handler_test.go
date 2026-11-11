@@ -497,6 +497,83 @@ func TestPublicVerifyHTTP(t *testing.T) {
 	}
 }
 
+func TestUserCertificatesHTTP(t *testing.T) {
+	f := newFx(t)
+	ownerID, _ := f.register("profilecert")
+	typeID := f.activeTypeID()
+
+	base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	code := "KAPOJ-PROF-0001"
+	reviewerID := int64(1)
+	require.NoError(t, f.db.Create(&certificate.Certificate{
+		UserID:              ownerID,
+		CertificateTypeID:   typeID,
+		CertificateTypeName: "蓝桥杯",
+		Level:               "省一",
+		ImageKey:            "certificates/1",
+		ImageContentType:    "image/png",
+		Status:              certificate.StatusApproved,
+		VerifyCode:          &code,
+		SubmittedAt:         base.Add(-time.Hour),
+		ReviewedAt:          &base,
+		ReviewedBy:          &reviewerID,
+	}).Error)
+	for _, status := range []certificate.Status{certificate.StatusPending, certificate.StatusRejected} {
+		require.NoError(t, f.db.Create(&certificate.Certificate{
+			UserID:              ownerID,
+			CertificateTypeID:   typeID,
+			CertificateTypeName: "蓝桥杯",
+			Level:               "省二",
+			ImageKey:            "certificates/2",
+			ImageContentType:    "image/png",
+			Status:              status,
+			SubmittedAt:         base,
+		}).Error)
+	}
+
+	// 游客 200，只返回 approved；形状为 {total, items}。
+	w, resp := f.do(http.MethodGet, fmt.Sprintf("/api/users/%d/certificates", ownerID), "", nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data := resp["data"].(map[string]any)
+	assert.EqualValues(t, 1, data["total"])
+	items := data["items"].([]any)
+	require.Len(t, items, 1)
+	it := items[0].(map[string]any)
+	assert.Equal(t, "蓝桥杯", it["type"])
+	assert.Equal(t, "省一", it["level"])
+	assert.Equal(t, code, it["verifyCode"])
+	assert.NotNil(t, it["approvedAt"])
+
+	// 摘要只含 id/type/level/verifyCode/approvedAt，不泄露图片/驳回原因/审核人/
+	// 邮箱/用户 ID 等敏感信息。
+	assert.ElementsMatch(t, []string{"id", "type", "level", "verifyCode", "approvedAt"}, mapKeys(it))
+	for _, key := range []string{"imageUrl", "status", "rejectReason", "reviewedBy", "reviewedAt", "userId", "email", "submittedAt"} {
+		_, exists := it[key]
+		assert.False(t, exists, "公开证书摘要不应包含 %s", key)
+	}
+
+	// 未知用户返回空列表（200），不是 404。
+	w, resp = f.do(http.MethodGet, "/api/users/999999/certificates", "", nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data = resp["data"].(map[string]any)
+	assert.EqualValues(t, 0, data["total"])
+	emptyItems, ok := data["items"].([]any)
+	require.True(t, ok, "items 应为数组")
+	assert.Empty(t, emptyItems)
+
+	// 非法 id 404。
+	w, _ = f.do(http.MethodGet, "/api/users/abc/certificates", "", nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func mapKeys(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 func TestAdminCertificateList(t *testing.T) {
 	f := newFx(t)
 	userToken := f.token("user")

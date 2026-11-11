@@ -57,6 +57,7 @@ func RegisterRoutes(public, api, uploads gin.IRouter, s *certificate.Service, op
 
 	public.GET("/certificate-types", h.listActiveTypes)
 	public.GET("/certificates/verify", h.publicVerify)
+	public.GET("/users/:id/certificates", h.userCertificates)
 
 	uploads.POST("/certificates", middleware.RequireAuth(), h.submitCertificate)
 	api.GET("/certificates/my", middleware.RequireAuth(), h.myCertificates)
@@ -74,6 +75,22 @@ func RegisterRoutes(public, api, uploads gin.IRouter, s *certificate.Service, op
 type handler struct {
 	svc  *certificate.Service
 	rbac *rbac.Service
+}
+
+// userCertificates 处理 GET /api/users/:id/certificates（公开，无需登录）。
+// 只返回 approved 证书摘要；未知用户返回空列表而非 404。limit 传 0 使用服务
+// 默认值（50）。
+func (h *handler) userCertificates(c *gin.Context) {
+	id, ok := pathID(c)
+	if !ok {
+		return
+	}
+	items, total, err := h.svc.ListApprovedByUser(c.Request.Context(), id, 0)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, httpx.Page[certificate.ProfileCertificateView]{Total: total, Items: items})
 }
 
 func pathID(c *gin.Context) (int64, bool) {

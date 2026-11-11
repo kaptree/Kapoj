@@ -58,6 +58,16 @@ type PublicCertificateView struct {
 	ApprovedAt *time.Time `json:"approvedAt,omitempty"`
 }
 
+// ProfileCertificateView 是用户公开主页上的证书摘要。仅包含已通过证书的
+// 非敏感字段：不返回图片、状态、驳回原因、审核人、用户 ID 或邮箱。
+type ProfileCertificateView struct {
+	ID         int64      `json:"id"`
+	Type       string     `json:"type"`
+	Level      string     `json:"level"`
+	VerifyCode string     `json:"verifyCode"`
+	ApprovedAt *time.Time `json:"approvedAt"`
+}
+
 // Image 是证书图片的原始字节与内容类型（内容类型取自数据库，而非重新探测）。
 type Image struct {
 	Data        []byte

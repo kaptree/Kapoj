@@ -713,6 +713,130 @@ func TestReviewNoSensitivePublicFields(t *testing.T) {
 	}
 }
 
+func TestListApprovedByUser(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	require.NoError(t, certificate.SeedTypes(ctx, e.db))
+	typeID := firstActiveTypeID(t, e)
+
+	ownerID := createUser(t, e.db, "profile-owner", "主页主人")
+	otherID := createUser(t, e.db, "profile-other", "其他用户")
+	reviewerID := createUser(t, e.db, "profile-reviewer", "审核员")
+
+	base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	codeOld, codeNew, codeTie := "KAPOJ-OLD1-OLD1", "KAPOJ-NEW1-NEW1", "KAPOJ-TIE1-TIE1"
+	codeOther := "KAPOJ-OTHR-OTHR"
+
+	// mk 插入一条证书；reviewedAt 为 nil 表示未审核。
+	mk := func(userID int64, status certificate.Status, level string, code *string, reviewedAt *time.Time) certificate.Certificate {
+		c := certificate.Certificate{
+			UserID:              userID,
+			CertificateTypeID:   typeID,
+			CertificateTypeName: "蓝桥杯",
+			Level:               level,
+			ImageKey:            "certificates/1",
+			ImageContentType:    "image/png",
+			Status:              status,
+			RejectReason:        "不应泄露的驳回原因",
+			VerifyCode:          code,
+			SubmittedAt:         base.Add(-24 * time.Hour),
+			ReviewedAt:          reviewedAt,
+			ReviewedBy:          &reviewerID,
+		}
+		require.NoError(t, e.db.Create(&c).Error)
+		return c
+	}
+	at := func(d time.Duration) *time.Time { v := base.Add(d); return &v }
+
+	older := mk(ownerID, certificate.StatusApproved, "省三", &codeOld, at(0))
+	newer := mk(ownerID, certificate.StatusApproved, "省二", &codeNew, at(time.Hour))
+	tie := mk(ownerID, certificate.StatusApproved, "省一", &codeTie, at(time.Hour))
+	mk(ownerID, certificate.StatusPending, "国三", nil, at(2*time.Hour))
+	mk(ownerID, certificate.StatusRejected, "国二", nil, at(2*time.Hour))
+	mk(otherID, certificate.StatusApproved, "国一", &codeOther, at(3*time.Hour))
+
+	// 只返回 approved，按 reviewed_at DESC, id DESC（同时间用 id 倒序兜底）。
+	items, total, err := e.svc.ListApprovedByUser(ctx, ownerID, 50)
+	require.NoError(t, err)
+	assert.EqualValues(t, 3, total)
+	require.Len(t, items, 3)
+	assert.Equal(t, tie.ID, items[0].ID)
+	assert.Equal(t, newer.ID, items[1].ID)
+	assert.Equal(t, older.ID, items[2].ID)
+
+	// 字段：type 使用提交时快照的类型名，approvedAt 取 reviewed_at。
+	first := items[0]
+	assert.Equal(t, "蓝桥杯", first.Type)
+	assert.Equal(t, "省一", first.Level)
+	assert.Equal(t, codeTie, first.VerifyCode)
+	require.NotNil(t, first.ApprovedAt)
+	assert.True(t, first.ApprovedAt.Equal(base.Add(time.Hour)))
+
+	// 公开摘要只包含 id/type/level/verifyCode/approvedAt，绝不泄露图片、状态、
+	// 驳回原因、审核人等敏感字段。
+	b, err := json.Marshal(first)
+	require.NoError(t, err)
+	var m map[string]any
+	require.NoError(t, json.Unmarshal(b, &m))
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	assert.ElementsMatch(t, []string{"id", "type", "level", "verifyCode", "approvedAt"}, keys)
+	for _, key := range []string{"imageUrl", "status", "rejectReason", "reviewedBy", "reviewedAt", "userId", "email", "submittedAt"} {
+		_, exists := m[key]
+		assert.False(t, exists, "公开证书摘要不应包含 %s", key)
+	}
+
+	// 无证书用户返回非 nil 空切片 + total 0。
+	emptyID := createUser(t, e.db, "profile-empty", "空用户")
+	items, total, err = e.svc.ListApprovedByUser(ctx, emptyID, 50)
+	require.NoError(t, err)
+	assert.Zero(t, total)
+	require.NotNil(t, items, "无证书应返回空切片而非 nil")
+	assert.Empty(t, items)
+
+	// limit 生效：limit=1 只取第一条，total 仍是全部 approved 数。
+	items, total, err = e.svc.ListApprovedByUser(ctx, ownerID, 1)
+	require.NoError(t, err)
+	assert.EqualValues(t, 3, total)
+	require.Len(t, items, 1)
+	assert.Equal(t, tie.ID, items[0].ID)
+
+	// limit<=0 取默认 50；超过 50 截断为 50。
+	items, _, err = e.svc.ListApprovedByUser(ctx, ownerID, 0)
+	require.NoError(t, err)
+	assert.Len(t, items, 3)
+
+	bulkID := createUser(t, e.db, "profile-bulk", "批量用户")
+	bulk := make([]certificate.Certificate, 51)
+	for i := range bulk {
+		code := fmt.Sprintf("KAPOJ-BULK-%04d", i)
+		reviewed := base.Add(time.Duration(i) * time.Minute)
+		bulk[i] = certificate.Certificate{
+			UserID:              bulkID,
+			CertificateTypeID:   typeID,
+			CertificateTypeName: "蓝桥杯",
+			Level:               "省一",
+			ImageKey:            "certificates/1",
+			ImageContentType:    "image/png",
+			Status:              certificate.StatusApproved,
+			VerifyCode:          &code,
+			SubmittedAt:         base,
+			ReviewedAt:          &reviewed,
+		}
+	}
+	require.NoError(t, e.db.Create(&bulk).Error)
+	items, total, err = e.svc.ListApprovedByUser(ctx, bulkID, 100)
+	require.NoError(t, err)
+	assert.EqualValues(t, 51, total)
+	assert.Len(t, items, 50, "limit 应上限为 50")
+
+	// 非法用户 ID -> 404。
+	_, _, err = e.svc.ListApprovedByUser(ctx, 0, 10)
+	requireAppErrorCode(t, err, 40400)
+}
+
 type failingStorage struct {
 	putErr  error
 	deleted []string
