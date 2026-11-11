@@ -223,7 +223,7 @@ func (s *Service) UserActivity(ctx context.Context, userID int64) (*UserActivity
 }
 ```
 
-- `items` 按 `updated_at DESC, id DESC` 分页；`page_size` 默认 10、最大 50。
+- `items` 按 `updated_at DESC, id DESC` 分页；前端固定每页 10 条。后端沿用通用分页默认 20、最大 100。
 - `cloud` 对该用户全部评价按 `content` 分组计数，按 count desc、最早 id asc 排序，取前 24。
 - `canDelete`：viewer 是作者或目标主页主人。
 - `myEvaluation`：当前登录用户对该主页的评价；游客为 null。
@@ -337,7 +337,7 @@ PUT /api/users/:id/evaluations/mine
   - `PUT /users/{id}/evaluations/mine`
   - `DELETE /users/{id}/evaluations/mine`
   - `DELETE /users/{id}/evaluations/{evaluationId}`
-  - `UserActivity`, `ActivityDay`, `ProfileCertificate`, `ProfileCertificateList`, `EvaluationAuthor`, `EvaluationItem`, `EvaluationCloudItem`, `EvaluationPage`, `EvaluationInput`.
+  - `UserActivity`, `ActivityDay`, `ProfileCertificate`, `ProfileCertificatePage`, `EvaluationAuthor`, `EvaluationItem`, `EvaluationCloudItem`, `EvaluationPage`, `EvaluationInput`.
 
 ### 5.10 前端文件
 
