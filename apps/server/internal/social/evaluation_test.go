@@ -194,7 +194,7 @@ func TestDeleteEvaluations(t *testing.T) {
 	carol := seedUser(t, e.db, "carol", user.StatusActive)
 	dave := seedUser(t, e.db, "dave", user.StatusActive)
 
-	item := saveEvaluation(t, e, bob, alice, "很棒")
+	saveEvaluation(t, e, bob, alice, "很棒")
 
 	// 作者删除自己的评价，幂等。
 	require.NoError(t, e.svc.DeleteMyEvaluation(ctx, bob, alice))
@@ -206,7 +206,7 @@ func TestDeleteEvaluations(t *testing.T) {
 	assert.EqualValues(t, 0, count)
 
 	// 重建后由主页主人删除。
-	item = saveEvaluation(t, e, bob, alice, "再来")
+	item := saveEvaluation(t, e, bob, alice, "再来")
 	require.NoError(t, e.svc.DeleteEvaluationAsTarget(ctx, alice, alice, item.ID))
 
 	count = 0
