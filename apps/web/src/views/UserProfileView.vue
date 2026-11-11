@@ -10,6 +10,7 @@ import { followUser, getUserSocial, unfollowUser } from '@/api/social'
 import { getProfile, getUserActivity } from '@/api/users'
 import type { Profile, SocialView, UserActivity } from '@/api/types'
 import ContributionGrid from '@/components/profile/ContributionGrid.vue'
+import ProfileEvaluationCard from '@/components/profile/ProfileEvaluationCard.vue'
 import FollowListDialog from '@/components/social/FollowListDialog.vue'
 import IdentityShowcase from '@/components/IdentityShowcase.vue'
 import RatingHistoryCard from '@/components/RatingHistoryCard.vue'
@@ -278,10 +279,11 @@ watch(
         </div>
 
         <aside class="profile-aside" data-test="profile-aside">
-          <AppSurface padding="lg" class="profile-aside__card" data-test="evaluation-slot">
-            <h2 class="profile-aside__title">词云评价</h2>
-            <p class="profile-aside__hint">评价功能即将上线。</p>
-          </AppSurface>
+          <ProfileEvaluationCard
+            :target-user-id="profile.id"
+            class="profile-aside__card"
+            data-test="evaluation-slot"
+          />
           <AppSurface padding="lg" class="profile-aside__card" data-test="certificate-slot">
             <h2 class="profile-aside__title">荣誉证书</h2>
             <p class="profile-aside__hint">证书展示即将上线。</p>

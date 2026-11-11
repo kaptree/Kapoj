@@ -72,6 +72,12 @@ const routes = [
   { path: '/login', name: 'login', component: { template: '<div />' } },
 ]
 
+const EvaluationCardStub = {
+  name: 'ProfileEvaluationCard',
+  props: ['targetUserId'],
+  template: '<div data-test="evaluation-slot">{{ targetUserId }}</div>',
+}
+
 async function mountPage(path = '/users/7') {
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push(path)
@@ -79,7 +85,7 @@ async function mountPage(path = '/users/7') {
   const wrapper = mount(UserProfileView, {
     global: {
       plugins: [router, PrimeVue],
-      stubs: { FollowListDialog: true },
+      stubs: { FollowListDialog: true, ProfileEvaluationCard: EvaluationCardStub },
     },
   })
   await flushPromises()
@@ -149,18 +155,23 @@ describe('UserProfileView', () => {
     wrapper.unmount()
   })
 
-  it('renders the two-column body with evaluation and certificate placeholders', async () => {
+  it('renders the two-column body with evaluation above certificate', async () => {
     const { wrapper } = await mountPage('/users/7')
 
     const body = wrapper.get('.profile-body')
     expect(body.find('.profile-main').exists()).toBe(true)
-    expect(body.find('[data-test="profile-aside"]').exists()).toBe(true)
+    const aside = body.get('[data-test="profile-aside"]')
 
     const main = body.get('.profile-main').text()
     expect(main).toContain('代码提交贡献图')
     expect(main).toContain('Rating 历史')
 
-    expect(wrapper.get('[data-test="evaluation-slot"]').text()).toContain('词云评价')
+    const children = Array.from(aside.element.children)
+    expect(children.map((child) => child.getAttribute('data-test'))).toEqual([
+      'evaluation-slot',
+      'certificate-slot',
+    ])
+    expect(wrapper.get('[data-test="evaluation-slot"]').text()).toBe('7')
     expect(wrapper.get('[data-test="certificate-slot"]').text()).toContain('荣誉证书')
     wrapper.unmount()
   })
