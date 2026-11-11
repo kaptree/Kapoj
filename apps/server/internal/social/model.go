@@ -44,6 +44,19 @@ type Notification struct {
 // TableName keeps the table name from the design document.
 func (Notification) TableName() string { return "notifications" }
 
+// UserEvaluation 是用户主页上的一条评价；每位作者对同一目标只能有一条。
+type UserEvaluation struct {
+	ID           int64     `gorm:"primaryKey"`
+	TargetUserID int64     `gorm:"not null;uniqueIndex:uniq_user_evaluations_author_target,priority:2;index:idx_user_evaluations_target_updated,priority:1"`
+	AuthorUserID int64     `gorm:"not null;uniqueIndex:uniq_user_evaluations_author_target,priority:1"`
+	Content      string    `gorm:"size:40;not null"`
+	CreatedAt    time.Time `gorm:"type:timestamptz;not null"`
+	UpdatedAt    time.Time `gorm:"type:timestamptz;not null;index:idx_user_evaluations_target_updated,priority:2"`
+}
+
+// TableName keeps the table name from the design document.
+func (UserEvaluation) TableName() string { return "user_evaluations" }
+
 // UserSummary 是用户公开摘要，供粉丝/关注列表与通知 actor 使用；不含邮箱。
 type UserSummary struct {
 	ID        int64  `json:"id"`

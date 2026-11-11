@@ -19,6 +19,12 @@ func RegisterRoutes(r gin.IRouter, s *social.Service) {
 	r.GET("/users/:id/followers", h.followers)
 	r.GET("/users/:id/following", h.following)
 
+	// 静态 /mine 必须注册在 /:evaluationId 之前。
+	r.GET("/users/:id/evaluations", h.evaluations)
+	r.PUT("/users/:id/evaluations/mine", middleware.RequireAuth(), h.saveEvaluation)
+	r.DELETE("/users/:id/evaluations/mine", middleware.RequireAuth(), h.deleteMyEvaluation)
+	r.DELETE("/users/:id/evaluations/:evaluationId", middleware.RequireAuth(), h.deleteEvaluation)
+
 	r.GET("/notifications", middleware.RequireAuth(), h.listNotifications)
 	r.GET("/notifications/unread-count", middleware.RequireAuth(), h.unreadCount)
 	r.POST("/notifications/:id/read", middleware.RequireAuth(), h.markRead)
@@ -112,6 +118,65 @@ func (h *handler) following(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, list)
+}
+
+func (h *handler) evaluations(c *gin.Context) {
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	page, size := httpx.ParsePage(c.Request.URL.RawQuery)
+	pageData, err := h.svc.ListEvaluations(c.Request.Context(), currentUserID(c), id, page, size)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, pageData)
+}
+
+func (h *handler) saveEvaluation(c *gin.Context) {
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	in, ok := httpx.BindJSON[social.EvaluationInput](c)
+	if !ok {
+		return
+	}
+	item, err := h.svc.SaveEvaluation(c.Request.Context(), currentUserID(c), id, in.Content)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, item)
+}
+
+func (h *handler) deleteMyEvaluation(c *gin.Context) {
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	if err := h.svc.DeleteMyEvaluation(c.Request.Context(), currentUserID(c), id); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, nil)
+}
+
+func (h *handler) deleteEvaluation(c *gin.Context) {
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	evaluationID, ok := pathID(c, "evaluationId")
+	if !ok {
+		return
+	}
+	if err := h.svc.DeleteEvaluationAsTarget(c.Request.Context(), currentUserID(c), id, evaluationID); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, nil)
 }
 
 func (h *handler) listNotifications(c *gin.Context) {

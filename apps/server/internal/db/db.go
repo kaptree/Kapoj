@@ -54,7 +54,7 @@ func Migrate(g *gorm.DB) error {
 		&contest.Announcement{}, &submission.Submission{},
 		&rating.RatingHistory{}, &rating.RatingSettings{}, &rating.RatingRun{},
 		&activity.ActivityLog{}, &activity.SharedItem{},
-		&social.Follow{}, &social.Notification{},
+		&social.Follow{}, &social.Notification{}, &social.UserEvaluation{},
 		&gamification.CoinTransaction{}, &gamification.Achievement{},
 		&gamification.UserAchievement{}, &gamification.Task{},
 		&gamification.UserTaskRecord{}, &gamification.UserLoginDay{},

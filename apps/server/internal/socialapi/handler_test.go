@@ -70,6 +70,28 @@ func (f *fix) do(method, path, token string) (*httptest.ResponseRecorder, map[st
 	return w, resp
 }
 
+func (f *fix) doJSON(method, path, token, body string) (*httptest.ResponseRecorder, map[string]any) {
+	f.t.Helper()
+	var reader *strings.Reader
+	if body == "" {
+		reader = strings.NewReader("")
+	} else {
+		reader = strings.NewReader(body)
+	}
+	req := httptest.NewRequest(method, path, reader)
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	w := httptest.NewRecorder()
+	f.engine.ServeHTTP(w, req)
+	var resp map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	return w, resp
+}
+
 func TestFollowHTTPLifecycle(t *testing.T) {
 	f := newFix(t)
 	alice, _ := f.user("alice", user.StatusActive)
@@ -207,5 +229,118 @@ func TestNotificationHTTP(t *testing.T) {
 
 	// 全部已读（幂等）。
 	w, _ = f.do(http.MethodPost, "/api/notifications/read-all", aliceTok)
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+}
+
+func TestEvaluationHTTP(t *testing.T) {
+	f := newFix(t)
+	alice, aliceTok := f.user("alice", user.StatusActive)
+	_, bobTok := f.user("bob", user.StatusActive)
+	_, carolTok := f.user("carol", user.StatusActive)
+
+	// 游客列表：空数组形状正确。
+	w, resp := f.do(http.MethodGet, fmt.Sprintf("/api/users/%d/evaluations", alice), "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.EqualValues(t, 0, resp["code"])
+	assert.Equal(t, "ok", resp["message"])
+	data := resp["data"].(map[string]any)
+	assert.EqualValues(t, 0, data["total"])
+	assert.Len(t, data["items"].([]any), 0)
+	assert.Len(t, data["cloud"].([]any), 0)
+	assert.Nil(t, data["myEvaluation"])
+	assert.Equal(t, false, data["canEvaluate"])
+
+	// 未登录写 401。
+	w, _ = f.doJSON(http.MethodPut, fmt.Sprintf("/api/users/%d/evaluations/mine", alice), "", `{"content":"很棒"}`)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	w, _ = f.doJSON(http.MethodDelete, fmt.Sprintf("/api/users/%d/evaluations/mine", alice), "", "")
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	w, _ = f.doJSON(http.MethodDelete, fmt.Sprintf("/api/users/%d/evaluations/1", alice), "", "")
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+
+	// 请求体校验。
+	w, resp = f.doJSON(http.MethodPut, fmt.Sprintf("/api/users/%d/evaluations/mine", alice), bobTok, `{`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40000, resp["code"])
+	w, resp = f.doJSON(http.MethodPut, fmt.Sprintf("/api/users/%d/evaluations/mine", alice), bobTok, `{"content":"   "}`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+	w, resp = f.doJSON(http.MethodPut, fmt.Sprintf("/api/users/%d/evaluations/mine", alice), bobTok, `{"content":"a\nb"}`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	// 自己评价自己 40001；目标不存在 404。
+	w, resp = f.doJSON(http.MethodPut, fmt.Sprintf("/api/users/%d/evaluations/mine", alice), aliceTok, `{"content":"自评"}`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+	w, resp = f.doJSON(http.MethodPut, "/api/users/999999/evaluations/mine", bobTok, `{"content":"你好"}`)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.EqualValues(t, 40400, resp["code"])
+
+	// 保存并检查 envelope 与 author 摘要。
+	w, resp = f.doJSON(http.MethodPut, fmt.Sprintf("/api/users/%d/evaluations/mine", alice), bobTok, `{"content":"  很棒  "}`)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.EqualValues(t, 0, resp["code"])
+	item := resp["data"].(map[string]any)
+	evaluationID := int64(item["id"].(float64))
+	assert.Equal(t, "很棒", item["content"])
+	assert.Equal(t, true, item["canDelete"])
+	author := item["author"].(map[string]any)
+	assert.Equal(t, "bob", author["username"])
+	assert.NotContains(t, author, "email")
+
+	// 作者视角列表。
+	w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/users/%d/evaluations", alice), bobTok)
+	require.Equal(t, http.StatusOK, w.Code)
+	data = resp["data"].(map[string]any)
+	assert.EqualValues(t, 1, data["total"])
+	assert.Equal(t, true, data["canEvaluate"])
+	my := data["myEvaluation"].(map[string]any)
+	assert.Equal(t, "很棒", my["content"])
+	items := data["items"].([]any)
+	require.Len(t, items, 1)
+	assert.Equal(t, true, items[0].(map[string]any)["canDelete"])
+	cloud := data["cloud"].([]any)
+	require.Len(t, cloud, 1)
+	assert.Equal(t, "很棒", cloud[0].(map[string]any)["text"])
+	assert.EqualValues(t, 1, cloud[0].(map[string]any)["count"])
+
+	// 主页主人视角：可删任意评价，但不显示 myEvaluation、不可自评。
+	w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/users/%d/evaluations", alice), aliceTok)
+	require.Equal(t, http.StatusOK, w.Code)
+	data = resp["data"].(map[string]any)
+	assert.Nil(t, data["myEvaluation"])
+	assert.Equal(t, false, data["canEvaluate"])
+	assert.Equal(t, true, data["items"].([]any)[0].(map[string]any)["canDelete"])
+
+	// 其他用户视角：不可删。
+	w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/users/%d/evaluations", alice), carolTok)
+	require.Equal(t, http.StatusOK, w.Code)
+	data = resp["data"].(map[string]any)
+	assert.Equal(t, true, data["canEvaluate"])
+	assert.Equal(t, false, data["items"].([]any)[0].(map[string]any)["canDelete"])
+
+	// 非主人（包括作者）通过 :evaluationId 删除 403。
+	w, resp = f.do(http.MethodDelete, fmt.Sprintf("/api/users/%d/evaluations/%d", alice, evaluationID), carolTok)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.EqualValues(t, 40300, resp["code"])
+	w, resp = f.do(http.MethodDelete, fmt.Sprintf("/api/users/%d/evaluations/%d", alice, evaluationID), bobTok)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.EqualValues(t, 40300, resp["code"])
+
+	// 主人删除成功；重复删除 404；非法 evaluationId 404。
+	w, _ = f.doJSON(http.MethodDelete, fmt.Sprintf("/api/users/%d/evaluations/%d", alice, evaluationID), aliceTok, "")
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	w, resp = f.doJSON(http.MethodDelete, fmt.Sprintf("/api/users/%d/evaluations/%d", alice, evaluationID), aliceTok, "")
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.EqualValues(t, 40400, resp["code"])
+	w, resp = f.doJSON(http.MethodDelete, fmt.Sprintf("/api/users/%d/evaluations/abc", alice), aliceTok, "")
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.EqualValues(t, 40400, resp["code"])
+
+	// 静态 /mine 优先于 /:evaluationId：删除作者自己的评价且幂等。
+	w, _ = f.doJSON(http.MethodDelete, fmt.Sprintf("/api/users/%d/evaluations/mine", alice), bobTok, "")
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	w, _ = f.doJSON(http.MethodDelete, fmt.Sprintf("/api/users/%d/evaluations/mine", alice), bobTok, "")
 	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
