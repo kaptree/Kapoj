@@ -869,6 +869,266 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/{id}/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * 用户活动统计与贡献日历（公开）
+         * @description 返回全部提交数（含客观题答案）、去重通过题数、365 天代码提交日历与连续天数；用户不存在返回 40400。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 活动统计 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UserActivityResponse"];
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{id}/certificates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * 用户已认证证书（公开）
+         * @description 只返回 approved 证书摘要，按审核时间倒序、id 倒序，最多 50 条；不返回图片、驳回原因或审核人；未知用户返回空列表。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已认证证书分页 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProfileCertificatePageResponse"];
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{id}/evaluations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * 用户评价分页与词云（可选登录）
+         * @description 评价按更新时间倒序、id 倒序；cloud 按内容分组计数取前 24；myEvaluation 为当前登录用户对主页的评价，游客为 null；canEvaluate 表示已登录、非本人且目标 active。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    page_size?: number;
+                };
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 评价分页、词云与权限信息 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EvaluationPageResponse"];
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{id}/evaluations/mine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 保存当前用户对主页的评价（登录）
+         * @description 同一作者对同一目标仅保留一条，重复保存更新内容并保留创建时间；内容 trim 后需为 1–40 字符，不能包含换行或控制字符；不能评价自己或非 active 用户。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["EvaluationInput"];
+                };
+            };
+            responses: {
+                /** @description 保存后的评价 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EvaluationItemResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        /**
+         * 删除当前用户对主页的评价（登录）
+         * @description 删除作者本人的评价；不存在时幂等返回成功。
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已删除（幂等） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{id}/evaluations/{evaluationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                evaluationId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * 主页主人删除评价（登录）
+         * @description 仅目标主页主人可删除；非主人 403，评价不存在或不属于该主页 404。
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                    evaluationId: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已删除 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/rating/season/current": {
         parameters: {
             query?: never;
@@ -8667,6 +8927,84 @@ export interface components {
             total: number;
             items: components["schemas"]["SocialUserSummary"][];
         };
+        /** @description 贡献日历中的一天；缺失日期由服务端补 0。 */
+        ActivityDay: {
+            /** @description 服务器本地日期 YYYY-MM-DD */
+            date: string;
+            /**
+             * Format: int64
+             * @description 当天代码提交数
+             */
+            count: number;
+        };
+        /** @description 用户公开主页的活动统计与 365 天代码提交日历。submissionCount 含客观题答案；contributionTotal 与 days 只统计代码提交。 */
+        UserActivity: {
+            /** Format: int64 */
+            submissionCount: number;
+            /**
+             * Format: int64
+             * @description 去重后的通过题数
+             */
+            acceptedProblemCount: number;
+            /**
+             * Format: int64
+             * @description 365 天窗口内代码提交总数，等于 days 求和
+             */
+            contributionTotal: number;
+            /** @description 日历起始本地日期 YYYY-MM-DD */
+            startDate: string;
+            /** @description 日历结束本地日期（今天）YYYY-MM-DD */
+            endDate: string;
+            /** @description 从今天向前连续有代码提交的天数；今天无提交为 0 */
+            currentStreak: number;
+            /** @description 365 天窗口内最长连续天数 */
+            longestStreak: number;
+            /** @description 固定 365 条由服务端保证，这里只描述数组。 */
+            days: components["schemas"]["ActivityDay"][];
+        };
+        /** @description 评价作者的公开摘要；不含邮箱。 */
+        EvaluationAuthor: {
+            /** Format: int64 */
+            id: number;
+            username: string;
+            nickname: string;
+            avatarUrl: string;
+            rating: number;
+        };
+        EvaluationItem: {
+            /** Format: int64 */
+            id: number;
+            /** @description trim 后 1–40 字符 */
+            content: string;
+            author: components["schemas"]["EvaluationAuthor"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** @description 当前查看者是否可删除；作者或主页主人为 true */
+            canDelete: boolean;
+        };
+        /** @description 词云中的一项：相同内容聚合后的文本与次数。 */
+        EvaluationCloudItem: {
+            text: string;
+            /** Format: int64 */
+            count: number;
+        };
+        EvaluationPage: {
+            /** Format: int64 */
+            total: number;
+            items: components["schemas"]["EvaluationItem"][];
+            /** @description 按内容分组计数，count 降序、最早 id 升序，最多 24 项。 */
+            cloud: components["schemas"]["EvaluationCloudItem"][];
+            /** @description 当前登录用户对主页的评价；游客或本人主页为 null */
+            myEvaluation: components["schemas"]["EvaluationItem"] | null;
+            /** @description 已登录、非本人且目标用户 active */
+            canEvaluate: boolean;
+        };
+        EvaluationInput: {
+            /** @description trim 后 1–40 字符，不能包含换行或控制字符 */
+            content: string;
+        };
         /** @enum {string} */
         NotificationType: "solution_reply" | "solution_like" | "follow";
         /** @enum {string} */
@@ -8711,6 +9049,15 @@ export interface components {
         };
         SocialUserPageResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["SocialUserPage"];
+        };
+        UserActivityResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["UserActivity"];
+        };
+        EvaluationPageResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["EvaluationPage"];
+        };
+        EvaluationItemResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["EvaluationItem"];
         };
         NotificationPageResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["NotificationPage"];
@@ -8817,6 +9164,25 @@ export interface components {
             total: number;
             items: components["schemas"]["CertificateView"][];
         };
+        /** @description 用户公开主页上的已认证证书摘要；不含图片、状态、驳回原因、审核人或用户 ID。 */
+        ProfileCertificate: {
+            /** Format: int64 */
+            id: number;
+            /** @description 提交时的证书类型名快照 */
+            type: string;
+            level: string;
+            verifyCode: string;
+            /**
+             * Format: date-time
+             * @description 通过时间，即审核通过时间
+             */
+            approvedAt: string | null;
+        };
+        ProfileCertificatePage: {
+            /** Format: int64 */
+            total: number;
+            items: components["schemas"]["ProfileCertificate"][];
+        };
         AdminCertificatePage: {
             /** Format: int64 */
             total: number;
@@ -8854,6 +9220,9 @@ export interface components {
         };
         CertificatePageResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["CertificatePage"];
+        };
+        ProfileCertificatePageResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["ProfileCertificatePage"];
         };
         AdminCertificatePageResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["AdminCertificatePage"];

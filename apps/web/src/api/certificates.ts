@@ -1,5 +1,11 @@
 import { http } from './client'
-import type { CertificateTypeView, CertificateView, Page, PublicCertificateView } from './types'
+import type {
+  CertificateTypeView,
+  CertificateView,
+  Page,
+  ProfileCertificatePage,
+  PublicCertificateView,
+} from './types'
 
 export interface SubmitCertificateInput {
   typeId: number
@@ -32,3 +38,7 @@ export const getCertificateImage = (id: number | string) =>
 /** Public verification; unknown/pending/rejected resolve to `{valid:false}` (200). */
 export const verifyCertificate = (code: string) =>
   http.get<PublicCertificateView>('/certificates/verify', { params: { code } })
+
+/** Approved certificate summaries shown on a public profile (newest first, max 50). */
+export const listUserCertificates = (userId: number | string) =>
+  http.get<ProfileCertificatePage>(`/users/${userId}/certificates`)

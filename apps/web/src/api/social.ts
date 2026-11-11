@@ -1,5 +1,8 @@
 import { http } from './client'
 import type {
+  EvaluationInput,
+  EvaluationItem,
+  EvaluationPage,
   FollowResult,
   LikeResult,
   NotificationPage,
@@ -33,6 +36,26 @@ export const listFollowers = (id: number | string, q: SocialPageQuery = {}) =>
 
 export const listFollowing = (id: number | string, q: SocialPageQuery = {}) =>
   http.get<SocialUserPage>(`/users/${id}/following`, { params: pageParams(q) })
+
+/** Public user evaluation page, word cloud and viewer permissions. */
+export const listUserEvaluations = (userId: number | string, page = 1, pageSize = 20) =>
+  http.get<EvaluationPage>(`/users/${userId}/evaluations`, {
+    params: { page, page_size: pageSize },
+  })
+
+/** Create or update the current user's evaluation of a profile. */
+export const saveMyEvaluation = (userId: number | string, content: string) => {
+  const input: EvaluationInput = { content }
+  return http.put<EvaluationItem>(`/users/${userId}/evaluations/mine`, input)
+}
+
+/** Delete the current user's evaluation; idempotent when absent. */
+export const deleteMyEvaluation = (userId: number | string) =>
+  http.delete<null>(`/users/${userId}/evaluations/mine`)
+
+/** Delete any evaluation on a profile the current user owns. */
+export const deleteUserEvaluation = (userId: number | string, evaluationId: number | string) =>
+  http.delete<null>(`/users/${userId}/evaluations/${evaluationId}`)
 
 export const listNotifications = (q: SocialPageQuery = {}) =>
   http.get<NotificationPage>('/notifications', { params: pageParams(q) })
