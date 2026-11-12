@@ -192,6 +192,9 @@ func (s *Service) ReplaceUserRoles(ctx context.Context, actor AuditMeta, userID 
 		if err != nil {
 			return err
 		}
+		if containsString(newCodes, RoleCodeGuest) {
+			return invalidUser("游客角色不可分配给用户")
+		}
 		newHasSuper := containsString(newCodes, RoleCodeSuperAdmin)
 
 		actorSuper, err := userHasRoleCode(tx, actor.ActorID, RoleCodeSuperAdmin)

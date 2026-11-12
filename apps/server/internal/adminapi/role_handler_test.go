@@ -192,7 +192,7 @@ func TestAdminListPermissionsAndRoles(t *testing.T) {
 	w, resp := f.do(http.MethodGet, "/api/admin/permissions", token, "")
 	requireStatus(t, w, resp, http.StatusOK)
 	permissions := dataList(t, resp)
-	require.Len(t, permissions, 38)
+	require.Len(t, permissions, 39)
 	first := permissions[0].(map[string]any)
 	assert.Equal(t, "admin.dashboard.view", first["code"])
 	assert.Equal(t, "访问管理仪表盘", first["name"])
@@ -203,9 +203,9 @@ func TestAdminListPermissionsAndRoles(t *testing.T) {
 	w, resp = f.do(http.MethodGet, "/api/admin/roles", token, "")
 	requireStatus(t, w, resp, http.StatusOK)
 	roles := dataList(t, resp)
-	require.Len(t, roles, 7)
+	require.Len(t, roles, 8)
 
-	var content, super map[string]any
+	var content, super, guest map[string]any
 	for _, raw := range roles {
 		role := raw.(map[string]any)
 		switch role["code"] {
@@ -213,14 +213,20 @@ func TestAdminListPermissionsAndRoles(t *testing.T) {
 			content = role
 		case rbac.RoleCodeSuperAdmin:
 			super = role
+		case rbac.RoleCodeGuest:
+			guest = role
 		}
 	}
 	require.NotNil(t, content)
 	require.NotNil(t, super)
+	require.NotNil(t, guest)
 	assert.Equal(t, true, content["isSystem"])
 	assert.EqualValues(t, 1, content["userCount"])
 	assert.Contains(t, stringsOf(t, content["permissions"]), "problem.create")
 	assert.Equal(t, []any{}, super["permissions"])
+	assert.Equal(t, true, guest["isSystem"])
+	assert.EqualValues(t, 0, guest["userCount"])
+	assert.Equal(t, []any{}, guest["permissions"])
 }
 
 func TestAdminCreateUpdateDeleteRole(t *testing.T) {
@@ -393,6 +399,62 @@ func TestAdminSystemRoleProtection(t *testing.T) {
 	require.NoError(t, f.db.Model(&rbac.RolePermission{}).Where("role_id = ?", super.ID).
 		Count(&superPermissions).Error)
 	assert.Zero(t, superPermissions)
+}
+
+func TestAdminGuestRoleIsolation(t *testing.T) {
+	f := newFixture(t)
+	_, token := f.user(t, "super_guest", rbac.RoleCodeSuperAdmin)
+	targetID, _ := f.user(t, "guest_assign_target")
+
+	var guest, content rbac.Role
+	require.NoError(t, f.db.Where("code = ?", rbac.RoleCodeGuest).First(&guest).Error)
+	require.NoError(t, f.db.Where("code = ?", rbac.RoleCodeContentAdmin).First(&content).Error)
+
+	guestPath := fmt.Sprintf("/api/admin/roles/%d/permissions", guest.ID)
+
+	// guest 角色只接受游客权限。
+	w, resp := f.do(http.MethodPut, guestPath, token, `{"permissionCodes":["guest.growth.view"]}`)
+	requireStatus(t, w, resp, http.StatusOK)
+	assert.Equal(t, []any{"guest.growth.view"}, dataMap(t, resp)["permissions"])
+
+	w, resp = f.do(http.MethodPut, guestPath, token, `{"permissionCodes":["user.read"]}`)
+	requireStatus(t, w, resp, http.StatusBadRequest)
+	assert.EqualValues(t, 40001, resp["code"])
+	codes, err := f.svc.GuestPermissions(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, []string{"guest.growth.view"}, codes, "被拒绝的请求不得改变 guest 权限")
+
+	// 普通角色不接受游客权限。
+	contentPath := fmt.Sprintf("/api/admin/roles/%d/permissions", content.ID)
+	w, resp = f.do(http.MethodPut, contentPath, token, `{"permissionCodes":["guest.growth.view"]}`)
+	requireStatus(t, w, resp, http.StatusBadRequest)
+	assert.EqualValues(t, 40001, resp["code"])
+	gotContent, err := f.svc.GetRole(context.Background(), content.ID)
+	require.NoError(t, err)
+	assert.NotContains(t, gotContent.Permissions, "guest.growth.view")
+
+	// 创建角色不得携带游客权限。
+	w, resp = f.do(http.MethodPost, "/api/admin/roles", token,
+		`{"code":"api_guest_permission","name":"游客权限角色","permissionCodes":["guest.growth.view"]}`)
+	requireStatus(t, w, resp, http.StatusBadRequest)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	// 用户角色分配拒绝 guest。
+	w, resp = f.do(http.MethodPut, fmt.Sprintf("/api/admin/users/%d/roles", targetID), token,
+		fmt.Sprintf(`{"roleIds":[%d]}`, guest.ID))
+	requireStatus(t, w, resp, http.StatusBadRequest)
+	assert.EqualValues(t, 40001, resp["code"])
+	var userRoleCount int64
+	require.NoError(t, f.db.Model(&rbac.UserRole{}).Where("user_id = ?", targetID).Count(&userRoleCount).Error)
+	assert.Zero(t, userRoleCount, "guest 不可分配给用户")
+
+	// 正常角色分配仍成功。
+	w, resp = f.do(http.MethodPut, fmt.Sprintf("/api/admin/users/%d/roles", targetID), token,
+		fmt.Sprintf(`{"roleIds":[%d]}`, content.ID))
+	requireStatus(t, w, resp, http.StatusOK)
+	roleObjs := dataMap(t, resp)["roles"].([]any)
+	require.Len(t, roleObjs, 1)
+	assert.Equal(t, rbac.RoleCodeContentAdmin, roleObjs[0].(map[string]any)["code"])
 }
 
 func TestAdminRoleNotFound(t *testing.T) {

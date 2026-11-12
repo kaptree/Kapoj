@@ -50,6 +50,8 @@ const (
 	PermCertificateManage PermissionCode = "certificate.manage"
 
 	PermSiteSettingsManage PermissionCode = "site.settings.manage"
+
+	PermGuestGrowthView PermissionCode = "guest.growth.view"
 )
 
 const (
@@ -64,6 +66,7 @@ const (
 	PermissionGroupAI           = "AI"
 	PermissionGroupCertificate  = "证书"
 	PermissionGroupSite         = "站点"
+	PermissionGroupGuest        = "游客访问"
 )
 
 // PermissionDef 描述权限目录中的一项，用于首次 Seed 与权限矩阵展示。
@@ -124,6 +127,8 @@ var permissionCatalog = []PermissionDef{
 	{Code: PermCertificateManage, Name: "管理证书", GroupName: PermissionGroupCertificate, Description: "审核证书认证并维护证书类型"},
 
 	{Code: PermSiteSettingsManage, Name: "管理站点设置", GroupName: PermissionGroupSite, Description: "编辑站点品牌、首页内容与页脚"},
+
+	{Code: PermGuestGrowthView, Name: "游客可见成长板块", GroupName: PermissionGroupGuest, Description: "允许未登录访客查看成就、任务、徽章商城与称号商店"},
 }
 
 // PermissionCodes 是按目录顺序排列的全部权限码。
@@ -143,6 +148,7 @@ const (
 	RoleCodeUserAdmin         = "user_admin"
 	RoleCodeSecurityAdmin     = "security_admin"
 	RoleCodeAuditor           = "auditor"
+	RoleCodeGuest             = "guest"
 )
 
 // RoleDef 描述一个内置角色及其初始权限集合。
@@ -212,6 +218,10 @@ var builtinRoleDefs = []RoleDef{
 		Permissions: []PermissionCode{
 			PermAdminDashboardView, PermAdminAuditView, PermUserRead, PermRoleRead,
 		},
+	},
+	{
+		Code: RoleCodeGuest, Name: "游客",
+		Description: "未登录访客的公开可见范围；不可分配给用户",
 	},
 }
 

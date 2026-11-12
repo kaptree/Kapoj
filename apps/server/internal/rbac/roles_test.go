@@ -42,7 +42,7 @@ func TestListPermissionsAndRoles(t *testing.T) {
 	svc := rbac.NewService(g)
 
 	permissions := svc.ListPermissions(ctx)
-	require.Len(t, permissions, 38)
+	require.Len(t, permissions, 39)
 
 	codes := make(map[string]struct{}, len(permissions))
 	groups := make([]string, 0, 8)
@@ -67,12 +67,12 @@ func TestListPermissionsAndRoles(t *testing.T) {
 		lastSort = item.SortOrder
 	}
 	assert.ElementsMatch(t, []string{
-		"管理后台", "用户与角色", "题库", "测评记录", "比赛", "游戏化", "学习路线", "Rating", "AI", "证书", "站点",
+		"管理后台", "用户与角色", "题库", "测评记录", "比赛", "游戏化", "学习路线", "Rating", "AI", "证书", "站点", "游客访问",
 	}, groups)
 
 	roles, err := svc.ListRoles(ctx)
 	require.NoError(t, err)
-	require.Len(t, roles, 7)
+	require.Len(t, roles, 8)
 
 	content := roleByCode(t, roles, rbac.RoleCodeContentAdmin)
 	assert.Equal(t, "内容管理员", content.Name)
@@ -97,6 +97,12 @@ func TestListPermissionsAndRoles(t *testing.T) {
 	assert.True(t, super.IsSystem)
 	assert.NotNil(t, super.Permissions)
 	assert.Empty(t, super.Permissions, "super_admin 依靠绕过而不是权限行")
+
+	guest := roleByCode(t, roles, rbac.RoleCodeGuest)
+	assert.True(t, guest.IsSystem)
+	assert.Equal(t, int64(0), guest.UserCount)
+	assert.NotNil(t, guest.Permissions)
+	assert.Empty(t, guest.Permissions, "guest 默认无权限")
 
 	userID := createSeedUser(t, g, "role_list_user", user.RoleUser)
 	var contentRole rbac.Role
@@ -287,6 +293,73 @@ func TestReplaceRolePermissions(t *testing.T) {
 	assert.Equal(t, "198.51.100.8", audit.IP)
 	assert.Equal(t, "permissions-test", audit.UserAgent)
 	assert.Contains(t, audit.Summary, "权限")
+}
+
+func TestGuestRoleIsolation(t *testing.T) {
+	g := testutil.PG(t)
+	ctx := context.Background()
+	require.NoError(t, rbac.Seed(ctx, g))
+	svc := rbac.NewService(g)
+	actor := rbac.AuditMeta{ActorID: 66, IP: "198.51.100.66", UserAgent: "guest-role-test"}
+
+	var guest rbac.Role
+	require.NoError(t, g.Where("code = ?", rbac.RoleCodeGuest).First(&guest).Error)
+
+	codes, err := svc.GuestPermissions(ctx)
+	require.NoError(t, err)
+	assert.NotNil(t, codes, "GuestPermissions 无权限时应返回非 nil 空切片")
+	assert.Empty(t, codes)
+
+	updated, err := svc.ReplaceRolePermissions(ctx, actor, guest.ID, []string{string(rbac.PermGuestGrowthView)})
+	require.NoError(t, err)
+	assert.Equal(t, []string{string(rbac.PermGuestGrowthView)}, updated.Permissions)
+
+	codes, err = svc.GuestPermissions(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, []string{string(rbac.PermGuestGrowthView)}, codes)
+
+	// guest 只能持有游客权限。
+	_, err = svc.ReplaceRolePermissions(ctx, actor, guest.ID, []string{string(rbac.PermUserRead)})
+	requireAppErrorCode(t, err, 40001)
+	codes, err = svc.GuestPermissions(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, []string{string(rbac.PermGuestGrowthView)}, codes, "被拒绝的替换不得改变 guest 权限")
+
+	// 普通角色不得持有游客权限，原行为不变。
+	custom, err := svc.CreateRole(ctx, actor, rbac.RoleInput{
+		Code: "custom_guest_guard", Name: "游客权限隔离测试", PermissionCodes: []string{string(rbac.PermProblemCreate)},
+	})
+	require.NoError(t, err)
+
+	_, err = svc.ReplaceRolePermissions(ctx, actor, custom.ID, []string{string(rbac.PermGuestGrowthView)})
+	requireAppErrorCode(t, err, 40001)
+	got, err := svc.GetRole(ctx, custom.ID)
+	require.NoError(t, err)
+	assert.Equal(t, []string{string(rbac.PermProblemCreate)}, got.Permissions, "被拒绝的替换不得改变普通角色权限")
+
+	replaced, err := svc.ReplaceRolePermissions(ctx, actor, custom.ID, []string{string(rbac.PermUserRead)})
+	require.NoError(t, err, "普通角色原有替换行为不变")
+	assert.Equal(t, []string{string(rbac.PermUserRead)}, replaced.Permissions)
+
+	// 创建角色时不得携带游客权限。
+	_, err = svc.CreateRole(ctx, actor, rbac.RoleInput{
+		Code: "custom_guest_permission", Name: "游客权限角色", PermissionCodes: []string{string(rbac.PermGuestGrowthView)},
+	})
+	requireAppErrorCode(t, err, 40001)
+
+	var created int64
+	require.NoError(t, g.Model(&rbac.Role{}).Where("code = ?", "custom_guest_permission").Count(&created).Error)
+	assert.Zero(t, created, "被拒绝的创建不得写入角色")
+
+	// guest 可以清空权限。
+	emptied, err := svc.ReplaceRolePermissions(ctx, actor, guest.ID, nil)
+	require.NoError(t, err)
+	assert.NotNil(t, emptied.Permissions)
+	assert.Empty(t, emptied.Permissions)
+	codes, err = svc.GuestPermissions(ctx)
+	require.NoError(t, err)
+	assert.NotNil(t, codes)
+	assert.Empty(t, codes)
 }
 
 func TestDeleteCustomRoleCleansJoins(t *testing.T) {

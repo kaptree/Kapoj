@@ -197,6 +197,37 @@ func TestReplaceUserRoles(t *testing.T) {
 	requireAppErrorCode(t, svc.ReplaceUserRoles(ctx, actor, 999999, []int64{contentRoleID}), 40400)
 }
 
+func TestReplaceUserRolesRejectsGuest(t *testing.T) {
+	g := testutil.PG(t)
+	ctx := context.Background()
+	require.NoError(t, rbac.Seed(ctx, g))
+	svc := rbac.NewService(g)
+
+	actorID := createSeedUser(t, g, "guest_assign_actor", user.RoleUser)
+	assignAccessTestRole(t, g, actorID, rbac.RoleCodeSuperAdmin)
+	target := createSeedUser(t, g, "guest_assign_target", user.RoleUser)
+	actor := rbac.AuditMeta{ActorID: actorID, IP: "203.0.113.11", UserAgent: "guest-assign-test"}
+
+	guestRoleID := roleIDForCode(t, g, rbac.RoleCodeGuest)
+	contentRoleID := roleIDForCode(t, g, rbac.RoleCodeContentAdmin)
+
+	require.NoError(t, svc.ReplaceUserRoles(ctx, actor, target, []int64{contentRoleID}))
+	assert.Equal(t, []string{rbac.RoleCodeContentAdmin}, userRoleCodes(t, g, target))
+
+	// guest 不可分配给用户，且不改变现有角色。
+	requireAppErrorCode(t, svc.ReplaceUserRoles(ctx, actor, target, []int64{guestRoleID}), 40001)
+	assert.Equal(t, []string{rbac.RoleCodeContentAdmin}, userRoleCodes(t, g, target))
+
+	requireAppErrorCode(t, svc.ReplaceUserRoles(ctx, actor, target,
+		[]int64{contentRoleID, guestRoleID}), 40001)
+	assert.Equal(t, []string{rbac.RoleCodeContentAdmin}, userRoleCodes(t, g, target))
+
+	// 正常角色分配仍成功。
+	contestRoleID := roleIDForCode(t, g, rbac.RoleCodeContestAdmin)
+	require.NoError(t, svc.ReplaceUserRoles(ctx, actor, target, []int64{contestRoleID}))
+	assert.Equal(t, []string{rbac.RoleCodeContestAdmin}, userRoleCodes(t, g, target))
+}
+
 func TestOnlySuperAssignsSuper(t *testing.T) {
 	g := testutil.PG(t)
 	ctx := context.Background()

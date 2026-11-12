@@ -67,7 +67,7 @@ func TestStatsCounts(t *testing.T) {
 	assert.Equal(t, int64(1), stats.Contests)
 	assert.Equal(t, int64(2), stats.Submissions)
 	assert.Equal(t, int64(1), stats.TodaySubmissions)
-	assert.Equal(t, int64(7), stats.Roles)
+	assert.Equal(t, int64(8), stats.Roles)
 	assert.NotNil(t, stats.RecentAudit)
 	assert.Empty(t, stats.RecentAudit)
 }

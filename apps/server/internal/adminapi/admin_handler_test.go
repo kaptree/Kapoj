@@ -174,7 +174,7 @@ func TestAdminStatsIncludesRecentAudit(t *testing.T) {
 	w, resp := f.do(http.MethodGet, "/api/admin/stats", contentToken, "")
 	requireStatus(t, w, resp, http.StatusOK)
 	data := dataMap(t, resp)
-	assert.Equal(t, int64(7), responseInt64(t, data["roles"]))
+	assert.Equal(t, int64(8), responseInt64(t, data["roles"]))
 	assert.Empty(t, data["recentAudit"].([]any), "无 audit.view 时不应返回最近审计")
 
 	// auditor：dashboard.view + audit.view → 返回最近审计。

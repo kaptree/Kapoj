@@ -118,6 +118,33 @@ func (s *Service) ListRoles(ctx context.Context) ([]RoleItem, error) {
 	return roleItemsForRoles(s.db.WithContext(ctx), roles)
 }
 
+// GuestPermissions 返回游客角色的权限码，按代码字典序排列。游客角色不存在
+// 或没有权限时返回非 nil 的空切片，便于 API 稳定输出 []。
+func (s *Service) GuestPermissions(ctx context.Context) ([]string, error) {
+	db := s.db.WithContext(ctx)
+	var role Role
+	if err := db.Where("code = ?", RoleCodeGuest).First(&role).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return []string{}, nil
+		}
+		return nil, fmt.Errorf("rbac: load guest role: %w", err)
+	}
+
+	codes := make([]string, 0)
+	if err := db.Table("role_permissions").
+		Select("permissions.code").
+		Joins("JOIN permissions ON permissions.id = role_permissions.permission_id").
+		Where("role_permissions.role_id = ?", role.ID).
+		Order("permissions.code ASC").
+		Scan(&codes).Error; err != nil {
+		return nil, fmt.Errorf("rbac: list guest permissions: %w", err)
+	}
+	if codes == nil {
+		codes = []string{}
+	}
+	return codes, nil
+}
+
 // GetRole 返回单个角色及其权限与用户数。
 func (s *Service) GetRole(ctx context.Context, id int64) (*RoleItem, error) {
 	db := s.db.WithContext(ctx)
@@ -153,6 +180,9 @@ func (s *Service) CreateRole(ctx context.Context, actor AuditMeta, in RoleInput)
 	codes, err := normalizePermissionCodes(in.PermissionCodes)
 	if err != nil {
 		return nil, err
+	}
+	if containsString(codes, string(PermGuestGrowthView)) {
+		return nil, invalidRole("游客访问权限只能配置给游客角色")
 	}
 
 	var roleID int64
@@ -288,6 +318,20 @@ func (s *Service) ReplaceRolePermissions(ctx context.Context, actor AuditMeta, i
 		}
 		if role.Code == RoleCodeSuperAdmin {
 			return invalidRole("超级管理员权限不可修改")
+		}
+
+		if role.Code == RoleCodeGuest {
+			for _, code := range normalized {
+				if code != string(PermGuestGrowthView) {
+					return invalidRole("游客角色只能配置游客访问权限")
+				}
+			}
+		} else {
+			for _, code := range normalized {
+				if code == string(PermGuestGrowthView) {
+					return invalidRole("游客访问权限只能配置给游客角色")
+				}
+			}
 		}
 
 		if err := tx.Where("role_id = ?", role.ID).Delete(&RolePermission{}).Error; err != nil {
