@@ -3,6 +3,7 @@ import PrimeVue from 'primevue/config'
 import InputNumber from 'primevue/inputnumber'
 import MultiSelect from 'primevue/multiselect'
 import Paginator from 'primevue/paginator'
+import Select from 'primevue/select'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
@@ -318,6 +319,37 @@ describe('AdminUsersView', () => {
     dialogButton('保存')!.click()
     await flushPromises()
     expect(replaceAdminUserRoles).toHaveBeenCalledWith(1, [2])
+    wrapper.unmount()
+  })
+
+  it('excludes the guest role from assignment but keeps it in the role filter', async () => {
+    auth.can.mockImplementation(
+      (code) => code === PERM.user.roles.assign || code === PERM.role.read,
+    )
+    vi.mocked(listAdminUsers).mockResolvedValue({ total: 1, items: [userItem()] })
+    vi.mocked(listAdminRoles).mockResolvedValue([
+      roleItem({ id: 1, code: 'super_admin', name: '超级管理员' }),
+      roleItem({ id: 2, code: 'user_admin', name: '用户管理员', isSystem: false }),
+      roleItem({ id: 3, code: 'guest', name: '游客' }),
+    ])
+    const wrapper = await mountPage()
+
+    await buttons(wrapper, '角色')[0]!.trigger('click')
+    await flushPromises()
+
+    const assignOptions = wrapper.findComponent(MultiSelect).props('options') as Array<{
+      value: number
+      label: string
+    }>
+    expect(assignOptions.map((option) => option.value)).toEqual([1, 2])
+    expect(assignOptions.some((option) => option.label === '游客')).toBe(false)
+
+    // The role filter is read-only filtering, so it keeps every role.
+    const filterOptions = wrapper.findAllComponents(Select)[1]!.props('options') as Array<{
+      value: number
+      label: string
+    }>
+    expect(filterOptions.map((option) => option.value)).toEqual([1, 2, 3])
     wrapper.unmount()
   })
 

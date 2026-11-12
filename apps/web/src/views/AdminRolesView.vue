@@ -102,6 +102,14 @@ const formErrors = ref({ code: '', name: '' })
 const isEdit = computed(() => editorMode.value === 'edit')
 const editingIsSystem = computed(() => editingRole.value?.isSystem === true)
 const editingIsSuper = computed(() => editingRole.value?.code === 'super_admin')
+const isGuestRole = computed(() => editingRole.value?.code === 'guest')
+
+/** Guest permissions live in their own group and must not leak into other roles. */
+const dialogPermissionGroups = computed(() =>
+  isGuestRole.value
+    ? permissionGroups.value.filter((group) => group.groupName === '游客访问')
+    : permissionGroups.value.filter((group) => group.groupName !== '游客访问'),
+)
 
 const codeDisabled = computed(() => isEdit.value)
 const nameDisabled = computed(() => isEdit.value && (editingIsSystem.value || !canUpdate.value))
@@ -428,7 +436,14 @@ onMounted(() => {
         </div>
         <div v-else class="permission-matrix">
           <p class="permission-matrix__title">权限</p>
-          <div v-for="group in permissionGroups" :key="group.groupName" class="permission-group">
+          <p v-if="isGuestRole" class="permission-matrix__hint">
+            游客默认只能看到核心导航；开启后额外显示成长板块（装扮管理仍需登录）。
+          </p>
+          <div
+            v-for="group in dialogPermissionGroups"
+            :key="group.groupName"
+            class="permission-group"
+          >
             <div class="permission-group__header">
               <h3 class="permission-group__name">{{ group.groupName }}</h3>
               <div class="permission-group__actions">
@@ -590,6 +605,16 @@ onMounted(() => {
   color: var(--kapoj-text);
   font-size: 0.9rem;
   font-weight: 600;
+}
+
+.permission-matrix__hint {
+  margin: 0;
+  padding: var(--kapoj-space-2) var(--kapoj-space-3);
+  color: var(--kapoj-text-secondary);
+  font-size: 0.8125rem;
+  background: var(--kapoj-surface-hover);
+  border: 1px dashed var(--kapoj-border-strong);
+  border-radius: var(--kapoj-radius-md);
 }
 
 .permission-group {

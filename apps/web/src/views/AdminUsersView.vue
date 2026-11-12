@@ -72,11 +72,13 @@ const roleFilterOptions = computed(() =>
 )
 
 const roleAssignOptions = computed(() =>
-  roles.value.map((role) => ({
-    value: role.id,
-    label: role.name,
-    disabled: role.code === 'super_admin' && !auth.isSuperAdmin,
-  })),
+  roles.value
+    .filter((role) => role.code !== 'guest')
+    .map((role) => ({
+      value: role.id,
+      label: role.name,
+      disabled: role.code === 'super_admin' && !auth.isSuperAdmin,
+    })),
 )
 
 // Only the newest request may update the page; slow older ones are ignored.

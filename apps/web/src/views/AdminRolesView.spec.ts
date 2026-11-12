@@ -87,6 +87,12 @@ function directory(): AdminPermissionItem[] {
       groupName: '题库',
       sortOrder: 4,
     }),
+    permissionItem({
+      code: 'guest.growth.view',
+      name: '查看成长板块',
+      groupName: '游客访问',
+      sortOrder: 5,
+    }),
   ]
 }
 
@@ -277,6 +283,71 @@ describe('AdminRolesView', () => {
     expect((dialog().querySelector('.code-input') as HTMLInputElement).disabled).toBe(true)
     expect(dialog().textContent).toContain('绕过全部权限检查')
     expect(dialog().querySelector('.permission-group__name')).toBeFalsy()
+    wrapper.unmount()
+  })
+
+  it('shows only the guest permission group and a hint for the guest role', async () => {
+    auth.can.mockImplementation(
+      (code) => code === PERM.role.update || code === PERM.role.permissions.update,
+    )
+    vi.mocked(listAdminRoles).mockResolvedValue([
+      roleItem({
+        id: 20,
+        code: 'guest',
+        name: '游客',
+        isSystem: true,
+        permissions: [],
+        userCount: 0,
+      }),
+    ])
+    vi.mocked(listAdminPermissions).mockResolvedValue(directory())
+    vi.mocked(replaceAdminRolePermissions).mockResolvedValue(roleItem())
+    const wrapper = await mountPage()
+
+    // Guest is a system role: no delete button, but permissions stay editable.
+    expect(buttons(wrapper, '删除')).toHaveLength(0)
+    expect(buttons(wrapper, '权限')).toHaveLength(1)
+
+    await buttons(wrapper, '权限')[0]!.trigger('click')
+    await flushPromises()
+
+    expect(groupNames()).toEqual(['游客访问'])
+    expect(dialog().textContent).toContain('游客默认只能看到核心导航')
+    expect(document.getElementById('perm-guest.growth.view')).toBeTruthy()
+    expect(document.getElementById('perm-problem.create')).toBeFalsy()
+
+    await toggle(document.getElementById('perm-guest.growth.view')!)
+    await flushPromises()
+
+    dialogButton('保存').click()
+    await flushPromises()
+
+    expect(replaceAdminRolePermissions).toHaveBeenCalledWith(20, ['guest.growth.view'])
+    wrapper.unmount()
+  })
+
+  it('hides the guest permission group from non-guest roles', async () => {
+    auth.can.mockImplementation(
+      (code) => code === PERM.role.update || code === PERM.role.permissions.update,
+    )
+    vi.mocked(listAdminRoles).mockResolvedValue([
+      roleItem({
+        id: 7,
+        code: 'content_editor',
+        name: '内容编辑员',
+        permissions: ['problem.create'],
+        userCount: 2,
+      }),
+    ])
+    vi.mocked(listAdminPermissions).mockResolvedValue(directory())
+    const wrapper = await mountPage()
+
+    await buttons(wrapper, '编辑')[0]!.trigger('click')
+    await flushPromises()
+
+    expect(groupNames()).toEqual(['管理后台', '用户与角色', '题库'])
+    expect(dialog().textContent).not.toContain('游客默认只能看到核心导航')
+    expect(document.getElementById('perm-guest.growth.view')).toBeFalsy()
     wrapper.unmount()
   })
 
