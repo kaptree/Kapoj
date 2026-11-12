@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"mime/multipart"
 	"net/http"
@@ -47,6 +48,20 @@ func (f *fakeIdentityLookup) Identities(_ context.Context, userIDs []int64) (map
 		}
 	}
 	return out, nil
+}
+
+type fakeGuestPermissions struct {
+	codes []string
+	err   error
+	calls int
+}
+
+func (f *fakeGuestPermissions) GuestPermissions(_ context.Context) ([]string, error) {
+	f.calls++
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.codes, nil
 }
 
 type fakeActivityLookup struct {
@@ -359,6 +374,36 @@ func TestMeWithoutRBACReturnsEmptyPermissions(t *testing.T) {
 	assert.Equal(t, []any{}, data["roles"])
 	assert.Equal(t, []any{}, data["permissions"])
 	assert.Equal(t, false, data["isSuperAdmin"])
+}
+
+func TestGuestPermissionsWithoutRBACReturnsEmptyArray(t *testing.T) {
+	f := setup(t)
+	w, resp := f.do(http.MethodGet, "/api/guest/permissions", "", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data := resp["data"].(map[string]any)
+	assert.Equal(t, []any{}, data["permissions"])
+	assert.NotContains(t, w.Body.String(), `"permissions":null`)
+}
+
+func TestGuestPermissionsReturnsGuestRolePermissions(t *testing.T) {
+	guest := &fakeGuestPermissions{codes: []string{"guest.growth.view"}}
+	f := setupWithOptions(t, Options{GuestPermissions: guest})
+
+	// 游客 token 为空也可访问。
+	w, resp := f.do(http.MethodGet, "/api/guest/permissions", "", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, []any{"guest.growth.view"}, resp["data"].(map[string]any)["permissions"])
+	assert.Equal(t, 1, guest.calls)
+}
+
+func TestGuestPermissionsErrorReturnsInternal(t *testing.T) {
+	guest := &fakeGuestPermissions{err: errors.New("guest lookup failed")}
+	f := setupWithOptions(t, Options{GuestPermissions: guest})
+
+	w, resp := f.do(http.MethodGet, "/api/guest/permissions", "", "")
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.EqualValues(t, 50000, resp["code"])
+	assert.Equal(t, 1, guest.calls)
 }
 
 func (f *fixture) doMultipart(t *testing.T, method, path, token string, file []byte) *httptest.ResponseRecorder {

@@ -3,6 +3,7 @@ import type { components } from './schema'
 type Schemas = components['schemas']
 
 export type Me = Schemas['Me']
+export type GuestPermissions = Schemas['GuestPermissions']
 export type Profile = Schemas['Profile']
 export type Role = Schemas['Role']
 export type TokenPair = Schemas['TokenPair']

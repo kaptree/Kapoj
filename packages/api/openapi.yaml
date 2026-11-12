@@ -71,6 +71,17 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/EmptyResponse' }
+  /guest/permissions:
+    get:
+      summary: 游客权限（公开）
+      description: 返回内置 guest 角色的权限码，按字典序排列；未配置 RBAC 或游客无权限时返回空数组。
+      responses:
+        '200':
+          description: 游客权限
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GuestPermissionsResponse' }
+        '500': { $ref: '#/components/responses/Error' }
   /users/me:
     get:
       summary: 当前用户信息
@@ -3405,6 +3416,21 @@ components:
           required: [data]
           properties:
             data: { $ref: '#/components/schemas/Me' }
+    GuestPermissions:
+      type: object
+      required: [permissions]
+      properties:
+        permissions:
+          type: array
+          description: 游客可用的权限码，按字典序排列；无权限时为空数组
+          items: { type: string }
+    GuestPermissionsResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/GuestPermissions' }
     ProfileResponse:
       allOf:
         - $ref: '#/components/schemas/Envelope'

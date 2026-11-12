@@ -171,6 +171,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/guest/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 游客权限（公开）
+         * @description 返回内置 guest 角色的权限码，按字典序排列；未配置 RBAC 或游客无权限时返回空数组。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 游客权限 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["GuestPermissionsResponse"];
+                    };
+                };
+                500: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users/me": {
         parameters: {
             query?: never;
@@ -7489,6 +7529,13 @@ export interface components {
         };
         MeResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["Me"];
+        };
+        GuestPermissions: {
+            /** @description 游客可用的权限码，按字典序排列；无权限时为空数组 */
+            permissions: string[];
+        };
+        GuestPermissionsResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["GuestPermissions"];
         };
         ProfileResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["Profile"];

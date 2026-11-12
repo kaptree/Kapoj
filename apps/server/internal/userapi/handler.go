@@ -28,11 +28,17 @@ type ActivityLookup interface {
 	UserActivity(ctx context.Context, userID int64) (*submission.UserActivity, error)
 }
 
+// GuestPermissionLookup 读取游客角色的公开权限码；由 rbac.Service 实现。
+type GuestPermissionLookup interface {
+	GuestPermissions(ctx context.Context) ([]string, error)
+}
+
 // Options 配置用户接口的可选依赖。
 type Options struct {
-	IdentityLookup IdentityLookup
-	RBAC           *rbac.Service
-	Activity       ActivityLookup
+	IdentityLookup   IdentityLookup
+	RBAC             *rbac.Service
+	GuestPermissions GuestPermissionLookup
+	Activity         ActivityLookup
 }
 
 // RegisterRoutes mounts user endpoints. The router must already run
@@ -42,8 +48,13 @@ func RegisterRoutes(r gin.IRouter, s *user.Service, opts ...Options) {
 	if len(opts) > 0 {
 		h.identities = opts[0].IdentityLookup
 		h.rbac = opts[0].RBAC
+		h.guest = opts[0].GuestPermissions
+		if h.guest == nil && opts[0].RBAC != nil {
+			h.guest = opts[0].RBAC
+		}
 		h.activity = opts[0].Activity
 	}
+	r.GET("/guest/permissions", h.guestPermissions)
 	r.GET("/users/me", middleware.RequireAuth(), h.getMe)
 	r.PUT("/users/me", middleware.RequireAuth(), h.updateMe)
 	r.GET("/users/:id/profile", h.profile)
@@ -64,7 +75,24 @@ type handler struct {
 	svc        *user.Service
 	identities IdentityLookup
 	rbac       *rbac.Service
+	guest      GuestPermissionLookup
 	activity   ActivityLookup
+}
+
+// guestPermissions 返回内置游客角色的公开权限码；未配置 RBAC 时返回空数组。
+func (h *handler) guestPermissions(c *gin.Context) {
+	codes := []string{}
+	if h.guest != nil {
+		result, err := h.guest.GuestPermissions(c.Request.Context())
+		if err != nil {
+			httpx.Fail(c, err)
+			return
+		}
+		if result != nil {
+			codes = result
+		}
+	}
+	httpx.OK(c, gin.H{"permissions": codes})
 }
 
 func (h *handler) getMe(c *gin.Context) {
