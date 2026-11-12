@@ -2,8 +2,9 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 
-import { ADMIN_ACCESS_PERMISSIONS } from '@/permissions'
+import { ADMIN_ACCESS_PERMISSIONS, GUEST_PERM } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
+import { useGuestStore } from '@/stores/guest'
 
 interface NavItem {
   key: string
@@ -22,6 +23,7 @@ interface NavGroup {
 const emit = defineEmits<{ navigate: [] }>()
 const route = useRoute()
 const auth = useAuthStore()
+const guest = useGuestStore()
 
 const primaryItems: NavItem[] = [
   { key: 'home', path: '/', label: '首页', icon: 'pi pi-home' },
@@ -48,15 +50,24 @@ const adminItem: NavItem = {
 }
 
 const showAdminEntry = computed(() => auth.canAny(ADMIN_ACCESS_PERMISSIONS))
+const growthVisible = computed(() => auth.isLoggedIn || guest.can(GUEST_PERM.growth))
+const guestGrowthItems = growthItems.filter((item) => item.key !== 'appearance')
 
-const groups = computed<NavGroup[]>(() => [
-  { key: 'core', label: '核心', items: primaryItems },
-  {
-    key: 'growth',
-    label: '成长',
-    items: showAdminEntry.value ? [...growthItems, adminItem] : growthItems,
-  },
-])
+const groups = computed<NavGroup[]>(() => {
+  const list: NavGroup[] = [{ key: 'core', label: '核心', items: primaryItems }]
+  if (growthVisible.value) {
+    list.push({
+      key: 'growth',
+      label: '成长',
+      items: auth.isLoggedIn
+        ? showAdminEntry.value
+          ? [...growthItems, adminItem]
+          : growthItems
+        : guestGrowthItems,
+    })
+  }
+  return list
+})
 
 function isActive(path: string): boolean {
   if (path === '/') return route.path === '/'

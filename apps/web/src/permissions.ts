@@ -73,6 +73,11 @@ export const PERM = {
   },
 } as const
 
+/** Permission codes that can be granted to the built-in guest role. */
+export const GUEST_PERM = {
+  growth: 'guest.growth.view',
+} as const
+
 /** The four gamification domain manage permissions shown as admin tabs. */
 export const GAMIFICATION_MANAGE_PERMISSIONS: string[] = [
   PERM.gamification.achievement.manage,

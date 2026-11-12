@@ -7,6 +7,7 @@ interface GuardTarget {
     guestOnly?: unknown
     permission?: unknown
     anyPermission?: unknown
+    guestPermission?: unknown
   }
 }
 
@@ -14,6 +15,8 @@ export interface AuthState {
   isLoggedIn: boolean
   permissions: string[]
   isSuperAdmin: boolean
+  /** Permissions granted to anonymous visitors; absent means none. */
+  guestPermissions?: string[]
 }
 
 /** Super admin passes, otherwise the code must be present in the permission set. */
@@ -39,6 +42,14 @@ export function authGuard(to: GuardTarget, state: AuthState): true | RouteLocati
   }
   if (to.meta.guestOnly && state.isLoggedIn) {
     return { name: 'home' }
+  }
+  const guestPermission = typeof to.meta.guestPermission === 'string' ? to.meta.guestPermission : ''
+  if (
+    !state.isLoggedIn &&
+    guestPermission !== '' &&
+    !(state.guestPermissions ?? []).includes(guestPermission)
+  ) {
+    return { name: 'forbidden' }
   }
   if (permission !== '' && !canPermission(state, permission)) {
     return { name: 'forbidden' }

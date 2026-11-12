@@ -5,7 +5,9 @@ import Button from 'primevue/button'
 
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
+import { GUEST_PERM } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
+import { useGuestStore } from '@/stores/guest'
 import { useSiteStore } from '@/stores/site'
 import { formatCoins } from '@/utils/gamification'
 
@@ -17,6 +19,7 @@ interface HomeLink {
 }
 
 const auth = useAuthStore()
+const guest = useGuestStore()
 const site = useSiteStore()
 
 const appearanceLink: HomeLink = {
@@ -26,9 +29,10 @@ const appearanceLink: HomeLink = {
   description: '管理已拥有的徽章与称号。',
 }
 
-const visibleGrowthLinks = computed(() =>
-  auth.isLoggedIn ? [...site.home.growthLinks, appearanceLink] : site.home.growthLinks,
-)
+const visibleGrowthLinks = computed(() => {
+  if (auth.isLoggedIn) return [...site.home.growthLinks, appearanceLink]
+  return guest.can(GUEST_PERM.growth) ? site.home.growthLinks : []
+})
 </script>
 
 <template>

@@ -1,7 +1,12 @@
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { describe, expect, it } from 'vitest'
 
-import { ADMIN_ACCESS_PERMISSIONS, GAMIFICATION_MANAGE_PERMISSIONS, PERM } from '@/permissions'
+import {
+  ADMIN_ACCESS_PERMISSIONS,
+  GAMIFICATION_MANAGE_PERMISSIONS,
+  GUEST_PERM,
+  PERM,
+} from '@/permissions'
 import { authGuard, canAnyPermission, canPermission, safeRedirect } from './guard'
 
 const route = (fullPath: string, meta: Record<string, unknown> = {}) => ({ fullPath, meta })
@@ -51,6 +56,26 @@ describe('authGuard', () => {
   it('removes role-based authorization', () => {
     // A legacy `roles` meta no longer restricts access.
     expect(authGuard(route('/x', { roles: ['problem_admin'] }), as([]))).toBe(true)
+  })
+
+  it('sends guests to forbidden when the guest permission is missing', () => {
+    const r = route('/achievements', { guestPermission: GUEST_PERM.growth })
+
+    expect(authGuard(r, guest)).toEqual({ name: 'forbidden' })
+    expect(authGuard(r, { ...guest, guestPermissions: [] })).toEqual({ name: 'forbidden' })
+  })
+
+  it('allows guests holding the guest permission', () => {
+    const r = route('/achievements', { guestPermission: GUEST_PERM.growth })
+
+    expect(authGuard(r, { ...guest, guestPermissions: [GUEST_PERM.growth] })).toBe(true)
+  })
+
+  it('lets logged-in users bypass the guest permission', () => {
+    const r = route('/achievements', { guestPermission: GUEST_PERM.growth })
+
+    expect(authGuard(r, as([]))).toBe(true)
+    expect(authGuard(r, superUser)).toBe(true)
   })
 })
 

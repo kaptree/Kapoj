@@ -1,8 +1,14 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
-import { ADMIN_ACCESS_PERMISSIONS, GAMIFICATION_MANAGE_PERMISSIONS, PERM } from '@/permissions'
+import {
+  ADMIN_ACCESS_PERMISSIONS,
+  GAMIFICATION_MANAGE_PERMISSIONS,
+  GUEST_PERM,
+  PERM,
+} from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
+import { useGuestStore } from '@/stores/guest'
 import { authGuard } from './guard'
 
 declare module 'vue-router' {
@@ -11,6 +17,7 @@ declare module 'vue-router' {
     permission?: string
     anyPermission?: string[]
     guestOnly?: boolean
+    guestPermission?: string
     title?: string
   }
 }
@@ -211,25 +218,25 @@ export const router = createRouter({
           path: 'achievements',
           name: 'achievements',
           component: () => import('@/views/AchievementsView.vue'),
-          meta: { title: '成就' },
+          meta: { guestPermission: GUEST_PERM.growth, title: '成就' },
         },
         {
           path: 'tasks',
           name: 'tasks',
           component: () => import('@/views/TasksView.vue'),
-          meta: { title: '任务' },
+          meta: { guestPermission: GUEST_PERM.growth, title: '任务' },
         },
         {
           path: 'shop/badges',
           name: 'badge-shop',
           component: () => import('@/views/BadgeShopView.vue'),
-          meta: { title: '徽章商城' },
+          meta: { guestPermission: GUEST_PERM.growth, title: '徽章商城' },
         },
         {
           path: 'shop/titles',
           name: 'title-shop',
           component: () => import('@/views/TitleShopView.vue'),
-          meta: { title: '称号商店' },
+          meta: { guestPermission: GUEST_PERM.growth, title: '称号商店' },
         },
         {
           path: 'appearance',
@@ -355,12 +362,15 @@ export const router = createRouter({
   ],
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   const auth = useAuthStore()
+  const guest = useGuestStore()
+  if (!auth.isLoggedIn) await guest.ensureLoaded()
   return authGuard(to, {
     isLoggedIn: auth.isLoggedIn,
     permissions: auth.user?.permissions ?? [],
     isSuperAdmin: auth.isSuperAdmin,
+    guestPermissions: guest.permissions,
   })
 })
 

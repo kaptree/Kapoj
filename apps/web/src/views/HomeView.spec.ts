@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Me, SitePublicView } from '@/api/types'
+import { GUEST_PERM } from '@/permissions'
 import { DEFAULT_FOOTER, DEFAULT_HOME, useSiteStore } from '@/stores/site'
 import HomeView from './HomeView.vue'
 
@@ -33,6 +34,17 @@ const auth = vi.hoisted(() => ({
 
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => auth,
+}))
+
+const guest = vi.hoisted(() => ({
+  permissions: [] as string[],
+  loaded: false,
+  ensureLoaded: vi.fn(),
+  can: vi.fn<(code: string) => boolean>(() => false),
+}))
+
+vi.mock('@/stores/guest', () => ({
+  useGuestStore: () => guest,
 }))
 
 const siteApi = vi.hoisted(() => ({
@@ -100,12 +112,16 @@ function hrefs(wrapper: Awaited<ReturnType<typeof mountHome>>['wrapper']) {
 beforeEach(() => {
   auth.isLoggedIn = false
   auth.user = null
+  guest.permissions = []
+  guest.loaded = false
+  guest.can.mockReset()
+  guest.can.mockReturnValue(false)
   siteApi.getSite.mockReset()
   siteApi.recordSiteVisit.mockReset()
 })
 
 describe('HomeView', () => {
-  it('shows the hero, system status and quick links to guests', async () => {
+  it('shows the hero and quick links to guests while hiding growth by default', async () => {
     const { wrapper } = await mountHome()
     const links = hrefs(wrapper)
 
@@ -118,19 +134,21 @@ describe('HomeView', () => {
         '/contests',
         '/leaderboard',
         '/submissions',
-        '/achievements',
-        '/tasks',
-        '/shop/badges',
-        '/shop/titles',
         '/login',
         '/register',
       ]),
     )
+    expect(links).not.toContain('/achievements')
+    expect(links).not.toContain('/tasks')
+    expect(links).not.toContain('/shop/badges')
+    expect(links).not.toContain('/shop/titles')
     expect(links).not.toContain('/appearance')
+    expect(wrapper.text()).not.toContain('成长中心')
     expect(wrapper.text()).toContain('登录后记录你的成长')
   })
 
   it('falls back to the default home copy when the site config is unavailable', async () => {
+    guest.can.mockReturnValue(true)
     const { wrapper } = await mountHome()
 
     expect(wrapper.find('h1').text()).toContain('欢迎来到 kapOJ')
@@ -141,6 +159,7 @@ describe('HomeView', () => {
   })
 
   it('renders custom hero, quick links, growth links and guest copy from the site config', async () => {
+    guest.can.mockReturnValue(true)
     const { wrapper } = await mountHome({
       site: {
         home: {
@@ -209,6 +228,7 @@ describe('HomeView', () => {
   })
 
   it('does not render empty quick or growth sections', async () => {
+    guest.can.mockReturnValue(true)
     const { wrapper } = await mountHome({
       site: {
         home: {
@@ -222,6 +242,20 @@ describe('HomeView', () => {
     expect(wrapper.findAll('.home-section')).toHaveLength(0)
   })
 
+  it('shows configured growth links without appearance to guests with guest.growth.view', async () => {
+    guest.can.mockReturnValue(true)
+    const { wrapper } = await mountHome()
+    const links = hrefs(wrapper)
+
+    expect(guest.can).toHaveBeenCalledWith(GUEST_PERM.growth)
+    expect(wrapper.text()).toContain('成长中心')
+    expect(links).toContain('/achievements')
+    expect(links).toContain('/tasks')
+    expect(links).toContain('/shop/badges')
+    expect(links).toContain('/shop/titles')
+    expect(links).not.toContain('/appearance')
+  })
+
   it('shows the profile strip and appearance entry to logged-in users', async () => {
     auth.isLoggedIn = true
     auth.user = baseUser
@@ -232,6 +266,8 @@ describe('HomeView', () => {
     expect(wrapper.text()).toContain('@alice')
     expect(wrapper.text()).toContain('1680')
     expect(wrapper.text()).toContain('1,234')
+    expect(links).toContain('/achievements')
+    expect(links).toContain('/tasks')
     expect(links).toContain('/appearance')
     expect(links).toContain('/settings/profile')
     expect(wrapper.text()).not.toContain('登录后记录你的成长')
