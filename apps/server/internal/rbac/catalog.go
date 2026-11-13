@@ -50,6 +50,7 @@ const (
 	PermCertificateManage PermissionCode = "certificate.manage"
 
 	PermSiteSettingsManage PermissionCode = "site.settings.manage"
+	PermMailSettingsManage PermissionCode = "mail.settings.manage"
 
 	PermGuestGrowthView PermissionCode = "guest.growth.view"
 )
@@ -66,6 +67,7 @@ const (
 	PermissionGroupAI           = "AI"
 	PermissionGroupCertificate  = "证书"
 	PermissionGroupSite         = "站点"
+	PermissionGroupMail         = "邮件"
 	PermissionGroupGuest        = "游客访问"
 )
 
@@ -127,6 +129,7 @@ var permissionCatalog = []PermissionDef{
 	{Code: PermCertificateManage, Name: "管理证书", GroupName: PermissionGroupCertificate, Description: "审核证书认证并维护证书类型"},
 
 	{Code: PermSiteSettingsManage, Name: "管理站点设置", GroupName: PermissionGroupSite, Description: "编辑站点品牌、首页内容与页脚"},
+	{Code: PermMailSettingsManage, Name: "管理邮件设置", GroupName: PermissionGroupMail, Description: "配置 SMTP 邮件服务与强制邮箱验证"},
 
 	{Code: PermGuestGrowthView, Name: "游客可见成长板块", GroupName: PermissionGroupGuest, Description: "允许未登录访客查看成就、任务、徽章商城与称号商店"},
 }
