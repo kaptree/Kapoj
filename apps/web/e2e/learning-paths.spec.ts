@@ -24,13 +24,11 @@ const secondPassword = process.env.E2E_SECOND_PASSWORD ?? 'correct-horse'
 const runId = Date.now().toString()
 const slugPrefix = `e2e-lp-${runId}`
 const codeMarker = `// e2e-lp-${runId}`
+const psqlCommand = process.env.E2E_PSQL ?? 'docker exec kapoj-postgres-1 psql -U kapoj -d kapoj'
 
 /** Run a single SQL statement against the dev database and return trimmed stdout. */
 function sql(query: string): string {
-  const out = execSync(
-    `docker exec kapoj-postgres-1 psql -U kapoj -d kapoj -Atc ${JSON.stringify(query)}`,
-    { encoding: 'utf8' },
-  )
+  const out = execSync(`${psqlCommand} -Atc ${JSON.stringify(query)}`, { encoding: 'utf8' })
   return out.trim()
 }
 
