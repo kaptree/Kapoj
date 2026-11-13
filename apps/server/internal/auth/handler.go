@@ -53,6 +53,23 @@ type logoutOthersRequest struct {
 	SessionID string `json:"sessionId"`
 }
 
+type emailTokenRequest struct {
+	Token string `json:"token"`
+}
+
+type emailRequest struct {
+	Email string `json:"email"`
+}
+
+type resetPasswordRequest struct {
+	Token       string `json:"token"`
+	NewPassword string `json:"newPassword"`
+}
+
+type messageDTO struct {
+	Message string `json:"message"`
+}
+
 func RegisterRoutes(r gin.IRouter, s *Service, hooks ...LoginHook) {
 	h := &handler{svc: s}
 	if len(hooks) > 0 {
@@ -62,6 +79,10 @@ func RegisterRoutes(r gin.IRouter, s *Service, hooks ...LoginHook) {
 	r.POST("/auth/login", h.login)
 	r.POST("/auth/refresh", h.refresh)
 	r.POST("/auth/logout", h.logout)
+	r.POST("/auth/email/verify", h.verifyEmail)
+	r.POST("/auth/email/resend", h.resendEmail)
+	r.POST("/auth/password/forgot", h.forgotPassword)
+	r.POST("/auth/password/reset", h.resetPassword)
 }
 
 type handler struct {
@@ -182,6 +203,79 @@ func (h *handler) logout(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, nil)
+}
+
+func (h *handler) verifyEmail(c *gin.Context) {
+	req, ok := httpx.BindJSON[emailTokenRequest](c)
+	if !ok {
+		return
+	}
+	if !h.allowEmailAttempt(c) {
+		return
+	}
+	session, err := h.svc.VerifyEmail(c.Request.Context(), req.Token, sessionMeta(c))
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	h.notifyLogin(c, session.User.ID)
+	httpx.OK(c, sessionDTO{TokenPair: session.TokenPair, User: user.ToMe(session.User)})
+}
+
+func (h *handler) resendEmail(c *gin.Context) {
+	req, ok := httpx.BindJSON[emailRequest](c)
+	if !ok {
+		return
+	}
+	if err := h.svc.ResendVerification(c.Request.Context(), req.Email, c.ClientIP()); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, messageDTO{Message: "如果该邮箱已注册且尚未验证，验证邮件已发送"})
+}
+
+func (h *handler) forgotPassword(c *gin.Context) {
+	req, ok := httpx.BindJSON[emailRequest](c)
+	if !ok {
+		return
+	}
+	if err := h.svc.ForgotPassword(c.Request.Context(), req.Email, c.ClientIP()); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, messageDTO{Message: "如果该邮箱已注册，重置邮件已发送"})
+}
+
+func (h *handler) resetPassword(c *gin.Context) {
+	req, ok := httpx.BindJSON[resetPasswordRequest](c)
+	if !ok {
+		return
+	}
+	if !h.allowEmailAttempt(c) {
+		return
+	}
+	if err := h.svc.ResetPassword(c.Request.Context(), req.Token, req.NewPassword); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, nil)
+}
+
+// allowEmailAttempt rate-limits verification and reset attempts per client IP.
+func (h *handler) allowEmailAttempt(c *gin.Context) bool {
+	if h.svc.emailTokens == nil {
+		return true
+	}
+	allowed, err := h.svc.emailTokens.AllowAttempt(c.Request.Context(), c.ClientIP())
+	if err != nil {
+		httpx.Fail(c, httpx.ErrUnavailable)
+		return false
+	}
+	if !allowed {
+		httpx.Fail(c, httpx.ErrTooManyEmailRequests)
+		return false
+	}
+	return true
 }
 
 // RegisterAccountRoutes mounts the authenticated self-service account endpoints

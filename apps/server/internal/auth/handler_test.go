@@ -365,3 +365,113 @@ func TestLogoutOthersRejectsOtherUsersSessionHTTP(t *testing.T) {
 	_, resp = authJSON(r, http.MethodGet, "/api/users/me/sessions", atoken, "")
 	assert.Len(t, resp["data"], 2)
 }
+
+func newAuthEngineWithMail(t *testing.T, required, ready bool) (*gin.Engine, *fakeMailer) {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	svc, _, mailer := newServiceWithMail(t, required, ready)
+	r := gin.New()
+	RegisterRoutes(r.Group("/api"), svc)
+	return r, mailer
+}
+
+func TestRegisterEndpointVerificationRequired(t *testing.T) {
+	r, _ := newAuthEngineWithMail(t, true, true)
+
+	w, resp := postJSON(r, "/api/auth/register",
+		`{"username":"bootstrap","email":"bootstrap@example.com","password":"correct-horse"}`)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	data := resp["data"].(map[string]any)
+	assert.NotNil(t, data["session"])
+	assert.False(t, data["verificationRequired"].(bool))
+
+	w, resp = postJSON(r, "/api/auth/register",
+		`{"username":"alice","email":"alice@example.com","password":"correct-horse"}`)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	data = resp["data"].(map[string]any)
+	assert.True(t, data["verificationRequired"].(bool))
+	assert.Nil(t, data["session"])
+	assert.Equal(t, "alice@example.com", data["email"])
+	assert.True(t, data["verificationEmailSent"].(bool))
+	assert.NotContains(t, w.Body.String(), "accessToken")
+}
+
+func TestVerifyEmailEndpoint(t *testing.T) {
+	r, mailer := newAuthEngineWithMail(t, true, true)
+	postJSON(r, "/api/auth/register", `{"username":"bootstrap","email":"bootstrap@example.com","password":"correct-horse"}`)
+	postJSON(r, "/api/auth/register", `{"username":"alice","email":"alice@example.com","password":"correct-horse"}`)
+	require.Len(t, mailer.verification, 1)
+
+	w, resp := postJSON(r, "/api/auth/email/verify", `{"token":"`+mailer.verification[0].token+`"}`)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data := resp["data"].(map[string]any)
+	assert.NotEmpty(t, data["accessToken"])
+	u := data["user"].(map[string]any)
+	assert.True(t, u["emailVerified"].(bool))
+
+	w, resp = postJSON(r, "/api/auth/email/verify", `{"token":"`+mailer.verification[0].token+`"}`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40003, resp["code"])
+}
+
+func TestResendEmailEndpointIsGeneric(t *testing.T) {
+	r, mailer := newAuthEngineWithMail(t, true, true)
+	postJSON(r, "/api/auth/register", `{"username":"bootstrap","email":"bootstrap@example.com","password":"correct-horse"}`)
+	postJSON(r, "/api/auth/register", `{"username":"alice","email":"alice@example.com","password":"correct-horse"}`)
+
+	w, resp := postJSON(r, "/api/auth/email/resend", `{"email":"nobody@example.com"}`)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.NotEmpty(t, resp["data"].(map[string]any)["message"])
+
+	w, _ = postJSON(r, "/api/auth/email/resend", `{"email":"alice@example.com"}`)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Len(t, mailer.verification, 2)
+}
+
+func TestResendEmailEndpointRateLimited(t *testing.T) {
+	r, _ := newAuthEngineWithMail(t, true, true)
+	for i := 0; i < 5; i++ {
+		w, _ := postJSON(r, "/api/auth/email/resend", `{"email":"nobody@example.com"}`)
+		require.Equal(t, http.StatusOK, w.Code, i)
+	}
+	w, resp := postJSON(r, "/api/auth/email/resend", `{"email":"nobody@example.com"}`)
+	assert.Equal(t, http.StatusTooManyRequests, w.Code)
+	assert.EqualValues(t, 42905, resp["code"])
+}
+
+func TestForgotPasswordEndpointIsGeneric(t *testing.T) {
+	r, mailer := newAuthEngineWithMail(t, true, true)
+	postJSON(r, "/api/auth/register", `{"username":"bootstrap","email":"bootstrap@example.com","password":"correct-horse"}`)
+	postJSON(r, "/api/auth/register", `{"username":"alice","email":"alice@example.com","password":"correct-horse"}`)
+
+	w, resp := postJSON(r, "/api/auth/password/forgot", `{"email":"nobody@example.com"}`)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.NotEmpty(t, resp["data"].(map[string]any)["message"])
+	assert.Empty(t, mailer.reset)
+
+	w, _ = postJSON(r, "/api/auth/password/forgot", `{"email":"alice@example.com"}`)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Len(t, mailer.reset, 1)
+}
+
+func TestResetPasswordEndpoint(t *testing.T) {
+	r, mailer := newAuthEngineWithMail(t, true, true)
+	postJSON(r, "/api/auth/register", `{"username":"bootstrap","email":"bootstrap@example.com","password":"correct-horse"}`)
+	postJSON(r, "/api/auth/register", `{"username":"alice","email":"alice@example.com","password":"correct-horse"}`)
+	postJSON(r, "/api/auth/password/forgot", `{"email":"alice@example.com"}`)
+	require.Len(t, mailer.reset, 1)
+
+	w, resp := postJSON(r, "/api/auth/password/reset",
+		`{"token":"`+mailer.reset[0].token+`","newPassword":"brand-new-password"}`)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Nil(t, resp["data"])
+
+	w, _ = postJSON(r, "/api/auth/login", `{"account":"alice","password":"correct-horse"}`)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	w, _ = postJSON(r, "/api/auth/login", `{"account":"alice","password":"brand-new-password"}`)
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	w, resp = postJSON(r, "/api/auth/password/reset", `{"token":"bad-token","newPassword":"brand-new-password"}`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40003, resp["code"])
+}
