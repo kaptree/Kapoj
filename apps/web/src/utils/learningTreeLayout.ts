@@ -71,8 +71,7 @@ const LEAF_GAP = 8
 const LEAF_RISE = 58
 const LEAF_ARC_LIFT = 14
 const SIDE_COLUMN_GAP = 16
-const SIDE_ROW_GAP = 18
-const LEAF_MARGIN = 16
+const SIDE_ROW_GAP = LEAF_HEIGHT + 6
 
 export function buildLearningTreeLayout(
   nodes: LearningPathNodeItem[],
@@ -168,20 +167,22 @@ export function buildLearningLeafPlacements(
   }
   if (entries.length === 0) return []
 
-  const marginX = Math.min(LEAF_MARGIN, canvasWidth / 2)
-  const marginY = Math.min(LEAF_MARGIN, canvasHeight / 2)
-  const clampX = (value: number) => Math.max(marginX, Math.min(canvasWidth - marginX, value))
-  const clampY = (value: number) => Math.max(marginY, Math.min(canvasHeight - marginY, value))
+  // Keep the whole leaf box inside the canvas. On canvases smaller than a
+  // leaf, fall back to centering the box on the available axis.
+  const halfWidth = Math.min(LEAF_WIDTH / 2, canvasWidth / 2)
+  const halfHeight = Math.min(LEAF_HEIGHT / 2, canvasHeight / 2)
+  const clampX = (value: number) => Math.max(halfWidth, Math.min(canvasWidth - halfWidth, value))
+  const clampY = (value: number) => Math.max(halfHeight, Math.min(canvasHeight - halfHeight, value))
 
   const count = entries.length
   const totalWidth = count * LEAF_WIDTH + (count - 1) * LEAF_GAP
-  const topY = layoutNode.y - layoutNode.size / 2 - LEAF_RISE - LEAF_ARC_LIFT - LEAF_HEIGHT / 2
-  const fitsAbove = topY >= marginY && totalWidth <= canvasWidth - marginX * 2
+  const topEdge = layoutNode.y - layoutNode.size / 2 - LEAF_RISE - LEAF_ARC_LIFT - halfHeight
+  const fitsAbove = topEdge >= 0 && totalWidth <= canvasWidth - halfWidth * 2
 
   if (fitsAbove) {
     const left = Math.max(
-      marginX,
-      Math.min(canvasWidth - marginX - totalWidth, layoutNode.x - totalWidth / 2),
+      halfWidth,
+      Math.min(canvasWidth - halfWidth - totalWidth, layoutNode.x - totalWidth / 2),
     )
     const center = (count - 1) / 2
 
@@ -198,6 +199,12 @@ export function buildLearningLeafPlacements(
 
   const leftX = layoutNode.x - layoutNode.size / 2 - SIDE_COLUMN_GAP - LEAF_WIDTH / 2
   const rightX = layoutNode.x + layoutNode.size / 2 + SIDE_COLUMN_GAP + LEAF_WIDTH / 2
+  const rowCount = Math.ceil(count / 2)
+  const columnHeight = (rowCount - 1) * SIDE_ROW_GAP
+  const bottomLimit = canvasHeight - halfHeight
+  let startY = layoutNode.y
+  if (startY + columnHeight > bottomLimit) startY = bottomLimit - columnHeight
+  if (startY < halfHeight) startY = halfHeight
 
   return entries.map((entry, index) => {
     const row = Math.floor(index / 2)
@@ -205,7 +212,7 @@ export function buildLearningLeafPlacements(
     return {
       ...entry,
       x: clampX(index % 2 === 0 ? leftX : rightX),
-      y: clampY(layoutNode.y + row * SIDE_ROW_GAP),
+      y: clampY(startY + row * SIDE_ROW_GAP),
     }
   })
 }

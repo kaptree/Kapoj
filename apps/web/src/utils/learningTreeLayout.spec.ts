@@ -8,8 +8,13 @@ import {
   buildLearningTreeLayout,
   computeLearningTreeFitScale,
   createSeededRandom,
+  type LearningLeafPlacement,
   type LearningTreeLayoutNode,
 } from './learningTreeLayout'
+
+// Keep in sync with the leaf box dimensions in learningTreeLayout.ts.
+const LEAF_WIDTH = 128
+const LEAF_HEIGHT = 34
 
 describe('learning tree layout', () => {
   it('places a parent at the midpoint of its children and colors edges by child status', () => {
@@ -83,14 +88,48 @@ describe('learning tree layout', () => {
     const nearTop = layoutNode({ y: 20 })
     const placements = buildLearningLeafPlacements(nearTop, problems(3), 640, 480)
 
-    for (const placement of placements) {
-      expect(placement.x).toBeGreaterThanOrEqual(0)
-      expect(placement.x).toBeLessThanOrEqual(640)
-      expect(placement.y).toBeGreaterThanOrEqual(0)
-      expect(placement.y).toBeLessThanOrEqual(480)
-    }
+    for (const placement of placements) expectLeafInside(placement, 640, 480)
 
     expect(placements.some((placement) => placement.y >= nearTop.y)).toBe(true)
+  })
+
+  it('spaces side-column rows by at least a leaf height', () => {
+    const placements = buildLearningLeafPlacements(layoutNode({ y: 20 }), problems(7), 640, 480)
+
+    for (const placement of placements) expectLeafInside(placement, 640, 480)
+
+    const columns = [
+      placements.filter((_, index) => index % 2 === 0),
+      placements.filter((_, index) => index % 2 === 1),
+    ]
+    for (const column of columns) {
+      for (let index = 1; index < column.length; index += 1) {
+        expect(column[index].y - column[index - 1].y).toBeGreaterThanOrEqual(LEAF_HEIGHT)
+      }
+    }
+  })
+
+  it('keeps full leaf boxes inside the canvas when clamped', () => {
+    const placements = buildLearningLeafPlacements(
+      layoutNode({ x: 8, y: 20 }),
+      problems(4),
+      300,
+      240,
+    )
+
+    for (const placement of placements) expectLeafInside(placement, 300, 240)
+  })
+
+  it('centers leaves on canvases smaller than a leaf', () => {
+    const placements = buildLearningLeafPlacements(
+      layoutNode({ x: 10, y: 10 }),
+      problems(2),
+      100,
+      60,
+    )
+
+    expect(placements).toHaveLength(2)
+    expect(placements.every((placement) => placement.x === 50)).toBe(true)
   })
 
   it('leaf placements cap at 4 + more', () => {
@@ -98,6 +137,7 @@ describe('learning tree layout', () => {
 
     expect(placements).toHaveLength(5)
     expect(placements.at(-1)).toMatchObject({ problem: null, moreCount: 3 })
+    for (const placement of placements) expectLeafInside(placement, 1200, 800)
   })
 
   it('shows every problem when there are five or fewer', () => {
@@ -148,6 +188,17 @@ function layoutNode(overrides: Partial<LearningTreeLayoutNode> = {}): LearningTr
     children: [],
     ...overrides,
   }
+}
+
+function expectLeafInside(
+  placement: LearningLeafPlacement,
+  canvasWidth: number,
+  canvasHeight: number,
+): void {
+  expect(placement.x - LEAF_WIDTH / 2).toBeGreaterThanOrEqual(0)
+  expect(placement.x + LEAF_WIDTH / 2).toBeLessThanOrEqual(canvasWidth)
+  expect(placement.y - LEAF_HEIGHT / 2).toBeGreaterThanOrEqual(0)
+  expect(placement.y + LEAF_HEIGHT / 2).toBeLessThanOrEqual(canvasHeight)
 }
 
 function problems(count: number): LearningProblemSummary[] {
