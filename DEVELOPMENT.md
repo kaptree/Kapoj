@@ -150,10 +150,12 @@ kapoj/
 | 0     | 200  | 成功（创建类接口返回 201）   |
 | 40000 | 400  | 请求体格式错误               |
 | 40001 | 400  | 参数校验失败（message 说明） |
+| 40003 | 400  | 邮箱验证/重置链接无效或已过期 |
 | 40100 | 401  | 未登录或令牌无效             |
 | 40101 | 401  | 账号或密码错误               |
 | 40300 | 403  | 权限不足                     |
 | 40301 | 403  | 账号已封禁                   |
+| 40303 | 403  | 邮箱尚未验证                 |
 | 40400 | 404  | 资源不存在                   |
 | 40901 | 409  | 用户名已被占用               |
 | 40902 | 409  | 邮箱已被注册                 |
@@ -162,8 +164,11 @@ kapoj/
 | 42901 | 429  | 登录失败次数过多             |
 | 42902 | 429  | 提交过于频繁                 |
 | 42904 | 429  | 修改密码尝试次数过多         |
+| 42905 | 429  | 邮件请求过于频繁             |
 | 50000 | 500  | 服务器内部错误               |
+| 50201 | 502  | 邮件发送失败                 |
 | 50300 | 503  | 依赖服务不可用               |
+| 50301 | 503  | 邮件服务未配置或未就绪       |
 
 ---
 
@@ -593,6 +598,10 @@ user_ai_configs (
 | POST | /auth/login        | 登录，返回 access/refresh token |
 | POST | /auth/refresh      | 刷新令牌                        |
 | POST | /auth/logout       | 登出，吊销 refresh token        |
+| POST | /auth/email/verify | 消费验证 token，标记邮箱已验证并自动登录 |
+| POST | /auth/email/resend | 重新发送验证邮件（通用成功信息） |
+| POST | /auth/password/forgot | 发送密码重置邮件（通用成功信息） |
+| POST | /auth/password/reset | 消费重置 token，改密并吊销全部会话 |
 | GET  | /users/me          | 当前用户信息                    |
 | PUT  | /users/me          | 更新资料                        |
 | POST | /users/me/avatar   | 上传头像（登录；multipart `file`） |
@@ -626,7 +635,7 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 
 **实现差异**：
 
-- 注册成功后直接返回 `{ accessToken, refreshToken, user }`，即自动登录，与登录响应相同。
+- 注册返回 `RegisterResult`：强制邮箱验证开启时 `verificationRequired=true`，不返回令牌；关闭时 `session` 中返回 `{ accessToken, refreshToken, sessionId, user }`，与登录响应相同。首个引导账号（`users` 表为空）始终直接登录。
 - 登录请求字段为 `account`（用户名或邮箱）和 `password`。
 - 校验规则：用户名 3–32 位字母、数字或下划线；邮箱不超过 254 字节；密码 8–72 字节（72 是 bcrypt 的上限）；昵称 1–32 个字符，为空时默认等于用户名；简介不超过 200 个字符；头像链接为 http(s) 且不超过 512 字符。
 - access token 为 HS256 JWT，有效期 15 分钟；refresh token 为随机串，有效期 7 天，每次刷新都会轮换，旧令牌立即失效。Redis 中只保存其 SHA-256。
@@ -699,6 +708,18 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 ```
 
 ---
+
+#### 邮箱验证与密码找回（2026-11-14）
+
+- **数据**：`users.email_verified_at` 为可空时间；新注册为 `NULL`。首次升级时 `db.Migrate` 在 advisory lock 内执行一次性 `email_verified_at_backfill_v1`，把存量用户标记为 `created_at`，并用 `db_migrations` 标记保证只回填一次。
+- **邮件设置**：单例 `mail_settings` 保存 provider（`qq`/`tencent_ses`/`aliyun_dm`/`custom`）、SMTP host/port/TLS、用户名、加密密码、发件地址/名称、Reply-To、`public_base_url`、`sending_enabled`、`require_email_verification`。SMTP 密码使用 AES-256-GCM 加密；API 只返回 `passwordState`（`none`/`ready`/`key_error`），不返回明文或密文。
+- **邮件通道**：统一走 SMTP，预设 QQ `smtp.qq.com:465`、腾讯云 SES `smtp.qcloudmail.com:465`、阿里云邮件推送 `smtpdm.aliyun.com:465`；支持 SSL/STARTTLS/不加密（仅 custom）。验证邮件 24 小时有效，重置邮件 30 分钟有效；链接使用后台配置的 `publicBaseUrl` 拼接。
+- **Redis**：`email_verify:<sha256>`、`email_verify_user:<uid>`、`email_verify_cooldown:<uid>`、`email_verify_ip:<ip>`、`password_reset:<sha256>`、`password_reset_user:<uid>`、`password_reset_email:<sha256>`、`password_reset_ip:<ip>`、`email_attempt_ip:<ip>`。token 为 32 字节随机串，只存 SHA-256，单次消费；重发会撤销旧 token。
+- **强制验证**：`require_email_verification` 默认开启。开启时注册不返回会话，登录/刷新与所有认证路由对未验证用户返回 40303；关闭时注册仍 best-effort 发送验证邮件并直接登录。首个引导账号（`users` 为空）始终跳过验证并标记已验证。
+- **管理接口**：`GET/PUT /api/admin/mail`、`POST /api/admin/mail/test`，需要 `mail.settings.manage`（分组「邮件」）；保存/测试成功写审计 action=`mail.settings.manage`。
+- **配置**：`KAPOJ_MAIL_ENCRYPTION_KEY`（base64 32 字节）、`KAPOJ_MAIL_KEY_FILE`（默认 `data/mail.key`）、`KAPOJ_MAIL_TIMEOUT`（默认 20s）、`KAPOJ_TRUSTED_PROXIES`（逗号分隔 CIDR，默认空 = 不信任代理头）。
+- **限流**：重发验证按用户 60 秒冷却、IP 5 次/小时；忘记密码按邮箱 60 秒冷却、IP 5 次/小时；验证/重置尝试 IP 20 次/5 分钟。重发/忘记密码对未知邮箱返回通用成功信息，防枚举。
+- **安全**：邮件头 CR/LF 清洗；SMTP 密码、token 不写日志；重置密码成功后吊销全部会话，并标记邮箱已验证、作废旧验证 token。
 
 ### 4.2 代码测评沙盒
 

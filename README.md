@@ -373,6 +373,30 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 - 登录/注册/刷新响应带 `sessionId`；刷新在同一会话内轮换 refresh token、sessionId 不变。Redis 会话结构：`refresh:<sha256>`、`session:<id>`、`user_refresh:<uid>`、`user_sessions:<uid>`，TTL 与 refresh token 一致（7 天）。IP 仅作展示（`c.ClientIP()`，best-effort），反向代理部署需配置 Gin trusted proxies。
 - 改密只吊销 refresh token，已签发 access token 在过期前（最长 15 分钟）仍有效；前端改密后立即清空并重新登录。
 
+## 邮箱验证与密码找回（2026-11-14）
+
+注册支持强制邮箱验证，密码找回通过邮件链接完成；邮件通道支持 QQ 邮箱 SMTP、腾讯云 SES SMTP、阿里云邮件推送 SMTP 与自定义 SMTP。规格见 [`DEVELOPMENT.md`](DEVELOPMENT.md) §4.1 与设计文档 [`docs/superpowers/specs/2026-11-13-email-verification-design.md`](docs/superpowers/specs/2026-11-13-email-verification-design.md)。
+
+**后台**
+
+- `/admin/mail`（`mail.settings.manage`，管理导航「系统」）配置 provider、SMTP host/port/TLS、用户名、密码/授权码、发件邮箱/名称、Reply-To 与站点公开地址；保存后可用「发送测试」验证。
+- SMTP 密码加密落库，页面只显示 `passwordState`（未配置/已就绪/密钥不匹配），不回显密码或密文。
+- `requireEmailVerification` 默认开启；开启后未验证用户无法登录，受保护接口返回 40303。邮件服务未就绪时除首个引导账号外注册返回 50301。
+
+**用户流程**
+
+- 注册：强制验证时创建账号并发送验证邮件，页面显示「验证邮件已发送」与重发倒计时；关闭强制验证时自动登录。
+- `/verify-email?token=`：验证成功自动登录并跳首页；失败可重新发送到邮箱。
+- `/forgot-password`：始终返回通用成功信息，防邮箱枚举；`/reset-password?token=` 设置新密码，成功后跳登录。
+- 登录页「忘记密码？」与 40303 内联「去验证邮箱」入口；未验证用户访问其他接口时前端统一跳 `/verify-email`。
+
+**接口与配置**
+
+- `POST /api/auth/email/verify`、`/auth/email/resend`、`/auth/password/forgot`、`/auth/password/reset`；`POST /api/auth/register` 返回 `RegisterResult`（`verificationRequired`/`email`/`verificationEmailSent`/可选 `session`）。
+- 新错误码：40003 链接无效/过期、40303 邮箱未验证、42905 邮件请求过频、50201 邮件发送失败、50301 邮件服务未就绪。
+- 邮件加密密钥：`KAPOJ_MAIL_ENCRYPTION_KEY`（base64 32 字节）或自动生成的 `data/mail.key`；SMTP 超时 `KAPOJ_MAIL_TIMEOUT`（默认 20s）；反向代理需配置 `KAPOJ_TRUSTED_PROXIES`。
+- 存量用户升级时一次性标记为已验证；首个引导账号（空库）跳过验证，需按运行手册用 SQL 授予 `super_admin`。
+
 ## 测试与检查
 
 后端（数据库相关测试需要 `-p 1`，因为各包共用同一个测试库）：
