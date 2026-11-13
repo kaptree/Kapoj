@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import Button from 'primevue/button'
 import ProgressBar from 'primevue/progressbar'
 import Tag from 'primevue/tag'
@@ -26,6 +26,8 @@ const props = withDefaults(
 const emit = defineEmits<{
   close: []
 }>()
+
+const problemList = ref<HTMLUListElement | null>(null)
 
 const { isDark } = useTheme()
 
@@ -64,6 +66,12 @@ const progressHint = computed(() => {
   const remaining = Math.max(0, props.node.requiredCount - props.node.solvedCount)
   return `已通过 ${props.node.solvedCount} 题 / 还需 ${remaining} 题`
 })
+
+function scrollToProblems() {
+  problemList.value?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+}
+
+defineExpose({ scrollToProblems })
 </script>
 
 <template>
@@ -119,7 +127,7 @@ const progressHint = computed(() => {
         完成前置节点后推进进度；题目仍可提前挑战。
       </p>
 
-      <ul v-if="node.problems.length" class="panel-problems">
+      <ul v-if="node.problems.length" ref="problemList" class="panel-problems">
         <li v-for="problem in node.problems" :key="problem.problemId">
           <RouterLink
             :to="`/problems/${problem.problemId}`"

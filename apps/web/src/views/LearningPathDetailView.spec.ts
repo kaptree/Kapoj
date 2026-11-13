@@ -1,21 +1,26 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
-import ProgressBar from 'primevue/progressbar'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, reactive } from 'vue'
 
 import { ApiError } from '@/api/http'
 import { getLearningTree } from '@/api/learning'
-import type { LearningPathItem, LearningPathNodeItem, LearningTree } from '@/api/types'
+import type { LearningPathItem, LearningPathNodeItem, LearningTree, Me } from '@/api/types'
+import AppEmptyState from '@/components/ui/AppEmptyState.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
 import LearningPathDetailView from './LearningPathDetailView.vue'
 
 const route = reactive({ params: { id: '3' } })
+const auth = vi.hoisted(() => ({
+  isLoggedIn: true,
+  user: null as Me | null,
+}))
 
 vi.mock('vue-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-router')>()
   return { ...actual, useRoute: () => route }
 })
+vi.mock('@/stores/auth', () => ({ useAuthStore: () => auth }))
 vi.mock('@/api/learning', () => ({
   getLearningTree: vi.fn(),
 }))
@@ -30,7 +35,7 @@ function path(overrides: Partial<LearningPathItem> = {}): LearningPathItem {
   return {
     id: 3,
     title: '算法入门',
-    descriptionMd: '从零开始学习。',
+    descriptionMd: '从零开始学习。\n\n逐步掌握算法。',
     coverUrl: '',
     isOfficial: true,
     isPublic: true,
@@ -45,8 +50,8 @@ function path(overrides: Partial<LearningPathItem> = {}): LearningPathItem {
   }
 }
 
-function problem(problemId: number, title = `题目 ${problemId}`) {
-  return { problemId, title, slug: `problem-${problemId}`, difficulty: 1, solved: false }
+function problem(problemId: number, title = `题目 ${problemId}`, solved = false) {
+  return { problemId, title, slug: `problem-${problemId}`, difficulty: 1, solved }
 }
 
 function node(overrides: Partial<LearningPathNodeItem> = {}): LearningPathNodeItem {
@@ -79,13 +84,22 @@ function mountView() {
 
 beforeEach(() => {
   route.params.id = '3'
+  auth.isLoggedIn = true
+  auth.user = null
   vi.mocked(getLearningTree).mockReset()
 })
 
 describe('LearningPathDetailView', () => {
-  it('renders path header, tree statuses and progress', async () => {
+  it('renders path metadata, problem summary and completion after loading', async () => {
     const nodes: LearningPathNodeItem[] = [
-      node({ id: 1, title: '基础语法', status: 'completed', solvedCount: 2, requiredCount: 2 }),
+      node({
+        id: 1,
+        title: '基础语法',
+        status: 'completed',
+        solvedCount: 2,
+        requiredCount: 2,
+        problems: [problem(101, '题目 101', true)],
+      }),
       node({
         id: 2,
         parentId: 1,
@@ -93,6 +107,7 @@ describe('LearningPathDetailView', () => {
         status: 'active',
         solvedCount: 1,
         requiredCount: 3,
+        problems: [problem(102), problem(103)],
       }),
       node({
         id: 3,
@@ -101,6 +116,7 @@ describe('LearningPathDetailView', () => {
         status: 'locked',
         solvedCount: 0,
         requiredCount: 2,
+        problems: [problem(104)],
       }),
     ]
     vi.mocked(getLearningTree).mockResolvedValue({ path: path(), nodes })
@@ -108,111 +124,155 @@ describe('LearningPathDetailView', () => {
     await flushPromises()
 
     expect(getLearningTree).toHaveBeenCalledWith('3')
-    expect(wrapper.text()).toContain('算法入门')
+    expect(wrapper.find('h1').text()).toBe('算法入门')
     expect(wrapper.text()).toContain('管理员')
     expect(wrapper.text()).toContain('官方')
     expect(wrapper.text()).toContain('已完成 1 / 3 节点')
-    expect(wrapper.text()).toContain('基础语法')
-    expect(wrapper.text()).toContain('数组')
-    expect(wrapper.text()).toContain('链表')
-    expect(wrapper.text()).toContain('已完成')
-    expect(wrapper.text()).toContain('进行中')
-    expect(wrapper.text()).toContain('未解锁')
-    expect(wrapper.text()).toContain('2 / 2')
-    expect(wrapper.text()).toContain('1 / 3')
-    expect(wrapper.text()).toContain('0 / 2')
-
-    const bars = wrapper.findAllComponents(ProgressBar)
-    expect(bars.map((bar) => bar.props('value'))).toEqual([100, 33, 0])
+    expect(wrapper.text()).toContain('已完成 1 / 4 题')
+    expect(wrapper.findAll('.tree-node')).toHaveLength(3)
+    expect(wrapper.find('.tree-node[aria-label^="基础语法"]').classes()).toContain(
+      'status-completed',
+    )
+    expect(wrapper.find('.tree-node[aria-label^="数组"]').classes()).toContain('status-active')
+    expect(wrapper.find('.tree-node[aria-label^="链表"]').classes()).toContain('status-locked')
     wrapper.unmount()
   })
 
-  it('renders nested tree with default expansion and toggles collapse/expand', async () => {
-    const grandchild = node({ id: 3, parentId: 2, title: '孙子节点' })
-    const childA = node({ id: 2, parentId: 1, title: '子节点A', children: [grandchild] })
-    const childB = node({ id: 4, parentId: 1, title: '子节点B' })
-    const root = node({ id: 1, title: '根节点', status: 'active', children: [childA, childB] })
-    vi.mocked(getLearningTree).mockResolvedValue({ path: path(), nodes: [root] })
-    const wrapper = mountView()
-    await flushPromises()
-
-    // Nested children render by default (expand-all) without any interaction.
-    expect(wrapper.text()).toContain('根节点')
-    expect(wrapper.text()).toContain('子节点A')
-    expect(wrapper.text()).toContain('子节点B')
-    expect(wrapper.text()).toContain('孙子节点')
-
-    // Collapse the root: children disappear.
-    const rootRow = wrapper.findAll('tr').find((tr) => tr.text().includes('根节点'))!
-    const toggle = rootRow.findAll('button').find((button) => button.text().trim() !== '查看')!
-    await toggle.trigger('click')
-
-    expect(wrapper.text()).not.toContain('子节点A')
-    expect(wrapper.text()).not.toContain('子节点B')
-    expect(wrapper.text()).not.toContain('孙子节点')
-
-    // Expand the root again: children reappear.
-    const rootRowAfter = wrapper.findAll('tr').find((tr) => tr.text().includes('根节点'))!
-    const toggleAfter = rootRowAfter
-      .findAll('button')
-      .find((button) => button.text().trim() !== '查看')!
-    await toggleAfter.trigger('click')
-
-    expect(wrapper.text()).toContain('子节点A')
-    expect(wrapper.text()).toContain('子节点B')
-    expect(wrapper.text()).toContain('孙子节点')
-    wrapper.unmount()
-  })
-
-  it('selects a node and shows its problems with links', async () => {
+  it('defaults to the first active node and updates the dossier on tree selection', async () => {
     const nodes: LearningPathNodeItem[] = [
       node({
         id: 1,
         title: '基础语法',
         status: 'completed',
-        descriptionMd: '语法描述',
-        problemIds: [101, 102],
-        problems: [problem(101), problem(102)],
-      }),
-      node({
-        id: 2,
-        parentId: 1,
-        title: '数组',
-        status: 'active',
-        descriptionMd: '数组描述',
-        problemIds: [103],
-        problems: [problem(103)],
+        descriptionMd: '基础语法描述',
+        problems: [problem(101)],
+        children: [
+          node({
+            id: 2,
+            parentId: 1,
+            title: '数组',
+            status: 'active',
+            descriptionMd: '数组节点描述',
+            problems: [problem(102)],
+          }),
+        ],
       }),
     ]
     vi.mocked(getLearningTree).mockResolvedValue({ path: path(), nodes })
     const wrapper = mountView()
     await flushPromises()
 
-    // Default-selects the first active node (id 2).
-    expect(wrapper.text()).toContain('数组描述')
-    expect(wrapper.find('a[href="/problems/103"]').exists()).toBe(true)
-
-    // Click the 查看 button on the completed node row.
-    const row = wrapper.findAll('tr').find((tr) => tr.text().includes('基础语法'))!
-    const viewButton = row.findAll('button').find((button) => button.text().trim() === '查看')!
-    await viewButton.trigger('click')
-
-    expect(wrapper.text()).toContain('语法描述')
-    expect(wrapper.find('a[href="/problems/101"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('数组节点描述')
+    expect(wrapper.text()).toContain('NODE // 02')
     expect(wrapper.find('a[href="/problems/102"]').exists()).toBe(true)
+    expect(wrapper.find('.tree-node[aria-label^="数组"]').classes()).toContain('selected')
+    expect(wrapper.find('.sr-only[aria-live="polite"]').text()).toBe('已选择 数组')
+
+    await wrapper.find('.tree-node[aria-label^="基础语法"]').trigger('click')
+
+    expect(wrapper.text()).toContain('基础语法描述')
+    expect(wrapper.find('a[href="/problems/101"]').exists()).toBe(true)
+    expect(wrapper.find('.tree-node[aria-label^="基础语法"]').classes()).toContain('selected')
+    expect(wrapper.find('.sr-only[aria-live="polite"]').text()).toBe('已选择 基础语法')
     wrapper.unmount()
   })
 
-  it('renders guest locked tree from API', async () => {
-    const nodes: LearningPathNodeItem[] = [
-      node({ id: 1, title: '根节点', status: 'active', solvedCount: 0, requiredCount: 2 }),
+  it('falls back to the first node when no node is active', async () => {
+    vi.mocked(getLearningTree).mockResolvedValue({
+      path: path(),
+      nodes: [
+        node({ id: 1, title: '第一个节点', status: 'completed' }),
+        node({ id: 2, title: '第二个节点', status: 'locked' }),
+      ],
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('.tree-node[aria-label^="第一个节点"]').classes()).toContain('selected')
+    expect(wrapper.text()).toContain('NODE // 01')
+    expect(wrapper.find('.sr-only[aria-live="polite"]').text()).toBe('已选择 第一个节点')
+    wrapper.unmount()
+  })
+
+  it('shows selected leaf problem links but no leaves for a node with children', async () => {
+    const root = node({
+      id: 1,
+      title: '根节点',
+      status: 'active',
+      problems: [problem(101)],
+      children: [
+        node({
+          id: 2,
+          parentId: 1,
+          title: '叶子节点',
+          status: 'locked',
+          problems: [problem(202)],
+        }),
+      ],
+    })
+    vi.mocked(getLearningTree).mockResolvedValue({ path: path(), nodes: [root] })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('.tree-node[aria-label^="根节点"]').classes()).toContain('selected')
+    expect(wrapper.findAll('.tree-leaf')).toHaveLength(0)
+
+    await wrapper.find('.tree-node[aria-label^="叶子节点"]').trigger('click')
+
+    expect(wrapper.find('a.tree-leaf[href="/problems/202"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/problems/202"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('expands and collapses the route description', async () => {
+    vi.mocked(getLearningTree).mockResolvedValue({ path: path(), nodes: [node()] })
+    const wrapper = mountView()
+    await flushPromises()
+
+    const description = wrapper.get('.path-description__content')
+    expect(description.classes()).not.toContain('path-description--expanded')
+    expect(description.find('.markdown-stub').text()).toContain('逐步掌握算法。')
+    expect(wrapper.text()).toContain('展开')
+
+    await wrapper.get('button.path-description__toggle').trigger('click')
+    expect(description.classes()).toContain('path-description--expanded')
+    expect(wrapper.text()).toContain('收起')
+
+    await wrapper.get('button.path-description__toggle').trigger('click')
+    expect(description.classes()).not.toContain('path-description--expanded')
+    expect(wrapper.text()).toContain('展开')
+    wrapper.unmount()
+  })
+
+  it('omits the route description section when it is empty', async () => {
+    vi.mocked(getLearningTree).mockResolvedValue({
+      path: path({ descriptionMd: '' }),
+      nodes: [node()],
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('.path-description').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shows guests only the total problem count and locks non-root nodes', async () => {
+    auth.isLoggedIn = false
+    const nodes = [
       node({
-        id: 2,
-        parentId: 1,
-        title: '子节点',
-        status: 'locked',
-        solvedCount: 0,
-        requiredCount: 2,
+        id: 1,
+        title: '根节点',
+        status: 'active',
+        problems: [problem(101), problem(102)],
+        children: [
+          node({
+            id: 2,
+            parentId: 1,
+            title: '子节点',
+            status: 'locked',
+            problems: [problem(103)],
+          }),
+        ],
       }),
     ]
     vi.mocked(getLearningTree).mockResolvedValue({
@@ -223,14 +283,45 @@ describe('LearningPathDetailView', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('公开')
-    expect(wrapper.text()).toContain('进行中')
-    expect(wrapper.text()).toContain('未解锁')
-    expect(wrapper.text()).toContain('0 / 2')
-    expect(wrapper.findAllComponents(ProgressBar).map((bar) => bar.props('value'))).toEqual([0, 0])
+    expect(wrapper.get('.summary-problem-progress').text()).toBe('3 题')
+    expect(wrapper.text()).not.toContain('已完成 0 / 3 题')
+    expect(wrapper.find('.tree-node[aria-label^="根节点"]').classes()).toContain('status-active')
+    expect(wrapper.find('.tree-node[aria-label^="子节点"]').classes()).toContain('status-locked')
     wrapper.unmount()
   })
 
-  it('shows not-found/forbidden error state for private path', async () => {
+  it('scrolls the dossier problem list into view when a tree leaf shows more problems', async () => {
+    const scrollIntoView = vi.fn()
+    const problems = Array.from({ length: 6 }, (_, index) => problem(200 + index))
+    vi.mocked(getLearningTree).mockResolvedValue({
+      path: path(),
+      nodes: [node({ id: 1, status: 'active', problems })],
+    })
+    const wrapper = mountView()
+    await flushPromises()
+    const problemList = wrapper.get('.panel-problems').element as HTMLUListElement
+    problemList.scrollIntoView = scrollIntoView
+
+    await wrapper.get('button.tree-leaf--more').trigger('click')
+    await nextTick()
+
+    expect(wrapper.text()).toContain('NODE // 01')
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'nearest' })
+    wrapper.unmount()
+  })
+
+  it('shows an empty state when the path contains no nodes', async () => {
+    vi.mocked(getLearningTree).mockResolvedValue({ path: path(), nodes: [] })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.findComponent(AppEmptyState).exists()).toBe(true)
+    expect(wrapper.findComponent(AppEmptyState).props('title')).toBe('该路线还没有节点')
+    expect(wrapper.find('.desktop-layout').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shows not-found/forbidden error state for a private path', async () => {
     vi.mocked(getLearningTree).mockRejectedValue(
       new ApiError(404, 40400, '学习路线不存在或无权查看'),
     )
@@ -248,17 +339,23 @@ describe('LearningPathDetailView', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('加载学习路线失败，请稍后再试')
+    expect(wrapper.findComponent(AppErrorState).exists()).toBe(true)
     wrapper.unmount()
   })
 
-  it('reloads on route id change and ignores stale responses', async () => {
+  it('clears the old route and selection before loading a changed id', async () => {
     vi.mocked(getLearningTree).mockResolvedValueOnce({
       path: path({ id: 3, title: '旧路线' }),
-      nodes: [node({ id: 1, title: '旧节点' })],
+      nodes: [node({ id: 1, title: '旧选中节点', status: 'active' })],
     })
     const wrapper = mountView()
     await flushPromises()
     expect(wrapper.text()).toContain('旧路线')
+    expect(wrapper.text()).toContain('旧选中节点')
+    await wrapper.get('button.path-description__toggle').trigger('click')
+    expect(wrapper.get('.path-description__content').classes()).toContain(
+      'path-description--expanded',
+    )
 
     let resolveSecond!: (value: LearningTree) => void
     vi.mocked(getLearningTree).mockImplementationOnce(
@@ -268,14 +365,23 @@ describe('LearningPathDetailView', () => {
     await nextTick()
 
     expect(wrapper.text()).not.toContain('旧路线')
+    expect(wrapper.text()).not.toContain('旧选中节点')
+    expect(wrapper.find('.desktop-layout').exists()).toBe(false)
     expect(wrapper.text()).toContain('正在加载学习路线')
 
     resolveSecond({
       path: path({ id: 4, title: '新路线' }),
-      nodes: [node({ id: 2, title: '新节点' })],
+      nodes: [node({ id: 2, title: '新选中节点', status: 'active' })],
     })
     await flushPromises()
+
     expect(wrapper.text()).toContain('新路线')
+    expect(wrapper.text()).toContain('新选中节点')
+    expect(wrapper.text()).not.toContain('旧选中节点')
+    expect(wrapper.find('.sr-only[aria-live="polite"]').text()).toBe('已选择 新选中节点')
+    expect(wrapper.get('.path-description__content').classes()).not.toContain(
+      'path-description--expanded',
+    )
     wrapper.unmount()
   })
 })
