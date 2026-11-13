@@ -93,7 +93,7 @@ func TestTreeStructureAndGuestStatus(t *testing.T) {
 		require.Len(t, tree.Nodes[0].Problems, 1)
 		assert.Equal(t, []int64{pubA.ID}, tree.Nodes[0].ProblemIDs, "公开题目 id 对所有查看者可见")
 		assert.Equal(t, learning.ProblemSummary{
-			ProblemID: pubA.ID, Title: "题目-tree-pub-a", Slug: "tree-pub-a", Difficulty: 1,
+			ProblemID: pubA.ID, Title: "题目-tree-pub-a", Slug: "tree-pub-a", Difficulty: 1, Solved: false,
 		}, tree.Nodes[0].Problems[0])
 
 		hiddenNode := tree.Nodes[0].Children[0]
@@ -111,6 +111,44 @@ func TestTreeStructureAndGuestStatus(t *testing.T) {
 	check(t, viewerFor(e.other), false)
 	check(t, authorView, true)
 	check(t, viewerFor(e.admin), true)
+}
+
+func TestTreeProblemSolvedFlag(t *testing.T) {
+	e := newPathEnv(t)
+	ctx := context.Background()
+	authorView := viewerFor(e.author)
+
+	p1 := e.addProblem(t, "solved-p1", true)
+	p2 := e.addProblem(t, "solved-p2", true)
+	path := e.createPath(t, authorView, learning.PathInput{Title: "题叶状态", IsPublic: boolPtr(true)})
+	root := e.createNode(t, authorView, path.ID, learning.NodeInput{
+		Title: "根", ProblemIDs: []int64{p1.ID, p2.ID}, RequiredCount: intPtr(2),
+	})
+	e.createNode(t, authorView, path.ID, learning.NodeInput{
+		Title: "子", ParentID: &root.ID, ProblemIDs: []int64{p1.ID, p2.ID}, RequiredCount: intPtr(2),
+	})
+
+	e.addAccepted(t, e.author.ID, p1.ID)
+
+	tree, err := e.svc.Tree(ctx, authorView, path.ID)
+	require.NoError(t, err)
+	require.Len(t, tree.Nodes, 1)
+	require.Len(t, tree.Nodes[0].Problems, 2)
+	assert.True(t, tree.Nodes[0].Problems[0].Solved, "作者 AC 的题目标记 solved")
+	assert.False(t, tree.Nodes[0].Problems[1].Solved)
+
+	// 子节点仍锁定，但题目的通过态独立于节点状态。
+	require.Len(t, tree.Nodes[0].Children, 1)
+	assert.Equal(t, learning.ProgressLocked, tree.Nodes[0].Children[0].Status)
+	assert.True(t, tree.Nodes[0].Children[0].Problems[0].Solved)
+
+	guestTree, err := e.svc.Tree(ctx, learning.Viewer{}, path.ID)
+	require.NoError(t, err)
+	assert.False(t, guestTree.Nodes[0].Problems[0].Solved, "游客不继承作者 AC")
+
+	otherTree, err := e.svc.Tree(ctx, viewerFor(e.other), path.ID)
+	require.NoError(t, err)
+	assert.False(t, otherTree.Nodes[0].Problems[0].Solved, "其他用户不继承作者 AC")
 }
 
 func TestTreeUsesEvaluatedProgress(t *testing.T) {

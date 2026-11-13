@@ -61,12 +61,14 @@ type NodeInput struct {
 	RequiredCount *int    `json:"requiredCount"`
 }
 
-// ProblemSummary 是节点树中暴露的公开题目摘要，不含题干/题解。
+// ProblemSummary 是节点树中暴露的公开题目摘要，不含题干/题解。Solved 表示
+// 当前查看者是否在该题目上有 AC；游客恒为 false。
 type ProblemSummary struct {
 	ProblemID  int64  `json:"problemId"`
 	Title      string `json:"title"`
 	Slug       string `json:"slug"`
 	Difficulty int    `json:"difficulty"`
+	Solved     bool   `json:"solved"`
 }
 
 // NodeItem 是学习路线树中的一个节点。Problems 只包含公开题目的摘要；

@@ -145,10 +145,18 @@ func (s *Service) Tree(ctx context.Context, v Viewer, pathID int64) (*Tree, erro
 			return nil, err
 		}
 	}
+	// 题目级 solved 是查看者的 AC 状态，独立于节点进度与完成锁存；游客恒为 false。
+	accepted := map[int64]struct{}{}
+	if v.UserID > 0 {
+		accepted, err = s.repo.AcceptedProblemIDs(ctx, v.UserID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	// 公开树对非作者/非管理员只暴露公开题目的 ID，避免枚举已下线或
 	// 已删除题目；作者、admin.read 与 official.manage 保留完整存储 ID 供编辑。
 	fullProblemIDs := v.CanManageOfficial || v.CanViewAll || (v.UserID > 0 && path.Author.ID == v.UserID)
-	return &Tree{Path: *path, Nodes: buildNodeTree(nodes, summaries, fullProblemIDs, progress)}, nil
+	return &Tree{Path: *path, Nodes: buildNodeTree(nodes, summaries, fullProblemIDs, progress, accepted)}, nil
 }
 
 // writablePath 加载可写路线并校验作者/管理员、官方与上下架权限。
@@ -319,7 +327,7 @@ func uniqueProblemIDs(nodes []LearningPathNode) []int64 {
 	return ids
 }
 
-func buildNodeTree(nodes []LearningPathNode, summaries map[int64]ProblemSummary, fullProblemIDs bool, progress map[int64]UserLearningProgress) []NodeItem {
+func buildNodeTree(nodes []LearningPathNode, summaries map[int64]ProblemSummary, fullProblemIDs bool, progress map[int64]UserLearningProgress, accepted map[int64]struct{}) []NodeItem {
 	byID := make(map[int64]LearningPathNode, len(nodes))
 	for _, n := range nodes {
 		byID[n.ID] = n
@@ -340,7 +348,7 @@ func buildNodeTree(nodes []LearningPathNode, summaries map[int64]ProblemSummary,
 	var build func(int64, map[int64]bool) NodeItem
 	build = func(id int64, seen map[int64]bool) NodeItem {
 		n := byID[id]
-		item := newNodeItem(&n, summaries, fullProblemIDs, progress)
+		item := newNodeItem(&n, summaries, fullProblemIDs, progress, accepted)
 		if seen[id] {
 			return item
 		}
@@ -357,7 +365,7 @@ func buildNodeTree(nodes []LearningPathNode, summaries map[int64]ProblemSummary,
 	return items
 }
 
-func newNodeItem(n *LearningPathNode, summaries map[int64]ProblemSummary, fullProblemIDs bool, progress map[int64]UserLearningProgress) NodeItem {
+func newNodeItem(n *LearningPathNode, summaries map[int64]ProblemSummary, fullProblemIDs bool, progress map[int64]UserLearningProgress, accepted map[int64]struct{}) NodeItem {
 	item := NodeItem{
 		ID:            n.ID,
 		ParentID:      n.ParentID,
@@ -387,6 +395,9 @@ func newNodeItem(n *LearningPathNode, summaries map[int64]ProblemSummary, fullPr
 		}
 		item.ProblemIDs = append(item.ProblemIDs, id)
 		if ok {
+			if _, solved := accepted[id]; solved {
+				summary.Solved = true
+			}
 			item.Problems = append(item.Problems, summary)
 		}
 	}
@@ -398,7 +409,8 @@ func (s *Service) nodeItem(ctx context.Context, n *LearningPathNode) (*NodeItem,
 	if err != nil {
 		return nil, err
 	}
-	// 节点写接口仅作者/管理员可调用，返回完整存储 ID 供编辑。
-	item := newNodeItem(n, summaries, true, nil)
+	// 节点写接口仅作者/管理员可调用，返回完整存储 ID 供编辑；写响应不含
+	// 题目级 solved（accepted 为 nil，游客/编辑视图语义）。
+	item := newNodeItem(n, summaries, true, nil, nil)
 	return &item, nil
 }

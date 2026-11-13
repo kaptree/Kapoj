@@ -509,11 +509,12 @@ func TestLearningPathAPINodesAndTree(t *testing.T) {
 	problems := root["problems"].([]any)
 	require.Len(t, problems, 1)
 	summary := problems[0].(map[string]any)
-	assert.Len(t, summary, 4, "树只返回 problemId/title/slug/difficulty")
+	assert.Len(t, summary, 5, "树返回 problemId/title/slug/difficulty/solved")
 	assert.EqualValues(t, pub.ID, summary["problemId"])
 	assert.Equal(t, "题目-api-node-pub", summary["title"])
 	assert.Equal(t, "api-node-pub", summary["slug"])
 	assert.EqualValues(t, 2, summary["difficulty"])
+	assert.Equal(t, false, summary["solved"], "写节点响应不含题目级 solved")
 
 	w, resp = f.do(http.MethodPost, nodesURL, authorToken, map[string]any{
 		"title": "子节点", "parentId": rootID, "problemIds": []int64{pub.ID},
@@ -543,6 +544,9 @@ func TestLearningPathAPINodesAndTree(t *testing.T) {
 	rootNode := rootNodes[0].(map[string]any)
 	assert.Equal(t, "根节点", rootNode["title"])
 	assert.Equal(t, learning.ProgressActive, rootNode["status"])
+	rootProblems := rootNode["problems"].([]any)
+	require.Len(t, rootProblems, 1)
+	assert.Equal(t, false, rootProblems[0].(map[string]any)["solved"], "游客读取公开树时题目 solved 恒为 false")
 	children := rootNode["children"].([]any)
 	require.Len(t, children, 1)
 	assert.Equal(t, "子节点", children[0].(map[string]any)["title"])

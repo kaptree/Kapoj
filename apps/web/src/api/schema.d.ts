@@ -8648,6 +8648,8 @@ export interface components {
             title: string;
             slug: string;
             difficulty: number;
+            /** @description 当前查看者是否在该题目上有 AC；游客恒为 false；不影响节点 solvedCount 与完成锁存 */
+            solved: boolean;
         };
         /** @description 学习路线树中的一个节点；`children` 递归嵌套，按 `sortOrder`、`id` 排序。 */
         LearningPathNodeItem: {

@@ -90,7 +90,7 @@ func TestNodeValidation(t *testing.T) {
 	assert.Equal(t, 9, root.SortOrder)
 	require.Len(t, root.Problems, 2)
 	assert.Equal(t, learning.ProblemSummary{
-		ProblemID: pubA.ID, Title: "题目-node-pub-a", Slug: "node-pub-a", Difficulty: 1,
+		ProblemID: pubA.ID, Title: "题目-node-pub-a", Slug: "node-pub-a", Difficulty: 1, Solved: false,
 	}, root.Problems[0])
 	assert.Empty(t, root.Children)
 

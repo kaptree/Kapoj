@@ -4815,12 +4815,15 @@ components:
     LearningProblemSummary:
       type: object
       description: 节点树中暴露的公开题目摘要，不包含题干/题解。
-      required: [problemId, title, slug, difficulty]
+      required: [problemId, title, slug, difficulty, solved]
       properties:
         problemId: { type: integer, format: int64 }
         title: { type: string }
         slug: { type: string }
         difficulty: { type: integer }
+        solved:
+          type: boolean
+          description: 当前查看者是否在该题目上有 AC；游客恒为 false；不影响节点 solvedCount 与完成锁存
     LearningPathNodeItem:
       type: object
       description: 学习路线树中的一个节点；`children` 递归嵌套，按 `sortOrder`、`id` 排序。
