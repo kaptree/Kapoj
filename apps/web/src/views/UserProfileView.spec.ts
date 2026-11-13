@@ -7,9 +7,9 @@ import { nextTick } from 'vue'
 
 import { ApiError } from '@/api/http'
 import { getRatingHistory } from '@/api/leaderboard'
-import { followUser, getUserSocial, unfollowUser } from '@/api/social'
+import { followUser, getUserSocial, listUserEvaluations, unfollowUser } from '@/api/social'
 import { getProfile, getUserActivity } from '@/api/users'
-import type { Profile, UserActivity } from '@/api/types'
+import type { EvaluationPage, Profile, UserActivity } from '@/api/types'
 import UserProfileView from './UserProfileView.vue'
 
 const auth = vi.hoisted(() => ({ isLoggedIn: true, user: null as { id: number } | null }))
@@ -33,6 +33,7 @@ vi.mock('@/api/social', () => ({
   unfollowUser: vi.fn(),
   listFollowers: vi.fn(),
   listFollowing: vi.fn(),
+  listUserEvaluations: vi.fn(),
 }))
 
 function profile(overrides: Partial<Profile> = {}): Profile {
@@ -66,16 +67,46 @@ function activity(overrides: Partial<UserActivity> = {}): UserActivity {
   }
 }
 
+function evaluationPage(overrides: Partial<EvaluationPage> = {}): EvaluationPage {
+  return {
+    total: 3,
+    items: [],
+    cloud: [
+      { text: '讲题清楚', count: 2 },
+      { text: '大佬', count: 1 },
+    ],
+    myEvaluation: null,
+    canEvaluate: true,
+    ...overrides,
+  }
+}
+
 const routes = [
   { path: '/users/:id', name: 'user-profile', component: { template: '<div />' } },
   { path: '/contests/:id(\\d+)', name: 'contest-detail', component: { template: '<div />' } },
   { path: '/login', name: 'login', component: { template: '<div />' } },
 ]
 
-const EvaluationCardStub = {
-  name: 'ProfileEvaluationCard',
-  props: ['targetUserId'],
-  template: '<div data-test="evaluation-slot">{{ targetUserId }}</div>',
+const WordCloudStub = {
+  name: 'ProfileWordCloud',
+  props: ['cloud', 'total', 'loading', 'error'],
+  emits: ['open', 'retry'],
+  template: '<div data-test="word-cloud" @click="$emit(\'open\')">{{ total }} 条评价</div>',
+}
+
+const EvaluationDialogStub = {
+  name: 'ProfileEvaluationDialog',
+  props: [
+    'visible',
+    'targetUserId',
+    'targetActive',
+    'myEvaluation',
+    'canEvaluate',
+    'isSelf',
+    'isLoggedIn',
+  ],
+  emits: ['update:visible', 'saved', 'deleted'],
+  template: '<div v-if="visible" data-test="evaluation-dialog">{{ targetUserId }}</div>',
 }
 
 const CertificateCardStub = {
@@ -93,7 +124,8 @@ async function mountPage(path = '/users/7') {
       plugins: [router, PrimeVue],
       stubs: {
         FollowListDialog: true,
-        ProfileEvaluationCard: EvaluationCardStub,
+        ProfileWordCloud: WordCloudStub,
+        ProfileEvaluationDialog: EvaluationDialogStub,
         ProfileCertificatesCard: CertificateCardStub,
       },
     },
@@ -104,6 +136,14 @@ async function mountPage(path = '/users/7') {
 
 function button(wrapper: Awaited<ReturnType<typeof mountPage>>['wrapper'], label: string) {
   return wrapper.findAll('button').find((b) => b.text().trim() === label)
+}
+
+function wordCloud(wrapper: Awaited<ReturnType<typeof mountPage>>['wrapper']) {
+  return wrapper.findComponent({ name: 'ProfileWordCloud' })
+}
+
+function evaluationDialog(wrapper: Awaited<ReturnType<typeof mountPage>>['wrapper']) {
+  return wrapper.findComponent({ name: 'ProfileEvaluationDialog' })
 }
 
 beforeEach(() => {
@@ -122,6 +162,8 @@ beforeEach(() => {
     followingCount: 0,
     isFollowing: false,
   })
+  vi.mocked(listUserEvaluations).mockReset()
+  vi.mocked(listUserEvaluations).mockResolvedValue(evaluationPage())
   vi.mocked(followUser).mockReset()
   vi.mocked(unfollowUser).mockReset()
 })
@@ -165,24 +207,71 @@ describe('UserProfileView', () => {
     wrapper.unmount()
   })
 
-  it('renders the two-column body with evaluation above certificate', async () => {
+  it('renders the hero word cloud above the bio and keeps only certificates in the aside', async () => {
     const { wrapper } = await mountPage('/users/7')
 
+    expect(listUserEvaluations).toHaveBeenCalledWith('7', 1, 1)
+
+    const hero = wrapper.get('.profile-hero')
+    const surface = wrapper.get('.profile-surface')
+    expect(
+      hero.element.compareDocumentPosition(surface.element) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(hero.find('[data-test="word-cloud"]').exists()).toBe(true)
+    expect(surface.text()).toContain('热爱算法与开源。')
+
+    const cloud = wordCloud(wrapper)
+    expect(cloud.props('total')).toBe(3)
+    expect(cloud.props('cloud')).toEqual(evaluationPage().cloud)
+
     const body = wrapper.get('.profile-body')
-    expect(body.find('.profile-main').exists()).toBe(true)
+    expect(body.find('.profile-main').text()).toContain('代码提交贡献图')
     const aside = body.get('[data-test="profile-aside"]')
+    expect(
+      Array.from(aside.element.children).map((child) => child.getAttribute('data-test')),
+    ).toEqual(['certificate-slot'])
+    expect(wrapper.find('[data-test="evaluation-slot"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
 
-    const main = body.get('.profile-main').text()
-    expect(main).toContain('代码提交贡献图')
-    expect(main).toContain('Rating 历史')
+  it('opens the evaluation dialog from the word cloud', async () => {
+    const { wrapper } = await mountPage('/users/7')
 
-    const children = Array.from(aside.element.children)
-    expect(children.map((child) => child.getAttribute('data-test'))).toEqual([
-      'evaluation-slot',
-      'certificate-slot',
-    ])
-    expect(wrapper.get('[data-test="evaluation-slot"]').text()).toBe('7')
-    expect(wrapper.get('[data-test="certificate-slot"]').text()).toBe('证书 7')
+    expect(evaluationDialog(wrapper).props('visible')).toBe(false)
+
+    wordCloud(wrapper).vm.$emit('open')
+    await nextTick()
+
+    const dialog = evaluationDialog(wrapper)
+    expect(dialog.props('visible')).toBe(true)
+    expect(dialog.props('targetUserId')).toBe(7)
+    expect(dialog.props('canEvaluate')).toBe(true)
+    expect(dialog.props('isSelf')).toBe(false)
+    expect(dialog.props('isLoggedIn')).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('reloads evaluations after the dialog saves or deletes', async () => {
+    const { wrapper } = await mountPage('/users/7')
+
+    evaluationDialog(wrapper).vm.$emit('saved')
+    await flushPromises()
+    expect(listUserEvaluations).toHaveBeenCalledTimes(2)
+
+    evaluationDialog(wrapper).vm.$emit('deleted')
+    await flushPromises()
+    expect(listUserEvaluations).toHaveBeenCalledTimes(3)
+    wrapper.unmount()
+  })
+
+  it('keeps the profile when evaluation loading fails', async () => {
+    vi.mocked(listUserEvaluations).mockRejectedValue(new ApiError(500, 50000, '评价加载失败'))
+    const { wrapper } = await mountPage('/users/7')
+
+    expect(wrapper.text()).toContain('Alice')
+    expect(wrapper.text()).toContain('热爱算法与开源。')
+    expect(wrapper.text()).toContain('Rating')
+    expect(wordCloud(wrapper).props('error')).toBe('评价加载失败')
     wrapper.unmount()
   })
 
@@ -305,6 +394,7 @@ describe('UserProfileView', () => {
     await router.push('/users/8')
     await flushPromises()
     expect(getProfile).toHaveBeenLastCalledWith('8')
+    expect(listUserEvaluations).toHaveBeenLastCalledWith('8', 1, 1)
     expect(wrapper.text()).toContain('Bob')
     expect(wrapper.text()).toContain('@bob')
     wrapper.unmount()

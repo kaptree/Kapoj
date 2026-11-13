@@ -6,18 +6,18 @@ import Button from 'primevue/button'
 import { useToast } from 'primevue/usetoast'
 
 import { ApiError } from '@/api/http'
-import { followUser, getUserSocial, unfollowUser } from '@/api/social'
+import { followUser, getUserSocial, listUserEvaluations, unfollowUser } from '@/api/social'
 import { getProfile, getUserActivity } from '@/api/users'
-import type { Profile, SocialView, UserActivity } from '@/api/types'
+import type { EvaluationPage, Profile, SocialView, UserActivity } from '@/api/types'
 import ContributionGrid from '@/components/profile/ContributionGrid.vue'
 import ProfileCertificatesCard from '@/components/profile/ProfileCertificatesCard.vue'
-import ProfileEvaluationCard from '@/components/profile/ProfileEvaluationCard.vue'
+import ProfileEvaluationDialog from '@/components/profile/ProfileEvaluationDialog.vue'
+import ProfileWordCloud from '@/components/profile/ProfileWordCloud.vue'
 import FollowListDialog from '@/components/social/FollowListDialog.vue'
 import IdentityShowcase from '@/components/IdentityShowcase.vue'
 import RatingHistoryCard from '@/components/RatingHistoryCard.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
-import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
 import { useAuthStore } from '@/stores/auth'
 
@@ -32,6 +32,10 @@ const error = ref('')
 const loading = ref(false)
 const activityLoading = ref(false)
 const activityError = ref('')
+const evaluationPage = ref<EvaluationPage | null>(null)
+const evaluationLoading = ref(false)
+const evaluationError = ref('')
+const evaluationDialogOpen = ref(false)
 const avatarFailed = ref(false)
 const followBusy = ref(false)
 const followDialogOpen = ref(false)
@@ -45,9 +49,9 @@ const initial = computed(() => {
 const registrationDate = computed(() =>
   profile.value ? new Date(profile.value.createdAt).toLocaleDateString('zh-CN') : '',
 )
-const description = computed(() =>
-  profile.value ? `@${profile.value.username}` : '查看选手公开资料、身份与成长数据。',
-)
+const evaluationTotal = computed(() => evaluationPage.value?.total ?? 0)
+const canEvaluate = computed(() => evaluationPage.value?.canEvaluate ?? false)
+const myEvaluation = computed(() => evaluationPage.value?.myEvaluation ?? null)
 const isSelf = computed(() => {
   const meId = auth.user?.id
   return meId != null && profile.value?.id === meId
@@ -72,6 +76,22 @@ async function loadActivity(id: string, seq: number) {
   }
 }
 
+async function loadEvaluations(id: string, seq: number) {
+  evaluationLoading.value = true
+  evaluationError.value = ''
+  try {
+    const data = await listUserEvaluations(id, 1, 1)
+    if (seq !== latestLoad) return
+    evaluationPage.value = data
+  } catch (e) {
+    if (seq !== latestLoad) return
+    evaluationPage.value = null
+    evaluationError.value = e instanceof ApiError ? e.message : '评价加载失败，请稍后再试'
+  } finally {
+    if (seq === latestLoad) evaluationLoading.value = false
+  }
+}
+
 async function loadProfile(id: string) {
   const seq = ++latestLoad
   loading.value = true
@@ -80,8 +100,12 @@ async function loadProfile(id: string) {
   social.value = null
   activity.value = null
   activityError.value = ''
+  evaluationPage.value = null
+  evaluationError.value = ''
+  evaluationDialogOpen.value = false
   avatarFailed.value = false
   void loadActivity(id, seq)
+  void loadEvaluations(id, seq)
   try {
     const [profileData, socialData] = await Promise.all([
       getProfile(id),
@@ -106,6 +130,16 @@ function retry() {
 function retryActivity() {
   const id = route.params.id
   if (typeof id === 'string') void loadActivity(id, latestLoad)
+}
+
+function retryEvaluations() {
+  const id = route.params.id
+  if (typeof id === 'string') void loadEvaluations(id, latestLoad)
+}
+
+function reloadEvaluations() {
+  const id = route.params.id
+  if (typeof id === 'string') void loadEvaluations(id, latestLoad)
 }
 
 function openFollowList(tab: 'followers' | 'following') {
@@ -161,19 +195,13 @@ watch(
 
 <template>
   <div class="profile-page">
-    <AppPageHeader
-      eyebrow="USER // PROFILE"
-      :title="profile?.nickname ?? '用户主页'"
-      :description="description"
-    />
-
     <AppLoadingState v-if="loading" label="正在加载用户主页" />
 
     <AppErrorState v-else-if="error" :description="error" @retry="retry" />
 
     <template v-else-if="profile">
-      <AppSurface padding="lg" class="profile-surface">
-        <div class="profile-head">
+      <section class="profile-hero">
+        <div class="profile-hero__identity">
           <Avatar
             :image="!avatarFailed && profile.avatarUrl ? profile.avatarUrl : undefined"
             :label="!avatarFailed && profile.avatarUrl ? undefined : initial"
@@ -183,16 +211,34 @@ watch(
             :aria-label="`用户头像：${profile.nickname}`"
             @error="avatarFailed = true"
           />
-          <div class="profile-identity">
-            <IdentityShowcase
-              :badges="profile.equippedBadges"
-              :title="profile.equippedTitle"
-              size="small"
-            />
-            <p class="profile-bio" :class="{ muted: !profile.bio }">
-              {{ profile.bio || '这个人还没有写简介。' }}
-            </p>
+          <div class="profile-hero__names">
+            <p class="profile-hero__eyebrow">USER // PROFILE</p>
+            <h1 class="profile-hero__title">{{ profile.nickname }}</h1>
+            <p class="profile-hero__handle">@{{ profile.username }}</p>
           </div>
+        </div>
+
+        <ProfileWordCloud
+          class="profile-hero__cloud"
+          :cloud="evaluationPage?.cloud ?? []"
+          :total="evaluationTotal"
+          :loading="evaluationLoading"
+          :error="evaluationError"
+          @open="evaluationDialogOpen = true"
+          @retry="retryEvaluations"
+        />
+      </section>
+
+      <AppSurface padding="lg" class="profile-surface">
+        <div class="profile-intro">
+          <IdentityShowcase
+            :badges="profile.equippedBadges"
+            :title="profile.equippedTitle"
+            size="small"
+          />
+          <p class="profile-bio" :class="{ muted: !profile.bio }">
+            {{ profile.bio || '这个人还没有写简介。' }}
+          </p>
         </div>
 
         <div class="social-row">
@@ -280,11 +326,6 @@ watch(
         </div>
 
         <aside class="profile-aside" data-test="profile-aside">
-          <ProfileEvaluationCard
-            :target-user-id="profile.id"
-            class="profile-aside__card"
-            data-test="evaluation-slot"
-          />
           <ProfileCertificatesCard
             :target-user-id="profile.id"
             class="profile-aside__card"
@@ -292,6 +333,18 @@ watch(
           />
         </aside>
       </div>
+
+      <ProfileEvaluationDialog
+        v-model:visible="evaluationDialogOpen"
+        :target-user-id="profile.id"
+        :target-active="true"
+        :my-evaluation="myEvaluation"
+        :can-evaluate="canEvaluate"
+        :is-self="isSelf"
+        :is-logged-in="isLoggedIn"
+        @saved="reloadEvaluations"
+        @deleted="reloadEvaluations"
+      />
     </template>
 
     <FollowListDialog
@@ -311,16 +364,65 @@ watch(
   max-width: var(--kapoj-content-max);
 }
 
+.profile-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: var(--kapoj-space-5);
+  align-items: stretch;
+}
+
+.profile-hero__identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--kapoj-space-4);
+  padding: var(--kapoj-space-2) 0;
+}
+
+.profile-hero__names {
+  min-width: 0;
+}
+
+.profile-hero__eyebrow {
+  margin: 0 0 var(--kapoj-space-1);
+  color: var(--kapoj-primary);
+  font-family: var(--kapoj-font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.profile-hero__title {
+  margin: 0;
+  color: var(--kapoj-text);
+  font-size: clamp(1.35rem, 1.1rem + 1vw, 1.9rem);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.profile-hero__handle {
+  margin: var(--kapoj-space-1) 0 0;
+  color: var(--kapoj-text-secondary);
+  font-family: var(--kapoj-font-mono);
+  font-size: 0.875rem;
+}
+
+.profile-hero__cloud {
+  min-width: 0;
+}
+
 .profile-surface {
   display: flex;
   flex-direction: column;
   gap: var(--kapoj-space-5);
 }
 
-.profile-head {
+.profile-intro {
   display: flex;
-  align-items: flex-start;
-  gap: var(--kapoj-space-4);
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--kapoj-space-2);
 }
 
 .profile-avatar {
@@ -331,13 +433,6 @@ watch(
   background: var(--kapoj-primary-soft);
   border: 1px solid color-mix(in srgb, var(--kapoj-primary) 30%, transparent);
   box-shadow: var(--kapoj-glow-primary);
-}
-
-.profile-identity {
-  display: flex;
-  flex-direction: column;
-  gap: var(--kapoj-space-2);
-  min-width: 0;
 }
 
 .profile-bio {
@@ -473,6 +568,10 @@ watch(
   .profile-body {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .profile-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 640px) {
@@ -486,8 +585,8 @@ watch(
 }
 
 @media (max-width: 520px) {
-  .profile-head {
-    flex-direction: column;
+  .profile-hero__identity {
+    align-items: flex-start;
   }
 }
 
