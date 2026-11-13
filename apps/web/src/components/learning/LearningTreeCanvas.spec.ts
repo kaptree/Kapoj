@@ -35,7 +35,10 @@ function node(overrides: Partial<LearningPathNodeItem> = {}): LearningPathNodeIt
 function mountCanvas(nodes: LearningPathNodeItem[], selectedId: number | null = null) {
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/problems/:id', component: { template: '<div />' } }],
+    routes: [
+      { path: '/', component: { template: '<div />' } },
+      { path: '/problems/:id', component: { template: '<div />' } },
+    ],
   })
   const wrapper = mount(LearningTreeCanvas, {
     props: { nodes, pathId: 5, selectedId },
@@ -76,6 +79,27 @@ describe('LearningTreeCanvas', () => {
     ])
     expect(leaves[0]!.classes()).toContain('solved')
     expect(leaves[1]!.classes()).not.toContain('solved')
+  })
+
+  it('shows the remaining problem count and emits more from the +N button', async () => {
+    const problems = Array.from({ length: 6 }, (_, index) => problem(201 + index, false))
+    const item = node({
+      id: 22,
+      parentId: 1,
+      title: '更多题目',
+      problems,
+      problemIds: problems.map(({ problemId }) => problemId),
+    })
+    const { wrapper } = mountCanvas([node({ children: [item] })], item.id)
+    const moreButton = wrapper.get('button.tree-leaf--more')
+
+    expect(moreButton.text()).toBe('+2')
+    expect(moreButton.attributes('aria-label')).toBe('查看其余 2 道题目')
+    expect(wrapper.findAll('a.tree-leaf')).toHaveLength(4)
+
+    await moreButton.trigger('click')
+
+    expect(wrapper.emitted('more')).toEqual([[item]])
   })
 
   it('emits select when a node is clicked', async () => {
