@@ -145,7 +145,7 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 **前端页面**
 
 - 侧边栏「学习路线」进入 `/learning-paths`：官方/公开自定义路线卡片，筛选「全部/官方/自定义/我创建的」（游客隐藏“我创建的”），登录用户可「新建路线」；卡片展示标题、作者、`已完成 n / n 节点` 与官方/公开/私有标签，作者或 `learning_path.official.manage` 可看到「编辑」入口。
-- 路线树 `/learning-paths/:id`：`TreeTable` 展示节点层级（`completed` 绿色、`active` 主色、`locked` 灰色锁），节点列含 `solvedCount/requiredCount` 进度条与题目数；点击节点右侧展示描述与题目链接；游客根 `active`、其余 `locked`；私有/下架路线显示「学习路线不存在或无权查看」。
+- 路线详情 `/learning-paths/:id`：桌面端以「算法之树」展示节点状态，点击节点查看「节点卷宗」与题目叶片；移动端使用纵向树并在选中节点下方显示内联卷宗。节点状态包括 `completed`、`active`、`locked`；游客根 `active`、其余 `locked`；私有/下架路线显示「学习路线不存在或无权查看」。
 - 编辑页 `/learning-paths/new`、`/learning-paths/:id/edit`：路线表单（标题/描述/封面/排序/公开；官方开关仅创建时且 `learning_path.official.manage` 可见并强制公开）+ 节点树编辑器（添加根/子节点、编辑、上移/下移、删除叶子；题目 1–50 去重、`requiredCount` 1–题目数）。
 - 官方管理 `/admin/learning-paths`：管理全部路线（含下架）；`learning_path.official.manage` 可新建官方、编辑、下架/恢复；`learning_path.admin.read` 只读。
 
@@ -156,6 +156,7 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 - `POST /api/learning-paths`：登录用户创建自定义路线，默认私有；管理员可创建强制公开的官方路线。`PUT`/`DELETE /api/learning-paths/{id}` 仅作者或管理员，删除为软删除（下架），管理员可恢复。
 - 节点接口 `POST/PUT/DELETE /api/learning-paths/{id}/nodes...`：父节点必须同路线、不能成环、最大深度 8；题目 1–50 道且必须存在/公开；`requiredCount` 为 1–题目数；仅叶子节点可删除。
 - **服务端进度（M4-2B）**：登录用户读取列表/树前服务端重算并写回进度。节点 `solvedCount` = 该节点题目中去重 AC 的题数，`solvedCount >= requiredCount` 时 `status=completed`；根节点默认 `active`，子节点仅父节点完成后 `active`、否则 `locked`。已完成节点锁存：之后改题或提高 `requiredCount` 不回退已完成用户（`solvedCount` 保留完成时的值），未完成/进行中节点按新配置重算。游客根 `active`、其余 `locked`、`solvedCount=0`，不写进度。
+- 题目摘要包含题目级 `solved`：登录用户查看时表示本人是否已 AC 该题；游客及节点写入响应均为 `false`。此字段用于题目叶片和卷宗中的通过状态展示，不替代节点级 `solvedCount/status`。
 - **AC 事件（M4-2B）**：`submission.accepted` 事件触发该用户进度重算（与 gamification 在同一 Asynq handler 组合，幂等可重试）；读取补算兜底。
 - **题目下线守卫（M4-2B）**：题目被任一活跃学习路线引用时，`PUT /problems/{id}` 将 `isPublic` 改为 false（下线）与 `DELETE /problems/{id}` 均返回 40001「题目被学习路线引用，不能下线/删除」；移除引用节点后允许下线/删除。
 

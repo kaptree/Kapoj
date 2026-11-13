@@ -106,9 +106,14 @@ function collectConsoleErrors(page: Page) {
   return errors
 }
 
-/** The tree row whose title cell contains `title`. */
-function treeRow(page: Page, title: string) {
-  return page.locator('.p-treetable-tbody tr').filter({ hasText: title }).first()
+/** A desktop algorithm-tree node, identified by its accessible title. */
+function treeNode(page: Page, title: string) {
+  return page.locator(`.tree-node[aria-label^="${title}"]`).first()
+}
+
+/** A mobile vertical-tree node whose visible text contains `title`. */
+function mobileTreeNode(page: Page, title: string) {
+  return page.locator('.mobile-node').filter({ hasText: title }).first()
 }
 
 /** A list card whose text contains `title`. */
@@ -128,6 +133,9 @@ test.describe.serial('learning path frontend acceptance', () => {
   let officialPathId = 0
   let officialTitle = ''
   let officialRootId = 0
+  let widePathId = 0
+  let widePathTitle = ''
+  let widePathDeepNodeTitle = ''
 
   let privatePathId = 0
   let privateTitle = ''
@@ -204,6 +212,46 @@ test.describe.serial('learning path frontend acceptance', () => {
     )
   }
 
+  async function createDeepWidePath() {
+    const path = await apiData<LearningPathItem>(
+      await api.post('/api/learning-paths', {
+        headers: await adminHeaders(),
+        data: {
+          title: widePathTitle,
+          descriptionMd: '深层宽树 E2E（临时）',
+          isOfficial: true,
+          isPublic: true,
+          sortOrder: 1,
+        },
+      }),
+    )
+    widePathId = path.id
+
+    let parentIds: Array<number | null> = [null]
+    for (let level = 1; level <= 5; level++) {
+      const nextParentIds: number[] = []
+      for (const parentId of parentIds) {
+        for (let sibling = 1; sibling <= 2; sibling++) {
+          const title = `${widePathTitle} 第${level}层-${nextParentIds.length + 1}-兄弟${sibling}`
+          const node = await apiData<LearningPathNodeItem>(
+            await api.post(`/api/learning-paths/${widePathId}/nodes`, {
+              headers: await adminHeaders(),
+              data: {
+                title,
+                ...(parentId === null ? {} : { parentId }),
+                problemIds: [problemIds[0]],
+                requiredCount: 1,
+              },
+            }),
+          )
+          nextParentIds.push(node.id)
+          if (level === 5) widePathDeepNodeTitle = title
+        }
+      }
+      parentIds = nextParentIds
+    }
+  }
+
   function insertAccepted(userId: number, problemId: number, idx: number) {
     sql(
       `INSERT INTO submissions (user_id, problem_id, language, code, status, created_at, judged_at) ` +
@@ -249,6 +297,7 @@ test.describe.serial('learning path frontend acceptance', () => {
 
     officialTitle = `${slugPrefix} 官方路线`
     privateTitle = `${slugPrefix} 私有路线`
+    widePathTitle = `${slugPrefix} 深层宽树`
 
     await createOfficialPath()
 
@@ -268,6 +317,8 @@ test.describe.serial('learning path frontend acceptance', () => {
         data: { title: '私有根节点', problemIds: [problemIds[2]], requiredCount: 1 },
       }),
     )
+
+    await createDeepWidePath()
   })
 
   test.afterAll(async () => {
@@ -281,11 +332,16 @@ test.describe.serial('learning path frontend acceptance', () => {
       sql(
         `DELETE FROM user_learning_progress ` +
           `WHERE id > ${baseline.progressMaxId} ` +
-          `AND (path_id IN (${officialPathId}, ${privatePathId}) ` +
+          `AND (path_id IN (${officialPathId}, ${privatePathId}, ${widePathId}) ` +
           `OR user_id IN (${adminUserId}, ${normalUserId}, ${secondUserId}))`,
       )
-      sql(`DELETE FROM learning_path_nodes WHERE path_id IN (${officialPathId}, ${privatePathId})`)
-      sql(`DELETE FROM learning_paths WHERE id IN (${officialPathId}, ${privatePathId})`)
+      sql(
+        `DELETE FROM learning_path_nodes ` +
+          `WHERE path_id IN (${officialPathId}, ${privatePathId}, ${widePathId})`,
+      )
+      sql(
+        `DELETE FROM learning_paths WHERE id IN (${officialPathId}, ${privatePathId}, ${widePathId})`,
+      )
       sql(`DELETE FROM problems WHERE slug LIKE '${slugPrefix}%'`)
       sql(
         `DELETE FROM admin_audit_logs ` +
@@ -316,15 +372,30 @@ test.describe.serial('learning path frontend acceptance', () => {
     await expect(page.getByRole('heading', { name: officialTitle })).toBeVisible()
     await expect(page.getByText(`已完成 0 / 3 节点`)).toBeVisible()
 
-    await expect(treeRow(page, '根节点')).toContainText('进行中')
-    await expect(treeRow(page, '根节点')).toContainText('0 / 2')
-    await expect(treeRow(page, '子节点一')).toContainText('未解锁')
-    await expect(treeRow(page, '子节点二')).toContainText('未解锁')
+    const rootNode = treeNode(page, '根节点')
+    await expect(rootNode).toHaveClass(/status-active/)
+    await expect(rootNode).toHaveAttribute('aria-label', /0 \/ 2/)
+    await expect(treeNode(page, '子节点一')).toHaveAttribute('aria-label', /未解锁/)
+    await expect(treeNode(page, '子节点二')).toHaveAttribute('aria-label', /未解锁/)
 
     // Detail panel defaults to the first active node (the root) with its problems.
-    await expect(page.locator('.detail-panel')).toContainText(problemTitles[0])
-    await expect(page.locator('.detail-panel')).toContainText(problemTitles[1])
+    await expect(page.locator('.node-panel')).toContainText(problemTitles[0])
+    await expect(page.locator('.node-panel')).toContainText(problemTitles[1])
 
+    expect(consoleErrors).toEqual([])
+  })
+
+  test('desktop algorithm tree: selecting a leaf shows and opens its problem leaves', async ({
+    page,
+  }) => {
+    const consoleErrors = collectConsoleErrors(page)
+    await page.goto(`/learning-paths/${officialPathId}`)
+    await treeNode(page, '子节点一').click()
+    const leaves = page.locator('.tree-leaf')
+    await expect(leaves.first()).toBeVisible()
+    await expect(leaves.first()).toContainText(problemTitles[3])
+    await leaves.first().click()
+    await expect(page).toHaveURL(new RegExp(`/problems/${problemIds[3]}$`))
     expect(consoleErrors).toEqual([])
   })
 
@@ -336,9 +407,9 @@ test.describe.serial('learning path frontend acceptance', () => {
     await expect(pathCard(page, officialTitle)).toContainText('已完成 0 / 3 节点')
 
     await page.goto(`/learning-paths/${officialPathId}`)
-    await expect(treeRow(page, '根节点')).toContainText('进行中')
-    await expect(treeRow(page, '子节点一')).toContainText('未解锁')
-    await expect(treeRow(page, '子节点二')).toContainText('未解锁')
+    await expect(treeNode(page, '根节点')).toHaveClass(/status-active/)
+    await expect(treeNode(page, '子节点一')).toHaveAttribute('aria-label', /未解锁/)
+    await expect(treeNode(page, '子节点二')).toHaveAttribute('aria-label', /未解锁/)
 
     expect(consoleErrors).toEqual([])
   })
@@ -353,19 +424,20 @@ test.describe.serial('learning path frontend acceptance', () => {
     const consoleErrors = collectConsoleErrors(page)
     await loginUI(page, normalUser, normalPassword)
     await page.goto(`/learning-paths/${officialPathId}`)
-    await expect(treeRow(page, '根节点')).toContainText('已完成')
-    await expect(treeRow(page, '根节点')).toContainText('2 / 2')
-    await expect(treeRow(page, '子节点一')).toContainText('进行中')
-    await expect(treeRow(page, '子节点二')).toContainText('进行中')
+    const rootNode = treeNode(page, '根节点')
+    await expect(rootNode).toHaveClass(/status-completed/)
+    await expect(rootNode).toHaveAttribute('aria-label', /2 \/ 2/)
+    await expect(treeNode(page, '子节点一')).toHaveClass(/status-active/)
+    await expect(treeNode(page, '子节点二')).toHaveClass(/status-active/)
 
     // AC the two child problems.
     insertAccepted(normalUserId, problemIds[3], 3)
     insertAccepted(normalUserId, problemIds[4], 4)
 
     await page.reload()
-    await expect(treeRow(page, '根节点')).toContainText('已完成')
-    await expect(treeRow(page, '子节点一')).toContainText('已完成')
-    await expect(treeRow(page, '子节点二')).toContainText('已完成')
+    await expect(rootNode).toHaveClass(/status-completed/)
+    await expect(treeNode(page, '子节点一')).toHaveClass(/status-completed/)
+    await expect(treeNode(page, '子节点二')).toHaveClass(/status-completed/)
     await expect(page.getByText('已完成 3 / 3 节点')).toBeVisible()
 
     await page.goto('/learning-paths')
@@ -393,8 +465,9 @@ test.describe.serial('learning path frontend acceptance', () => {
     const completedConsole = collectConsoleErrors(page)
     await loginUI(page, normalUser, normalPassword)
     await page.goto(`/learning-paths/${officialPathId}`)
-    await expect(treeRow(page, '根节点')).toContainText('已完成')
-    await expect(treeRow(page, '根节点')).toContainText('2 / 3')
+    const rootNode = treeNode(page, '根节点')
+    await expect(rootNode).toHaveClass(/status-completed/)
+    await expect(rootNode).toHaveAttribute('aria-label', /2 \/ 3/)
 
     // A different user with only one AC recomputes against the new config.
     insertAccepted(secondUserId, problemIds[0], 5)
@@ -404,9 +477,9 @@ test.describe.serial('learning path frontend acceptance', () => {
     await page.evaluate(() => localStorage.clear())
     await loginUI(page, secondUser, secondPassword)
     await page.goto(`/learning-paths/${officialPathId}`)
-    await expect(treeRow(page, '根节点')).toContainText('进行中')
-    await expect(treeRow(page, '根节点')).toContainText('1 / 3')
-    await expect(treeRow(page, '子节点一')).toContainText('未解锁')
+    await expect(treeNode(page, '根节点')).toHaveClass(/status-active/)
+    await expect(treeNode(page, '根节点')).toHaveAttribute('aria-label', /1 \/ 3/)
+    await expect(treeNode(page, '子节点一')).toHaveAttribute('aria-label', /未解锁/)
 
     expect(completedConsole).toEqual([])
     expect(secondConsole).toEqual([])
@@ -423,7 +496,7 @@ test.describe.serial('learning path frontend acceptance', () => {
     await expect(pathCard(page, privateTitle)).toBeVisible()
     await page.goto(`/learning-paths/${privatePathId}`)
     await expect(page.getByRole('heading', { name: privateTitle })).toBeVisible()
-    await expect(treeRow(page, '私有根节点')).toContainText('进行中')
+    await expect(treeNode(page, '私有根节点')).toHaveClass(/status-active/)
     expect(ownerConsole).toEqual([])
 
     // Guest cannot see the private path. The expected `GET .../tree` 404 is the
@@ -546,7 +619,65 @@ test.describe.serial('learning path frontend acceptance', () => {
     expect(consoleErrors).toEqual([])
   })
 
-  test('375px layout: list cards, tree/table scroll, dialog usable, no console errors', async ({
+  test('deep and wide algorithm tree renders every node and centers the selected node', async ({
+    page,
+  }) => {
+    const consoleErrors = collectConsoleErrors(page)
+    await page.goto(`/learning-paths/${widePathId}`)
+    await expect(page.locator('.tree-node')).toHaveCount(62)
+
+    const selectedNode = treeNode(page, widePathDeepNodeTitle)
+    await selectedNode.click()
+    await expect(selectedNode).toHaveClass(/selected/)
+    await expect
+      .poll(() =>
+        selectedNode.evaluate((node) => {
+          const nodeRect = node.getBoundingClientRect()
+          const viewportRect = document.querySelector('.tree-viewport')!.getBoundingClientRect()
+          return (
+            nodeRect.left >= viewportRect.left &&
+            nodeRect.right <= viewportRect.right &&
+            nodeRect.top >= viewportRect.top &&
+            nodeRect.bottom <= viewportRect.bottom
+          )
+        }),
+      )
+      .toBe(true)
+    expect(consoleErrors).toEqual([])
+  })
+
+  test('light theme keeps algorithm tree nodes and problem leaves visible', async ({ page }) => {
+    const consoleErrors = collectConsoleErrors(page)
+    await page.addInitScript(() => localStorage.setItem('kapoj.theme', 'dark'))
+    await page.goto(`/learning-paths/${officialPathId}`)
+    await page.getByRole('button', { name: '切换到亮色主题' }).click()
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+    await expect(treeNode(page, '根节点')).toBeVisible()
+
+    await treeNode(page, '子节点一').click()
+    await expect(page.locator('.tree-leaf').first()).toBeVisible()
+    expect(consoleErrors).toEqual([])
+  })
+
+  test('reduced motion disables algorithm-tree animation after selecting a node', async ({
+    page,
+  }) => {
+    const consoleErrors = collectConsoleErrors(page)
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.goto(`/learning-paths/${officialPathId}`)
+    const selectedNode = treeNode(page, '子节点一')
+    await selectedNode.click()
+    await expect(selectedNode).toHaveClass(/selected/)
+
+    const animationName = await page
+      .locator('.tree-crowns circle.sparkle')
+      .first()
+      .evaluate((element) => getComputedStyle(element).animationName)
+    expect(animationName).toBe('none')
+    expect(consoleErrors).toEqual([])
+  })
+
+  test('375px layout: vertical tree, inline dossier, usable dialog, no horizontal scroll', async ({
     page,
   }) => {
     const consoleErrors = collectConsoleErrors(page)
@@ -560,13 +691,18 @@ test.describe.serial('learning path frontend acceptance', () => {
     expect(listOverflow).toBeLessThanOrEqual(0)
 
     await page.goto(`/learning-paths/${officialPathId}`)
-    await expect(treeRow(page, '根节点')).toBeVisible()
-    const treeScroller = page.locator('.tree-scroll').first()
-    await expect(treeScroller).toBeVisible()
-    const treeOverflow = await page.evaluate(
-      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-    )
-    expect(treeOverflow).toBeLessThanOrEqual(0)
+    await expect(page.locator('.mobile-tree')).toBeVisible()
+    await expect(page.locator('.tree-viewport')).toHaveCount(0)
+    const mobileNode = mobileTreeNode(page, '子节点一')
+    await expect(mobileNode).toBeVisible()
+    await mobileNode.click()
+    await expect(page.locator('.mobile-node-panel')).toBeVisible()
+    await expect(page.locator('.mobile-node-panel')).toContainText(problemTitles[3])
+    const treeWidth = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }))
+    expect(treeWidth.scrollWidth).toBeLessThanOrEqual(treeWidth.clientWidth)
 
     await loginUI(page, adminUser, adminPassword)
     await page.goto('/admin/learning-paths')
