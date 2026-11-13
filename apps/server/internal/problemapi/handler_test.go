@@ -158,7 +158,7 @@ func (f *fx) registerUser(role string) (string, int64) {
 		"username": name, "email": name + "@example.com", "password": "correct-horse",
 	})
 	require.Equal(f.t, http.StatusCreated, w.Code, w.Body.String())
-	userID := int64(resp["data"].(map[string]any)["user"].(map[string]any)["id"].(float64))
+	userID := int64(resp["data"].(map[string]any)["session"].(map[string]any)["user"].(map[string]any)["id"].(float64))
 	require.NoError(f.t, f.db.Exec("UPDATE users SET role = ? WHERE id = ?", role, userID).Error)
 	w, resp = f.do(http.MethodPost, "/api/auth/login", "", map[string]string{"account": name, "password": "correct-horse"})
 	require.Equal(f.t, http.StatusOK, w.Code)
@@ -524,7 +524,7 @@ func TestDetailShowsSolutionAfterAccepted(t *testing.T) {
 		"username": "solver", "email": "solver@example.com", "password": "correct-horse",
 	})
 	require.Equal(t, http.StatusCreated, w.Code)
-	token := reg["data"].(map[string]any)["accessToken"].(string)
+	token := reg["data"].(map[string]any)["session"].(map[string]any)["accessToken"].(string)
 	var userID int64
 	require.NoError(t, f.db.Raw(`SELECT id FROM users WHERE username = 'solver'`).Scan(&userID).Error)
 
@@ -558,7 +558,7 @@ func TestHiddenContestProblemVisibleToParticipant(t *testing.T) {
 		"username": "contestant", "email": "contestant@example.com", "password": "correct-horse",
 	})
 	require.Equal(t, http.StatusCreated, w.Code)
-	token := reg["data"].(map[string]any)["accessToken"].(string)
+	token := reg["data"].(map[string]any)["session"].(map[string]any)["accessToken"].(string)
 	var userID int64
 	require.NoError(t, f.db.Raw(`SELECT id FROM users WHERE username = 'contestant'`).Scan(&userID).Error)
 
@@ -1202,7 +1202,7 @@ func TestLockedContestProblemDetailAndResources(t *testing.T) {
 		"username": "lockeduser", "email": "locked@example.com", "password": "correct-horse",
 	})
 	require.Equal(t, http.StatusCreated, w.Code)
-	token := reg["data"].(map[string]any)["accessToken"].(string)
+	token := reg["data"].(map[string]any)["session"].(map[string]any)["accessToken"].(string)
 	var userID int64
 	require.NoError(t, f.db.Raw(`SELECT id FROM users WHERE username = 'lockeduser'`).Scan(&userID).Error)
 

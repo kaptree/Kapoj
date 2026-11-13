@@ -134,7 +134,7 @@ func (f *fx) register(name string) string {
 		"username": name, "email": name + "@example.com", "password": "correct-horse",
 	})
 	require.Equal(f.t, http.StatusCreated, w.Code, w.Body.String())
-	return resp["data"].(map[string]any)["accessToken"].(string)
+	return resp["data"].(map[string]any)["session"].(map[string]any)["accessToken"].(string)
 }
 
 func (f *fx) problem(t *testing.T, slug string, public bool, typ problem.Type, cases int) *problem.Problem {
@@ -211,7 +211,7 @@ func (f *fx) registerUser(role string) (string, int64) {
 		"username": name, "email": name + "@example.com", "password": "correct-horse",
 	})
 	require.Equal(f.t, http.StatusCreated, w.Code, w.Body.String())
-	userID := int64(resp["data"].(map[string]any)["user"].(map[string]any)["id"].(float64))
+	userID := int64(resp["data"].(map[string]any)["session"].(map[string]any)["user"].(map[string]any)["id"].(float64))
 	require.NoError(f.t, f.db.Exec("UPDATE users SET role = ? WHERE id = ?", role, userID).Error)
 	w, resp = f.do(http.MethodPost, "/api/auth/login", "", map[string]string{"account": name, "password": "correct-horse"})
 	require.Equal(f.t, http.StatusOK, w.Code)

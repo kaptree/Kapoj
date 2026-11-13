@@ -192,7 +192,7 @@ func TestAdminListPermissionsAndRoles(t *testing.T) {
 	w, resp := f.do(http.MethodGet, "/api/admin/permissions", token, "")
 	requireStatus(t, w, resp, http.StatusOK)
 	permissions := dataList(t, resp)
-	require.Len(t, permissions, 39)
+	require.Len(t, permissions, 40)
 	first := permissions[0].(map[string]any)
 	assert.Equal(t, "admin.dashboard.view", first["code"])
 	assert.Equal(t, "访问管理仪表盘", first["name"])
