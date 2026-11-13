@@ -46,7 +46,7 @@ function path(overrides: Partial<LearningPathItem> = {}): LearningPathItem {
 }
 
 function problem(problemId: number, title = `题目 ${problemId}`) {
-  return { problemId, title, slug: `problem-${problemId}`, difficulty: 1 }
+  return { problemId, title, slug: `problem-${problemId}`, difficulty: 1, solved: false }
 }
 
 function node(overrides: Partial<LearningPathNodeItem> = {}): LearningPathNodeItem {
