@@ -14,7 +14,11 @@ const authApi = vi.hoisted(() => ({
 vi.mock('@/api/auth', () => authApi)
 
 const routes = [
-  { path: '/forgot-password', name: 'forgot-password', component: { template: '<div>forgot</div>' } },
+  {
+    path: '/forgot-password',
+    name: 'forgot-password',
+    component: { template: '<div>forgot</div>' },
+  },
   { path: '/login', name: 'login', component: { template: '<div>login</div>' } },
 ]
 

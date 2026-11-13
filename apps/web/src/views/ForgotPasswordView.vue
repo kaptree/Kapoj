@@ -74,12 +74,7 @@ async function submit() {
     </template>
 
     <form v-else class="auth-form" novalidate @submit.prevent="submit">
-      <AppFormField
-        v-slot="{ id, invalid, describedby }"
-        label="邮箱"
-        :error="emailError"
-        required
-      >
+      <AppFormField v-slot="{ id, invalid, describedby }" label="邮箱" :error="emailError" required>
         <InputText
           :id="id"
           v-model="email"

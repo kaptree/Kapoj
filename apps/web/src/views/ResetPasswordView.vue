@@ -114,13 +114,7 @@ async function submit() {
         />
       </AppFormField>
 
-      <Button
-        type="submit"
-        label="重置密码"
-        icon="pi pi-check"
-        :loading="submitting"
-        fluid
-      />
+      <Button type="submit" label="重置密码" icon="pi pi-check" :loading="submitting" fluid />
     </form>
 
     <template #footer>

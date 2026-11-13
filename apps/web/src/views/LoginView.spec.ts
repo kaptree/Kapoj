@@ -19,7 +19,11 @@ const routes = [
   { path: '/', name: 'home', component: { template: '<div>home</div>' } },
   { path: '/login', name: 'login', component: { template: '<div>login</div>' } },
   { path: '/register', name: 'register', component: { template: '<div>register</div>' } },
-  { path: '/forgot-password', name: 'forgot-password', component: { template: '<div>forgot</div>' } },
+  {
+    path: '/forgot-password',
+    name: 'forgot-password',
+    component: { template: '<div>forgot</div>' },
+  },
   { path: '/verify-email', name: 'verify-email', component: { template: '<div>verify</div>' } },
   { path: '/problems', name: 'problems', component: { template: '<div>problems</div>' } },
 ]

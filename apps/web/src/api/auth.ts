@@ -11,7 +11,8 @@ import type {
   SessionView,
 } from './types'
 
-export const register = (input: RegisterRequest) => http.post<RegisterResult>('/auth/register', input)
+export const register = (input: RegisterRequest) =>
+  http.post<RegisterResult>('/auth/register', input)
 
 export const login = (input: LoginRequest) => http.post<Session>('/auth/login', input)
 

@@ -326,7 +326,12 @@ onMounted(load)
           </AppFormField>
 
           <AppFormField label="发件邮箱" required>
-            <InputText v-model="settings.fromEmail" type="email" fluid placeholder="noreply@example.com" />
+            <InputText
+              v-model="settings.fromEmail"
+              type="email"
+              fluid
+              placeholder="noreply@example.com"
+            />
           </AppFormField>
 
           <AppFormField label="发件人名称">
@@ -334,7 +339,12 @@ onMounted(load)
           </AppFormField>
 
           <AppFormField label="Reply-To">
-            <InputText v-model="settings.replyTo" type="email" fluid placeholder="support@example.com" />
+            <InputText
+              v-model="settings.replyTo"
+              type="email"
+              fluid
+              placeholder="support@example.com"
+            />
           </AppFormField>
 
           <AppFormField label="站点公开地址" hint="用于拼接验证/重置链接，只填根地址" required>
@@ -360,9 +370,7 @@ onMounted(load)
         <div class="switch-row">
           <div>
             <div class="switch-title">强制全站邮箱验证</div>
-            <p class="switch-hint">
-              开启后未验证用户无法登录；必须先把邮件服务配置到“可发送”。
-            </p>
+            <p class="switch-hint">开启后未验证用户无法登录；必须先把邮件服务配置到“可发送”。</p>
           </div>
           <ToggleSwitch v-model="settings.requireEmailVerification" />
         </div>
