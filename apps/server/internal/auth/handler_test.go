@@ -47,6 +47,16 @@ func postJSON(r *gin.Engine, path, body string) (*httptest.ResponseRecorder, map
 	return w, resp
 }
 
+// registerSession extracts the auto-login session from a register response.
+func registerSession(t *testing.T, resp map[string]any) map[string]any {
+	t.Helper()
+	data, ok := resp["data"].(map[string]any)
+	require.True(t, ok, "register response data missing")
+	session, ok := data["session"].(map[string]any)
+	require.True(t, ok, "register response must include a session")
+	return session
+}
+
 // authJSON performs a request with an optional bearer token.
 func authJSON(r *gin.Engine, method, path, token, body string) (*httptest.ResponseRecorder, map[string]any) {
 	req := httptest.NewRequest(method, path, bytes.NewBufferString(body))
@@ -101,12 +111,15 @@ func TestRegisterEndpoint(t *testing.T) {
 
 	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
 	data := resp["data"].(map[string]any)
-	assert.NotEmpty(t, data["accessToken"])
-	assert.NotEmpty(t, data["refreshToken"])
-	assert.NotEmpty(t, data["sessionId"])
-	u := data["user"].(map[string]any)
+	assert.False(t, data["verificationRequired"].(bool))
+	session := data["session"].(map[string]any)
+	assert.NotEmpty(t, session["accessToken"])
+	assert.NotEmpty(t, session["refreshToken"])
+	assert.NotEmpty(t, session["sessionId"])
+	u := session["user"].(map[string]any)
 	assert.Equal(t, "alice", u["username"])
 	assert.Equal(t, "alice@example.com", u["email"])
+	assert.True(t, u["emailVerified"].(bool))
 	assert.NotContains(t, w.Body.String(), "passwordHash")
 	assert.NotContains(t, w.Body.String(), "PasswordHash")
 }
@@ -121,7 +134,7 @@ func TestLoginHookFiresOnRegisterAndLogin(t *testing.T) {
 	w, resp := postJSON(r, "/api/auth/register",
 		`{"username":"alice","email":"alice@example.com","password":"correct-horse"}`)
 	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
-	registerID := int64(resp["data"].(map[string]any)["user"].(map[string]any)["id"].(float64))
+	registerID := int64(resp["data"].(map[string]any)["session"].(map[string]any)["user"].(map[string]any)["id"].(float64))
 	require.Len(t, hook.userIDs, 1)
 	assert.Equal(t, registerID, hook.userIDs[0])
 
@@ -190,7 +203,7 @@ func TestLoginWrongPasswordEndpoint(t *testing.T) {
 func TestPasswordEndpoint(t *testing.T) {
 	r := newAccountEngine(t)
 	_, resp := postJSON(r, "/api/auth/register", `{"username":"alice","email":"alice@example.com","password":"correct-horse"}`)
-	token := resp["data"].(map[string]any)["accessToken"].(string)
+	token := registerSession(t, resp)["accessToken"].(string)
 
 	// Unauthenticated.
 	w, _ := authJSON(r, http.MethodPut, "/api/users/me/password", "", `{"currentPassword":"correct-horse","newPassword":"new-password-1"}`)
@@ -214,7 +227,7 @@ func TestPasswordEndpoint(t *testing.T) {
 func TestPasswordEndpointRateLimit(t *testing.T) {
 	r := newAccountEngine(t)
 	_, resp := postJSON(r, "/api/auth/register", `{"username":"alice","email":"alice@example.com","password":"correct-horse"}`)
-	token := resp["data"].(map[string]any)["accessToken"].(string)
+	token := registerSession(t, resp)["accessToken"].(string)
 
 	for i := 0; i < 10; i++ {
 		w, _ := authJSON(r, http.MethodPut, "/api/users/me/password", token, `{"currentPassword":"nope","newPassword":"new-password-1"}`)
@@ -228,7 +241,7 @@ func TestPasswordEndpointRateLimit(t *testing.T) {
 func TestSessionEndpoints(t *testing.T) {
 	r := newAccountEngine(t)
 	_, resp := postJSON(r, "/api/auth/register", `{"username":"alice","email":"alice@example.com","password":"correct-horse"}`)
-	data := resp["data"].(map[string]any)
+	data := registerSession(t, resp)
 	tokenA := data["accessToken"].(string)
 	sessionA := data["sessionId"].(string)
 	refreshA := data["refreshToken"].(string)
@@ -260,7 +273,7 @@ func TestSessionEndpoints(t *testing.T) {
 
 	// Deleting another user's session is a 404.
 	_, bresp := postJSON(r, "/api/auth/register", `{"username":"bob","email":"bob@example.com","password":"correct-horse"}`)
-	bobSession := bresp["data"].(map[string]any)["sessionId"].(string)
+	bobSession := registerSession(t, bresp)["sessionId"].(string)
 	w, resp = authJSON(r, http.MethodDelete, "/api/users/me/sessions/"+bobSession, tokenA, "")
 	assert.Equal(t, http.StatusNotFound, w.Code)
 	assert.EqualValues(t, 40400, resp["code"])
@@ -289,7 +302,7 @@ func TestSessionEndpoints(t *testing.T) {
 func TestLogoutOthersRequiresSessionID(t *testing.T) {
 	r := newAccountEngine(t)
 	_, resp := postJSON(r, "/api/auth/register", `{"username":"alice","email":"alice@example.com","password":"correct-horse"}`)
-	data := resp["data"].(map[string]any)
+	data := registerSession(t, resp)
 	token := data["accessToken"].(string)
 
 	postJSON(r, "/api/auth/login", `{"account":"alice","password":"correct-horse"}`)
@@ -322,7 +335,7 @@ func TestSessionMetaTruncatesUserAgentOnRuneBoundary(t *testing.T) {
 func TestLogoutOthersRejectsUnknownSession(t *testing.T) {
 	r := newAccountEngine(t)
 	_, resp := postJSON(r, "/api/auth/register", `{"username":"alice","email":"alice@example.com","password":"correct-horse"}`)
-	data := resp["data"].(map[string]any)
+	data := registerSession(t, resp)
 	token := data["accessToken"].(string)
 	postJSON(r, "/api/auth/login", `{"account":"alice","password":"correct-horse"}`)
 
@@ -338,10 +351,10 @@ func TestLogoutOthersRejectsUnknownSession(t *testing.T) {
 func TestLogoutOthersRejectsOtherUsersSessionHTTP(t *testing.T) {
 	r := newAccountEngine(t)
 	_, aresp := postJSON(r, "/api/auth/register", `{"username":"alice","email":"alice@example.com","password":"correct-horse"}`)
-	adata := aresp["data"].(map[string]any)
+	adata := registerSession(t, aresp)
 	atoken := adata["accessToken"].(string)
 	_, bresp := postJSON(r, "/api/auth/register", `{"username":"bob","email":"bob@example.com","password":"correct-horse"}`)
-	bsession := bresp["data"].(map[string]any)["sessionId"].(string)
+	bsession := registerSession(t, bresp)["sessionId"].(string)
 	postJSON(r, "/api/auth/login", `{"account":"alice","password":"correct-horse"}`)
 
 	w, resp := authJSON(r, http.MethodPost, "/api/users/me/sessions/logout-others", atoken,

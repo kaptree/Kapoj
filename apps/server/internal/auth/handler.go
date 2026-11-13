@@ -21,6 +21,13 @@ type sessionDTO struct {
 	User user.MeDTO `json:"user"`
 }
 
+type registerResultDTO struct {
+	VerificationRequired  bool        `json:"verificationRequired"`
+	Email                 string      `json:"email"`
+	VerificationEmailSent bool        `json:"verificationEmailSent"`
+	Session               *sessionDTO `json:"session,omitempty"`
+}
+
 type registerRequest struct {
 	Username string `json:"username"`
 	Email    string `json:"email"`
@@ -121,13 +128,21 @@ func (h *handler) register(c *gin.Context) {
 	if !ok {
 		return
 	}
-	s, err := h.svc.RegisterWithMeta(c.Request.Context(), RegisterInput(req), sessionMeta(c))
+	result, err := h.svc.RegisterWithMeta(c.Request.Context(), RegisterInput(req), sessionMeta(c))
 	if err != nil {
 		httpx.Fail(c, err)
 		return
 	}
-	h.notifyLogin(c, s.User.ID)
-	httpx.Created(c, sessionDTO{TokenPair: s.TokenPair, User: user.ToMe(s.User)})
+	dto := registerResultDTO{
+		VerificationRequired:  result.VerificationRequired,
+		Email:                 result.Email,
+		VerificationEmailSent: result.VerificationEmailSent,
+	}
+	if result.Session != nil {
+		h.notifyLogin(c, result.Session.User.ID)
+		dto.Session = &sessionDTO{TokenPair: result.Session.TokenPair, User: user.ToMe(result.Session.User)}
+	}
+	httpx.Created(c, dto)
 }
 
 func (h *handler) login(c *gin.Context) {

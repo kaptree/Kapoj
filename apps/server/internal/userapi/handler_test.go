@@ -128,11 +128,12 @@ func setupWithRepository(t *testing.T, repo user.Repository, opts ...Options) *f
 
 func (f *fixture) register(t *testing.T, name string) (*user.User, string) {
 	t.Helper()
-	s, err := f.auth.Register(context.Background(), auth.RegisterInput{
+	res, err := f.auth.Register(context.Background(), auth.RegisterInput{
 		Username: name, Email: name + "@example.com", Password: "correct-horse",
 	})
 	require.NoError(t, err)
-	return s.User, s.AccessToken
+	require.NotNil(t, res.Session)
+	return res.Session.User, res.Session.AccessToken
 }
 
 func (f *fixture) do(method, path, token, body string) (*httptest.ResponseRecorder, map[string]any) {

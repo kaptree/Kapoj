@@ -54,9 +54,10 @@ func (r *failingPasswordRepo) UpdatePassword(context.Context, int64, string) err
 
 func register(t *testing.T, svc *Service, username, email string) *Session {
 	t.Helper()
-	s, err := svc.Register(context.Background(), RegisterInput{Username: username, Email: email, Password: password})
+	res, err := svc.Register(context.Background(), RegisterInput{Username: username, Email: email, Password: password})
 	require.NoError(t, err)
-	return s
+	require.NotNil(t, res.Session)
+	return res.Session
 }
 
 func assertCode(t *testing.T, err error, code int) {
@@ -548,4 +549,274 @@ func TestLogoutOthersRejectsOtherUsersSessionService(t *testing.T) {
 	views, err := svc.ListSessions(ctx, alice.User.ID)
 	require.NoError(t, err)
 	require.Len(t, views, 2, "a foreign keep session must not revoke Alice's sessions")
+}
+
+type sentMail struct {
+	to       string
+	nickname string
+	token    string
+}
+
+type fakeMailer struct {
+	required            bool
+	ready               bool
+	sendVerificationErr error
+	sendResetErr        error
+	verification        []sentMail
+	reset               []sentMail
+}
+
+func (m *fakeMailer) VerificationRequired(context.Context) (bool, error) {
+	return m.required, nil
+}
+
+func (m *fakeMailer) Ready(context.Context) (bool, error) {
+	return m.ready, nil
+}
+
+func (m *fakeMailer) SendVerification(_ context.Context, to, nickname, token string) error {
+	m.verification = append(m.verification, sentMail{to: to, nickname: nickname, token: token})
+	return m.sendVerificationErr
+}
+
+func (m *fakeMailer) SendPasswordReset(_ context.Context, to, nickname, token string) error {
+	m.reset = append(m.reset, sentMail{to: to, nickname: nickname, token: token})
+	return m.sendResetErr
+}
+
+func newServiceWithMail(t *testing.T, required, ready bool) (*Service, user.Repository, *fakeMailer) {
+	t.Helper()
+	_, rdb := newRedis(t)
+	repo := user.NewMemoryRepository()
+	mailer := &fakeMailer{required: required, ready: ready}
+	svc := NewService(repo,
+		NewTokenIssuer(testSecret, 15*time.Minute),
+		NewRefreshStore(rdb, time.Hour),
+		NewLoginLimiter(rdb),
+		WithMailer(mailer),
+		WithEmailTokens(NewEmailTokenStore(rdb)),
+	)
+	return svc, repo, mailer
+}
+
+func TestRegisterFirstUserBypassesVerification(t *testing.T) {
+	ctx := context.Background()
+	svc, repo, mailer := newServiceWithMail(t, true, false)
+
+	res, err := svc.Register(ctx, RegisterInput{Username: "admin", Email: "admin@example.com", Password: password})
+	require.NoError(t, err)
+	require.NotNil(t, res.Session)
+	assert.False(t, res.VerificationRequired)
+	assert.Empty(t, mailer.verification)
+
+	u, err := repo.FindByEmail(ctx, "admin@example.com")
+	require.NoError(t, err)
+	assert.NotNil(t, u.EmailVerifiedAt)
+}
+
+func TestRegisterRequiresMailWhenEnforced(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _ := newServiceWithMail(t, true, false)
+
+	_, err := svc.Register(ctx, RegisterInput{Username: "bootstrap", Email: "bootstrap@example.com", Password: password})
+	require.NoError(t, err)
+	_, err = svc.Register(ctx, RegisterInput{Username: "alice", Email: "alice@example.com", Password: password})
+	assertCode(t, err, 50301)
+}
+
+func TestRegisterSendsVerificationWithoutSession(t *testing.T) {
+	ctx := context.Background()
+	svc, _, mailer := newServiceWithMail(t, true, true)
+
+	_, err := svc.Register(ctx, RegisterInput{Username: "bootstrap", Email: "bootstrap@example.com", Password: password})
+	require.NoError(t, err)
+
+	res, err := svc.Register(ctx, RegisterInput{Username: "alice", Email: "alice@example.com", Password: password})
+	require.NoError(t, err)
+	assert.True(t, res.VerificationRequired)
+	assert.Nil(t, res.Session)
+	assert.True(t, res.VerificationEmailSent)
+	require.Len(t, mailer.verification, 1)
+	assert.Equal(t, "alice@example.com", mailer.verification[0].to)
+	assert.NotEmpty(t, mailer.verification[0].token)
+}
+
+func TestRegisterSendsBestEffortWhenEnforcementOff(t *testing.T) {
+	ctx := context.Background()
+	svc, _, mailer := newServiceWithMail(t, false, true)
+
+	_, err := svc.Register(ctx, RegisterInput{Username: "bootstrap", Email: "bootstrap@example.com", Password: password})
+	require.NoError(t, err)
+
+	res, err := svc.Register(ctx, RegisterInput{Username: "alice", Email: "alice@example.com", Password: password})
+	require.NoError(t, err)
+	require.NotNil(t, res.Session)
+	assert.False(t, res.VerificationRequired)
+	assert.True(t, res.VerificationEmailSent)
+	require.Len(t, mailer.verification, 1)
+}
+
+func TestRegisterVerificationSendFailureDoesNotFailRegistration(t *testing.T) {
+	ctx := context.Background()
+	svc, _, mailer := newServiceWithMail(t, true, true)
+	mailer.sendVerificationErr = errors.New("smtp down")
+
+	_, err := svc.Register(ctx, RegisterInput{Username: "bootstrap", Email: "bootstrap@example.com", Password: password})
+	require.NoError(t, err)
+
+	res, err := svc.Register(ctx, RegisterInput{Username: "alice", Email: "alice@example.com", Password: password})
+	require.NoError(t, err)
+	assert.True(t, res.VerificationRequired)
+	assert.False(t, res.VerificationEmailSent)
+	assert.Nil(t, res.Session)
+}
+
+func TestLoginBlocksUnverifiedWhenEnforced(t *testing.T) {
+	ctx := context.Background()
+	svc, repo, _ := newServiceWithMail(t, true, true)
+
+	_, err := svc.Register(ctx, RegisterInput{Username: "bootstrap", Email: "bootstrap@example.com", Password: password})
+	require.NoError(t, err)
+	_, err = svc.Register(ctx, RegisterInput{Username: "alice", Email: "alice@example.com", Password: password})
+	require.NoError(t, err)
+
+	_, err = svc.Login(ctx, "alice", password)
+	assertCode(t, err, 40303)
+
+	u, err := repo.FindByEmail(ctx, "alice@example.com")
+	require.NoError(t, err)
+	require.NoError(t, repo.MarkEmailVerified(ctx, u.ID, time.Now().UTC()))
+	_, err = svc.Login(ctx, "alice", password)
+	require.NoError(t, err)
+}
+
+func TestRefreshBlocksUnverifiedWhenEnforced(t *testing.T) {
+	ctx := context.Background()
+	svc, _, mailer := newServiceWithMail(t, false, true)
+
+	_, err := svc.Register(ctx, RegisterInput{Username: "bootstrap", Email: "bootstrap@example.com", Password: password})
+	require.NoError(t, err)
+	res, err := svc.Register(ctx, RegisterInput{Username: "alice", Email: "alice@example.com", Password: password})
+	require.NoError(t, err)
+	require.NotNil(t, res.Session)
+
+	mailer.required = true
+	_, err = svc.Refresh(ctx, res.Session.RefreshToken)
+	assertCode(t, err, 40303)
+}
+
+func TestVerifyEmailMarksAndReturnsSession(t *testing.T) {
+	ctx := context.Background()
+	svc, repo, mailer := newServiceWithMail(t, true, true)
+
+	_, err := svc.Register(ctx, RegisterInput{Username: "bootstrap", Email: "bootstrap@example.com", Password: password})
+	require.NoError(t, err)
+	_, err = svc.Register(ctx, RegisterInput{Username: "alice", Email: "alice@example.com", Password: password})
+	require.NoError(t, err)
+	require.Len(t, mailer.verification, 1)
+
+	session, err := svc.VerifyEmail(ctx, mailer.verification[0].token, SessionMeta{})
+	require.NoError(t, err)
+	require.NotNil(t, session)
+	assert.NotEmpty(t, session.AccessToken)
+	assert.NotEmpty(t, session.RefreshToken)
+
+	u, err := repo.FindByEmail(ctx, "alice@example.com")
+	require.NoError(t, err)
+	assert.NotNil(t, u.EmailVerifiedAt)
+
+	_, err = svc.VerifyEmail(ctx, mailer.verification[0].token, SessionMeta{})
+	assertCode(t, err, 40003)
+}
+
+func TestResendVerificationIsGenericForUnknownEmail(t *testing.T) {
+	ctx := context.Background()
+	svc, _, mailer := newServiceWithMail(t, true, true)
+
+	require.NoError(t, svc.ResendVerification(ctx, "nobody@example.com", "203.0.113.1"))
+	assert.Empty(t, mailer.verification)
+}
+
+func TestResendVerificationSendsToUnverifiedUser(t *testing.T) {
+	ctx := context.Background()
+	svc, _, mailer := newServiceWithMail(t, true, true)
+
+	_, err := svc.Register(ctx, RegisterInput{Username: "bootstrap", Email: "bootstrap@example.com", Password: password})
+	require.NoError(t, err)
+	_, err = svc.Register(ctx, RegisterInput{Username: "alice", Email: "alice@example.com", Password: password})
+	require.NoError(t, err)
+	require.NoError(t, svc.ResendVerification(ctx, "alice@example.com", "203.0.113.2"))
+	assert.Len(t, mailer.verification, 2, "initial registration + resend")
+}
+
+func TestResendVerificationUserCooldown(t *testing.T) {
+	ctx := context.Background()
+	svc, _, mailer := newServiceWithMail(t, true, true)
+
+	_, err := svc.Register(ctx, RegisterInput{Username: "bootstrap", Email: "bootstrap@example.com", Password: password})
+	require.NoError(t, err)
+	_, err = svc.Register(ctx, RegisterInput{Username: "alice", Email: "alice@example.com", Password: password})
+	require.NoError(t, err)
+
+	require.NoError(t, svc.ResendVerification(ctx, "alice@example.com", "203.0.113.3"))
+	require.NoError(t, svc.ResendVerification(ctx, "alice@example.com", "203.0.113.3"))
+	assert.Len(t, mailer.verification, 2, "the second resend must be rate-limited silently")
+}
+
+func TestForgotPasswordIsGenericForUnknownEmail(t *testing.T) {
+	ctx := context.Background()
+	svc, _, mailer := newServiceWithMail(t, true, true)
+
+	require.NoError(t, svc.ForgotPassword(ctx, "nobody@example.com", "198.51.100.1"))
+	assert.Empty(t, mailer.reset)
+}
+
+func TestForgotPasswordSendsResetToken(t *testing.T) {
+	ctx := context.Background()
+	svc, _, mailer := newServiceWithMail(t, true, true)
+
+	_, err := svc.Register(ctx, RegisterInput{Username: "bootstrap", Email: "bootstrap@example.com", Password: password})
+	require.NoError(t, err)
+	_, err = svc.Register(ctx, RegisterInput{Username: "alice", Email: "alice@example.com", Password: password})
+	require.NoError(t, err)
+
+	require.NoError(t, svc.ForgotPassword(ctx, "alice@example.com", "198.51.100.2"))
+	require.Len(t, mailer.reset, 1)
+	assert.Equal(t, "alice@example.com", mailer.reset[0].to)
+	assert.NotEmpty(t, mailer.reset[0].token)
+}
+
+func TestResetPasswordVerifiesEmailAndRevokesSessions(t *testing.T) {
+	ctx := context.Background()
+	svc, repo, mailer := newServiceWithMail(t, false, true)
+
+	_, err := svc.Register(ctx, RegisterInput{Username: "bootstrap", Email: "bootstrap@example.com", Password: password})
+	require.NoError(t, err)
+	res, err := svc.Register(ctx, RegisterInput{Username: "alice", Email: "alice@example.com", Password: password})
+	require.NoError(t, err)
+	require.NotNil(t, res.Session)
+	oldRefresh := res.Session.RefreshToken
+
+	mailer.required = true
+	require.NoError(t, svc.ForgotPassword(ctx, "alice@example.com", "198.51.100.3"))
+	require.Len(t, mailer.reset, 1)
+
+	require.NoError(t, svc.ResetPassword(ctx, mailer.reset[0].token, "brand-new-password"))
+	u, err := repo.FindByEmail(ctx, "alice@example.com")
+	require.NoError(t, err)
+	assert.NotNil(t, u.EmailVerifiedAt)
+
+	_, err = svc.Refresh(ctx, oldRefresh)
+	assertCode(t, err, 40100)
+	_, err = svc.Login(ctx, "alice", password)
+	assertCode(t, err, 40101)
+	_, err = svc.Login(ctx, "alice", "brand-new-password")
+	require.NoError(t, err)
+}
+
+func TestResetPasswordRejectsInvalidToken(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _ := newServiceWithMail(t, true, true)
+	err := svc.ResetPassword(ctx, "bad-token", "brand-new-password")
+	assertCode(t, err, 40003)
 }

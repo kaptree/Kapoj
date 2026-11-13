@@ -18,6 +18,7 @@ func newErr(status, code int, msg string) *AppError {
 var (
 	ErrBadRequest              = newErr(http.StatusBadRequest, 40000, "请求体格式错误")
 	ErrAIKeyNotConfigured      = newErr(http.StatusBadRequest, 40002, "AI 加密密钥未配置")
+	ErrInvalidEmailToken       = newErr(http.StatusBadRequest, 40003, "链接无效或已过期")
 	ErrUnauthorized            = newErr(http.StatusUnauthorized, 40100, "未登录或登录已过期")
 	ErrInvalidCredentials      = newErr(http.StatusUnauthorized, 40101, "账号或密码错误")
 	ErrForbidden               = newErr(http.StatusForbidden, 40300, "没有权限执行此操作")
@@ -33,6 +34,7 @@ var (
 	ErrTooManySubmissions      = newErr(http.StatusTooManyRequests, 42902, "提交过于频繁，请稍后再试")
 	ErrTooManyAIRequests       = newErr(http.StatusTooManyRequests, 42903, "AI 请求过于频繁，请稍后再试")
 	ErrTooManyPasswordAttempts = newErr(http.StatusTooManyRequests, 42904, "修改密码尝试次数过多，请 5 分钟后再试")
+	ErrTooManyEmailRequests    = newErr(http.StatusTooManyRequests, 42905, "邮件请求过于频繁，请稍后再试")
 	ErrInternal                = newErr(http.StatusInternalServerError, 50000, "服务器内部错误")
 	ErrBadGateway              = newErr(http.StatusBadGateway, 50200, "AI 服务调用失败")
 	ErrMailSendFailed          = newErr(http.StatusBadGateway, 50201, "邮件发送失败，请稍后重试")
