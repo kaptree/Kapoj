@@ -1,4 +1,9 @@
-import type { LearningNodeStatus, LearningPathItem, LearningPathNodeItem } from '@/api/types'
+import type {
+  LearningNodeStatus,
+  LearningPathItem,
+  LearningPathNodeItem,
+  LearningProblemSummary,
+} from '@/api/types'
 
 export function learningStatusLabel(status: LearningNodeStatus): string {
   if (status === 'completed') return '已完成'
@@ -34,6 +39,35 @@ export function flattenLearningNodes(nodes: LearningPathNodeItem[]): LearningPat
     result.push(...flattenLearningNodes(node.children))
   }
   return result
+}
+
+/** Pre-order flattening of a node forest that also reports each node's depth. */
+export function flattenLearningNodesWithDepth(
+  nodes: LearningPathNodeItem[],
+  depth = 0,
+): Array<{ node: LearningPathNodeItem; depth: number }> {
+  const result: Array<{ node: LearningPathNodeItem; depth: number }> = []
+  for (const node of nodes) {
+    result.push({ node, depth })
+    result.push(...flattenLearningNodesWithDepth(node.children, depth + 1))
+  }
+  return result
+}
+
+/**
+ * Splits a node's problems into the items shown on the tree and a `+N` count.
+ * Up to `limit` problems are shown in full; beyond that the last slot becomes
+ * the overflow indicator, so `visible` holds `limit - 1` items.
+ */
+export function splitLearningProblems(
+  problems: LearningProblemSummary[],
+  limit = 5,
+): { visible: LearningProblemSummary[]; more: number } {
+  if (problems.length <= limit) {
+    return { visible: problems.slice(), more: 0 }
+  }
+  const visible = problems.slice(0, Math.max(0, limit - 1))
+  return { visible, more: problems.length - visible.length }
 }
 
 /** Depth-first search for a node by id across the whole forest. */

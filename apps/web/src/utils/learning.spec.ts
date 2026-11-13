@@ -1,15 +1,17 @@
 import { describe, expect, it } from 'vitest'
 
-import type { LearningPathItem, LearningPathNodeItem } from '@/api/types'
+import type { LearningPathItem, LearningPathNodeItem, LearningProblemSummary } from '@/api/types'
 import {
   descendantNodeIds,
   findLearningNode,
   flattenLearningNodes,
+  flattenLearningNodesWithDepth,
   learningPathVisibilityLabel,
   learningStatusLabel,
   learningStatusSeverity,
   nodeProgressPercent,
   siblingNodes,
+  splitLearningProblems,
 } from './learning'
 
 describe('learning utils', () => {
@@ -62,6 +64,36 @@ describe('learning utils', () => {
     expect(flattenLearningNodes(tree).map((n) => n.id)).toEqual([1, 2, 4, 3])
   })
 
+  it('flattens nodes with depth in pre-order', () => {
+    const tree = [node(1, [node(2, [node(4)]), node(3)])]
+
+    expect(flattenLearningNodesWithDepth(tree).map(({ node, depth }) => [node.id, depth])).toEqual([
+      [1, 0],
+      [2, 1],
+      [4, 2],
+      [3, 1],
+    ])
+    expect(
+      flattenLearningNodesWithDepth(tree, 2).map(({ node, depth }) => [node.id, depth]),
+    ).toEqual([
+      [1, 2],
+      [2, 3],
+      [4, 4],
+      [3, 3],
+    ])
+  })
+
+  it('splits problems into visible items and a more count', () => {
+    const problems = Array.from({ length: 7 }, (_, index) => problem(index + 1))
+
+    expect(splitLearningProblems(problems)).toEqual({ visible: problems.slice(0, 4), more: 3 })
+    expect(splitLearningProblems(problems.slice(0, 5))).toEqual({
+      visible: problems.slice(0, 5),
+      more: 0,
+    })
+    expect(splitLearningProblems(problems, 3)).toEqual({ visible: problems.slice(0, 2), more: 5 })
+  })
+
   it('finds a node by id anywhere in the tree', () => {
     const tree = [node(1, [node(2, [node(4)]), node(3)])]
 
@@ -106,5 +138,15 @@ function node(
     solvedCount: 0,
     status: 'locked',
     children,
+  }
+}
+
+function problem(problemId: number): LearningProblemSummary {
+  return {
+    problemId,
+    title: `题目 ${problemId}`,
+    slug: `problem-${problemId}`,
+    difficulty: 2,
+    solved: false,
   }
 }
