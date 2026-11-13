@@ -22,6 +22,7 @@ function hooks(overrides: Partial<AuthHooks> = {}): AuthHooks {
       refresh = pair.refreshToken
     },
     onAuthFailure: vi.fn(),
+    onEmailNotVerified: vi.fn(),
     ...overrides,
   }
 }
@@ -263,5 +264,41 @@ describe('createHttp', () => {
       '/auth/refresh',
       '/certificates/1/image Bearer new-access',
     ])
+  })
+
+  it('reports email not verified for non-auth requests', async () => {
+    const h = hooks()
+    const http = createHttp(h, {
+      adapter: (c) => respond(c, 403, { code: 40303, message: '邮箱尚未验证', data: null }),
+    })
+    const err = await http.get('/users/me').catch((e) => e)
+    expect(err).toMatchObject({ status: 403, code: 40303 })
+    expect(h.onEmailNotVerified).toHaveBeenCalledTimes(1)
+    expect(h.onAuthFailure).not.toHaveBeenCalled()
+  })
+
+  it('does not redirect the login endpoint on 40303', async () => {
+    const h = hooks()
+    const http = createHttp(h, {
+      adapter: (c) => respond(c, 403, { code: 40303, message: '邮箱尚未验证', data: null }),
+    })
+    await http.post('/auth/login', {}).catch(() => {})
+    expect(h.onEmailNotVerified).not.toHaveBeenCalled()
+  })
+
+  it('reports email not verified when refresh returns 40303 without clearing auth', async () => {
+    const h = hooks()
+    const http = createHttp(h, {
+      adapter: (c) => {
+        if (c.url === '/auth/refresh') {
+          return respond(c, 403, { code: 40303, message: '邮箱尚未验证', data: null })
+        }
+        return respond(c, 401, { code: 40100, message: 'expired', data: null })
+      },
+    })
+    const err = await http.get('/users/me').catch((e) => e)
+    expect(err).toMatchObject({ status: 403, code: 40303 })
+    expect(h.onEmailNotVerified).toHaveBeenCalledTimes(1)
+    expect(h.onAuthFailure).not.toHaveBeenCalled()
   })
 })

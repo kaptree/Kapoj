@@ -20,6 +20,7 @@ function me(permissions: string[], isSuperAdmin = false): Me {
     username: 'admin',
     nickname: '管理员',
     email: 'admin@example.com',
+    emailVerified: true,
     avatarUrl: '',
     avatarUploaded: false,
     bio: '',

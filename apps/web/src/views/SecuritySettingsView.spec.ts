@@ -30,6 +30,7 @@ function me(): Me {
     username: 'alice',
     nickname: 'Alice',
     email: 'alice@example.com',
+    emailVerified: true,
     avatarUrl: '',
     avatarUploaded: false,
     role: 'user',

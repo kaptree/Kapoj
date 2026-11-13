@@ -143,6 +143,7 @@ function me(coins = 500, id = 1): Me {
     username: 'alice',
     nickname: 'Alice',
     email: 'alice@example.com',
+    emailVerified: true,
     avatarUrl: '',
     avatarUploaded: false,
     bio: '',

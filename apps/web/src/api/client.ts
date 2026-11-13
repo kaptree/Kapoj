@@ -15,4 +15,10 @@ export const http = createHttp({
       void router.push({ name: 'login', query: { redirect: current.fullPath } })
     }
   },
+  onEmailNotVerified: () => {
+    const current = router.currentRoute.value
+    if (current.name === 'verify-email') return
+    const email = useAuthStore().user?.email
+    void router.push({ name: 'verify-email', query: email ? { email } : {} })
+  },
 })

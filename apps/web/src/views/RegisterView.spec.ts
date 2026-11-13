@@ -9,6 +9,7 @@ import RegisterView from './RegisterView.vue'
 
 const auth = vi.hoisted(() => ({
   register: vi.fn(),
+  resendVerification: vi.fn(),
 }))
 
 const toast = vi.hoisted(() => ({
@@ -41,8 +42,17 @@ async function mountRegister() {
 
 beforeEach(() => {
   auth.register.mockReset()
+  auth.resendVerification.mockReset()
   toast.add.mockReset()
 })
+
+async function submitRegistration(wrapper: Awaited<ReturnType<typeof mountRegister>>['wrapper']) {
+  await wrapper.find('input[autocomplete="username"]').setValue('alice_01')
+  await wrapper.find('input[autocomplete="email"]').setValue('alice@example.com')
+  await wrapper.find('input[autocomplete="new-password"]').setValue('secret123')
+  await wrapper.find('form').trigger('submit')
+  await flushPromises()
+}
 
 describe('RegisterView', () => {
   it('blocks submission and shows required messages', async () => {
@@ -70,8 +80,12 @@ describe('RegisterView', () => {
     expect(auth.register).not.toHaveBeenCalled()
   })
 
-  it('registers, shows a success toast and navigates home', async () => {
-    auth.register.mockResolvedValue(undefined)
+  it('registers, shows a success toast and navigates home when verification is off', async () => {
+    auth.register.mockResolvedValue({
+      verificationRequired: false,
+      email: 'alice@example.com',
+      verificationEmailSent: true,
+    })
     const { wrapper, router } = await mountRegister()
 
     await wrapper.find('input[autocomplete="username"]').setValue('alice_01')
@@ -89,6 +103,36 @@ describe('RegisterView', () => {
     })
     expect(toast.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }))
     expect(router.currentRoute.value.name).toBe('home')
+  })
+
+  it('shows the verification panel without logging in or navigating', async () => {
+    auth.register.mockResolvedValue({
+      verificationRequired: true,
+      email: 'alice@example.com',
+      verificationEmailSent: true,
+    })
+    const { wrapper, router } = await mountRegister()
+
+    await submitRegistration(wrapper)
+
+    expect(wrapper.text()).toContain('验证邮件已发送')
+    expect(wrapper.text()).toContain('alice@example.com')
+    expect(wrapper.find('form').exists()).toBe(false)
+    expect(toast.add).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }))
+    expect(router.currentRoute.value.name).toBe('register')
+  })
+
+  it('warns when the verification email failed to send', async () => {
+    auth.register.mockResolvedValue({
+      verificationRequired: true,
+      email: 'alice@example.com',
+      verificationEmailSent: false,
+    })
+    const { wrapper } = await mountRegister()
+
+    await submitRegistration(wrapper)
+
+    expect(wrapper.text()).toContain('验证邮件发送失败')
   })
 
   it('keeps the user on the page and shows the API error', async () => {

@@ -7,6 +7,7 @@ import type {
   LoginRequest,
   Me,
   RegisterRequest,
+  RegisterResult,
   Session,
   TokenPair,
   UpdateMeRequest,
@@ -129,9 +130,17 @@ export const useAuthStore = defineStore('auth', () => {
     await fetchMe().catch(() => undefined)
   }
 
-  async function register(input: RegisterRequest) {
-    setSession(await authApi.register(input))
-    await fetchMe().catch(() => undefined)
+  async function register(input: RegisterRequest): Promise<RegisterResult> {
+    const result = await authApi.register(input)
+    if (result.session) {
+      setSession(result.session)
+      await fetchMe().catch(() => undefined)
+    }
+    return result
+  }
+
+  async function resendVerification(email: string): Promise<void> {
+    await authApi.resendVerification(email)
   }
 
   async function logout() {
@@ -168,6 +177,7 @@ export const useAuthStore = defineStore('auth', () => {
     clear,
     login,
     register,
+    resendVerification,
     logout,
     fetchMe,
     updateProfile,

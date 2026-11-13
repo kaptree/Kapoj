@@ -23,6 +23,7 @@ export interface AuthHooks {
   getRefreshToken(): string | null
   setTokens(pair: TokenPair): void
   onAuthFailure(): void
+  onEmailNotVerified(): void
 }
 
 export interface Http {
@@ -64,19 +65,25 @@ function toApiError(err: unknown): ApiError {
  */
 export function createHttp(hooks: AuthHooks, options: { adapter?: AxiosAdapter } = {}): Http {
   const instance = axios.create({ baseURL: '/api', adapter: options.adapter })
-  let refreshing: Promise<boolean> | null = null
+  let refreshing: Promise<ApiError | null> | null = null
 
-  async function refresh(): Promise<boolean> {
+  async function refresh(): Promise<ApiError | null> {
     const refreshToken = hooks.getRefreshToken()
-    if (!refreshToken) return false
+    if (!refreshToken) return new ApiError(401, 40100, '未登录或登录已过期')
     try {
       const res = await instance.post<Envelope<TokenPair>>('/auth/refresh', { refreshToken })
       hooks.setTokens(res.data.data)
-      return true
-    } catch {
+      return null
+    } catch (e) {
+      const err = toApiError(e)
+      if (err.code === 40303) {
+        hooks.onEmailNotVerified()
+        return err
+      }
       // Another tab may have rotated the token first; use its new pair.
       const current = hooks.getRefreshToken()
-      return current !== null && current !== refreshToken
+      if (current !== null && current !== refreshToken) return null
+      return err
     }
   }
 
@@ -92,11 +99,14 @@ export function createHttp(hooks: AuthHooks, options: { adapter?: AxiosAdapter }
       return await instance.request({ ...config, headers })
     } catch (e) {
       const err = toApiError(e)
+      if (err.code === 40303 && !isAuthEndpoint) hooks.onEmailNotVerified()
       if (err.status === 401 && !retried && !isAuthEndpoint) {
         refreshing ??= refresh().finally(() => {
           refreshing = null
         })
-        if (await refreshing) return request(config, true)
+        const refreshErr = await refreshing
+        if (!refreshErr) return request(config, true)
+        if (refreshErr.code === 40303) throw refreshErr
         hooks.onAuthFailure()
       }
       throw err

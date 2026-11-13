@@ -8,6 +8,7 @@ const authApi = vi.hoisted(() => ({
   login: vi.fn(),
   register: vi.fn(),
   logout: vi.fn(),
+  resendVerification: vi.fn(),
 }))
 
 const usersApi = vi.hoisted(() => ({
@@ -23,6 +24,7 @@ const me: Me = {
   username: 'alice',
   nickname: 'Alice',
   email: 'alice@example.com',
+  emailVerified: true,
   avatarUrl: '',
   avatarUploaded: false,
   role: 'user',
@@ -43,6 +45,7 @@ describe('auth store', () => {
     authApi.login.mockReset()
     authApi.register.mockReset()
     authApi.logout.mockReset()
+    authApi.resendVerification.mockReset()
     usersApi.getMe.mockReset()
     usersApi.updateMe.mockReset()
   })
@@ -171,18 +174,45 @@ describe('auth store', () => {
   it('register refreshes Me after establishing the session', async () => {
     const store = useAuthStore()
     authApi.register.mockResolvedValue({
-      accessToken: 'a',
-      refreshToken: 'r',
-      sessionId: 's1',
-      user: me,
+      verificationRequired: false,
+      email: 'alice@example.com',
+      verificationEmailSent: true,
+      session: { accessToken: 'a', refreshToken: 'r', sessionId: 's1', user: me },
     })
     usersApi.getMe.mockResolvedValue({ ...me, isSuperAdmin: true })
 
-    await store.register({ username: 'alice', email: 'a@b.c', password: 'secret' })
+    const result = await store.register({ username: 'alice', email: 'a@b.c', password: 'secret' })
 
+    expect(result.verificationRequired).toBe(false)
     expect(usersApi.getMe).toHaveBeenCalledTimes(1)
     expect(store.sessionId).toBe('s1')
     expect(store.user?.isSuperAdmin).toBe(true)
+  })
+
+  it('register does not log in when verification is required', async () => {
+    const store = useAuthStore()
+    authApi.register.mockResolvedValue({
+      verificationRequired: true,
+      email: 'alice@example.com',
+      verificationEmailSent: true,
+    })
+
+    const result = await store.register({ username: 'alice', email: 'a@b.c', password: 'secret' })
+
+    expect(result.verificationRequired).toBe(true)
+    expect(result.session).toBeUndefined()
+    expect(usersApi.getMe).not.toHaveBeenCalled()
+    expect(store.isLoggedIn).toBe(false)
+  })
+
+  it('resendVerification delegates to the API without changing the session', async () => {
+    const store = useAuthStore()
+    authApi.resendVerification.mockResolvedValue({ message: 'ok' })
+
+    await store.resendVerification('alice@example.com')
+
+    expect(authApi.resendVerification).toHaveBeenCalledWith('alice@example.com')
+    expect(store.isLoggedIn).toBe(false)
   })
 
   it('keeps the session when the Me refresh fails', async () => {

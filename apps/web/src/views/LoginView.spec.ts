@@ -19,6 +19,8 @@ const routes = [
   { path: '/', name: 'home', component: { template: '<div>home</div>' } },
   { path: '/login', name: 'login', component: { template: '<div>login</div>' } },
   { path: '/register', name: 'register', component: { template: '<div>register</div>' } },
+  { path: '/forgot-password', name: 'forgot-password', component: { template: '<div>forgot</div>' } },
+  { path: '/verify-email', name: 'verify-email', component: { template: '<div>verify</div>' } },
   { path: '/problems', name: 'problems', component: { template: '<div>problems</div>' } },
 ]
 
@@ -74,5 +76,27 @@ describe('LoginView', () => {
 
     expect(wrapper.text()).toContain('账号或密码错误')
     expect(router.currentRoute.value.fullPath).toBe('/login')
+  })
+
+  it('shows an inline unverified message and verification link on 40303', async () => {
+    auth.login.mockRejectedValue(new ApiError(403, 40303, '邮箱尚未验证，请先完成邮箱验证'))
+    const { wrapper, router } = await mountLogin()
+
+    await wrapper.find('input[autocomplete="username"]').setValue('alice@example.com')
+    await wrapper.find('input[autocomplete="current-password"]').setValue('secret123')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('邮箱尚未验证')
+    const link = wrapper.find('a[href*="/verify-email"]')
+    expect(link.exists()).toBe(true)
+    expect(link.attributes('href')).toContain('alice@example.com')
+    expect(router.currentRoute.value.fullPath).toBe('/login')
+  })
+
+  it('links to the forgot password page', async () => {
+    const { wrapper } = await mountLogin()
+    const link = wrapper.find('a[href="/forgot-password"]')
+    expect(link.exists()).toBe(true)
   })
 })

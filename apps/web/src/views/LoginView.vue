@@ -21,6 +21,8 @@ const form = reactive({ account: '', password: '' })
 const errors = reactive({ account: '', password: '' })
 const submitting = ref(false)
 const error = ref('')
+const unverified = ref(false)
+const unverifiedEmail = ref('')
 
 const validators = {
   account: validateLoginAccount,
@@ -46,10 +48,16 @@ async function submit() {
 
   submitting.value = true
   error.value = ''
+  unverified.value = false
+  unverifiedEmail.value = ''
   try {
     await auth.login(form)
     await router.replace(safeRedirect(route.query.redirect))
   } catch (e) {
+    if (e instanceof ApiError && e.code === 40303) {
+      unverified.value = true
+      unverifiedEmail.value = form.account.includes('@') ? form.account.trim() : ''
+    }
     error.value = e instanceof ApiError ? e.message : '登录失败，请稍后再试'
   } finally {
     submitting.value = false
@@ -61,6 +69,15 @@ async function submit() {
   <AuthLayout title="登录" description="使用用户名或邮箱继续你的训练。">
     <Message v-if="error" severity="error" :closable="false" class="form-banner" role="alert">
       {{ error }}
+    </Message>
+
+    <Message v-if="unverified" severity="warn" :closable="false" class="form-banner" role="status">
+      邮箱尚未验证。
+      <RouterLink
+        :to="{ name: 'verify-email', query: unverifiedEmail ? { email: unverifiedEmail } : {} }"
+      >
+        去验证邮箱
+      </RouterLink>
     </Message>
 
     <form class="auth-form" novalidate @submit.prevent="submit">
@@ -115,6 +132,10 @@ async function submit() {
         fluid
         class="auth-submit"
       />
+
+      <div class="auth-links">
+        <RouterLink to="/forgot-password">忘记密码？</RouterLink>
+      </div>
     </form>
 
     <template #footer> 还没有账号？<RouterLink to="/register">创建账号</RouterLink> </template>
@@ -134,5 +155,11 @@ async function submit() {
 
 .auth-submit {
   margin-top: var(--kapoj-space-1);
+}
+
+.auth-links {
+  display: flex;
+  justify-content: flex-end;
+  font-size: 13px;
 }
 </style>

@@ -14,6 +14,7 @@ const baseUser: Me = {
   username: 'alice',
   nickname: 'Alice',
   email: 'alice@example.com',
+  emailVerified: true,
   avatarUrl: '',
   avatarUploaded: false,
   bio: '',
