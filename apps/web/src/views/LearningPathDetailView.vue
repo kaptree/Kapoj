@@ -136,6 +136,7 @@ function visibilitySeverity(): 'info' | 'warn' {
         />
         <section v-if="path.descriptionMd" class="path-description">
           <div
+            id="path-description-content"
             class="path-description__content"
             :class="{ 'path-description--expanded': descriptionExpanded }"
           >
@@ -145,6 +146,7 @@ function visibilitySeverity(): 'info' | 'warn' {
             type="button"
             class="path-description__toggle"
             :aria-expanded="descriptionExpanded"
+            aria-controls="path-description-content"
             @click="descriptionExpanded = !descriptionExpanded"
           >
             {{ descriptionExpanded ? '收起' : '展开' }}

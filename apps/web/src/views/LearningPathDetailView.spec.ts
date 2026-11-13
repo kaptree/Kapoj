@@ -294,12 +294,15 @@ describe('LearningPathDetailView', () => {
     expect(description.classes()).not.toContain('path-description--expanded')
     expect(description.find('.markdown-stub').text()).toContain('逐步掌握算法。')
     expect(wrapper.text()).toContain('展开')
+    const toggle = wrapper.get('button.path-description__toggle')
+    expect(description.attributes('id')).toBe('path-description-content')
+    expect(toggle.attributes('aria-controls')).toBe('path-description-content')
 
-    await wrapper.get('button.path-description__toggle').trigger('click')
+    await toggle.trigger('click')
     expect(description.classes()).toContain('path-description--expanded')
     expect(wrapper.text()).toContain('收起')
 
-    await wrapper.get('button.path-description__toggle').trigger('click')
+    await toggle.trigger('click')
     expect(description.classes()).not.toContain('path-description--expanded')
     expect(wrapper.text()).toContain('展开')
     wrapper.unmount()

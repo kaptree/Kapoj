@@ -29,17 +29,36 @@ function mountNode(item: LearningPathNodeItem, selected = false) {
 
 describe('LearningTreeNode', () => {
   it.each([
-    ['completed', 'status-completed', '已完成'],
-    ['active', 'status-active', '进行中'],
-    ['locked', 'status-locked', '未解锁'],
-  ] as const)('renders %s status and accessible progress', (status, className, label) => {
-    const wrapper = mountNode(node({ status }))
+    ['completed', 'status-completed', '已完成', '1 / 2'],
+    ['active', 'status-active', '进行中', '1 / 2'],
+    ['locked', 'status-locked', '未解锁', '未解锁'],
+  ] as const)(
+    'renders %s status and accessible progress',
+    (status, className, label, statusText) => {
+      const wrapper = mountNode(node({ status }))
+      const button = wrapper.get('button.tree-node')
+
+      expect(button.classes()).toContain(className)
+      expect(button.attributes('aria-label')).toContain('基础语法')
+      expect(button.attributes('aria-label')).toContain(label)
+      expect(button.attributes('aria-label')).toContain('1 / 2')
+
+      // Visible title below the circle and the native full-title tooltip.
+      expect(button.get('.tree-node__label-title').text()).toBe('基础语法')
+      expect(button.attributes('title')).toBe('基础语法')
+      // Second line: solved / required for completed/active, 未解锁 for locked.
+      expect(button.get('.tree-node__label-status').text()).toBe(statusText)
+    },
+  )
+
+  it('renders the full title in the label and title attribute for a long title', () => {
+    const longTitle = '这是一个非常长的节点标题用来验证单行省略与完整卷宗展示'
+    const wrapper = mountNode(node({ title: longTitle }))
     const button = wrapper.get('button.tree-node')
 
-    expect(button.classes()).toContain(className)
-    expect(button.attributes('aria-label')).toContain('基础语法')
-    expect(button.attributes('aria-label')).toContain(label)
-    expect(button.attributes('aria-label')).toContain('1 / 2')
+    expect(button.get('.tree-node__label-title').text()).toBe(longTitle)
+    expect(button.attributes('title')).toBe(longTitle)
+    expect(button.attributes('aria-label')).toContain(longTitle)
   })
 
   it('emits select with the original node when clicked', async () => {

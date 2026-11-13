@@ -373,7 +373,13 @@ test.describe.serial('learning path frontend acceptance', () => {
     const rootNode = treeNode(page, '根节点')
     await expect(rootNode).toHaveClass(/status-active/)
     await expect(rootNode).toHaveAttribute('aria-label', /0 \/ 2/)
+    await expect(rootNode).toHaveAttribute('title', '根节点')
+    await expect(rootNode.locator('.tree-node__label-title')).toHaveText('根节点')
+    await expect(rootNode.locator('.tree-node__label-status')).toHaveText('0 / 2')
     await expect(treeNode(page, '子节点一')).toHaveAttribute('aria-label', /未解锁/)
+    await expect(treeNode(page, '子节点一').locator('.tree-node__label-status')).toHaveText(
+      '未解锁',
+    )
     await expect(treeNode(page, '子节点二')).toHaveAttribute('aria-label', /未解锁/)
 
     // Detail panel defaults to the first active node (the root) with its problems.

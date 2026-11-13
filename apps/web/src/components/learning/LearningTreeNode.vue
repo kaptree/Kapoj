@@ -30,6 +30,13 @@ const ariaLabel = computed(() => {
   return `${node.title}, ${learningStatusLabel(node.status)}, ${node.solvedCount} / ${node.requiredCount}`
 })
 
+/** Second label line: `solved / required` for completed/active, `未解锁` for locked. */
+const statusLine = computed(() => {
+  const node = props.layoutNode.node
+  if (node.status === 'locked') return '未解锁'
+  return `${node.solvedCount} / ${node.requiredCount}`
+})
+
 const titleInitial = computed(() => Array.from(props.layoutNode.node.title)[0] ?? '·')
 </script>
 
@@ -40,6 +47,7 @@ const titleInitial = computed(() => Array.from(props.layoutNode.node.title)[0] ?
     :class="[`status-${layoutNode.node.status}`, { selected }]"
     :style="nodeStyle"
     :aria-label="ariaLabel"
+    :title="layoutNode.node.title"
     @click="emit('select', layoutNode.node)"
   >
     <span class="tree-node__surface" aria-hidden="true">
@@ -58,6 +66,10 @@ const titleInitial = computed(() => Array.from(props.layoutNode.node.title)[0] ?
         </svg>
         <span>{{ layoutNode.node.problems.length }}</span>
       </span>
+    </span>
+    <span class="tree-node__label" aria-hidden="true">
+      <span class="tree-node__label-title">{{ layoutNode.node.title }}</span>
+      <span class="tree-node__label-status">{{ statusLine }}</span>
     </span>
   </button>
 </template>
@@ -195,6 +207,43 @@ const titleInitial = computed(() => Array.from(props.layoutNode.node.title)[0] ?
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 1.5;
+}
+
+.tree-node__label {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  display: flex;
+  width: 150px;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  text-align: center;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.tree-node__label-title {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--kapoj-text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-node__label-status {
+  color: var(--kapoj-text-secondary);
+  font-family: var(--kapoj-font-mono);
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.status-locked .tree-node__label-title {
+  color: var(--kapoj-text-muted);
 }
 
 @media (prefers-reduced-motion: reduce) {
