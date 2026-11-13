@@ -583,3 +583,19 @@ func TestRevokeOthersRemovesLegacyTokens(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(7), uid)
 }
+
+func TestIssueAccessCarriesEmailVerified(t *testing.T) {
+	issuer := NewTokenIssuer(testSecret, time.Hour)
+	verified := time.Now()
+	tok, err := issuer.IssueAccess(&user.User{ID: 1, Role: user.RoleUser, EmailVerifiedAt: &verified})
+	require.NoError(t, err)
+	claims, err := issuer.ParseAccess(tok)
+	require.NoError(t, err)
+	assert.True(t, claims.EmailVerified)
+
+	unverified, err := issuer.IssueAccess(&user.User{ID: 2, Role: user.RoleUser})
+	require.NoError(t, err)
+	claims, err = issuer.ParseAccess(unverified)
+	require.NoError(t, err)
+	assert.False(t, claims.EmailVerified)
+}

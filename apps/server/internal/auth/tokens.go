@@ -64,12 +64,14 @@ const ClaimsContextKey = "kapoj.claims"
 
 // Claims identifies the user an access token was issued to.
 type Claims struct {
-	UserID int64
-	Role   user.Role
+	UserID        int64
+	Role          user.Role
+	EmailVerified bool
 }
 
 type jwtClaims struct {
-	Role string `json:"role"`
+	Role          string `json:"role"`
+	EmailVerified bool   `json:"emailVerified"`
 	jwt.RegisteredClaims
 }
 
@@ -87,7 +89,8 @@ func NewTokenIssuer(secret string, ttl time.Duration) *TokenIssuer {
 func (t *TokenIssuer) IssueAccess(u *user.User) (string, error) {
 	now := t.now()
 	claims := jwtClaims{
-		Role: string(u.Role),
+		Role:          string(u.Role),
+		EmailVerified: u.EmailVerifiedAt != nil,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   strconv.FormatInt(u.ID, 10),
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -109,7 +112,7 @@ func (t *TokenIssuer) ParseAccess(token string) (*Claims, error) {
 	if err != nil {
 		return nil, ErrInvalidToken
 	}
-	return &Claims{UserID: id, Role: user.Role(claims.Role)}, nil
+	return &Claims{UserID: id, Role: user.Role(claims.Role), EmailVerified: claims.EmailVerified}, nil
 }
 
 // RefreshStore keeps opaque refresh tokens in Redis. Only a SHA-256 of each

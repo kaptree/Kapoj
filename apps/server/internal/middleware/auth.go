@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"context"
+	"errors"
 	"slices"
 	"strings"
 
@@ -52,6 +54,55 @@ func RequireAuth() gin.HandlerFunc {
 			return
 		}
 		c.Next()
+	}
+}
+
+// EmailVerificationPolicy reports the current global verification switch.
+type EmailVerificationPolicy interface {
+	VerificationRequired(ctx context.Context) (bool, error)
+}
+
+// RequireVerifiedEmail blocks unverified users when the global switch is on.
+// A verified claim is trusted; an old token without the claim falls back to the
+// database so existing sessions and multi-device verification still work.
+func RequireVerifiedEmail(policy EmailVerificationPolicy, users user.Repository) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		claims, ok := CurrentClaims(c)
+		if !ok {
+			c.Next()
+			return
+		}
+		if claims.EmailVerified {
+			c.Next()
+			return
+		}
+		if policy == nil {
+			c.Next()
+			return
+		}
+		required, err := policy.VerificationRequired(c.Request.Context())
+		if err != nil {
+			httpx.Fail(c, httpx.ErrUnavailable)
+			return
+		}
+		if !required {
+			c.Next()
+			return
+		}
+		u, err := users.FindByID(c.Request.Context(), claims.UserID)
+		if errors.Is(err, user.ErrNotFound) {
+			httpx.Fail(c, httpx.ErrUnauthorized)
+			return
+		}
+		if err != nil {
+			httpx.Fail(c, httpx.ErrUnavailable)
+			return
+		}
+		if u.EmailVerifiedAt != nil {
+			c.Next()
+			return
+		}
+		httpx.Fail(c, httpx.ErrEmailNotVerified)
 	}
 }
 
