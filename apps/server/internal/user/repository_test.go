@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -206,4 +207,63 @@ func TestUpdatePasswordMissingUser(t *testing.T) {
 
 	mem := user.NewMemoryRepository()
 	assert.ErrorIs(t, mem.UpdatePassword(ctx, 999999, "x"), user.ErrNotFound)
+}
+
+func TestMarkEmailVerified(t *testing.T) {
+	ctx := context.Background()
+
+	repo := user.NewGormRepository(testutil.PG(t))
+	u := newUser("verified")
+	require.NoError(t, repo.Create(ctx, u))
+	assert.Nil(t, u.EmailVerifiedAt)
+
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	require.NoError(t, repo.MarkEmailVerified(ctx, u.ID, now))
+	got, err := repo.FindByID(ctx, u.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got.EmailVerifiedAt)
+	assert.WithinDuration(t, now, *got.EmailVerifiedAt, time.Second)
+	assert.True(t, user.ToMe(got).EmailVerified)
+
+	mem := user.NewMemoryRepository()
+	mu := newUser("memverified")
+	require.NoError(t, mem.Create(ctx, mu))
+	require.NoError(t, mem.MarkEmailVerified(ctx, mu.ID, now))
+	mgot, err := mem.FindByID(ctx, mu.ID)
+	require.NoError(t, err)
+	require.NotNil(t, mgot.EmailVerifiedAt)
+	assert.True(t, user.ToMe(mgot).EmailVerified)
+}
+
+func TestMarkEmailVerifiedMissingUser(t *testing.T) {
+	ctx := context.Background()
+
+	repo := user.NewGormRepository(testutil.PG(t))
+	assert.ErrorIs(t, repo.MarkEmailVerified(ctx, 999999, time.Now()), user.ErrNotFound)
+
+	mem := user.NewMemoryRepository()
+	assert.ErrorIs(t, mem.MarkEmailVerified(ctx, 999999, time.Now()), user.ErrNotFound)
+}
+
+func TestCountUsers(t *testing.T) {
+	ctx := context.Background()
+
+	repo := user.NewMemoryRepository()
+	n, err := repo.Count(ctx)
+	require.NoError(t, err)
+	assert.Zero(t, n)
+
+	require.NoError(t, repo.Create(ctx, newUser("counted")))
+	n, err = repo.Count(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), n)
+
+	gormRepo := user.NewGormRepository(testutil.PG(t))
+	n, err = gormRepo.Count(ctx)
+	require.NoError(t, err)
+	assert.Zero(t, n)
+	require.NoError(t, gormRepo.Create(ctx, newUser("gormcounted")))
+	n, err = gormRepo.Count(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), n)
 }

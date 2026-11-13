@@ -133,6 +133,25 @@ func (r *memoryRepository) UpdatePassword(_ context.Context, id int64, hash stri
 	return nil
 }
 
+func (r *memoryRepository) MarkEmailVerified(_ context.Context, id int64, at time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	u, ok := r.users[id]
+	if !ok {
+		return ErrNotFound
+	}
+	u.EmailVerifiedAt = &at
+	u.UpdatedAt = time.Now()
+	r.users[id] = u
+	return nil
+}
+
+func (r *memoryRepository) Count(_ context.Context) (int64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return int64(len(r.users)), nil
+}
+
 func (r *memoryRepository) List(_ context.Context, offset, limit int) ([]User, int64, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

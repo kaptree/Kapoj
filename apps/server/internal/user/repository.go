@@ -3,6 +3,7 @@ package user
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
@@ -27,6 +28,10 @@ type Repository interface {
 	// UpdatePassword replaces only the password hash; it returns ErrNotFound
 	// when the user does not exist.
 	UpdatePassword(ctx context.Context, id int64, hash string) error
+	// MarkEmailVerified sets email_verified_at without touching other columns.
+	MarkEmailVerified(ctx context.Context, id int64, at time.Time) error
+	// Count returns the total number of users.
+	Count(ctx context.Context) (int64, error)
 	List(ctx context.Context, offset, limit int) ([]User, int64, error)
 }
 
@@ -121,6 +126,25 @@ func (r *gormRepository) UpdatePassword(ctx context.Context, id int64, hash stri
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (r *gormRepository) MarkEmailVerified(ctx context.Context, id int64, at time.Time) error {
+	res := r.db.WithContext(ctx).Model(&User{}).Where("id = ?", id).Update("email_verified_at", at)
+	if res.Error != nil {
+		return mapErr(res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *gormRepository) Count(ctx context.Context) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&User{}).Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 func (r *gormRepository) List(ctx context.Context, offset, limit int) ([]User, int64, error) {

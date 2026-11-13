@@ -22,12 +22,13 @@ const (
 const InitialRating = 1500
 
 type User struct {
-	ID           int64  `gorm:"primaryKey"`
-	Username     string `gorm:"size:32;not null;uniqueIndex:uniq_users_username"`
-	Nickname     string `gorm:"size:64;not null"`
-	Email        string `gorm:"size:254;not null;uniqueIndex:uniq_users_email"`
-	PasswordHash string `gorm:"size:100;not null" json:"-"`
-	AvatarURL    string `gorm:"size:512;not null;default:''"`
+	ID              int64      `gorm:"primaryKey"`
+	Username        string     `gorm:"size:32;not null;uniqueIndex:uniq_users_username"`
+	Nickname        string     `gorm:"size:64;not null"`
+	Email           string     `gorm:"size:254;not null;uniqueIndex:uniq_users_email"`
+	EmailVerifiedAt *time.Time `gorm:"type:timestamptz"`
+	PasswordHash    string     `gorm:"size:100;not null" json:"-"`
+	AvatarURL       string     `gorm:"size:512;not null;default:''"`
 	// AvatarKey is the storage key of an uploaded avatar; empty means none.
 	AvatarKey         string    `gorm:"size:255;not null;default:''"`
 	AvatarContentType string    `gorm:"size:100;not null;default:''"`

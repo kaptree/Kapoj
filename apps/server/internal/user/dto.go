@@ -19,6 +19,7 @@ type MeDTO struct {
 	Username       string        `json:"username"`
 	Nickname       string        `json:"nickname"`
 	Email          string        `json:"email"`
+	EmailVerified  bool          `json:"emailVerified"`
 	AvatarURL      string        `json:"avatarUrl"`
 	AvatarUploaded bool          `json:"avatarUploaded"`
 	Role           Role          `json:"role"`
@@ -51,7 +52,8 @@ type ProfileDTO struct {
 func ToMe(u *User) MeDTO {
 	return MeDTO{
 		ID: u.ID, Username: u.Username, Nickname: u.Nickname, Email: u.Email,
-		AvatarURL: u.AvatarURL, AvatarUploaded: u.AvatarKey != "",
+		EmailVerified: u.EmailVerifiedAt != nil,
+		AvatarURL:     u.AvatarURL, AvatarUploaded: u.AvatarKey != "",
 		Role: u.Role, Rating: u.Rating, Coins: u.Coins,
 		Bio: u.Bio, Status: u.Status,
 		Roles: []RoleSummary{}, Permissions: []string{}, IsSuperAdmin: false,
