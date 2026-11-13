@@ -4,6 +4,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net"
+	"strings"
 	"time"
 
 	"github.com/spf13/viper"
@@ -26,6 +28,10 @@ type Config struct {
 	AIKeyFile          string
 	AIRequestTimeout   time.Duration
 	AICooldown         time.Duration
+	MailEncryptionKey  string
+	MailKeyFile        string
+	MailTimeout        time.Duration
+	TrustedProxies     []string
 }
 
 const minSecretLen = 32
@@ -52,6 +58,15 @@ func Load() (*Config, error) {
 	v.SetDefault("ai_key_file", "data/ai.key")
 	v.SetDefault("ai_request_timeout", "45s")
 	v.SetDefault("ai_cooldown", "2s")
+	v.SetDefault("mail_encryption_key", "")
+	v.SetDefault("mail_key_file", "data/mail.key")
+	v.SetDefault("mail_timeout", "20s")
+	v.SetDefault("trusted_proxies", "")
+
+	trustedProxies, err := parseTrustedProxies(v.GetString("trusted_proxies"))
+	if err != nil {
+		return nil, err
+	}
 
 	cfg := &Config{
 		HTTPAddr:           v.GetString("http_addr"),
@@ -70,6 +85,10 @@ func Load() (*Config, error) {
 		AIKeyFile:          v.GetString("ai_key_file"),
 		AIRequestTimeout:   v.GetDuration("ai_request_timeout"),
 		AICooldown:         v.GetDuration("ai_cooldown"),
+		MailEncryptionKey:  v.GetString("mail_encryption_key"),
+		MailKeyFile:        v.GetString("mail_key_file"),
+		MailTimeout:        v.GetDuration("mail_timeout"),
+		TrustedProxies:     trustedProxies,
 	}
 
 	if len(cfg.JWTSecret) < minSecretLen {
@@ -100,21 +119,49 @@ func Load() (*Config, error) {
 		return nil, errors.New("KAPOJ_AI_COOLDOWN must be a positive duration")
 	}
 	if cfg.AIEncryptionKey != "" {
-		if err := validateAIEncryptionKey(cfg.AIEncryptionKey); err != nil {
+		if err := validateEncryptionKey("KAPOJ_AI_ENCRYPTION_KEY", cfg.AIEncryptionKey); err != nil {
 			return nil, err
 		}
+	}
+	if cfg.MailEncryptionKey != "" {
+		if err := validateEncryptionKey("KAPOJ_MAIL_ENCRYPTION_KEY", cfg.MailEncryptionKey); err != nil {
+			return nil, err
+		}
+	}
+	if cfg.MailTimeout <= 0 {
+		return nil, errors.New("KAPOJ_MAIL_TIMEOUT must be a positive duration")
 	}
 	return cfg, nil
 }
 
-// validateAIEncryptionKey 要求非空密钥为合法 base64 且解码后为 32 字节。
-func validateAIEncryptionKey(key string) error {
+// validateEncryptionKey 要求非空密钥为合法 base64 且解码后为 32 字节。
+func validateEncryptionKey(name, key string) error {
 	decoded, err := base64.StdEncoding.DecodeString(key)
 	if err != nil {
-		return fmt.Errorf("KAPOJ_AI_ENCRYPTION_KEY is not valid base64: %w", err)
+		return fmt.Errorf("%s is not valid base64: %w", name, err)
 	}
 	if len(decoded) != 32 {
-		return fmt.Errorf("KAPOJ_AI_ENCRYPTION_KEY must decode to 32 bytes, got %d", len(decoded))
+		return fmt.Errorf("%s must decode to 32 bytes, got %d", name, len(decoded))
 	}
 	return nil
+}
+
+func parseTrustedProxies(raw string) ([]string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		value := strings.TrimSpace(part)
+		if value == "" {
+			continue
+		}
+		if _, _, err := net.ParseCIDR(value); err != nil && net.ParseIP(value) == nil {
+			return nil, fmt.Errorf("KAPOJ_TRUSTED_PROXIES contains invalid IP/CIDR %q", value)
+		}
+		out = append(out, value)
+	}
+	return out, nil
 }

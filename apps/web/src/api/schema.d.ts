@@ -13,7 +13,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 注册并直接登录 */
+        /**
+         * 注册（强制邮箱验证时需先验证）
+         * @description 注册成功返回 201。强制邮箱验证开启时，除首个引导账号外不返回会话，
+         *     只返回 verificationRequired=true 与 email；关闭时与旧行为一致，session 中有令牌。
+         */
         post: {
             parameters: {
                 query?: never;
@@ -27,17 +31,18 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description 注册成功 */
+                /** @description 注册结果 */
                 201: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["SessionResponse"];
+                        "application/json": components["schemas"]["RegisterResultResponse"];
                     };
                 };
                 400: components["responses"]["Error"];
                 409: components["responses"]["Error"];
+                503: components["responses"]["Error"];
             };
         };
         delete?: never;
@@ -163,6 +168,191 @@ export interface paths {
                         "application/json": components["schemas"]["EmptyResponse"];
                     };
                 };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/email/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 验证邮箱并自动登录
+         * @description 消费一次性验证 token；成功返回新的登录会话。无效/过期/已消费返回 40003。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["EmailVerificationInput"];
+                };
+            };
+            responses: {
+                /** @description 验证成功并登录 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SessionResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                429: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/email/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 重新发送邮箱验证邮件
+         * @description 始终返回通用成功信息；邮件服务未就绪返回 50301，IP 超限返回 42905。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["EmailRequest"];
+                };
+            };
+            responses: {
+                /** @description 已接受请求 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MessageResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                429: components["responses"]["Error"];
+                503: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/password/forgot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 发送密码重置邮件
+         * @description 始终返回通用成功信息；邮件服务未就绪返回 50301，IP 超限返回 42905。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["EmailRequest"];
+                };
+            };
+            responses: {
+                /** @description 已接受请求 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MessageResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                429: components["responses"]["Error"];
+                503: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/password/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 用邮件链接重置密码
+         * @description 消费一次性重置 token，吊销该用户全部会话；无效/过期/已消费返回 40003。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ResetPasswordInput"];
+                };
+            };
+            responses: {
+                /** @description 密码已重置 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                429: components["responses"]["Error"];
+                503: components["responses"]["Error"];
             };
         };
         delete?: never;
@@ -7227,6 +7417,126 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/mail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 邮件设置视图（mail.settings.manage）
+         * @description 返回 SMTP 配置、密码状态 passwordState、就绪状态与强制邮箱验证开关；绝不返回密码/密文。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 邮件设置 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminMailResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        /**
+         * 保存邮件设置（mail.settings.manage）
+         * @description smtpPassword 省略/null 保持现有密码，非空替换，空串清除。
+         *     启用发送或强制验证前必须 ready；未就绪返回 40001。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["MailSettingsInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的邮件设置 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminMailResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/mail/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 发送邮件配置测试（mail.settings.manage）
+         * @description 使用已保存配置发送固定测试邮件；未就绪 50301，发送失败 50201。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["MailTestInput"];
+                };
+            };
+            responses: {
+                /** @description 测试邮件已发送 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                502: components["responses"]["Error"];
+                503: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -7417,6 +7727,29 @@ export interface components {
             /** @description 为空时默认等于用户名 */
             nickname?: string;
         };
+        RegisterResult: {
+            verificationRequired: boolean;
+            /** Format: email */
+            email: string;
+            verificationEmailSent: boolean;
+            /** @description 自动登录时存在；强制邮箱验证且未验证时为 null */
+            session?: components["schemas"]["Session"] | null;
+        };
+        EmailVerificationInput: {
+            token: string;
+        };
+        EmailRequest: {
+            /** Format: email */
+            email: string;
+        };
+        ResetPasswordInput: {
+            token: string;
+            /** @description 按字节计 */
+            newPassword: string;
+        };
+        MessageView: {
+            message: string;
+        };
         LoginRequest: {
             /** @description 用户名或邮箱 */
             account: string;
@@ -7443,6 +7776,8 @@ export interface components {
             username: string;
             nickname: string;
             email: string;
+            /** @description 邮箱是否已完成验证 */
+            emailVerified: boolean;
             avatarUrl: string;
             /** @description 是否已有上传头像；为 true 时 avatarUrl 为内部头像接口，前端不应将其填入外链输入 */
             avatarUploaded: boolean;
@@ -7523,6 +7858,12 @@ export interface components {
         };
         SessionResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["Session"];
+        };
+        RegisterResultResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["RegisterResult"];
+        };
+        MessageResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["MessageView"];
         };
         TokenPairResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["TokenPair"];
@@ -9368,6 +9709,58 @@ export interface components {
         };
         SiteVisitResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["SiteVisitResult"];
+        };
+        /** @enum {string} */
+        PasswordState: "none" | "ready" | "key_error";
+        AdminMailView: {
+            /** @enum {string} */
+            provider: "qq" | "tencent_ses" | "aliyun_dm" | "custom";
+            smtpHost: string;
+            smtpPort: number;
+            /** @enum {string} */
+            smtpTls: "ssl" | "starttls" | "none";
+            smtpUsername: string;
+            passwordState: components["schemas"]["PasswordState"];
+            /** Format: email */
+            fromEmail: string;
+            fromName: string;
+            replyTo: string;
+            publicBaseUrl: string;
+            sendingEnabled: boolean;
+            requireEmailVerification: boolean;
+            /** @description 当前配置是否可发送邮件 */
+            ready: boolean;
+            /** Format: int64 */
+            updatedBy: number;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        MailSettingsInput: {
+            /** @enum {string} */
+            provider: "qq" | "tencent_ses" | "aliyun_dm" | "custom";
+            smtpHost: string;
+            smtpPort: number;
+            /** @enum {string} */
+            smtpTls: "ssl" | "starttls" | "none";
+            smtpUsername: string;
+            /** @description 省略/null 保持现有密码；非空替换；空串清除 */
+            smtpPassword?: string | null;
+            /** Format: email */
+            fromEmail: string;
+            fromName: string;
+            /** Format: email */
+            replyTo: string;
+            /** @description 站点公开根地址，只允许 http(s) origin，用于拼接验证/重置链接 */
+            publicBaseUrl: string;
+            sendingEnabled: boolean;
+            requireEmailVerification: boolean;
+        };
+        MailTestInput: {
+            /** Format: email */
+            to: string;
+        };
+        AdminMailResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AdminMailView"];
         };
     };
     responses: {

@@ -10,7 +10,10 @@ servers:
 paths:
   /auth/register:
     post:
-      summary: 注册并直接登录
+      summary: 注册（强制邮箱验证时需先验证）
+      description: |
+        注册成功返回 201。强制邮箱验证开启时，除首个引导账号外不返回会话，
+        只返回 verificationRequired=true 与 email；关闭时与旧行为一致，session 中有令牌。
       requestBody:
         required: true
         content:
@@ -18,12 +21,13 @@ paths:
             schema: { $ref: '#/components/schemas/RegisterRequest' }
       responses:
         '201':
-          description: 注册成功
+          description: 注册结果
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SessionResponse' }
+              schema: { $ref: '#/components/schemas/RegisterResultResponse' }
         '400': { $ref: '#/components/responses/Error' }
         '409': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
   /auth/login:
     post:
       summary: 用用户名或邮箱登录
@@ -71,6 +75,79 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/EmptyResponse' }
+  /auth/email/verify:
+    post:
+      summary: 验证邮箱并自动登录
+      description: 消费一次性验证 token；成功返回新的登录会话。无效/过期/已消费返回 40003。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmailVerificationInput' }
+      responses:
+        '200':
+          description: 验证成功并登录
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+  /auth/email/resend:
+    post:
+      summary: 重新发送邮箱验证邮件
+      description: 始终返回通用成功信息；邮件服务未就绪返回 50301，IP 超限返回 42905。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmailRequest' }
+      responses:
+        '200':
+          description: 已接受请求
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MessageResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /auth/password/forgot:
+    post:
+      summary: 发送密码重置邮件
+      description: 始终返回通用成功信息；邮件服务未就绪返回 50301，IP 超限返回 42905。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmailRequest' }
+      responses:
+        '200':
+          description: 已接受请求
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MessageResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /auth/password/reset:
+    post:
+      summary: 用邮件链接重置密码
+      description: 消费一次性重置 token，吊销该用户全部会话；无效/过期/已消费返回 40003。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResetPasswordInput' }
+      responses:
+        '200':
+          description: 密码已重置
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
   /guest/permissions:
     get:
       summary: 游客权限（公开）
@@ -3044,6 +3121,60 @@ paths:
               schema: { $ref: '#/components/schemas/SiteAdminResponse' }
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
+  /admin/mail:
+    get:
+      summary: 邮件设置视图（mail.settings.manage）
+      description: 返回 SMTP 配置、密码状态 passwordState、就绪状态与强制邮箱验证开关；绝不返回密码/密文。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 邮件设置
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminMailResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+    put:
+      summary: 保存邮件设置（mail.settings.manage）
+      description: |
+        smtpPassword 省略/null 保持现有密码，非空替换，空串清除。
+        启用发送或强制验证前必须 ready；未就绪返回 40001。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MailSettingsInput' }
+      responses:
+        '200':
+          description: 更新后的邮件设置
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminMailResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /admin/mail/test:
+    post:
+      summary: 发送邮件配置测试（mail.settings.manage）
+      description: 使用已保存配置发送固定测试邮件；未就绪 50301，发送失败 50201。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MailTestInput' }
+      responses:
+        '200':
+          description: 测试邮件已发送
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '502': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
 components:
   securitySchemes:
     bearer:
@@ -3254,6 +3385,40 @@ components:
         email: { type: string, format: email, maxLength: 254 }
         password: { type: string, minLength: 8, maxLength: 72, description: 按字节计 }
         nickname: { type: string, maxLength: 32, description: 为空时默认等于用户名 }
+    RegisterResult:
+      type: object
+      required: [verificationRequired, email, verificationEmailSent]
+      properties:
+        verificationRequired: { type: boolean }
+        email: { type: string, format: email }
+        verificationEmailSent: { type: boolean }
+        session:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/Session'
+          description: 自动登录时存在；强制邮箱验证且未验证时为 null
+    EmailVerificationInput:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string }
+    EmailRequest:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+    ResetPasswordInput:
+      type: object
+      required: [token, newPassword]
+      properties:
+        token: { type: string }
+        newPassword: { type: string, minLength: 8, maxLength: 72, description: 按字节计 }
+    MessageView:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string }
     LoginRequest:
       type: object
       required: [account, password]
@@ -3281,12 +3446,13 @@ components:
     Me:
       type: object
       description: 登录/注册响应中的 user 权限字段可能为空；前端登录后应调用 GET /users/me 获取最新角色与权限。
-      required: [id, username, nickname, email, avatarUrl, avatarUploaded, role, rating, coins, bio, status, roles, permissions, isSuperAdmin, createdAt]
+      required: [id, username, nickname, email, emailVerified, avatarUrl, avatarUploaded, role, rating, coins, bio, status, roles, permissions, isSuperAdmin, createdAt]
       properties:
         id: { type: integer, format: int64 }
         username: { type: string }
         nickname: { type: string }
         email: { type: string }
+        emailVerified: { type: boolean, description: 邮箱是否已完成验证 }
         avatarUrl: { type: string }
         avatarUploaded:
           type: boolean
@@ -3402,6 +3568,20 @@ components:
           required: [data]
           properties:
             data: { $ref: '#/components/schemas/Session' }
+    RegisterResultResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/RegisterResult' }
+    MessageResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/MessageView' }
     TokenPairResponse:
       allOf:
         - $ref: '#/components/schemas/Envelope'
@@ -5708,3 +5888,85 @@ components:
           required: [data]
           properties:
             data: { $ref: '#/components/schemas/SiteVisitResult' }
+    PasswordState:
+      type: string
+      enum: [none, ready, key_error]
+    AdminMailView:
+      type: object
+      required:
+        - provider
+        - smtpHost
+        - smtpPort
+        - smtpTls
+        - smtpUsername
+        - passwordState
+        - fromEmail
+        - fromName
+        - replyTo
+        - publicBaseUrl
+        - sendingEnabled
+        - requireEmailVerification
+        - ready
+        - updatedBy
+        - updatedAt
+      properties:
+        provider: { type: string, enum: [qq, tencent_ses, aliyun_dm, custom] }
+        smtpHost: { type: string }
+        smtpPort: { type: integer, minimum: 1, maximum: 65535 }
+        smtpTls: { type: string, enum: [ssl, starttls, none] }
+        smtpUsername: { type: string }
+        passwordState: { $ref: '#/components/schemas/PasswordState' }
+        fromEmail: { type: string, format: email }
+        fromName: { type: string }
+        replyTo: { type: string }
+        publicBaseUrl: { type: string }
+        sendingEnabled: { type: boolean }
+        requireEmailVerification: { type: boolean }
+        ready: { type: boolean, description: 当前配置是否可发送邮件 }
+        updatedBy: { type: integer, format: int64 }
+        updatedAt: { type: string, format: date-time }
+    MailSettingsInput:
+      type: object
+      required:
+        - provider
+        - smtpHost
+        - smtpPort
+        - smtpTls
+        - smtpUsername
+        - fromEmail
+        - fromName
+        - replyTo
+        - publicBaseUrl
+        - sendingEnabled
+        - requireEmailVerification
+      properties:
+        provider: { type: string, enum: [qq, tencent_ses, aliyun_dm, custom] }
+        smtpHost: { type: string, maxLength: 255 }
+        smtpPort: { type: integer, minimum: 1, maximum: 65535 }
+        smtpTls: { type: string, enum: [ssl, starttls, none] }
+        smtpUsername: { type: string, maxLength: 255 }
+        smtpPassword:
+          type: string
+          nullable: true
+          description: 省略/null 保持现有密码；非空替换；空串清除
+        fromEmail: { type: string, format: email, maxLength: 254 }
+        fromName: { type: string, maxLength: 100 }
+        replyTo: { type: string, format: email, maxLength: 254 }
+        publicBaseUrl:
+          type: string
+          maxLength: 500
+          description: 站点公开根地址，只允许 http(s) origin，用于拼接验证/重置链接
+        sendingEnabled: { type: boolean }
+        requireEmailVerification: { type: boolean }
+    MailTestInput:
+      type: object
+      required: [to]
+      properties:
+        to: { type: string, format: email, maxLength: 254 }
+    AdminMailResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/AdminMailView' }

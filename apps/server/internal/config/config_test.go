@@ -199,3 +199,42 @@ func TestLoadAIKeyFile(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "/var/lib/kapoj/ai.key", cfg.AIKeyFile)
 }
+
+func TestMailConfig(t *testing.T) {
+	t.Setenv("KAPOJ_JWT_SECRET", strings.Repeat("a", 32))
+	t.Setenv("KAPOJ_MAIL_ENCRYPTION_KEY", base64.StdEncoding.EncodeToString(make([]byte, 32)))
+	t.Setenv("KAPOJ_MAIL_KEY_FILE", "/tmp/mail.key")
+	t.Setenv("KAPOJ_MAIL_TIMEOUT", "10s")
+	t.Setenv("KAPOJ_TRUSTED_PROXIES", "127.0.0.1/32, 10.0.0.0/8")
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, "/tmp/mail.key", cfg.MailKeyFile)
+	assert.Equal(t, 10*time.Second, cfg.MailTimeout)
+	assert.Equal(t, []string{"127.0.0.1/32", "10.0.0.0/8"}, cfg.TrustedProxies)
+}
+
+func TestMailConfigDefaults(t *testing.T) {
+	t.Setenv("KAPOJ_JWT_SECRET", strings.Repeat("a", 32))
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, "data/mail.key", cfg.MailKeyFile)
+	assert.Equal(t, 20*time.Second, cfg.MailTimeout)
+	assert.Empty(t, cfg.TrustedProxies)
+}
+
+func TestMailConfigRejectsInvalidValues(t *testing.T) {
+	t.Setenv("KAPOJ_JWT_SECRET", strings.Repeat("a", 32))
+	t.Setenv("KAPOJ_MAIL_ENCRYPTION_KEY", "not-base64")
+	_, err := Load()
+	assert.Error(t, err)
+
+	t.Setenv("KAPOJ_MAIL_ENCRYPTION_KEY", "")
+	t.Setenv("KAPOJ_MAIL_TIMEOUT", "0s")
+	_, err = Load()
+	assert.Error(t, err)
+
+	t.Setenv("KAPOJ_MAIL_TIMEOUT", "20s")
+	t.Setenv("KAPOJ_TRUSTED_PROXIES", "not-a-cidr")
+	_, err = Load()
+	assert.Error(t, err)
+}
