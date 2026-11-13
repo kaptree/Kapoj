@@ -26,6 +26,8 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/learning"
 	"github.com/kaptree/kapoj/apps/server/internal/learningapi"
+	"github.com/kaptree/kapoj/apps/server/internal/mail"
+	"github.com/kaptree/kapoj/apps/server/internal/mailapi"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/problemapi"
@@ -67,10 +69,17 @@ type Deps struct {
 	AISettings  *ai.SettingsService
 	TestcaseGen *testcasegen.Service
 	Certificate *certificate.Service
+	Mail        *mail.Service
 }
 
 func New(d Deps) *gin.Engine {
 	r := gin.New()
+	if err := r.SetTrustedProxies(d.Config.TrustedProxies); err != nil {
+		// Config validation rejects invalid values; a failure here must still
+		// fail closed rather than trusting every forwarded header.
+		slog.Warn("trusted proxies rejected; disabling proxy trust", "err", err)
+		_ = r.SetTrustedProxies(nil)
+	}
 	r.Use(requestLog(), gin.CustomRecovery(func(c *gin.Context, recovered any) {
 		slog.Error("panic recovered", "path", c.Request.URL.Path, "panic", recovered)
 		httpx.Fail(c, httpx.ErrInternal)
@@ -81,9 +90,15 @@ func New(d Deps) *gin.Engine {
 
 	users := user.NewGormRepository(d.DB)
 	issuer := auth.NewTokenIssuer(d.Config.JWTSecret, d.Config.AccessTokenTTL)
+	var authOpts []auth.ServiceOption
+	if d.Mail != nil {
+		authOpts = append(authOpts,
+			auth.WithMailer(d.Mail),
+			auth.WithEmailTokens(auth.NewEmailTokenStore(d.Redis)))
+	}
 	authSvc := auth.NewService(users, issuer,
 		auth.NewRefreshStore(d.Redis, d.Config.RefreshTokenTTL),
-		auth.NewLoginLimiter(d.Redis))
+		auth.NewLoginLimiter(d.Redis), authOpts...)
 
 	var loginHooks []auth.LoginHook
 	if d.Game != nil {
@@ -95,11 +110,18 @@ func New(d Deps) *gin.Engine {
 	auth.RegisterRoutes(r.Group("/api", middleware.MaxBody(maxBodyBytes)), authSvc, loginHooks...)
 
 	public := r.Group("/api", middleware.MaxBody(maxBodyBytes))
-	api := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxBodyBytes))
+	authenticated := func(limit int64) []gin.HandlerFunc {
+		handlers := []gin.HandlerFunc{middleware.Authenticate(issuer)}
+		if d.Mail != nil {
+			handlers = append(handlers, middleware.RequireVerifiedEmail(d.Mail, users))
+		}
+		return append(handlers, middleware.MaxBody(limit))
+	}
+	api := r.Group("/api", authenticated(maxBodyBytes)...)
 	auth.RegisterAccountRoutes(api, authSvc)
-	problemJSON := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxProblemJSONBytes))
-	uploads := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxUploadBytes))
-	imports := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxImportBodyBytes))
+	problemJSON := r.Group("/api", authenticated(maxProblemJSONBytes)...)
+	uploads := r.Group("/api", authenticated(maxUploadBytes)...)
+	imports := r.Group("/api", authenticated(maxImportBodyBytes)...)
 	userSvc := user.NewService(users, user.WithStorage(d.Storage))
 	userOpts := userapi.Options{RBAC: d.RBAC}
 	if d.Game != nil {
@@ -134,6 +156,9 @@ func New(d Deps) *gin.Engine {
 	}
 	siteSvc := site.NewService(site.NewGormRepository(d.DB), d.Storage)
 	siteapi.RegisterRoutes(public, api, uploads, siteSvc, d.RBAC)
+	if d.Mail != nil {
+		mailapi.RegisterRoutes(api, d.Mail, d.RBAC)
+	}
 	contestRepo := contest.NewGormRepository(d.DB)
 	problemRepo := problem.NewGormRepository(d.DB)
 	if d.AI != nil {

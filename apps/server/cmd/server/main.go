@@ -25,10 +25,12 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/judgequeue"
 	"github.com/kaptree/kapoj/apps/server/internal/learning"
+	"github.com/kaptree/kapoj/apps/server/internal/mail"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/rating"
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 	"github.com/kaptree/kapoj/apps/server/internal/router"
+	"github.com/kaptree/kapoj/apps/server/internal/secret"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
 	"github.com/kaptree/kapoj/apps/server/internal/testcasegen"
 )
@@ -91,6 +93,11 @@ func run() error {
 	learningSvc := learning.NewService(learning.NewRepository(g))
 	rbacSvc := rbac.NewService(g)
 	certSvc := certificate.NewService(certificate.NewGormRepository(g), store)
+	mailKeys, err := secret.NewKeyManager(cfg.MailEncryptionKey, cfg.MailKeyFile)
+	if err != nil {
+		return err
+	}
+	mailSvc := mail.NewService(mail.NewGormRepository(g), mailKeys, mail.WithTimeout(cfg.MailTimeout))
 
 	// KeyManager loads the AI encryption key from the environment (priority) or
 	// a local file. An invalid env key fails startup; a missing/invalid file
@@ -147,6 +154,7 @@ func run() error {
 			DB: g, Redis: rdb, Storage: store, Config: cfg, Enqueuer: queue, Game: gameSvc,
 			Rating: ratingSvc, Activity: activitySvc, Learning: learningSvc, RBAC: rbacSvc,
 			AI: aiSvc, AISettings: aiSettings, TestcaseGen: testcaseGenSvc, Certificate: certSvc,
+			Mail: mailSvc,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}

@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -24,8 +25,10 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/auth"
 	"github.com/kaptree/kapoj/apps/server/internal/config"
 	"github.com/kaptree/kapoj/apps/server/internal/learning"
+	"github.com/kaptree/kapoj/apps/server/internal/mail"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
+	"github.com/kaptree/kapoj/apps/server/internal/secret"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
@@ -52,6 +55,14 @@ func newRouter(t *testing.T) http.Handler {
 		},
 		Enqueuer: noopQueue{},
 	})
+}
+
+func registerSession(t *testing.T, resp map[string]any) map[string]any {
+	t.Helper()
+	data := resp["data"].(map[string]any)
+	session, ok := data["session"].(map[string]any)
+	require.True(t, ok, "register response must include a session")
+	return session
 }
 
 func call(h http.Handler, method, path, token, body string) (*httptest.ResponseRecorder, map[string]any) {
@@ -84,7 +95,7 @@ func TestRouterEndToEndWithDatabase(t *testing.T) {
 	w, resp := call(h, http.MethodPost, "/api/auth/register", "",
 		`{"username":"alice","email":"alice@example.com","password":"correct-horse"}`)
 	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
-	token := resp["data"].(map[string]any)["accessToken"].(string)
+	token := registerSession(t, resp)["accessToken"].(string)
 
 	w, resp = call(h, http.MethodGet, "/api/users/me", token, "")
 	require.Equal(t, http.StatusOK, w.Code)
@@ -116,7 +127,7 @@ func TestLogoutWithExpiredAccessTokenRevokes(t *testing.T) {
 	w, resp := call(h, http.MethodPost, "/api/auth/register", "",
 		`{"username":"alice","email":"alice@example.com","password":"correct-horse"}`)
 	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
-	refresh := resp["data"].(map[string]any)["refreshToken"].(string)
+	refresh := registerSession(t, resp)["refreshToken"].(string)
 
 	expired, err := auth.NewTokenIssuer(strings.Repeat("s", 32), -time.Minute).
 		IssueAccess(&user.User{ID: 1, Role: user.RoleUser})
@@ -222,7 +233,7 @@ func TestRouterWiresActivityHooksWithoutGameService(t *testing.T) {
 	w, resp := call(h, http.MethodPost, "/api/auth/register", "",
 		`{"username":"hookalice","email":"hookalice@example.com","password":"correct-horse"}`)
 	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
-	data := resp["data"].(map[string]any)
+	data := registerSession(t, resp)
 	token := data["accessToken"].(string)
 	userID := int64(data["user"].(map[string]any)["id"].(float64))
 
@@ -291,7 +302,7 @@ func TestRouterWiresAIEndpoints(t *testing.T) {
 	w, resp = call(h, http.MethodPost, "/api/auth/register", "",
 		`{"username":"aiguy","email":"aiguy@example.com","password":"correct-horse"}`)
 	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
-	token := resp["data"].(map[string]any)["accessToken"].(string)
+	token := registerSession(t, resp)["accessToken"].(string)
 
 	w, resp = call(h, http.MethodGet, "/api/ai/configs", token, "")
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
@@ -322,7 +333,7 @@ func TestRouterMountsAdminRBACRoutes(t *testing.T) {
 	w, resp := call(h, http.MethodPost, "/api/auth/register", "",
 		`{"username":"adminroutes","email":"adminroutes@example.com","password":"correct-horse"}`)
 	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
-	data := resp["data"].(map[string]any)
+	data := registerSession(t, resp)
 	token := data["accessToken"].(string)
 	userID := int64(data["user"].(map[string]any)["id"].(float64))
 
@@ -349,7 +360,7 @@ func TestRouterMountsAdminRBACRoutes(t *testing.T) {
 
 	w, resp = call(h, http.MethodGet, "/api/admin/permissions", token, "")
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
-	assert.Len(t, resp["data"], 39)
+	assert.Len(t, resp["data"], 40)
 }
 
 func TestRouterWiresRBACMe(t *testing.T) {
@@ -376,7 +387,7 @@ func TestRouterWiresRBACMe(t *testing.T) {
 	w, resp := call(h, http.MethodPost, "/api/auth/register", "",
 		`{"username":"rbacme","email":"rbacme@example.com","password":"correct-horse"}`)
 	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
-	data := resp["data"].(map[string]any)
+	data := registerSession(t, resp)
 	token := data["accessToken"].(string)
 	userID := int64(data["user"].(map[string]any)["id"].(float64))
 
@@ -408,7 +419,7 @@ func TestRouterWiresAvatarEndpoints(t *testing.T) {
 	w, resp := call(h, http.MethodPost, "/api/auth/register", "",
 		`{"username":"avatarw","email":"avatarw@example.com","password":"correct-horse"}`)
 	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
-	data := resp["data"].(map[string]any)
+	data := registerSession(t, resp)
 	token := data["accessToken"].(string)
 	userID := int64(data["user"].(map[string]any)["id"].(float64))
 
@@ -445,7 +456,7 @@ func TestRouterWiresAccountRoutes(t *testing.T) {
 	w, resp := call(h, http.MethodPost, "/api/auth/register", "",
 		`{"username":"acct","email":"acct@example.com","password":"correct-horse"}`)
 	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
-	data := resp["data"].(map[string]any)
+	data := registerSession(t, resp)
 	token := data["accessToken"].(string)
 	assert.NotEmpty(t, data["sessionId"])
 
@@ -459,4 +470,102 @@ func TestRouterWiresAccountRoutes(t *testing.T) {
 	sessions := resp["data"].([]any)
 	require.Len(t, sessions, 1)
 	assert.Equal(t, data["sessionId"], sessions[0].(map[string]any)["id"])
+}
+
+type routerFakeSender struct{}
+
+func (routerFakeSender) Send(context.Context, mail.Message) error { return nil }
+
+func TestRouterRequiresEmailVerification(t *testing.T) {
+	g := testutil.PG(t)
+	rbacSvc := testutil.SeedRBAC(t, g)
+	mr := miniredis.RunT(t)
+	store, err := storage.NewLocal(t.TempDir())
+	require.NoError(t, err)
+	keys, err := secret.NewKeyManager("", filepath.Join(t.TempDir(), "mail.key"))
+	require.NoError(t, err)
+	require.NoError(t, keys.EnsureKey())
+	mailSvc := mail.NewService(mail.NewMemoryRepository(), keys,
+		mail.WithSenderFactory(func(mail.Config) (mail.Sender, error) { return routerFakeSender{}, nil }))
+	password := "smtp-secret"
+	_, err = mailSvc.Update(context.Background(), 1, mail.SettingsInput{
+		Provider: mail.ProviderQQ, SMTPHost: "smtp.qq.com", SMTPPort: 465, SMTPTLS: mail.TLSSSL,
+		SMTPUsername: "bot@qq.com", SMTPPassword: &password, FromEmail: "bot@qq.com",
+		FromName: "kapOJ", PublicBaseURL: "https://oj.example.com",
+		SendingEnabled: true, RequireEmailVerification: true,
+	})
+	require.NoError(t, err)
+
+	h := New(Deps{
+		DB:       g,
+		Redis:    redis.NewClient(&redis.Options{Addr: mr.Addr()}),
+		Storage:  store,
+		Config:   &config.Config{JWTSecret: strings.Repeat("s", 32), AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: time.Hour, SubmitCooldown: time.Second},
+		Enqueuer: noopQueue{},
+		RBAC:     rbacSvc,
+		Mail:     mailSvc,
+	})
+
+	w, resp := call(h, http.MethodPost, "/api/auth/register", "",
+		`{"username":"bootstrap","email":"bootstrap@example.com","password":"correct-horse"}`)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	bootstrapToken := registerSession(t, resp)["accessToken"].(string)
+
+	w, resp = call(h, http.MethodPost, "/api/auth/register", "",
+		`{"username":"alice","email":"alice@example.com","password":"correct-horse"}`)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	data := resp["data"].(map[string]any)
+	assert.True(t, data["verificationRequired"].(bool))
+	assert.Nil(t, data["session"])
+
+	w, resp = call(h, http.MethodPost, "/api/auth/login", "",
+		`{"account":"alice","password":"correct-horse"}`)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.EqualValues(t, 40303, resp["code"])
+
+	repo := user.NewGormRepository(g)
+	alice, err := repo.FindByEmail(context.Background(), "alice@example.com")
+	require.NoError(t, err)
+	issuer := auth.NewTokenIssuer(strings.Repeat("s", 32), 15*time.Minute)
+	aliceToken, err := issuer.IssueAccess(alice)
+	require.NoError(t, err)
+	w, resp = call(h, http.MethodGet, "/api/users/me", aliceToken, "")
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.EqualValues(t, 40303, resp["code"])
+
+	w, _ = call(h, http.MethodGet, "/api/users/me", bootstrapToken, "")
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	// 普通用户不能访问邮件管理；超级管理员可以。
+	w, _ = call(h, http.MethodGet, "/api/admin/mail", bootstrapToken, "")
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	now := time.Now().UTC()
+	super := &user.User{Username: "mailsuper", Nickname: "mailsuper", Email: "mailsuper@example.com", PasswordHash: "x", Role: user.RoleSuperAdmin, Status: user.StatusActive, EmailVerifiedAt: &now}
+	require.NoError(t, repo.Create(context.Background(), super))
+	testutil.AssignRole(t, g, super.ID, rbac.RoleCodeSuperAdmin)
+	superToken, err := issuer.IssueAccess(super)
+	require.NoError(t, err)
+	w, _ = call(h, http.MethodGet, "/api/admin/mail", superToken, "")
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestRouterDoesNotTrustForwardedForByDefault(t *testing.T) {
+	h := newRouter(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/register",
+		bytes.NewBufferString(`{"username":"proxyuser","email":"proxyuser@example.com","password":"correct-horse"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Forwarded-For", "203.0.113.7")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	token := registerSession(t, resp)["accessToken"].(string)
+
+	w, resp = call(h, http.MethodGet, "/api/users/me/sessions", token, "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	sessions := resp["data"].([]any)
+	require.Len(t, sessions, 1)
+	assert.Equal(t, "192.0.2.1", sessions[0].(map[string]any)["ip"], "default config must not trust X-Forwarded-For")
 }
