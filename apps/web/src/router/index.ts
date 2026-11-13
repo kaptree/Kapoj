@@ -375,6 +375,16 @@ export const router = createRouter({
             title: '站点设置',
           },
         },
+        {
+          path: 'mail',
+          name: 'admin-mail',
+          component: () => import('@/views/AdminMailView.vue'),
+          meta: {
+            requiresAuth: true,
+            permission: PERM.mail.settings.manage,
+            title: '邮件设置',
+          },
+        },
       ],
     },
   ],

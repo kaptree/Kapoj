@@ -71,6 +71,9 @@ export const PERM = {
   site: {
     settings: { manage: 'site.settings.manage' },
   },
+  mail: {
+    settings: { manage: 'mail.settings.manage' },
+  },
 } as const
 
 /** Permission codes that can be granted to the built-in guest role. */
@@ -137,4 +140,5 @@ export const ADMIN_ACCESS_PERMISSIONS: string[] = [
   PERM.ai.settings.manage,
   PERM.certificate.manage,
   PERM.site.settings.manage,
+  PERM.mail.settings.manage,
 ]

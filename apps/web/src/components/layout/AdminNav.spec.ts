@@ -191,4 +191,16 @@ describe('AdminNav', () => {
     expect(wrapper.text()).toContain('站点设置')
     wrapper.unmount()
   })
+
+  it('shows the mail settings entry only with mail.settings.manage', async () => {
+    let wrapper = await mountNav()
+    expect(wrapper.text()).not.toContain('邮件设置')
+
+    auth.can.mockImplementation((code) => code === PERM.mail.settings.manage)
+    wrapper = await mountNav()
+    expect(auth.can).toHaveBeenCalledWith(PERM.mail.settings.manage)
+    expect(wrapper.find('a[href="/admin/mail"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('邮件设置')
+    wrapper.unmount()
+  })
 })
