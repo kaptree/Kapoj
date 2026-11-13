@@ -85,7 +85,7 @@ func (km *KeyManager) Masked() string {
 	if km.enc == nil {
 		return ""
 	}
-	return maskKey(km.enc.key)
+	return maskKey(km.enc.Key())
 }
 
 // Fingerprint 返回密钥的 SHA-256 hex 指纹（对 base64 密钥串哈希）；未配置返回空串。
@@ -95,7 +95,7 @@ func (km *KeyManager) Fingerprint() string {
 	if km.enc == nil {
 		return ""
 	}
-	sum := sha256.Sum256([]byte(km.enc.key))
+	sum := sha256.Sum256([]byte(km.enc.Key()))
 	return hex.EncodeToString(sum[:])
 }
 
