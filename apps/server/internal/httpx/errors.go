@@ -34,7 +34,9 @@ var (
 	ErrTooManyPasswordAttempts = newErr(http.StatusTooManyRequests, 42904, "修改密码尝试次数过多，请 5 分钟后再试")
 	ErrInternal                = newErr(http.StatusInternalServerError, 50000, "服务器内部错误")
 	ErrBadGateway              = newErr(http.StatusBadGateway, 50200, "AI 服务调用失败")
+	ErrMailSendFailed          = newErr(http.StatusBadGateway, 50201, "邮件发送失败，请稍后重试")
 	ErrUnavailable             = newErr(http.StatusServiceUnavailable, 50300, "依赖服务不可用")
+	ErrMailNotConfigured       = newErr(http.StatusServiceUnavailable, 50301, "邮件服务未配置或未就绪")
 )
 
 // ErrValidation reports which input failed validation.

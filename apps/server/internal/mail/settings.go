@@ -11,19 +11,45 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
 
-// Service reads and updates mail settings and derives readiness.
+// Service reads and updates mail settings, derives readiness and sends mail.
 type Service struct {
-	repo Repository
-	keys *secret.KeyManager
-	now  func() time.Time
+	repo      Repository
+	keys      *secret.KeyManager
+	now       func() time.Time
+	timeout   time.Duration
+	newSender SenderFactory
 }
 
-// Option customizes a mail Service. Task 3 adds sender-related options.
+// Option customizes a mail Service.
 type Option func(*Service)
 
-// NewService constructs a mail settings service.
+// WithTimeout sets the SMTP connection/read timeout.
+func WithTimeout(timeout time.Duration) Option {
+	return func(s *Service) {
+		if timeout > 0 {
+			s.timeout = timeout
+		}
+	}
+}
+
+// WithSenderFactory replaces the SMTP sender factory (used by tests).
+func WithSenderFactory(factory SenderFactory) Option {
+	return func(s *Service) {
+		if factory != nil {
+			s.newSender = factory
+		}
+	}
+}
+
+// NewService constructs a mail service.
 func NewService(repo Repository, keys *secret.KeyManager, opts ...Option) *Service {
-	svc := &Service{repo: repo, keys: keys, now: time.Now}
+	svc := &Service{
+		repo:      repo,
+		keys:      keys,
+		now:       time.Now,
+		timeout:   20 * time.Second,
+		newSender: NewSMTPSender,
+	}
 	for _, opt := range opts {
 		opt(svc)
 	}
