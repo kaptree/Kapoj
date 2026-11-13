@@ -12,11 +12,13 @@ import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
+import LearningMobileTree from '@/components/learning/LearningMobileTree.vue'
 import LearningNodePanel from '@/components/learning/LearningNodePanel.vue'
 import LearningPathSummary from '@/components/learning/LearningPathSummary.vue'
 import LearningTreeCanvas from '@/components/learning/LearningTreeCanvas.vue'
 import MarkdownView from '@/components/MarkdownView.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useMediaQuery } from '@/composables/useMediaQuery'
 import { useTheme } from '@/theme/theme'
 import {
   findLearningNode,
@@ -27,6 +29,7 @@ import {
 const route = useRoute()
 const auth = useAuthStore()
 const { isDark } = useTheme()
+const isMobile = useMediaQuery('(max-width: 899px)')
 const showSolved = computed(() => auth.isLoggedIn)
 
 const id = computed(() => {
@@ -125,7 +128,12 @@ function visibilitySeverity(): 'info' | 'warn' {
         <div class="path-visibility">
           <Tag :value="learningPathVisibilityLabel(path)" :severity="visibilitySeverity()" />
         </div>
-        <LearningPathSummary :path="path" :nodes="nodes" :show-solved="showSolved" />
+        <LearningPathSummary
+          :path="path"
+          :nodes="nodes"
+          :show-solved="showSolved"
+          :compact="isMobile"
+        />
         <section v-if="path.descriptionMd" class="path-description">
           <div
             class="path-description__content"
@@ -152,6 +160,13 @@ function visibilitySeverity(): 'info' | 'warn' {
 
       <template v-else-if="path">
         <AppEmptyState v-if="nodes.length === 0" title="该路线还没有节点" />
+
+        <LearningMobileTree
+          v-else-if="isMobile"
+          :nodes="nodes"
+          :selected-id="selectedId"
+          @select="selectNode"
+        />
 
         <div v-else class="desktop-layout">
           <LearningTreeCanvas

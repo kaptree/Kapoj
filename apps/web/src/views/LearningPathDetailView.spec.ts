@@ -82,6 +82,28 @@ function mountView() {
   })
 }
 
+function mockMobileMatchMedia(width = 375) {
+  const originalMatchMedia = window.matchMedia
+  const originalWidth = window.innerWidth
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: width })
+  window.matchMedia = vi.fn((query: string) => {
+    return {
+      matches: query === '(max-width: 899px)',
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(() => false),
+    } as MediaQueryList
+  }) as typeof window.matchMedia
+  return () => {
+    window.matchMedia = originalMatchMedia
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth })
+  }
+}
+
 beforeEach(() => {
   route.params.id = '3'
   auth.isLoggedIn = true
@@ -90,6 +112,45 @@ beforeEach(() => {
 })
 
 describe('LearningPathDetailView', () => {
+  it('renders the mobile tree and compact summary when the viewport matches mobile', async () => {
+    const restoreMedia = mockMobileMatchMedia()
+    vi.mocked(getLearningTree).mockResolvedValue({
+      path: path(),
+      nodes: [node({ id: 1, title: '数组', status: 'active' })],
+    })
+    const wrapper = mountView()
+    try {
+      await flushPromises()
+
+      expect(wrapper.find('.mobile-tree').exists()).toBe(true)
+      expect(wrapper.find('.tree-viewport').exists()).toBe(false)
+      expect(wrapper.find('.path-summary--compact').exists()).toBe(true)
+      expect(wrapper.find('h1').text()).toBe('算法入门')
+    } finally {
+      wrapper.unmount()
+      restoreMedia()
+    }
+  })
+
+  it('keeps the mobile detail branch at a 375px viewport without rendering the desktop tree', async () => {
+    const restoreMedia = mockMobileMatchMedia(375)
+    vi.mocked(getLearningTree).mockResolvedValue({
+      path: path(),
+      nodes: [node({ id: 1, title: '数组', status: 'active' })],
+    })
+    const wrapper = mountView()
+    try {
+      await flushPromises()
+
+      expect(window.innerWidth).toBe(375)
+      expect(wrapper.find('.mobile-tree').exists()).toBe(true)
+      expect(wrapper.find('.tree-viewport').exists()).toBe(false)
+    } finally {
+      wrapper.unmount()
+      restoreMedia()
+    }
+  })
+
   it('renders path metadata, problem summary and completion after loading', async () => {
     const nodes: LearningPathNodeItem[] = [
       node({
