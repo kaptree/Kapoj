@@ -9,6 +9,8 @@ import ToggleSwitch from 'primevue/toggleswitch'
 import { useConfirm } from 'primevue/useconfirm'
 import { useToast } from 'primevue/usetoast'
 
+import { copyText } from '@/utils/clipboard'
+
 import {
   generateAdminAIKey,
   getAdminAIKey,
@@ -257,7 +259,7 @@ async function doSaveManual(value: string) {
 async function copyGeneratedKey() {
   if (!generatedKey.value) return
   try {
-    await navigator.clipboard.writeText(generatedKey.value)
+    await copyText(generatedKey.value)
     toast.add({ severity: 'success', summary: '已复制', life: 2000 })
   } catch {
     toast.add({ severity: 'error', summary: '复制失败', detail: '请手动选择文本', life: 3000 })

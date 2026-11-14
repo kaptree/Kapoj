@@ -10,6 +10,8 @@ import java from 'highlight.js/lib/languages/java'
 import python from 'highlight.js/lib/languages/python'
 import 'highlight.js/styles/atom-one-dark.css'
 
+import { copyText } from '@/utils/clipboard'
+
 hljs.registerLanguage('c', c)
 hljs.registerLanguage('cpp', cpp)
 hljs.registerLanguage('go', go)
@@ -66,7 +68,7 @@ function escapeHtml(value: string): string {
 
 async function copy() {
   try {
-    await navigator.clipboard.writeText(props.code)
+    await copyText(props.code)
     toast.add({ severity: 'success', summary: '代码已复制', life: 3000 })
   } catch {
     toast.add({ severity: 'warn', summary: '复制失败，请手动选择代码', life: 3000 })

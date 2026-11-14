@@ -43,6 +43,7 @@ import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
 import { useSiteStore } from '@/stores/site'
+import { copyText } from '@/utils/clipboard'
 
 const ACCEPT_IMAGES = 'image/png,image/jpeg,image/webp,image/gif'
 const ACCEPT_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
@@ -473,7 +474,7 @@ async function saveDeployment() {
 
 async function copyDeployment() {
   try {
-    await navigator.clipboard.writeText(deploymentText.value)
+    await copyText(deploymentText.value)
     toast.add({ severity: 'success', summary: '部署配置已复制', life: 3000 })
   } catch {
     toast.add({ severity: 'warn', summary: '复制失败，请手动选择配置', life: 3000 })

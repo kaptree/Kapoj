@@ -13,6 +13,7 @@ import {
 } from '@/api/problems'
 import type { ProblemAttachment } from '@/api/types'
 import { resolveAssetUrl } from '@/utils/asset'
+import { copyText } from '@/utils/clipboard'
 import { formatBytes } from '@/utils/format'
 
 const props = defineProps<{ problemId: number }>()
@@ -85,7 +86,7 @@ function onDrop(event: DragEvent) {
 async function copyLink(item: ProblemAttachment) {
   const absolute = new URL(resolveAssetUrl(item.url), window.location.origin).toString()
   try {
-    await navigator.clipboard.writeText(absolute)
+    await copyText(absolute)
     toast.add({ severity: 'success', summary: '下载链接已复制', life: 3000 })
   } catch {
     toast.add({ severity: 'warn', summary: '复制失败，请手动复制链接', life: 3000 })

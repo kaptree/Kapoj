@@ -24,6 +24,7 @@ import AppFormField from '@/components/ui/AppFormField.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
+import { copyText } from '@/utils/clipboard'
 import { formatDateTime } from '@/utils/format'
 
 const MAX_FILE_MB = 5
@@ -179,8 +180,17 @@ async function submit() {
 
 async function copyVerifyLink(cert: CertificateView) {
   const url = `${window.location.origin}/verify?code=${cert.verifyCode}`
-  await navigator.clipboard.writeText(url)
-  toast.add({ severity: 'success', summary: '已复制', detail: '验证链接已复制', life: 3000 })
+  try {
+    await copyText(url)
+    toast.add({ severity: 'success', summary: '已复制', detail: '验证链接已复制', life: 3000 })
+  } catch {
+    toast.add({
+      severity: 'error',
+      summary: '复制失败',
+      detail: '请手动选择验证链接',
+      life: 3000,
+    })
+  }
 }
 
 onMounted(() => {

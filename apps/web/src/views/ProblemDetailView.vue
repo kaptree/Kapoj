@@ -22,6 +22,7 @@ import AppSurface from '@/components/ui/AppSurface.vue'
 import { PERM } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useTheme } from '@/theme/theme'
+import { copyText } from '@/utils/clipboard'
 import { formatCoins } from '@/utils/gamification'
 
 const route = useRoute()
@@ -152,7 +153,7 @@ async function requestAIHint() {
 
 async function copy(text: string) {
   try {
-    await navigator.clipboard.writeText(text)
+    await copyText(text)
     toast.add({ severity: 'success', summary: '已复制', life: 2000 })
   } catch {
     toast.add({ severity: 'error', summary: '复制失败', detail: '请手动选择文本', life: 3000 })
