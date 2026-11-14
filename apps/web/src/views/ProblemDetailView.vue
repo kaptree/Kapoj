@@ -29,13 +29,13 @@ const auth = useAuthStore()
 const toast = useToast()
 const { isDark } = useTheme()
 
-const canEdit = computed(() => auth.can(PERM.problem.update))
 const contestId = computed(() => {
   const n = Number(route.query?.contestId)
   return Number.isInteger(n) && n > 0 ? n : 0
 })
 
 const problem = ref<ProblemDetail | null>(null)
+const canEdit = computed(() => problem.value?.canEdit ?? false)
 const stats = ref<ProblemStats | null>(null)
 const contest = ref<ContestDetail | null>(null)
 const loading = ref(false)

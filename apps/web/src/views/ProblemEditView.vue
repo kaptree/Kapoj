@@ -50,6 +50,7 @@ const problemId = computed(() =>
   typeof route.params.id === 'string' ? Number(route.params.id) : null,
 )
 const isEdit = computed(() => problemId.value !== null)
+const canEdit = ref(true)
 
 const pageEyebrow = computed(() => (isEdit.value ? 'PROBLEMS // EDIT' : 'PROBLEMS // CREATE'))
 const pageTitle = computed(() => (isEdit.value ? '编辑题目' : '新建题目'))
@@ -111,6 +112,7 @@ function fill(p: ProblemDetail) {
   answersText.value = form.answers.join('\n')
   checkerUploaded.value = p.checkerUploaded ?? false
   published.value = p.isPublic
+  canEdit.value = p.canEdit
 }
 
 async function load() {
@@ -119,6 +121,7 @@ async function load() {
     answersText.value = ''
     checkerUploaded.value = false
     published.value = false
+    canEdit.value = true
     loadFailed.value = false
     notFound.value = false
     error.value = ''
@@ -283,6 +286,18 @@ function remove() {
           outlined
         />
       </div>
+    </AppSurface>
+
+    <AppSurface v-else-if="!canEdit" padding="lg">
+      <AppEmptyState
+        icon="pi pi-lock"
+        title="无权编辑此题目"
+        description="出题人只能编辑自己创建的题目；如需修改，请联系题目管理员。"
+      >
+        <template #actions>
+          <Button as="router-link" :to="{ name: 'problems' }" label="返回题库" />
+        </template>
+      </AppEmptyState>
     </AppSurface>
 
     <template v-else>

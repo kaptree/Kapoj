@@ -30,6 +30,7 @@ type Filter struct {
 	Difficulty    int
 	IncludeHidden bool
 	IncludeLocked bool
+	OwnerID       int64
 	Now           time.Time
 }
 
@@ -111,6 +112,9 @@ func (r *gormRepository) List(ctx context.Context, f Filter, offset, limit int) 
 	q := r.db.WithContext(ctx).Model(&Problem{})
 	if !f.IncludeHidden {
 		q = q.Where("is_public = ?", true)
+	}
+	if f.OwnerID > 0 {
+		q = q.Where("created_by = ?", f.OwnerID)
 	}
 	if !f.IncludeLocked {
 		now := f.Now

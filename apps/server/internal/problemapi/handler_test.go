@@ -238,14 +238,24 @@ func idOf(resp map[string]any) int64 {
 
 func (f *fx) create(b map[string]any) int64 {
 	f.t.Helper()
-	w, resp := f.do(http.MethodPost, "/api/problems", f.token("problem_admin"), b)
+	return f.createAs(f.token("problem_admin"), b)
+}
+
+func (f *fx) createAs(token string, b map[string]any) int64 {
+	f.t.Helper()
+	w, resp := f.do(http.MethodPost, "/api/problems", token, b)
 	require.Equal(f.t, http.StatusCreated, w.Code, w.Body.String())
 	return idOf(resp)
 }
 
 func (f *fx) addCase(id int64) int64 {
 	f.t.Helper()
-	w, resp := f.multipart(fmt.Sprintf("/api/problems/%d/testcases", id), f.token("problem_admin"), nil,
+	return f.addCaseAs(id, f.token("problem_admin"))
+}
+
+func (f *fx) addCaseAs(id int64, token string) int64 {
+	f.t.Helper()
+	w, resp := f.multipart(fmt.Sprintf("/api/problems/%d/testcases", id), token, nil,
 		filePart{"input", "1.in", strings.NewReader("1 2")}, filePart{"output", "1.out", strings.NewReader("3")})
 	require.Equal(f.t, http.StatusCreated, w.Code, w.Body.String())
 	return idOf(resp)
@@ -879,39 +889,111 @@ func TestProblemRoutesRequirePermissions(t *testing.T) {
 
 func TestProblemPublishRequiresExtraPermission(t *testing.T) {
 	f := newFx(t)
-	f.createRole("update_only", rbac.PermProblemUpdate)
-	f.createRole("update_publish", rbac.PermProblemUpdate, rbac.PermProblemPublish)
+	f.createRole("update_only", rbac.PermProblemCreate, rbac.PermProblemUpdate)
+	f.createRole("update_publish", rbac.PermProblemCreate, rbac.PermProblemUpdate, rbac.PermProblemPublish)
 	updateOnly := f.userWithRole("update_only")
 	updatePublish := f.userWithRole("update_publish")
 
-	id := f.create(body("pub"))
+	id := f.createAs(updateOnly, body("pub"))
 	f.addCase(id)
 
-	// update-only：改 title 成功。
+	// 作者：改自己的 title 成功。
 	title := body("pub")
 	title["title"] = "Renamed"
 	w, _ := f.do(http.MethodPut, path("/api/problems/%d", id), updateOnly, title)
 	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 
-	// update-only：改 isPublic=true 403。
+	// 作者没有 publish：改 isPublic=true 403。
 	publish := body("pub")
 	publish["isPublic"] = true
 	w, _ = f.do(http.MethodPut, path("/api/problems/%d", id), updateOnly, publish)
 	assert.Equal(t, http.StatusForbidden, w.Code)
 
-	// update+publish：隐藏题改公开成功。
-	w, _ = f.do(http.MethodPut, path("/api/problems/%d", id), updatePublish, publish)
+	// 有 publish 的作者发布自己的另一道题成功。
+	publishID := f.createAs(updatePublish, body("pub-publish"))
+	f.addCase(publishID)
+	publishOther := body("pub-publish")
+	publishOther["isPublic"] = true
+	w, _ = f.do(http.MethodPut, path("/api/problems/%d", publishID), updatePublish, publishOther)
 	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 
-	// update-only：公开题改回隐藏 403。
-	offline := body("pub")
+	// 有 publish 的作者：公开题改回隐藏成功。
+	offline := body("pub-publish")
 	offline["isPublic"] = false
-	w, _ = f.do(http.MethodPut, path("/api/problems/%d", id), updateOnly, offline)
-	assert.Equal(t, http.StatusForbidden, w.Code)
-
-	// update+publish：公开题改回隐藏成功。
-	w, _ = f.do(http.MethodPut, path("/api/problems/%d", id), updatePublish, offline)
+	w, _ = f.do(http.MethodPut, path("/api/problems/%d", publishID), updatePublish, offline)
 	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+}
+
+func TestProblemOwnershipScopes(t *testing.T) {
+	f := newFx(t)
+	authorA := f.userWithRole("problem_author")
+	authorB := f.userWithRole("problem_author")
+	admin := f.token("problem_admin")
+	id := f.createAs(authorA, body("owned"))
+
+	// 作者本人可以看到自己的隐藏题并拿到 canEdit。
+	w, resp := f.do(http.MethodGet, path("/api/problems/%d", id), authorA, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data := resp["data"].(map[string]any)
+	assert.Equal(t, true, data["canEdit"])
+
+	// 另一个出题人看不到、也改不了。
+	w, _ = f.do(http.MethodGet, path("/api/problems/%d", id), authorB, nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	w, _ = f.do(http.MethodPut, path("/api/problems/%d", id), authorB, body("owned"))
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	// 作者本人可以修改。
+	update := body("owned")
+	update["title"] = "Owned updated"
+	w, _ = f.do(http.MethodPut, path("/api/problems/%d", id), authorA, update)
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	// 管理员可以修改任意题目。
+	w, _ = f.do(http.MethodPut, path("/api/problems/%d", id), admin, update)
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	// 我的题目范围与全部范围。
+	_, resp = f.do(http.MethodGet, "/api/problems?scope=mine", authorA, nil)
+	assert.EqualValues(t, 1, resp["data"].(map[string]any)["total"])
+	_, resp = f.do(http.MethodGet, "/api/problems?scope=mine", authorB, nil)
+	assert.EqualValues(t, 0, resp["data"].(map[string]any)["total"])
+	w, _ = f.do(http.MethodGet, "/api/problems?scope=all", authorA, nil)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	_, resp = f.do(http.MethodGet, "/api/problems?scope=all", admin, nil)
+	assert.EqualValues(t, 1, resp["data"].(map[string]any)["total"])
+
+	// 作者可删除自己的题目，另一个出题人不能。
+	w, _ = f.do(http.MethodDelete, path("/api/problems/%d", id), authorB, nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	w, _ = f.do(http.MethodDelete, path("/api/problems/%d", id), authorA, nil)
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+}
+
+func TestOtherAuthorCannotReadAnswersOrEdit(t *testing.T) {
+	f := newFx(t)
+	admin := f.token("problem_admin")
+	author := f.userWithRole("problem_author")
+	create := body("answers-public")
+	create["type"] = "objective"
+	create["answers"] = []string{"A", "B"}
+	id := f.createAs(admin, create)
+	publish := body("answers-public")
+	publish["type"] = "objective"
+	publish["answers"] = []string{"A", "B"}
+	publish["isPublic"] = true
+	w, _ := f.do(http.MethodPut, path("/api/problems/%d", id), admin, publish)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	_, resp := f.do(http.MethodGet, path("/api/problems/%d", id), author, nil)
+	data := resp["data"].(map[string]any)
+	assert.Equal(t, false, data["canEdit"])
+	assert.NotContains(t, data, "answers")
+
+	_, resp = f.do(http.MethodGet, path("/api/problems/%d", id), admin, nil)
+	data = resp["data"].(map[string]any)
+	assert.Equal(t, true, data["canEdit"])
+	assert.Contains(t, data, "answers")
 }
 
 func TestProblemWritesAudit(t *testing.T) {

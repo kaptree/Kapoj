@@ -1228,7 +1228,8 @@ paths:
         - { name: keyword, in: query, schema: { type: string }, description: 匹配标题或题目标识，不区分大小写，按字面量匹配 }
         - { name: tag, in: query, schema: { type: string } }
         - { name: difficulty, in: query, schema: { type: integer, minimum: 1, maximum: 5 } }
-        - { name: includeHidden, in: query, schema: { type: boolean }, description: 需要 problem.view_hidden 权限；需携带 bearer token }
+        - { name: scope, in: query, schema: { type: string, enum: [public, mine, all], default: public }, description: 'public=公开题；mine=我的题目（需 problem.* 管理权限）；all=全部题目（需 problem.manage_all）' }
+        - { name: includeHidden, in: query, schema: { type: boolean }, description: 需要 problem.view_hidden 或题目管理权限；出题人仅能通过该参数看到自己的隐藏题 }
         - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
         - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
       responses:
@@ -3913,19 +3914,20 @@ components:
       allOf:
         - $ref: '#/components/schemas/ProblemListItem'
         - type: object
-          required: [statementMd, inputFormatMd, outputFormatMd, samples, hintMd, solutionPriceCoins]
+          required: [statementMd, inputFormatMd, outputFormatMd, samples, hintMd, solutionPriceCoins, canEdit]
           properties:
             statementMd: { type: string }
             inputFormatMd: { type: string }
             outputFormatMd: { type: string }
             samples: { type: array, items: { $ref: '#/components/schemas/Sample' } }
             hintMd: { type: string }
-            answers: { type: array, items: { type: string }, description: 仅题目编辑者（problem.update）可见 }
+            answers: { type: array, items: { type: string }, description: 仅当前题目的创建者（problem.update）或 problem.manage_all 管理员可见 }
             solutionPriceCoins: { type: integer, format: int64, description: 官方题解解锁价格（金币），0 表示所有人免费；对所有可读题目始终返回，不受题解访问状态影响 }
-            solutionMd: { type: string, description: 拥有题目管理权限（problem.update/delete/publish/testcase.manage/checker.manage）或本人已通过该题时可见 }
-            solutionCode: { type: string, description: 拥有题目管理权限或本人已通过该题时可见 }
-            checkerUploaded: { type: boolean, description: 拥有题目管理权限或本人已通过该题时可见 }
-            createdBy: { type: integer, format: int64, description: 拥有题目管理权限或本人已通过该题时可见 }
+            solutionMd: { type: string, description: 当前题目的创建者/管理员或本人已通过该题时可见 }
+            solutionCode: { type: string, description: 当前题目的创建者/管理员或本人已通过该题时可见 }
+            checkerUploaded: { type: boolean, description: 当前题目的创建者/管理员或本人已通过该题时可见 }
+            createdBy: { type: integer, format: int64, description: 当前题目的创建者/管理员或本人已通过该题时可见 }
+            canEdit: { type: boolean, description: 当前用户是否可以编辑/管理该题目（创建者本人或 problem.manage_all） }
             author: { $ref: '#/components/schemas/ProblemAuthor' }
     ProblemAuthor:
       type: object

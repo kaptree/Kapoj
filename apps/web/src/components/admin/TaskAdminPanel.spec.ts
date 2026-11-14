@@ -137,6 +137,7 @@ beforeEach(() => {
     samples: [],
     hintMd: '',
     solutionPriceCoins: 0,
+    canEdit: false,
   }))
   vi.mocked(createTask).mockResolvedValue(task({ id: 99 }))
   vi.mocked(updateTask).mockResolvedValue(task())

@@ -122,6 +122,7 @@ function detail(id: number, overrides: Partial<ProblemDetail> = {}): ProblemDeta
     acceptCount: 0,
     createdAt: '',
     solutionPriceCoins: 0,
+    canEdit: false,
     ...overrides,
   } as ProblemDetail
 }

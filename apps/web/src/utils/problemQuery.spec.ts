@@ -4,14 +4,29 @@ import { parseProblemQuery, toRouteQuery } from './problemQuery'
 
 describe('parseProblemQuery', () => {
   it('returns defaults for an empty query', () => {
-    expect(parseProblemQuery({})).toEqual({ keyword: '', tag: '', difficulty: null, page: 1 })
+    expect(parseProblemQuery({})).toEqual({
+      keyword: '',
+      tag: '',
+      difficulty: null,
+      scope: '',
+      page: 1,
+    })
   })
 
   it('reads valid values', () => {
-    expect(parseProblemQuery({ keyword: 'sum', tag: 'math', difficulty: '3', page: '4' })).toEqual({
+    expect(
+      parseProblemQuery({
+        keyword: 'sum',
+        tag: 'math',
+        difficulty: '3',
+        scope: 'mine',
+        page: '4',
+      }),
+    ).toEqual({
       keyword: 'sum',
       tag: 'math',
       difficulty: 3,
+      scope: 'mine',
       page: 4,
     })
   })
@@ -37,6 +52,7 @@ describe('parseProblemQuery', () => {
       keyword: '',
       tag: '',
       difficulty: null,
+      scope: '',
       page: 1,
     })
   })
@@ -44,26 +60,31 @@ describe('parseProblemQuery', () => {
 
 describe('toRouteQuery', () => {
   it('omits default values', () => {
-    expect(toRouteQuery({ keyword: '', tag: '', difficulty: null, page: 1 })).toEqual({})
+    expect(
+      toRouteQuery({ keyword: '', tag: '', difficulty: null, scope: '', page: 1 }),
+    ).toEqual({})
   })
 
   it('writes everything else as strings', () => {
-    expect(toRouteQuery({ keyword: 'sum', tag: 'math', difficulty: 3, page: 2 })).toEqual({
+    expect(
+      toRouteQuery({ keyword: 'sum', tag: 'math', difficulty: 3, scope: 'all', page: 2 }),
+    ).toEqual({
       keyword: 'sum',
       tag: 'math',
       difficulty: '3',
+      scope: 'all',
       page: '2',
     })
   })
 
   it('omits a cleared difficulty even when it arrives as undefined or empty', () => {
-    const base = { keyword: '', tag: '', page: 1 }
+    const base = { keyword: '', tag: '', scope: '' as const, page: 1 }
     expect(toRouteQuery({ ...base, difficulty: undefined as unknown as null })).toEqual({})
     expect(toRouteQuery({ ...base, difficulty: '' as unknown as null })).toEqual({})
   })
 
   it('round-trips through parse', () => {
-    const q = { keyword: 'a b', tag: '图论', difficulty: 4, page: 7 }
+    const q = { keyword: 'a b', tag: '图论', difficulty: 4, scope: 'mine' as const, page: 7 }
     expect(parseProblemQuery(toRouteQuery(q))).toEqual(q)
   })
 })

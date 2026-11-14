@@ -153,12 +153,31 @@ func viewer(c *gin.Context) problem.Viewer {
 	if !ok || access == nil {
 		return problem.Viewer{}
 	}
-	return problem.Viewer{
-		CanViewHidden: access.Has(string(rbac.PermProblemViewHidden)),
-		CanViewLocked: access.Has(string(rbac.PermProblemViewHidden)) ||
-			access.Has(string(rbac.PermContestUpdate)),
-		CanViewSolution: canViewSolution(access),
+	var userID int64
+	if claims, ok := middleware.CurrentClaims(c); ok {
+		userID = claims.UserID
 	}
+	canManageAll := access.IsSuper || access.Has(string(rbac.PermProblemManageAll))
+	canManageOwn := canManageAll || access.Has(string(rbac.PermProblemCreate)) ||
+		access.Has(string(rbac.PermProblemUpdate)) ||
+		access.Has(string(rbac.PermProblemDelete)) ||
+		access.Has(string(rbac.PermProblemPublish)) ||
+		access.Has(string(rbac.PermProblemTestcaseManage)) ||
+		access.Has(string(rbac.PermProblemCheckerManage))
+	return problem.Viewer{
+		UserID:        userID,
+		CanViewHidden: access.Has(string(rbac.PermProblemViewHidden)) || canManageAll,
+		CanViewLocked: access.Has(string(rbac.PermProblemViewHidden)) ||
+			access.Has(string(rbac.PermContestUpdate)) || canManageAll,
+		CanViewSolution: canViewSolution(access) || canManageAll,
+		CanManageAll:    canManageAll,
+		CanManageOwn:    canManageOwn,
+	}
+}
+
+// canManageThis reports whether the viewer may manage this specific problem.
+func canManageThis(v problem.Viewer, p *problem.Problem) bool {
+	return v.CanManageAll || (v.CanManageOwn && p.CreatedBy == v.UserID)
 }
 
 // canViewSolution 表示当前用户是否能看到题解字段。只有题面/元数据编辑、删除、
@@ -180,6 +199,28 @@ func currentHas(c *gin.Context, code string) bool {
 // currentCanManageContest reports whether the current user may edit contests.
 func currentCanManageContest(c *gin.Context) bool {
 	return currentHas(c, string(rbac.PermContestUpdate))
+}
+
+// problemForManage loads a problem and verifies the current user may manage it.
+// Admins/manage_all may manage any problem; authors may manage only their own.
+// Hidden problems owned by someone else look missing to users without hidden
+// read access.
+func (h *handler) problemForManage(c *gin.Context, id int64) (*problem.Problem, bool) {
+	p, err := h.svc.Get(c.Request.Context(), problem.Viewer{CanViewHidden: true}, id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return nil, false
+	}
+	v := viewer(c)
+	if canManageThis(v, p) {
+		return p, true
+	}
+	if !p.IsPublic && !v.CanViewHidden {
+		httpx.Fail(c, httpx.ErrNotFound)
+	} else {
+		httpx.Fail(c, httpx.ErrForbidden)
+	}
+	return nil, false
 }
 
 // currentCanViewLockedStats reports whether the current user may see statistics
@@ -235,10 +276,42 @@ func pathID(c *gin.Context, name string) (int64, bool) {
 }
 
 func (h *handler) list(c *gin.Context) {
+	v := viewer(c)
 	q := problem.ListQuery{
 		Keyword:       c.Query("keyword"),
 		Tag:           c.Query("tag"),
 		IncludeHidden: c.Query("includeHidden") == "true",
+	}
+	scope := c.Query("scope")
+	switch scope {
+	case "", "public":
+		if scope == "public" {
+			q.IncludeHidden = false
+		}
+	case "mine":
+		claims, ok := middleware.CurrentClaims(c)
+		if !ok || claims.UserID <= 0 {
+			httpx.Fail(c, httpx.ErrUnauthorized)
+			return
+		}
+		if !v.CanManageOwn && !v.CanManageAll {
+			httpx.Fail(c, httpx.ErrForbidden)
+			return
+		}
+		q.OwnerID = claims.UserID
+		// The management view defaults to showing the author's hidden drafts.
+		if c.Query("includeHidden") == "" {
+			q.IncludeHidden = true
+		}
+	case "all":
+		if !v.CanManageAll {
+			httpx.Fail(c, httpx.ErrForbidden)
+			return
+		}
+		q.IncludeHidden = true
+	default:
+		httpx.Fail(c, httpx.ErrValidation("scope 必须是 public、mine 或 all"))
+		return
 	}
 	if d := c.Query("difficulty"); d != "" {
 		n, err := strconv.Atoi(d)
@@ -249,7 +322,7 @@ func (h *handler) list(c *gin.Context) {
 		q.Difficulty = n
 	}
 	page, size := httpx.ParsePage(c.Request.URL.RawQuery)
-	result, err := h.svc.List(c.Request.Context(), viewer(c), q, page, size)
+	result, err := h.svc.List(c.Request.Context(), v, q, page, size)
 	if err != nil {
 		httpx.Fail(c, err)
 		return
@@ -297,7 +370,8 @@ func (h *handler) get(c *gin.Context) {
 			return
 		}
 	}
-	includeSolution := v.CanViewSolution
+	manageThis := canManageThis(v, p)
+	includeSolution := v.CanViewSolution && manageThis
 	if !includeSolution && h.accepted != nil {
 		if claims, ok := middleware.CurrentClaims(c); ok {
 			includeSolution, err = h.accepted.HasAccepted(c.Request.Context(), claims.UserID, p.ID)
@@ -311,17 +385,18 @@ func (h *handler) get(c *gin.Context) {
 	if locked && !v.CanViewSolution && !currentIsSuper(c) {
 		includeSolution = false
 	}
-	// 正确答案只对题目编辑者或超管开放，题解/测试数据权限都不够。
-	includeAnswer := false
-	if access, ok := middleware.CurrentAccess(c); ok && access != nil {
-		includeAnswer = access.IsSuper || access.Has(string(rbac.PermProblemUpdate))
-	}
+	// 正确答案只对当前题目的编辑者/管理员开放，不能因为拥有
+	// problem.update 就读取他人题目的答案。
+	includeAnswer := manageThis && (v.CanManageAll || currentIsSuper(c) ||
+		currentHas(c, string(rbac.PermProblemUpdate)))
 	author, err := h.svc.Author(c.Request.Context(), p.CreatedBy)
 	if err != nil {
 		httpx.Fail(c, err)
 		return
 	}
-	httpx.OK(c, problem.ToDetail(p, includeSolution, includeAnswer, author))
+	d := problem.ToDetail(p, includeSolution, includeAnswer, author)
+	d.CanEdit = manageThis
+	httpx.OK(c, d)
 }
 
 func (h *handler) statistics(c *gin.Context) {
@@ -357,7 +432,9 @@ func (h *handler) create(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
-	httpx.Created(c, problem.ToDetail(p, true, true, nil))
+	d := problem.ToDetail(p, true, true, nil)
+	d.CanEdit = true
+	httpx.Created(c, d)
 }
 
 func (h *handler) update(c *gin.Context) {
@@ -369,9 +446,8 @@ func (h *handler) update(c *gin.Context) {
 	if !ok {
 		return
 	}
-	existing, err := h.svc.Get(c.Request.Context(), problem.Viewer{CanViewHidden: true}, id)
-	if err != nil {
-		httpx.Fail(c, err)
+	existing, ok := h.problemForManage(c, id)
+	if !ok {
 		return
 	}
 	if in.IsPublic != existing.IsPublic && !middleware.HasPermission(c, string(rbac.PermProblemPublish)) {
@@ -383,12 +459,17 @@ func (h *handler) update(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
-	httpx.OK(c, problem.ToDetail(p, true, true, nil))
+	d := problem.ToDetail(p, true, true, nil)
+	d.CanEdit = true
+	httpx.OK(c, d)
 }
 
 func (h *handler) delete(c *gin.Context) {
 	id, ok := pathID(c, "id")
 	if !ok {
+		return
+	}
+	if _, ok := h.problemForManage(c, id); !ok {
 		return
 	}
 	offlined, err := h.svc.Delete(c.Request.Context(), id)
@@ -402,6 +483,9 @@ func (h *handler) delete(c *gin.Context) {
 func (h *handler) listTestcases(c *gin.Context) {
 	id, ok := pathID(c, "id")
 	if !ok {
+		return
+	}
+	if _, ok := h.problemForManage(c, id); !ok {
 		return
 	}
 	list, err := h.svc.ListTestcases(c.Request.Context(), id)
@@ -428,6 +512,9 @@ func (h *handler) updateTestcase(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if _, ok := h.problemForManage(c, id); !ok {
+		return
+	}
 	if err := h.svc.UpdateTestcase(c.Request.Context(), id, tid, in.Score, in.IsSample); err != nil {
 		httpx.Fail(c, err)
 		return
@@ -438,6 +525,9 @@ func (h *handler) updateTestcase(c *gin.Context) {
 func (h *handler) reorderTestcases(c *gin.Context) {
 	id, ok := pathID(c, "id")
 	if !ok {
+		return
+	}
+	if _, ok := h.problemForManage(c, id); !ok {
 		return
 	}
 	in, ok := httpx.BindJSON[struct {
@@ -460,6 +550,9 @@ func (h *handler) deleteTestcase(c *gin.Context) {
 	}
 	tid, ok := pathID(c, "tid")
 	if !ok {
+		return
+	}
+	if _, ok := h.problemForManage(c, id); !ok {
 		return
 	}
 	if err := h.svc.DeleteTestcase(c.Request.Context(), id, tid); err != nil {
@@ -501,6 +594,9 @@ func formFile(c *gin.Context, field string) (multipart.File, bool) {
 func (h *handler) addTestcase(c *gin.Context) {
 	id, ok := pathID(c, "id")
 	if !ok {
+		return
+	}
+	if _, ok := h.problemForManage(c, id); !ok {
 		return
 	}
 	cleanup, ok := parseMultipart(c)
@@ -552,6 +648,9 @@ func (h *handler) addTestcase(c *gin.Context) {
 func (h *handler) uploadChecker(c *gin.Context) {
 	id, ok := pathID(c, "id")
 	if !ok {
+		return
+	}
+	if _, ok := h.problemForManage(c, id); !ok {
 		return
 	}
 	cleanup, ok := parseMultipart(c)

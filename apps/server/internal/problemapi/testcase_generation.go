@@ -13,6 +13,9 @@ func (h *handler) createTestcaseGeneration(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if _, ok := h.problemForManage(c, id); !ok {
+		return
+	}
 	claims, _ := middleware.CurrentClaims(c)
 	in, ok := httpx.BindJSON[testcasegen.CreateInput](c)
 	if !ok {
@@ -31,6 +34,9 @@ func (h *handler) getTestcaseGeneration(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if _, ok := h.problemForManage(c, id); !ok {
+		return
+	}
 	genID, ok := pathID(c, "genId")
 	if !ok {
 		return
@@ -46,6 +52,9 @@ func (h *handler) getTestcaseGeneration(c *gin.Context) {
 func (h *handler) previewTestcaseGeneration(c *gin.Context) {
 	id, ok := pathID(c, "id")
 	if !ok {
+		return
+	}
+	if _, ok := h.problemForManage(c, id); !ok {
 		return
 	}
 	genID, ok := pathID(c, "genId")
@@ -69,6 +78,9 @@ func (h *handler) confirmTestcaseGeneration(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if _, ok := h.problemForManage(c, id); !ok {
+		return
+	}
 	genID, ok := pathID(c, "genId")
 	if !ok {
 		return
@@ -84,6 +96,9 @@ func (h *handler) confirmTestcaseGeneration(c *gin.Context) {
 func (h *handler) discardTestcaseGeneration(c *gin.Context) {
 	id, ok := pathID(c, "id")
 	if !ok {
+		return
+	}
+	if _, ok := h.problemForManage(c, id); !ok {
 		return
 	}
 	genID, ok := pathID(c, "genId")

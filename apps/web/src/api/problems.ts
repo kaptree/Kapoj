@@ -20,6 +20,7 @@ export interface ListProblemsQuery {
   keyword?: string
   tag?: string
   difficulty?: number | null
+  scope?: 'public' | 'mine' | 'all'
   includeHidden?: boolean
   page?: number
   pageSize?: number
@@ -31,6 +32,7 @@ export const listProblems = (q: ListProblemsQuery = {}) =>
       keyword: q.keyword || undefined,
       tag: q.tag || undefined,
       difficulty: q.difficulty ?? undefined,
+      scope: q.scope,
       includeHidden: q.includeHidden ? 'true' : undefined,
       page: q.page,
       page_size: q.pageSize,

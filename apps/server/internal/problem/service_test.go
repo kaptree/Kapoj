@@ -116,6 +116,40 @@ func TestCreateForcesHidden(t *testing.T) {
 	assert.Equal(t, int64(1), p.CreatedBy)
 }
 
+func TestViewerOwnershipAndListScopes(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	own := e.create(t, input("own-draft"))
+	other, err := e.svc.Create(ctx, 2, input("other-draft"))
+	require.NoError(t, err)
+
+	owner := problem.Viewer{UserID: 1, CanManageOwn: true}
+	admin := problem.Viewer{UserID: 99, CanManageAll: true}
+
+	got, err := e.svc.Get(ctx, owner, own.ID)
+	require.NoError(t, err)
+	assert.Equal(t, own.ID, got.ID)
+
+	_, err = e.svc.Get(ctx, owner, other.ID)
+	assertCode(t, err, 40400)
+	_, err = e.svc.Get(ctx, admin, other.ID)
+	require.NoError(t, err)
+
+	mine, err := e.svc.List(ctx, owner, problem.ListQuery{OwnerID: 1, IncludeHidden: true}, 1, 20)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, mine.Total)
+	assert.Equal(t, own.ID, mine.Items[0].ID)
+
+	legacy, err := e.svc.List(ctx, owner, problem.ListQuery{IncludeHidden: true}, 1, 20)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, legacy.Total)
+	assert.Equal(t, own.ID, legacy.Items[0].ID)
+
+	all, err := e.svc.List(ctx, admin, problem.ListQuery{IncludeHidden: true}, 1, 20)
+	require.NoError(t, err)
+	assert.EqualValues(t, 2, all.Total)
+}
+
 func TestCreateDuplicateSlug(t *testing.T) {
 	e := newEnv(t)
 	e.create(t, input("dup"))

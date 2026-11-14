@@ -73,6 +73,7 @@ function detail(overrides: Partial<ProblemDetail> = {}): ProblemDetail {
     hintMd: '提示',
     solutionPriceCoins: 0,
     checkerUploaded: false,
+    canEdit: true,
     ...overrides,
   }
 }

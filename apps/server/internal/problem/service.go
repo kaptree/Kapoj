@@ -23,14 +23,19 @@ const (
 )
 
 // Viewer describes who is looking. The zero value is a guest or ordinary
-// user. CanViewHidden grants read access to unpublished problems;
+// user. CanViewHidden grants read access to all unpublished problems;
 // CanViewLocked grants read access to problems locked by an unfinished
 // contest; CanViewSolution grants read access to the solution fields
-// (solutionMd, solutionCode, checkerUploaded, createdBy).
+// (solutionMd, solutionCode, checkerUploaded, createdBy). CanManageAll grants
+// access to every problem; CanManageOwn allows the creator to see their own
+// hidden problems.
 type Viewer struct {
+	UserID          int64
 	CanViewHidden   bool
 	CanViewLocked   bool
 	CanViewSolution bool
+	CanManageAll    bool
+	CanManageOwn    bool
 }
 
 type ListQuery struct {
@@ -38,6 +43,9 @@ type ListQuery struct {
 	Tag           string
 	Difficulty    int
 	IncludeHidden bool
+	// OwnerID limits the result to problems created by this user. It is set
+	// by the mine scope; zero means no owner filter.
+	OwnerID int64
 }
 
 type TestcaseUpload struct {
@@ -150,7 +158,8 @@ func (s *Service) Get(ctx context.Context, v Viewer, id int64) (*Problem, error)
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	if !p.IsPublic && !v.CanViewHidden {
+	if !p.IsPublic && !v.CanViewHidden && !v.CanManageAll &&
+		!(v.CanManageOwn && p.CreatedBy == v.UserID) {
 		return nil, httpx.ErrNotFound
 	}
 	return p, nil
@@ -167,9 +176,23 @@ func (s *Service) Author(ctx context.Context, userID int64) (*AuthorSummary, err
 
 func (s *Service) List(ctx context.Context, v Viewer, q ListQuery, page, size int) (httpx.Page[ListItem], error) {
 	page = min(max(page, 1), maxListPage)
+
+	ownerID := q.OwnerID
+	includeHidden := q.IncludeHidden && (v.CanViewHidden || v.CanManageAll)
+	if ownerID > 0 {
+		// The mine scope is explicitly scoped by the handler; ownership is
+		// checked there. Hidden own problems are included when requested.
+		includeHidden = q.IncludeHidden
+	} else if q.IncludeHidden && !v.CanViewHidden && !v.CanManageAll && v.CanManageOwn {
+		// Legacy includeHidden=true for an author means "my hidden problems",
+		// not every hidden problem in the bank.
+		ownerID = v.UserID
+		includeHidden = true
+	}
+
 	items, total, err := s.repo.List(ctx, Filter{
 		Keyword: q.Keyword, Tag: q.Tag, Difficulty: q.Difficulty,
-		IncludeHidden: q.IncludeHidden && v.CanViewHidden,
+		IncludeHidden: includeHidden, OwnerID: ownerID,
 		IncludeLocked: v.CanViewLocked, Now: time.Now(),
 	}, (page-1)*size, size)
 	if err != nil {

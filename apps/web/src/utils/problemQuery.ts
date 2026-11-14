@@ -1,7 +1,10 @@
+export type ProblemScope = 'public' | 'mine' | 'all'
+
 export interface ProblemQuery {
   keyword: string
   tag: string
   difficulty: number | null
+  scope: ProblemScope | ''
   page: number
 }
 
@@ -19,10 +22,14 @@ function integer(v: unknown): number | null {
 export function parseProblemQuery(q: Record<string, unknown>): ProblemQuery {
   const page = integer(q.page)
   const difficulty = integer(q.difficulty)
+  const rawScope = first(q.scope)
+  const scope: ProblemQuery['scope'] =
+    rawScope === 'public' || rawScope === 'mine' || rawScope === 'all' ? rawScope : ''
   return {
     keyword: first(q.keyword),
     tag: first(q.tag),
     difficulty: difficulty !== null && difficulty >= 1 && difficulty <= 5 ? difficulty : null,
+    scope,
     page: page !== null && page >= 1 ? page : 1,
   }
 }
@@ -33,6 +40,7 @@ export function toRouteQuery(q: ProblemQuery): Record<string, string> {
   if (q.keyword) out.keyword = q.keyword
   if (q.tag) out.tag = q.tag
   if (typeof q.difficulty === 'number') out.difficulty = String(q.difficulty)
+  if (q.scope) out.scope = q.scope
   if (q.page > 1) out.page = String(q.page)
   return out
 }

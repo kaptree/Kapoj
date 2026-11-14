@@ -21,7 +21,7 @@ import AppSurface from '@/components/ui/AppSurface.vue'
 import { PERM } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { DIFFICULTIES } from '@/utils/difficulty'
-import { parseProblemQuery, toRouteQuery } from '@/utils/problemQuery'
+import { parseProblemQuery, toRouteQuery, type ProblemScope } from '@/utils/problemQuery'
 
 const PAGE_SIZE = 20
 
@@ -30,15 +30,42 @@ const router = useRouter()
 const auth = useAuthStore()
 
 const canCreate = computed(() => auth.can(PERM.problem.create))
-const canViewHidden = computed(() => auth.can(PERM.problem.viewHidden))
+const canManageAll = computed(() => auth.can(PERM.problem.manageAll))
+const canManageOwn = computed(
+  () =>
+    canManageAll.value ||
+    [
+      PERM.problem.create,
+      PERM.problem.update,
+      PERM.problem.publish,
+      PERM.problem.delete,
+      PERM.problem.testcase.manage,
+      PERM.problem.checker.manage,
+    ].some((code) => auth.can(code)),
+)
 const query = computed(() => parseProblemQuery(route.query))
+const defaultScope = computed<ProblemScope>(() =>
+  canManageAll.value ? 'all' : canManageOwn.value ? 'mine' : 'public',
+)
+const scope = computed<ProblemScope>(() => query.value.scope || defaultScope.value)
+const scopeOptions = computed(() => {
+  const options = [{ label: '公开题库', value: 'public' }]
+  if (canManageOwn.value) options.push({ label: '我的题目', value: 'mine' })
+  if (canManageAll.value) options.push({ label: '全部题目', value: 'all' })
+  return options
+})
 
 const filters = ref({ keyword: '', tag: '', difficulty: null as number | null })
-const showHidden = ref(false)
+const showHidden = ref(true)
 const items = ref<ProblemListItem[]>([])
 const total = ref(0)
 const loading = ref(false)
 const error = ref('')
+
+const scopeModel = computed<ProblemScope>({
+  get: () => scope.value,
+  set: (value) => go({ scope: value, page: 1 }),
+})
 
 const first = computed(() => (query.value.page - 1) * PAGE_SIZE)
 
@@ -52,7 +79,8 @@ async function load() {
   try {
     const page = await listProblems({
       ...query.value,
-      includeHidden: canViewHidden.value && showHidden.value,
+      scope: scope.value,
+      includeHidden: scope.value !== 'public' && showHidden.value,
       pageSize: PAGE_SIZE,
     })
     if (seq !== latest) return
@@ -136,6 +164,15 @@ function rate(p: ProblemListItem) {
     <AppSurface padding="lg" class="problem-surface">
       <form class="filter-bar" role="search" @submit.prevent="search">
         <div class="filter-fields">
+          <Select
+            v-if="canManageOwn"
+            v-model="scopeModel"
+            :options="scopeOptions"
+            option-label="label"
+            option-value="value"
+            aria-label="题库范围"
+            data-test="problem-scope"
+          />
           <InputText
             v-model="filters.keyword"
             fluid
@@ -158,7 +195,7 @@ function rate(p: ProblemListItem) {
           <Button type="submit" label="搜索" icon="pi pi-search" />
           <Button type="button" label="重置" severity="secondary" text @click="reset" />
         </div>
-        <div v-if="canViewHidden" class="filter-admin">
+        <div v-if="canManageOwn && scope !== 'public'" class="filter-admin">
           <ToggleSwitch v-model="showHidden" input-id="show-hidden" />
           <label for="show-hidden">显示未公开</label>
         </div>

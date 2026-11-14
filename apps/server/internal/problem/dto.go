@@ -39,6 +39,7 @@ type DetailDTO struct {
 	CheckerUploaded    *bool     `json:"checkerUploaded,omitempty"`
 	CreatedBy          *int64    `json:"createdBy,omitempty"`
 	Answers            *[]string `json:"answers,omitempty"`
+	CanEdit            bool      `json:"canEdit"`
 }
 
 type TestcaseDTO struct {

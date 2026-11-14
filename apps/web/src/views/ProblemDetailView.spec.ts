@@ -64,6 +64,7 @@ function detail(id: number, overrides: Partial<ProblemDetail> = {}): ProblemDeta
     acceptCount: 0,
     createdAt: '',
     solutionPriceCoins: 0,
+    canEdit: false,
     ...overrides,
   } as ProblemDetail
 }
@@ -240,8 +241,8 @@ describe('ProblemDetailView', () => {
     wrapper.unmount()
   })
 
-  it('shows the edit button only with problem.update permission', async () => {
-    vi.mocked(getProblem).mockResolvedValue(detail(1))
+  it('shows the edit button only when the API marks the problem editable', async () => {
+    vi.mocked(getProblem).mockResolvedValue(detail(1, { canEdit: false }))
     vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
 
     let wrapper = mountView()
@@ -249,7 +250,7 @@ describe('ProblemDetailView', () => {
     expect(wrapper.text()).not.toContain('编辑')
     wrapper.unmount()
 
-    auth.can.mockReturnValue(true)
+    vi.mocked(getProblem).mockResolvedValue(detail(1, { canEdit: true }))
     wrapper = mountView()
     await flushPromises()
     expect(wrapper.text()).toContain('编辑')

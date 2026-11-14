@@ -3067,7 +3067,9 @@ export interface paths {
                     keyword?: string;
                     tag?: string;
                     difficulty?: number;
-                    /** @description 需要 problem.view_hidden 权限；需携带 bearer token */
+                    /** @description public=公开题；mine=我的题目（需 problem.* 管理权限）；all=全部题目（需 problem.manage_all） */
+                    scope?: "public" | "mine" | "all";
+                    /** @description 需要 problem.view_hidden 或题目管理权限；出题人仅能通过该参数看到自己的隐藏题 */
                     includeHidden?: boolean;
                     page?: number;
                     page_size?: number;
@@ -8157,24 +8159,26 @@ export interface components {
             outputFormatMd: string;
             samples: components["schemas"]["Sample"][];
             hintMd: string;
-            /** @description 仅题目编辑者（problem.update）可见 */
+            /** @description 仅当前题目的创建者（problem.update）或 problem.manage_all 管理员可见 */
             answers?: string[];
             /**
              * Format: int64
              * @description 官方题解解锁价格（金币），0 表示所有人免费；对所有可读题目始终返回，不受题解访问状态影响
              */
             solutionPriceCoins: number;
-            /** @description 拥有题目管理权限（problem.update/delete/publish/testcase.manage/checker.manage）或本人已通过该题时可见 */
+            /** @description 当前题目的创建者/管理员或本人已通过该题时可见 */
             solutionMd?: string;
-            /** @description 拥有题目管理权限或本人已通过该题时可见 */
+            /** @description 当前题目的创建者/管理员或本人已通过该题时可见 */
             solutionCode?: string;
-            /** @description 拥有题目管理权限或本人已通过该题时可见 */
+            /** @description 当前题目的创建者/管理员或本人已通过该题时可见 */
             checkerUploaded?: boolean;
             /**
              * Format: int64
-             * @description 拥有题目管理权限或本人已通过该题时可见
+             * @description 当前题目的创建者/管理员或本人已通过该题时可见
              */
             createdBy?: number;
+            /** @description 当前用户是否可以编辑/管理该题目（创建者本人或 problem.manage_all） */
+            canEdit: boolean;
             author?: components["schemas"]["ProblemAuthor"];
         };
         /** @description 题目创建者的公开摘要；仅含 id/username/nickname，不含邮箱。 */
