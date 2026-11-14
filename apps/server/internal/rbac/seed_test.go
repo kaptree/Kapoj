@@ -16,6 +16,7 @@ import (
 var builtinRoleCodes = []string{
 	"super_admin",
 	"content_admin",
+	"problem_author",
 	"contest_admin",
 	"gamification_admin",
 	"user_admin",
@@ -72,7 +73,7 @@ func countRows(t *testing.T, g *gorm.DB, model any) int64 {
 
 func TestCatalogDefinitions(t *testing.T) {
 	permissions := rbac.AllPermissions()
-	require.Len(t, permissions, 40)
+	require.Len(t, permissions, 41)
 
 	codes := make(map[string]struct{}, len(permissions))
 	for _, def := range permissions {
@@ -124,6 +125,7 @@ func TestPermissionCatalogExactCodes(t *testing.T) {
 		"problem.publish",
 		"problem.testcase.manage",
 		"problem.checker.manage",
+		"problem.manage_all",
 		"submission.view_live_contest",
 		"contest.view_hidden",
 		"contest.create",
@@ -145,7 +147,7 @@ func TestPermissionCatalogExactCodes(t *testing.T) {
 		"mail.settings.manage",
 		"guest.growth.view",
 	}
-	require.Len(t, expected, 40)
+	require.Len(t, expected, 41)
 
 	codes := make([]string, len(rbac.PermissionCodes))
 	for i, code := range rbac.PermissionCodes {
@@ -172,10 +174,10 @@ func TestSiteSettingsPermissionCatalog(t *testing.T) {
 	}
 	require.True(t, found, "权限目录必须包含 site.settings.manage")
 
-	require.Len(t, rbac.PermissionCodes, 40)
-	assert.Equal(t, rbac.PermSiteSettingsManage, rbac.PermissionCodes[37])
-	assert.Equal(t, rbac.PermMailSettingsManage, rbac.PermissionCodes[38])
-	assert.Equal(t, rbac.PermGuestGrowthView, rbac.PermissionCodes[39], "游客权限应追加在目录最后")
+	require.Len(t, rbac.PermissionCodes, 41)
+	assert.Equal(t, rbac.PermSiteSettingsManage, rbac.PermissionCodes[38])
+	assert.Equal(t, rbac.PermMailSettingsManage, rbac.PermissionCodes[39])
+	assert.Equal(t, rbac.PermGuestGrowthView, rbac.PermissionCodes[40], "游客权限应追加在目录最后")
 
 	g := testutil.PG(t)
 	require.NoError(t, rbac.Seed(context.Background(), g))
@@ -207,7 +209,11 @@ func TestSeedCreatesCatalogAndRoles(t *testing.T) {
 			"learning_path.admin.read", "learning_path.official.manage",
 			"problem.checker.manage", "problem.create", "problem.delete",
 			"problem.publish", "problem.testcase.manage", "problem.update",
-			"problem.view_hidden",
+			"problem.view_hidden", "problem.manage_all",
+		},
+		"problem_author": {
+			"problem.checker.manage", "problem.create", "problem.delete",
+			"problem.publish", "problem.testcase.manage", "problem.update",
 		},
 		"contest_admin": {
 			"admin.dashboard.view",
@@ -248,7 +254,7 @@ func TestSeedCreatesCatalogAndRoles(t *testing.T) {
 
 	var seedVersion string
 	require.NoError(t, g.Model(&rbac.Meta{}).Where("key = ?", "seed_version").Pluck("value", &seedVersion).Error)
-	assert.Equal(t, "1", seedVersion)
+	assert.Equal(t, "2", seedVersion)
 }
 
 func TestSeedMapsLegacyRoles(t *testing.T) {
@@ -289,13 +295,13 @@ func TestSeedIsIdempotent(t *testing.T) {
 	assert.Equal(t, userRoles, countRows(t, g, &rbac.UserRole{}))
 	assert.Equal(t, int64(1), userRoles)
 	assert.Equal(t, []string{"content_admin"}, userRoleCodes(t, g, legacyID))
-	assert.Equal(t, int64(8), roles, "内置角色应为 8 个")
-	assert.Equal(t, int64(40), permissions, "权限目录应为 40 项")
+	assert.Equal(t, int64(9), roles, "内置角色应为 9 个")
+	assert.Equal(t, int64(41), permissions, "权限目录应为 41 项")
 	assert.Empty(t, rolePermissionCodes(t, g, rbac.RoleCodeGuest), "重复 seed 后 guest 仍无权限")
 
 	var seedVersion string
 	require.NoError(t, g.Model(&rbac.Meta{}).Where("key = ?", "seed_version").Pluck("value", &seedVersion).Error)
-	assert.Equal(t, "1", seedVersion)
+	assert.Equal(t, "2", seedVersion)
 }
 
 func TestSeedDoesNotRestoreRemovedPermission(t *testing.T) {
@@ -385,4 +391,35 @@ func TestSeedUpgradeOnlyEnsuresCatalog(t *testing.T) {
 	var seedVersion string
 	require.NoError(t, g.Model(&rbac.Meta{}).Where("key = ?", "seed_version").Pluck("value", &seedVersion).Error)
 	assert.Equal(t, rbac.SeedVersion, seedVersion, "版本升级后应记录当前版本")
+}
+
+func TestSeedV2GrantsProblemAuthorPermissions(t *testing.T) {
+	g := testutil.PG(t)
+	require.NoError(t, rbac.Seed(context.Background(), g))
+
+	var contentRole rbac.Role
+	require.NoError(t, g.Where("code = ?", rbac.RoleCodeContentAdmin).First(&contentRole).Error)
+	var authorRole rbac.Role
+	require.NoError(t, g.Where("code = ?", rbac.RoleCodeProblemAuthor).First(&authorRole).Error)
+	var manageAll rbac.Permission
+	require.NoError(t, g.Where("code = ?", rbac.PermProblemManageAll).First(&manageAll).Error)
+	var publish rbac.Permission
+	require.NoError(t, g.Where("code = ?", rbac.PermProblemPublish).First(&publish).Error)
+
+	// 模拟旧版本：新权限/新角色的授权尚未写入，且管理员删除了一个旧授权。
+	require.NoError(t, g.Where("role_id = ? AND permission_id IN ?", contentRole.ID,
+		[]int64{manageAll.ID, publish.ID}).Delete(&rbac.RolePermission{}).Error)
+	require.NoError(t, g.Where("role_id = ?", authorRole.ID).Delete(&rbac.RolePermission{}).Error)
+	require.NoError(t, g.Model(&rbac.Meta{}).Where("key = ?", "seed_version").
+		Update("value", "1").Error)
+
+	require.NoError(t, rbac.Seed(context.Background(), g))
+
+	assert.Contains(t, rolePermissionCodes(t, g, rbac.RoleCodeContentAdmin), "problem.manage_all")
+	assert.NotContains(t, rolePermissionCodes(t, g, rbac.RoleCodeContentAdmin), "problem.publish",
+		"V2 迁移不得恢复管理员删除的旧授权")
+	assert.ElementsMatch(t, []string{
+		"problem.checker.manage", "problem.create", "problem.delete",
+		"problem.publish", "problem.testcase.manage", "problem.update",
+	}, rolePermissionCodes(t, g, rbac.RoleCodeProblemAuthor))
 }

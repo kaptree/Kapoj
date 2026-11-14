@@ -27,6 +27,7 @@ describe('permission catalog', () => {
       'problem.publish',
       'problem.testcase.manage',
       'problem.checker.manage',
+      'problem.manage_all',
     ])
   })
 
@@ -79,6 +80,7 @@ describe('permission catalog', () => {
     expect(PERM.problem.create).toBe('problem.create')
     expect(PERM.problem.update).toBe('problem.update')
     expect(PERM.problem.delete).toBe('problem.delete')
+    expect(PERM.problem.manageAll).toBe('problem.manage_all')
     expect(PERM.contest.viewHidden).toBe('contest.view_hidden')
     expect(PERM.contest.create).toBe('contest.create')
     expect(PERM.contest.update).toBe('contest.update')

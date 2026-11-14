@@ -26,6 +26,7 @@ const (
 	PermProblemPublish            PermissionCode = "problem.publish"
 	PermProblemTestcaseManage     PermissionCode = "problem.testcase.manage"
 	PermProblemCheckerManage      PermissionCode = "problem.checker.manage"
+	PermProblemManageAll          PermissionCode = "problem.manage_all"
 	PermSubmissionViewLiveContest PermissionCode = "submission.view_live_contest"
 
 	PermContestViewHidden         PermissionCode = "contest.view_hidden"
@@ -103,6 +104,7 @@ var permissionCatalog = []PermissionDef{
 	{Code: PermProblemPublish, Name: "发布与下线题目", GroupName: PermissionGroupProblem, Description: "公开或下线题目"},
 	{Code: PermProblemTestcaseManage, Name: "管理测试数据", GroupName: PermissionGroupProblem, Description: "上传、编辑、排序或删除测试数据"},
 	{Code: PermProblemCheckerManage, Name: "管理检查器", GroupName: PermissionGroupProblem, Description: "上传题目检查器"},
+	{Code: PermProblemManageAll, Name: "管理全部题目", GroupName: PermissionGroupProblem, Description: "查看、编辑、发布和删除所有题目；未持有者只能操作自己创建的题目"},
 
 	{Code: PermSubmissionViewLiveContest, Name: "查看赛时提交", GroupName: PermissionGroupSubmission, Description: "比赛进行中查看他人代码、成绩与测试点"},
 
@@ -146,6 +148,7 @@ var PermissionCodes = func() []PermissionCode {
 const (
 	RoleCodeSuperAdmin        = "super_admin"
 	RoleCodeContentAdmin      = "content_admin"
+	RoleCodeProblemAuthor     = "problem_author"
 	RoleCodeContestAdmin      = "contest_admin"
 	RoleCodeGamificationAdmin = "gamification_admin"
 	RoleCodeUserAdmin         = "user_admin"
@@ -174,7 +177,16 @@ var builtinRoleDefs = []RoleDef{
 			PermAdminDashboardView,
 			PermProblemViewHidden, PermProblemCreate, PermProblemUpdate, PermProblemDelete,
 			PermProblemPublish, PermProblemTestcaseManage, PermProblemCheckerManage,
+			PermProblemManageAll,
 			PermLearningPathOfficialManage, PermLearningPathAdminRead,
+		},
+	},
+	{
+		Code: RoleCodeProblemAuthor, Name: "出题人",
+		Description: "创建、编辑、发布和删除自己的题目；不能操作他人题目",
+		Permissions: []PermissionCode{
+			PermProblemCreate, PermProblemUpdate, PermProblemPublish, PermProblemDelete,
+			PermProblemTestcaseManage, PermProblemCheckerManage,
 		},
 	},
 	{

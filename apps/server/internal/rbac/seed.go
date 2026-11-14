@@ -15,7 +15,7 @@ import (
 const (
 	// SeedVersion 是当前权限目录与内置角色的数据版本。提升版本只会补齐缺失的
 	// 权限目录与内置角色，不会新增或恢复任何角色权限授权。
-	SeedVersion = "1"
+	SeedVersion = "2"
 
 	metaSeedVersionKey = "seed_version"
 )
@@ -61,8 +61,63 @@ func Seed(ctx context.Context, g *gorm.DB) error {
 
 		// 新版本只确保上面的权限目录与内置角色；角色授权变更必须走显式数据迁移，
 		// 避免重启时恢复管理员已删除的 role_permissions。
+		if stored < 2 {
+			if err := migrateSeedV2(tx); err != nil {
+				return err
+			}
+		}
 		return writeSeedVersion(tx)
 	})
+}
+
+// migrateSeedV2 grants the permissions introduced with the problem-author
+// ownership model. It only touches the new permission and the new built-in
+// role; deleted grants on existing permissions are left alone.
+func migrateSeedV2(tx *gorm.DB) error {
+	if err := grantRolePermissions(tx, RoleCodeContentAdmin, []PermissionCode{PermProblemManageAll}); err != nil {
+		return err
+	}
+	var authorPerms []PermissionCode
+	for _, role := range BuiltinRoles() {
+		if role.Code == RoleCodeProblemAuthor {
+			authorPerms = role.Permissions
+			break
+		}
+	}
+	if len(authorPerms) == 0 {
+		return fmt.Errorf("rbac: builtin role %q missing permissions", RoleCodeProblemAuthor)
+	}
+	return grantRolePermissions(tx, RoleCodeProblemAuthor, authorPerms)
+}
+
+func grantRolePermissions(tx *gorm.DB, roleCode string, codes []PermissionCode) error {
+	roleIDs, err := roleIDsByCode(tx)
+	if err != nil {
+		return err
+	}
+	permissionIDs, err := permissionIDsByCode(tx)
+	if err != nil {
+		return err
+	}
+	roleID, ok := roleIDs[roleCode]
+	if !ok {
+		return fmt.Errorf("rbac: builtin role %q missing after seed", roleCode)
+	}
+	rows := make([]RolePermission, 0, len(codes))
+	for _, code := range codes {
+		permissionID, ok := permissionIDs[string(code)]
+		if !ok {
+			return fmt.Errorf("rbac: permission %q missing after seed", code)
+		}
+		rows = append(rows, RolePermission{RoleID: roleID, PermissionID: permissionID})
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error; err != nil {
+		return fmt.Errorf("grant problem author permissions: %w", err)
+	}
+	return nil
 }
 
 func readSeedVersion(tx *gorm.DB) (string, bool, error) {

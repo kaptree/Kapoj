@@ -36,6 +36,7 @@ export const PERM = {
     publish: 'problem.publish',
     testcase: { manage: 'problem.testcase.manage' },
     checker: { manage: 'problem.checker.manage' },
+    manageAll: 'problem.manage_all',
   },
   submission: {
     viewLiveContest: 'submission.view_live_contest',
@@ -98,6 +99,7 @@ export const PROBLEM_MANAGE_PERMISSIONS: string[] = [
   PERM.problem.publish,
   PERM.problem.testcase.manage,
   PERM.problem.checker.manage,
+  PERM.problem.manageAll,
 ]
 
 /** Every contest management permission code. */

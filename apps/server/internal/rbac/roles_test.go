@@ -42,7 +42,7 @@ func TestListPermissionsAndRoles(t *testing.T) {
 	svc := rbac.NewService(g)
 
 	permissions := svc.ListPermissions(ctx)
-	require.Len(t, permissions, 40)
+	require.Len(t, permissions, 41)
 
 	codes := make(map[string]struct{}, len(permissions))
 	groups := make([]string, 0, 8)
@@ -72,7 +72,7 @@ func TestListPermissionsAndRoles(t *testing.T) {
 
 	roles, err := svc.ListRoles(ctx)
 	require.NoError(t, err)
-	require.Len(t, roles, 8)
+	require.Len(t, roles, 9)
 
 	content := roleByCode(t, roles, rbac.RoleCodeContentAdmin)
 	assert.Equal(t, "内容管理员", content.Name)
@@ -85,6 +85,7 @@ func TestListPermissionsAndRoles(t *testing.T) {
 		"problem.checker.manage",
 		"problem.create",
 		"problem.delete",
+		"problem.manage_all",
 		"problem.publish",
 		"problem.testcase.manage",
 		"problem.update",
@@ -92,6 +93,18 @@ func TestListPermissionsAndRoles(t *testing.T) {
 	}, content.Permissions)
 	assert.False(t, content.CreatedAt.IsZero())
 	assert.False(t, content.UpdatedAt.IsZero())
+
+	author := roleByCode(t, roles, rbac.RoleCodeProblemAuthor)
+	assert.Equal(t, "出题人", author.Name)
+	assert.True(t, author.IsSystem)
+	assert.Equal(t, []string{
+		"problem.checker.manage",
+		"problem.create",
+		"problem.delete",
+		"problem.publish",
+		"problem.testcase.manage",
+		"problem.update",
+	}, author.Permissions)
 
 	super := roleByCode(t, roles, rbac.RoleCodeSuperAdmin)
 	assert.True(t, super.IsSystem)
