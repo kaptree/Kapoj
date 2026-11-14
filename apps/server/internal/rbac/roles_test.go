@@ -42,7 +42,7 @@ func TestListPermissionsAndRoles(t *testing.T) {
 	svc := rbac.NewService(g)
 
 	permissions := svc.ListPermissions(ctx)
-	require.Len(t, permissions, 41)
+	require.Len(t, permissions, 42)
 
 	codes := make(map[string]struct{}, len(permissions))
 	groups := make([]string, 0, 8)
@@ -90,6 +90,7 @@ func TestListPermissionsAndRoles(t *testing.T) {
 		"problem.testcase.manage",
 		"problem.update",
 		"problem.view_hidden",
+		"submission.rejudge",
 	}, content.Permissions)
 	assert.False(t, content.CreatedAt.IsZero())
 	assert.False(t, content.UpdatedAt.IsZero())

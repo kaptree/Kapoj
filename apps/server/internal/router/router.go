@@ -186,15 +186,18 @@ func New(d Deps) *gin.Engine {
 	}
 	socialSvc := social.NewService(d.DB, d.Activity)
 	socialapi.RegisterRoutes(api, socialSvc)
+	problemOpts := problemapi.Options{
+		RBAC:        d.RBAC,
+		Solutions:   problem.NewOfficialSolutionService(d.DB, problemRepo),
+		Discussions: problem.NewDiscussionService(d.DB, problemRepo),
+		Social:      socialSvc,
+		TestcaseGen: d.TestcaseGen,
+	}
+	if d.Game != nil {
+		problemOpts.IdentityLookup = d.Game
+	}
 	problemapi.RegisterRoutes(api, problemJSON, uploads, imports,
-		problemSvc, submissionRepo, contestRepo,
-		problemapi.Options{
-			RBAC:        d.RBAC,
-			Solutions:   problem.NewOfficialSolutionService(d.DB, problemRepo),
-			Discussions: problem.NewDiscussionService(d.DB, problemRepo),
-			Social:      socialSvc,
-			TestcaseGen: d.TestcaseGen,
-		})
+		problemSvc, submissionRepo, contestRepo, problemOpts)
 	submissionSvc := submission.NewService(
 		submissionRepo,
 		problemRepo,

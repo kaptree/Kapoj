@@ -28,6 +28,12 @@ type Viewer struct {
 	// CanManageContest bypasses the registration requirement for contest test
 	// submissions. It does not grant hidden-problem access.
 	CanManageContest bool
+	// CanRejudge allows resetting a terminal submission and enqueueing it again.
+	CanRejudge bool
+	// CanViewAllCode lets administrators read others' code outside contest
+	// protection. It does not bypass contest protection; CanViewLiveContest
+	// does that.
+	CanViewAllCode bool
 }
 
 type ProblemLookup interface {
@@ -120,20 +126,40 @@ func (s *Service) Detail(ctx context.Context, v Viewer, id int64) (*Detail, erro
 		ListItem: toListItem(*row), Code: row.Code, Answer: row.Answer, ErrorMessage: row.ErrorMessage,
 		JudgeResult: append([]JudgeCaseResult{}, row.JudgeResult...),
 	}
-	// Answers are never public: only the owner or a live-contest viewer can read
-	// them, regardless of contest state or verdict.
-	if row.Language == LanguageAnswer && v.UserID != row.UserID && !v.CanViewLiveContest {
-		detail.Answer = ""
-		detail.AnswerHidden = true
-	}
+	// Contest protection is the stronger rule: while a contest is running, other
+	// users lose code, answer, error output and testcase metrics even if they
+	// have an accepted submission on the same problem.
 	if contestProtected(*row, v, time.Now()) {
 		detail.Code = ""
 		detail.CodeHidden = true
+		detail.Answer = ""
+		detail.AnswerHidden = true
 		detail.ErrorMessage = ""
 		detail.JudgeResult = []JudgeCaseResult{}
 		detail.TimeUsedMS = 0
 		detail.MemoryUsedKB = 0
 		detail.Score = 0
+		return detail, nil
+	}
+	// Outside contest protection, others' code and answers are only visible to
+	// administrators or viewers who already accepted the same problem. Testcase
+	// metrics stay visible so statistics remain useful.
+	if v.UserID == row.UserID || v.CanViewAllCode || v.CanViewLiveContest || v.CanViewHiddenProblems {
+		return detail, nil
+	}
+	accepted := false
+	if v.UserID > 0 {
+		var err error
+		accepted, err = s.repo.HasAccepted(ctx, v.UserID, row.ProblemID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if !accepted {
+		detail.Code = ""
+		detail.CodeHidden = true
+		detail.Answer = ""
+		detail.AnswerHidden = true
 	}
 	return detail, nil
 }
@@ -146,6 +172,58 @@ func contestProtected(row ListRow, v Viewer, now time.Time) bool {
 		return false
 	}
 	return !now.Before(*row.ContestStartTime) && now.Before(*row.ContestEndTime)
+}
+
+const rejudgeCooldown = 30 * time.Second
+
+// Rejudge resets a terminal submission and enqueues it again. Only callers
+// with the submission.rejudge capability may use it.
+func (s *Service) Rejudge(ctx context.Context, v Viewer, id int64) (*Submission, error) {
+	if !v.CanRejudge {
+		return nil, httpx.ErrForbidden
+	}
+	sub, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil, httpx.ErrNotFound
+		}
+		return nil, err
+	}
+	if !sub.Status.Terminal() {
+		return nil, httpx.ErrValidation("提交仍在评测中，不能重测")
+	}
+	if sub.RejudgedAt != nil && time.Since(*sub.RejudgedAt) < rejudgeCooldown {
+		return nil, httpx.ErrValidation("同一提交 30 秒内只能重测一次")
+	}
+	now := time.Now()
+	res, err := s.repo.ResetForRejudge(ctx, id, now)
+	if errors.Is(err, ErrNotRejudgeable) {
+		return nil, httpx.ErrValidation("提交仍在评测中，不能重测")
+	}
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil, httpx.ErrNotFound
+		}
+		return nil, err
+	}
+	s.publish(ctx, res.ID)
+	if err := s.queue.Enqueue(ctx, res.ID); err != nil {
+		if markErr := s.repo.MarkSystemError(ctx, res.ID, "重测任务入队失败"); markErr != nil {
+			slog.Error("mark rejudge system error failed", "submission_id", res.ID, "err", markErr)
+		}
+		s.publish(ctx, res.ID)
+		return nil, err
+	}
+	sub.Status = StatusPending
+	sub.TimeUsedMS = 0
+	sub.MemoryUsedKB = 0
+	sub.Score = 0
+	sub.ErrorMessage = ""
+	sub.JudgeResult = dbtypes.List[JudgeCaseResult]{}
+	sub.JudgedAt = nil
+	sub.AcceptedCounted = false
+	sub.RejudgedAt = &now
+	return sub, nil
 }
 
 func (s *Service) HasAccepted(ctx context.Context, userID, problemID int64) (bool, error) {
@@ -242,10 +320,15 @@ func (s *Service) Create(ctx context.Context, v Viewer, userID int64, in Input) 
 		}
 	}
 
+	codeLength := len(in.Code)
+	if in.Language == LanguageAnswer {
+		codeLength = len(in.Answer)
+	}
 	sub := &Submission{
 		UserID: userID, ProblemID: p.ID, ContestID: contestID,
 		Language: in.Language, Code: in.Code, Answer: in.Answer,
-		Status: StatusPending, JudgeResult: dbtypes.List[JudgeCaseResult]{},
+		CodeLength: codeLength,
+		Status:     StatusPending, JudgeResult: dbtypes.List[JudgeCaseResult]{},
 	}
 	if err := s.repo.Create(ctx, sub); err != nil {
 		if errors.Is(err, problem.ErrNotFound) || errors.Is(err, contest.ErrNotFound) {

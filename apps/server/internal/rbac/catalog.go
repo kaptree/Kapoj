@@ -28,6 +28,7 @@ const (
 	PermProblemCheckerManage      PermissionCode = "problem.checker.manage"
 	PermProblemManageAll          PermissionCode = "problem.manage_all"
 	PermSubmissionViewLiveContest PermissionCode = "submission.view_live_contest"
+	PermSubmissionRejudge         PermissionCode = "submission.rejudge"
 
 	PermContestViewHidden         PermissionCode = "contest.view_hidden"
 	PermContestCreate             PermissionCode = "contest.create"
@@ -107,6 +108,7 @@ var permissionCatalog = []PermissionDef{
 	{Code: PermProblemManageAll, Name: "管理全部题目", GroupName: PermissionGroupProblem, Description: "查看、编辑、发布和删除所有题目；未持有者只能操作自己创建的题目"},
 
 	{Code: PermSubmissionViewLiveContest, Name: "查看赛时提交", GroupName: PermissionGroupSubmission, Description: "比赛进行中查看他人代码、成绩与测试点"},
+	{Code: PermSubmissionRejudge, Name: "重测提交", GroupName: PermissionGroupSubmission, Description: "重新评测任意提交"},
 
 	{Code: PermContestViewHidden, Name: "查看非公开比赛", GroupName: PermissionGroupContest, Description: "查看非公开比赛及其题目与榜单"},
 	{Code: PermContestCreate, Name: "创建比赛", GroupName: PermissionGroupContest, Description: "创建新比赛"},
@@ -177,7 +179,7 @@ var builtinRoleDefs = []RoleDef{
 			PermAdminDashboardView,
 			PermProblemViewHidden, PermProblemCreate, PermProblemUpdate, PermProblemDelete,
 			PermProblemPublish, PermProblemTestcaseManage, PermProblemCheckerManage,
-			PermProblemManageAll,
+			PermProblemManageAll, PermSubmissionRejudge,
 			PermLearningPathOfficialManage, PermLearningPathAdminRead,
 		},
 	},
@@ -196,7 +198,7 @@ var builtinRoleDefs = []RoleDef{
 			PermAdminDashboardView,
 			PermContestViewHidden, PermContestCreate, PermContestUpdate, PermContestDelete,
 			PermContestParticipantRead, PermContestAnnouncementManage,
-			PermSubmissionViewLiveContest,
+			PermSubmissionViewLiveContest, PermSubmissionRejudge,
 		},
 	},
 	{

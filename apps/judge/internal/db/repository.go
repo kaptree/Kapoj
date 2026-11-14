@@ -127,14 +127,26 @@ func (r *Repository) Finish(ctx context.Context, id int64, in FinishInput) error
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	var problemID int64
+	var wasCounted bool
+	err = tx.QueryRow(ctx, `
+		SELECT accepted_counted FROM submissions
+		WHERE id = $1 AND status = 'judging'
+		FOR UPDATE`, id).Scan(&wasCounted)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return tx.Commit(ctx)
+	}
+	if err != nil {
+		return err
+	}
 	err = tx.QueryRow(ctx, `
 		UPDATE submissions SET
-			status = $2,
+			status = $2::varchar,
 			time_used_ms = $3,
 			memory_used_kb = $4,
 			score = $5,
 			error_message = $6,
 			judge_result_json = $7::jsonb,
+			accepted_counted = CASE WHEN $2::varchar = 'accepted' THEN true ELSE accepted_counted END,
 			judged_at = now()
 		WHERE id = $1 AND status = 'judging'
 		RETURNING problem_id`,
@@ -146,7 +158,7 @@ func (r *Repository) Finish(ctx context.Context, id int64, in FinishInput) error
 	if err != nil {
 		return err
 	}
-	if in.Status == model.StatusAccepted {
+	if in.Status == model.StatusAccepted && !wasCounted {
 		if _, err := tx.Exec(ctx,
 			`UPDATE problems SET accept_count = accept_count + 1 WHERE id = $1`, problemID); err != nil {
 			return err

@@ -40,6 +40,7 @@ export const PERM = {
   },
   submission: {
     viewLiveContest: 'submission.view_live_contest',
+    rejudge: 'submission.rejudge',
   },
   contest: {
     viewHidden: 'contest.view_hidden',
@@ -133,6 +134,7 @@ export const ADMIN_ACCESS_PERMISSIONS: string[] = [
   PERM.role.permissions.update,
   ...PROBLEM_MANAGE_PERMISSIONS,
   PERM.submission.viewLiveContest,
+  PERM.submission.rejudge,
   ...CONTEST_MANAGE_PERMISSIONS,
   ...GAMIFICATION_MANAGE_PERMISSIONS,
   PERM.gamification.config.manage,

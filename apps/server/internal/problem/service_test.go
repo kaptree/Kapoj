@@ -834,7 +834,10 @@ func TestStatisticsAcceptRate(t *testing.T) {
 
 	s, err := e.svc.Statistics(ctx, manager, p.ID)
 	require.NoError(t, err)
-	assert.Equal(t, problem.Stats{}, s, "no submissions: rate is 0, not NaN")
+	assert.Zero(t, s.SubmitCount)
+	assert.Zero(t, s.AcceptCount)
+	assert.Zero(t, s.AcceptRate, "no submissions: rate is 0, not NaN")
+	assert.Empty(t, s.StatusCounts)
 
 	require.NoError(t, e.db.Exec("UPDATE problems SET submit_count = 4, accept_count = 1 WHERE id = ?", p.ID).Error)
 	s, err = e.svc.Statistics(ctx, manager, p.ID)

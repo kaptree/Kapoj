@@ -67,6 +67,12 @@ type Repository interface {
 	ReorderTestcases(ctx context.Context, problemID int64, ids []int64) error
 	CountTestcases(ctx context.Context, problemID int64) (int, error)
 
+	// StatusCounts returns the visible submission distribution for a problem.
+	StatusCounts(ctx context.Context, problemID int64, f SubmissionVisibility) ([]StatusCount, error)
+	// ListSubmissionMetrics returns visible submission metrics without code or
+	// submission IDs, plus the total number of matching rows.
+	ListSubmissionMetrics(ctx context.Context, problemID int64, f SubmissionMetricsFilter) ([]SubmissionMetricRow, int64, error)
+
 	CreateAttachment(ctx context.Context, a *ProblemAttachment) error
 	ListAttachments(ctx context.Context, problemID int64, kind string) ([]ProblemAttachment, error)
 	FindAttachment(ctx context.Context, problemID, id int64) (*ProblemAttachment, error)

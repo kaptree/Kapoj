@@ -69,6 +69,7 @@ describe('gamification utils', () => {
 
   it('formats coin reasons', () => {
     expect(coinReasonLabel('achievement')).toBe('成就奖励')
+    expect(coinReasonLabel('problem_accepted')).toBe('通过题目奖励')
     expect(coinReasonLabel('task')).toBe('任务奖励')
     expect(coinReasonLabel('badge_purchase')).toBe('购买徽章')
     expect(coinReasonLabel('title_purchase')).toBe('购买称号')

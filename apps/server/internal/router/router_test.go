@@ -352,7 +352,7 @@ func TestRouterMountsAdminRBACRoutes(t *testing.T) {
 	// 旧 token 不需要重新签发，权限按数据库实时解析。
 	w, resp = call(h, http.MethodGet, "/api/admin/roles", token, "")
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
-	assert.Len(t, resp["data"], 8)
+	assert.Len(t, resp["data"], 9)
 
 	w, resp = call(h, http.MethodGet, "/api/admin/users", token, "")
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
@@ -360,7 +360,7 @@ func TestRouterMountsAdminRBACRoutes(t *testing.T) {
 
 	w, resp = call(h, http.MethodGet, "/api/admin/permissions", token, "")
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
-	assert.Len(t, resp["data"], 40)
+	assert.Len(t, resp["data"], 42)
 }
 
 func TestRouterWiresRBACMe(t *testing.T) {

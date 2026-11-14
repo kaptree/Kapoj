@@ -33,6 +33,7 @@ type ListItem struct {
 	TimeUsedMS     int                         `json:"timeUsedMs"`
 	MemoryUsedKB   int                         `json:"memoryUsedKb"`
 	Score          int                         `json:"score"`
+	CodeLength     int                         `json:"codeLength"`
 	CreatedAt      time.Time                   `json:"createdAt"`
 	JudgedAt       *time.Time                  `json:"judgedAt,omitempty"`
 }
@@ -57,6 +58,7 @@ func toListItem(row ListRow) ListItem {
 		ProblemID: s.ProblemID, ProblemTitle: row.ProblemTitle, ProblemSlug: row.ProblemSlug,
 		ContestID: s.ContestID, Language: s.Language, Status: s.Status,
 		TimeUsedMS: s.TimeUsedMS, MemoryUsedKB: s.MemoryUsedKB, Score: s.Score,
-		CreatedAt: s.CreatedAt, JudgedAt: s.JudgedAt,
+		CodeLength: s.CodeLength,
+		CreatedAt:  s.CreatedAt, JudgedAt: s.JudgedAt,
 	}
 }

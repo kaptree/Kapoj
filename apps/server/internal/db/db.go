@@ -46,8 +46,9 @@ func newLogger(w io.Writer) logger.Interface {
 }
 
 const (
-	emailVerifiedBackfillKey = "email_verified_at_backfill_v1"
-	migrationAdvisoryLock    = int64(0x6b61706f6a)
+	emailVerifiedBackfillKey    = "email_verified_at_backfill_v1"
+	submissionFieldsBackfillKey = "submission_fields_backfill_v1"
+	migrationAdvisoryLock       = int64(0x6b61706f6a)
 )
 
 // Migration records one-off data migrations that must run exactly once.
@@ -93,8 +94,34 @@ func Migrate(g *gorm.DB) error {
 		); err != nil {
 			return err
 		}
-		return backfillEmailVerified(tx)
+		if err := backfillEmailVerified(tx); err != nil {
+			return err
+		}
+		return backfillSubmissionFields(tx)
 	})
+}
+
+func backfillSubmissionFields(tx *gorm.DB) error {
+	var count int64
+	if err := tx.Model(&Migration{}).Where("key = ?", submissionFieldsBackfillKey).Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	if err := tx.Exec(`
+		UPDATE submissions
+		SET accepted_counted = true
+		WHERE status = 'accepted' AND accepted_counted = false`).Error; err != nil {
+		return err
+	}
+	if err := tx.Exec(`
+		UPDATE submissions
+		SET code_length = octet_length(code) + octet_length(answer)
+		WHERE code_length = 0 AND (code <> '' OR answer <> '')`).Error; err != nil {
+		return err
+	}
+	return tx.Create(&Migration{Key: submissionFieldsBackfillKey, AppliedAt: time.Now().UTC()}).Error
 }
 
 func backfillEmailVerified(tx *gorm.DB) error {

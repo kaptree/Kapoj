@@ -10,6 +10,7 @@ import type {
   ProblemInput,
   ProblemListItem,
   ProblemStats,
+  ProblemSubmissionMetric,
   ProblemUpdateInput,
   StatementImageResult,
   Testcase,
@@ -56,6 +57,25 @@ export const deleteProblem = (id: number | string) =>
 
 export const getStatistics = (id: number | string) =>
   http.get<ProblemStats>(`/problems/${id}/statistics`)
+
+export type SubmissionMetricSort = 'time' | 'memory' | 'code_length' | 'created_at'
+
+export interface SubmissionStatsQuery {
+  sort?: SubmissionMetricSort
+  order?: 'asc' | 'desc'
+  page?: number
+  pageSize?: number
+}
+
+export const getSubmissionStats = (id: number | string, q: SubmissionStatsQuery = {}) =>
+  http.get<Page<ProblemSubmissionMetric>>(`/problems/${id}/submission-stats`, {
+    params: {
+      sort: q.sort,
+      order: q.order,
+      page: q.page,
+      page_size: q.pageSize,
+    },
+  })
 
 export const listProblemAttachments = (id: number | string) =>
   http.get<ProblemAttachment[]>(`/problems/${id}/attachments`)

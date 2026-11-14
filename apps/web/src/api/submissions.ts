@@ -39,3 +39,6 @@ export const getSubmission = (id: number | string) =>
 
 export const createSubmission = (input: CreateSubmissionRequest) =>
   http.post<SubmissionCreated>('/submissions', input)
+
+export const rejudgeSubmission = (id: number | string) =>
+  http.post<SubmissionCreated>(`/submissions/${id}/rejudge`)

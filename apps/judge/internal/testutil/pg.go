@@ -80,11 +80,15 @@ CREATE TABLE IF NOT EXISTS submissions (
   time_used_ms int NOT NULL DEFAULT 0,
   memory_used_kb int NOT NULL DEFAULT 0,
   score int NOT NULL DEFAULT 0,
+  code_length int NOT NULL DEFAULT 0,
+  accepted_counted boolean NOT NULL DEFAULT false,
   error_message text NOT NULL DEFAULT '',
   judge_result_json jsonb NOT NULL DEFAULT '[]',
   created_at timestamptz NOT NULL DEFAULT now(),
   judged_at timestamptz
 )`)
+	mustExec(t, pool, `ALTER TABLE submissions ADD COLUMN IF NOT EXISTS code_length int NOT NULL DEFAULT 0`)
+	mustExec(t, pool, `ALTER TABLE submissions ADD COLUMN IF NOT EXISTS accepted_counted boolean NOT NULL DEFAULT false`)
 	mustExec(t, pool, `
 CREATE TABLE IF NOT EXISTS testcase_generations (
   id bigserial PRIMARY KEY,

@@ -15,7 +15,7 @@ import (
 const (
 	// SeedVersion 是当前权限目录与内置角色的数据版本。提升版本只会补齐缺失的
 	// 权限目录与内置角色，不会新增或恢复任何角色权限授权。
-	SeedVersion = "2"
+	SeedVersion = "3"
 
 	metaSeedVersionKey = "seed_version"
 )
@@ -66,8 +66,22 @@ func Seed(ctx context.Context, g *gorm.DB) error {
 				return err
 			}
 		}
+		if stored < 3 {
+			if err := migrateSeedV3(tx); err != nil {
+				return err
+			}
+		}
 		return writeSeedVersion(tx)
 	})
+}
+
+func migrateSeedV3(tx *gorm.DB) error {
+	for _, role := range []string{RoleCodeContentAdmin, RoleCodeContestAdmin} {
+		if err := grantRolePermissions(tx, role, []PermissionCode{PermSubmissionRejudge}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // migrateSeedV2 grants the permissions introduced with the problem-author

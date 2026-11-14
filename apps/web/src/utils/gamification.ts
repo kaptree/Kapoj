@@ -38,6 +38,7 @@ const TITLE_UNLOCK_LABELS: Record<TitleUnlockType, string> = {
 }
 
 const COIN_REASON_LABELS: Record<string, string> = {
+  problem_accepted: '通过题目奖励',
   achievement: '成就奖励',
   task: '任务奖励',
   badge_purchase: '购买徽章',

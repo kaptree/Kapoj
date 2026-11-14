@@ -13,13 +13,14 @@ import Select from 'primevue/select'
 import { useToast } from 'primevue/usetoast'
 
 import { ApiError } from '@/api/http'
-import { getSubmission, listSubmissions } from '@/api/submissions'
+import { getSubmission, listSubmissions, rejudgeSubmission } from '@/api/submissions'
 import type {
   SubmissionDetail,
   SubmissionLanguage,
   SubmissionListItem,
   SubmissionStatus,
 } from '@/api/types'
+import CodeViewer from '@/components/CodeViewer.vue'
 import UserIdentityName from '@/components/UserIdentityName.vue'
 import AppEmptyState from '@/components/ui/AppEmptyState.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
@@ -27,6 +28,8 @@ import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppStatusTag from '@/components/ui/AppStatusTag.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
+import { PERM } from '@/permissions'
+import { useAuthStore } from '@/stores/auth'
 import { formatDateTime } from '@/utils/format'
 import { languageLabel, SUBMISSION_LANGUAGE_FILTERS, SUBMISSION_STATUSES } from '@/utils/submission'
 
@@ -34,6 +37,9 @@ const PAGE_SIZE = 20
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
+const auth = useAuthStore()
+const canRejudge = computed(() => auth.can(PERM.submission.rejudge))
+const rejudging = ref(false)
 
 interface FilterState {
   problemId: number | null
@@ -204,6 +210,31 @@ async function openDetail(row: SubmissionListItem) {
 
 function retryDetail() {
   if (lastDetailRow.value) void openDetail(lastDetailRow.value)
+}
+
+const testcaseTotal = computed<number | null>(() => {
+  const cases = detail.value?.judgeResult ?? []
+  if (!cases.length || cases.some((item) => item.score == null)) return null
+  return cases.reduce((sum, item) => sum + (item.score ?? 0), 0)
+})
+
+async function rejudge() {
+  if (!detail.value || rejudging.value) return
+  rejudging.value = true
+  try {
+    await rejudgeSubmission(detail.value.id)
+    toast.add({ severity: 'success', summary: '已提交重测', life: 3000 })
+    const next = await getSubmission(detail.value.id)
+    detail.value = next
+  } catch (e) {
+    toast.add({
+      severity: 'error',
+      summary: e instanceof ApiError ? e.message : '重测失败，请稍后再试',
+      life: 4000,
+    })
+  } finally {
+    rejudging.value = false
+  }
 }
 
 function scheduleReload() {
@@ -443,6 +474,19 @@ onBeforeUnmount(() => {
       <AppLoadingState v-if="detailLoading" label="正在加载测评详情" />
       <AppErrorState v-else-if="detailError" :description="detailError" @retry="retryDetail" />
       <template v-else-if="detail">
+        <div v-if="canRejudge" class="drawer-actions">
+          <Button
+            label="重测"
+            icon="pi pi-refresh"
+            size="small"
+            outlined
+            :loading="rejudging"
+            :disabled="detail.status === 'pending' || detail.status === 'judging'"
+            data-test="rejudge"
+            @click="rejudge"
+          />
+        </div>
+
         <dl class="detail-meta">
           <div>
             <dt>提交</dt>
@@ -467,7 +511,15 @@ onBeforeUnmount(() => {
           </div>
           <div>
             <dt>题目</dt>
-            <dd>{{ detail.problemTitle }}</dd>
+            <dd>
+              <RouterLink
+                :to="{ name: 'problem-detail', params: { id: detail.problemId } }"
+                class="problem-link"
+                @click.stop
+              >
+                {{ detail.problemTitle }}
+              </RouterLink>
+            </dd>
           </div>
           <div>
             <dt>语言</dt>
@@ -507,7 +559,7 @@ onBeforeUnmount(() => {
             :closable="false"
             class="hidden-banner"
           >
-            答案仅提交者本人可见。
+            该提交的答案暂不可见。仅提交者本人、管理员或已通过该题的用户可以查看。
           </Message>
           <template v-else-if="detail.answer">
             <h3>答案</h3>
@@ -523,12 +575,12 @@ onBeforeUnmount(() => {
           :closable="false"
           class="hidden-banner"
         >
-          比赛进行中，其他选手的代码与测评详情暂不可见。
+          该提交的代码暂不可见。仅提交者本人、管理员或已通过该题的用户可以查看。
         </Message>
 
         <template v-else>
           <h3>代码</h3>
-          <pre class="code-block" tabindex="0">{{ detail.code }}</pre>
+          <CodeViewer :code="detail.code ?? ''" :language="detail.language" />
 
           <template v-if="detail.errorMessage">
             <h3>错误信息</h3>
@@ -561,10 +613,18 @@ onBeforeUnmount(() => {
                   ><span class="num">{{ data.memoryKb }}</span></template
                 >
               </Column>
+              <Column header="分数" style="width: 80px">
+                <template #body="{ data }">
+                  <span class="num">{{ data.score ?? '—' }}</span>
+                </template>
+              </Column>
               <Column header="信息" style="min-width: 160px">
                 <template #body="{ data }">{{ data.message }}</template>
               </Column>
             </DataTable>
+            <p v-if="testcaseTotal !== null" class="testcase-total">
+              测试点总分：{{ testcaseTotal }}
+            </p>
           </template>
         </template>
       </template>
@@ -751,6 +811,19 @@ h3 {
   margin: var(--kapoj-space-5) 0 var(--kapoj-space-2);
   color: var(--kapoj-text);
   font-size: 1rem;
+}
+
+.drawer-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--kapoj-space-2);
+}
+
+.testcase-total {
+  margin: var(--kapoj-space-2) 0 0;
+  color: var(--kapoj-text-muted);
+  font-size: 12px;
+  text-align: right;
 }
 
 .code-block {

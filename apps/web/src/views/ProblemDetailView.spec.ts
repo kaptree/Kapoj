@@ -74,6 +74,7 @@ function stats(submitCount: number, acceptCount: number): ProblemStats {
     submitCount,
     acceptCount,
     acceptRate: submitCount === 0 ? 0 : acceptCount / submitCount,
+    statusCounts: [],
   }
 }
 

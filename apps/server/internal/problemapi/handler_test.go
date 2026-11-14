@@ -25,6 +25,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/ai"
 	"github.com/kaptree/kapoj/apps/server/internal/config"
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
+	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 	"github.com/kaptree/kapoj/apps/server/internal/router"
@@ -90,6 +91,7 @@ func newFx(t *testing.T) *fx {
 		RBAC:        rbacSvc,
 		Activity:    activity.NewService(g, rdb),
 		TestcaseGen: testcaseGenSvc,
+		Game:        gamification.NewService(gamification.NewRepository(g)),
 	})
 	return &fx{t: t, h: h, db: g, rbac: rbacSvc, root: root, tokens: map[string]string{}}
 }
@@ -804,6 +806,53 @@ func TestStatisticsEndpoint(t *testing.T) {
 	assert.EqualValues(t, 4, data["submitCount"])
 	assert.EqualValues(t, 1, data["acceptCount"])
 	assert.InDelta(t, 0.25, data["acceptRate"], 1e-9)
+}
+
+func TestSubmissionStatsEndpointExposesMetricsOnly(t *testing.T) {
+	f := newFx(t)
+	id := f.publish("submission-stats", nil)
+	require.NoError(t, f.db.Exec(
+		`INSERT INTO users (id, username, nickname, email, password_hash, avatar_url, created_at, updated_at)
+		 VALUES (11, 'metric-user', '指标用户', 'metric@example.com', 'x', 'https://example.com/avatar.png', now(), now())`,
+	).Error)
+	require.NoError(t, f.db.Exec(
+		`INSERT INTO submissions (user_id, problem_id, language, code, status, time_used_ms, memory_used_kb, code_length, created_at)
+		 VALUES (11, ?, 'cpp', 'SECRET_CODE', 'accepted', 12, 345, 11, now() - interval '2 minutes'),
+		        (11, ?, 'python3', 'OTHER_SECRET', 'wrong_answer', 34, 567, 12, now() - interval '1 minute')`,
+		id, id,
+	).Error)
+
+	w, resp := f.do(http.MethodGet, path("/api/problems/%d/statistics", id), "", nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	counts := resp["data"].(map[string]any)["statusCounts"].([]any)
+	require.Len(t, counts, 2)
+	first := counts[0].(map[string]any)
+	assert.Equal(t, "accepted", first["status"])
+	assert.EqualValues(t, 1, first["count"])
+	assert.InDelta(t, 0.5, first["percentage"], 1e-9)
+
+	w, resp = f.do(http.MethodGet, path("/api/problems/%d/submission-stats?sort=code_length&order=asc&page=1&page_size=1", id), "", nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	page := resp["data"].(map[string]any)
+	assert.EqualValues(t, 2, page["total"])
+	items := page["items"].([]any)
+	require.Len(t, items, 1)
+	item := items[0].(map[string]any)
+	assert.Equal(t, "指标用户", item["nickname"])
+	assert.Equal(t, "https://example.com/avatar.png", item["avatarUrl"])
+	assert.EqualValues(t, 11, item["codeLength"])
+	assert.Equal(t, "accepted", item["status"])
+	assert.Equal(t, []any{}, item["equippedBadges"])
+	_, hasID := item["id"]
+	assert.False(t, hasID, "must not expose submission IDs")
+	for _, key := range []string{"code", "codeHidden", "judgeResult", "answer"} {
+		_, ok := item[key]
+		assert.False(t, ok, "statistics must not expose %s", key)
+	}
+
+	w, resp = f.do(http.MethodGet, path("/api/problems/%d/submission-stats?sort=id", id), "", nil)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
 }
 
 func TestProblemListAndDetailRespectViewHiddenPermission(t *testing.T) {

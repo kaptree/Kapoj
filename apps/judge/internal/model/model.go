@@ -76,13 +76,14 @@ type Testcase struct {
 	SortOrder  int
 }
 
-// JudgeCaseResult is stored in submissions.judge_result_json. Score is only
-// used in memory for aggregation and is not serialized.
+// JudgeCaseResult is stored in submissions.judge_result_json. Score is used
+// for aggregation and is serialized so the submission detail can show the
+// per-testcase score.
 type JudgeCaseResult struct {
 	TestcaseID int64  `json:"testcaseId"`
 	Status     Status `json:"status"`
 	TimeMS     int    `json:"timeMs"`
 	MemoryKB   int    `json:"memoryKb"`
 	Message    string `json:"message,omitempty"`
-	Score      int    `json:"-"`
+	Score      int    `json:"score,omitempty"`
 }

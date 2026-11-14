@@ -150,17 +150,25 @@ func TestDetailVisibility(t *testing.T) {
 	contest := insertContest(t, e.db, now.Add(-time.Hour), now.Add(time.Hour))
 	contestSub := insertRecord(t, e.db, e.alice, e.problem1.ID, "cpp", "secret", "accepted", &contest, now)
 	require.NoError(t, e.db.Exec(
-		`UPDATE submissions SET judge_result_json = '[{"testcaseId":1,"status":"accepted","timeMs":1,"memoryKb":2}]'::jsonb,
+		`UPDATE submissions SET judge_result_json = '[{"testcaseId":1,"status":"accepted","timeMs":1,"memoryKb":2,"score":7}]'::jsonb,
 		 error_message = 'SECRET_COMPILER_OUTPUT' WHERE id = ?`,
 		contestSub,
 	).Error)
 	practiceSub := insertRecord(t, e.db, e.alice, e.problem1.ID, "cpp", "public", "accepted", nil, now)
+	require.NoError(t, e.db.Exec(
+		`UPDATE submissions SET time_used_ms = 11, memory_used_kb = 22, score = 7,
+		 judge_result_json = '[{"testcaseId":1,"status":"accepted","timeMs":11,"memoryKb":22,"score":7}]'::jsonb
+		 WHERE id = ?`, practiceSub,
+	).Error)
+	otherProblemSub := insertRecord(t, e.db, e.alice, e.problem2.ID, "cpp", "other-problem", "accepted", nil, now)
 
 	own, err := e.svc.Detail(context.Background(), submission.Viewer{UserID: e.alice}, contestSub)
 	require.NoError(t, err)
 	assert.Equal(t, "secret", own.Code)
 	assert.False(t, own.CodeHidden)
-	assert.NotEmpty(t, own.JudgeResult)
+	require.Len(t, own.JudgeResult, 1)
+	require.NotNil(t, own.JudgeResult[0].Score)
+	assert.Equal(t, 7, *own.JudgeResult[0].Score)
 
 	other, err := e.svc.Detail(context.Background(), submission.Viewer{UserID: e.bob}, contestSub)
 	require.NoError(t, err)
@@ -174,10 +182,47 @@ func TestDetailVisibility(t *testing.T) {
 	assert.False(t, admin.CodeHidden)
 	assert.Equal(t, "secret", admin.Code)
 
+	// 练习提交默认隐藏他人代码，但耗时、内存、分数与测试点仍保留供统计使用。
+	blocked, err := e.svc.Detail(context.Background(), submission.Viewer{UserID: e.bob}, practiceSub)
+	require.NoError(t, err)
+	assert.True(t, blocked.CodeHidden)
+	assert.Empty(t, blocked.Code)
+	assert.Equal(t, 11, blocked.TimeUsedMS)
+	assert.Equal(t, 22, blocked.MemoryUsedKB)
+	assert.Equal(t, 7, blocked.Score)
+	require.Len(t, blocked.JudgeResult, 1)
+	assert.Equal(t, 7, *blocked.JudgeResult[0].Score)
+
+	// 只有同题 AC 才能解锁；AC 了另一道题不算。
+	insertRecord(t, e.db, e.bob, e.problem2.ID, "cpp", "bob-product", "accepted", nil, now)
+	cross, err := e.svc.Detail(context.Background(), submission.Viewer{UserID: e.bob}, practiceSub)
+	require.NoError(t, err)
+	assert.True(t, cross.CodeHidden)
+	assert.Empty(t, cross.Code)
+
+	adminOnly, err := e.svc.Detail(context.Background(), submission.Viewer{UserID: e.bob, CanViewAllCode: true}, otherProblemSub)
+	require.NoError(t, err)
+	assert.False(t, adminOnly.CodeHidden)
+	assert.Equal(t, "other-problem", adminOnly.Code)
+
+	liveOnly, err := e.svc.Detail(context.Background(), submission.Viewer{UserID: e.bob, CanViewLiveContest: true}, otherProblemSub)
+	require.NoError(t, err)
+	assert.False(t, liveOnly.CodeHidden)
+	assert.Equal(t, "other-problem", liveOnly.Code)
+
+	// 查看者通过该题后可以看他人练习代码。
+	insertRecord(t, e.db, e.bob, e.problem1.ID, "cpp", "bob-ac", "accepted", nil, now)
 	visible, err := e.svc.Detail(context.Background(), submission.Viewer{UserID: e.bob}, practiceSub)
 	require.NoError(t, err)
 	assert.False(t, visible.CodeHidden)
 	assert.Equal(t, "public", visible.Code)
+
+	// 比赛进行中，同题 AC 也不能绕过赛时保护。
+	stillProtected, err := e.svc.Detail(context.Background(), submission.Viewer{UserID: e.bob}, contestSub)
+	require.NoError(t, err)
+	assert.True(t, stillProtected.CodeHidden)
+	assert.Empty(t, stillProtected.Code)
+	assert.Zero(t, stillProtected.Score)
 
 	ended := insertContest(t, e.db, now.Add(-2*time.Hour), now.Add(-time.Hour))
 	endedSub := insertRecord(t, e.db, e.alice, e.problem1.ID, "cpp", "ended-code", "accepted", &ended, now.Add(-90*time.Minute))
@@ -185,6 +230,15 @@ func TestDetailVisibility(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, after.CodeHidden)
 	assert.Equal(t, "ended-code", after.Code)
+
+	// 比赛结束后，未 AC 该题的用户仍然看不到代码。
+	endedOther := insertRecord(t, e.db, e.alice, e.problem2.ID, "cpp", "ended-other", "accepted", &ended, now.Add(-90*time.Minute))
+	afterOther, err := e.svc.Detail(context.Background(), submission.Viewer{UserID: e.alice}, endedOther)
+	require.NoError(t, err)
+	assert.False(t, afterOther.CodeHidden)
+	hiddenAfter, err := e.svc.Detail(context.Background(), submission.Viewer{}, endedOther)
+	require.NoError(t, err)
+	assert.True(t, hiddenAfter.CodeHidden)
 
 	_, err = e.svc.Detail(context.Background(), submission.Viewer{}, 999999)
 	assertCode(t, err, 40400)
@@ -212,22 +266,42 @@ func TestSubmissionAnswerVisibility(t *testing.T) {
 	assert.Equal(t, "choice-a", admin.Answer)
 	assert.False(t, admin.AnswerHidden)
 
-	// 比赛结束后答案仍然只对本人和 view_live_contest 可见。
-	ended := insertContest(t, e.db, now.Add(-2*time.Hour), now.Add(-time.Hour))
-	endedSub := insertRecord(t, e.db, e.alice, e.problem1.ID, "answer", "", "accepted", &ended, now.Add(-90*time.Minute))
-	require.NoError(t, e.db.Exec(`UPDATE submissions SET answer = 'choice-b' WHERE id = ?`, endedSub).Error)
-	after, err := e.svc.Detail(context.Background(), submission.Viewer{UserID: e.bob}, endedSub)
-	require.NoError(t, err)
-	assert.Empty(t, after.Answer)
-	assert.True(t, after.AnswerHidden)
-
-	// 非比赛提交同样不公开答案。
+	// 非比赛提交默认不公开答案；同题 AC 后可见。
 	practiceSub := insertRecord(t, e.db, e.alice, e.problem1.ID, "answer", "", "accepted", nil, now)
 	require.NoError(t, e.db.Exec(`UPDATE submissions SET answer = 'choice-c' WHERE id = ?`, practiceSub).Error)
 	practice, err := e.svc.Detail(context.Background(), submission.Viewer{UserID: e.bob}, practiceSub)
 	require.NoError(t, err)
 	assert.Empty(t, practice.Answer)
 	assert.True(t, practice.AnswerHidden)
+
+	insertRecord(t, e.db, e.bob, e.problem1.ID, "cpp", "bob-ac", "accepted", nil, now)
+	unlocked, err := e.svc.Detail(context.Background(), submission.Viewer{UserID: e.bob}, practiceSub)
+	require.NoError(t, err)
+	assert.Equal(t, "choice-c", unlocked.Answer)
+	assert.False(t, unlocked.AnswerHidden)
+
+	// 比赛进行中仍然优先赛时保护，即使查看者已 AC 同题。
+	protected, err := e.svc.Detail(context.Background(), submission.Viewer{UserID: e.bob}, contestSub)
+	require.NoError(t, err)
+	assert.Empty(t, protected.Answer)
+	assert.True(t, protected.AnswerHidden)
+
+	// 比赛结束后按普通可见性规则处理：同题 AC 可见。
+	ended := insertContest(t, e.db, now.Add(-2*time.Hour), now.Add(-time.Hour))
+	endedSub := insertRecord(t, e.db, e.alice, e.problem1.ID, "answer", "", "accepted", &ended, now.Add(-90*time.Minute))
+	require.NoError(t, e.db.Exec(`UPDATE submissions SET answer = 'choice-b' WHERE id = ?`, endedSub).Error)
+	after, err := e.svc.Detail(context.Background(), submission.Viewer{UserID: e.bob}, endedSub)
+	require.NoError(t, err)
+	assert.Equal(t, "choice-b", after.Answer)
+	assert.False(t, after.AnswerHidden)
+
+	// 未 AC 该题时，比赛结束也看不到答案。
+	endedOther := insertRecord(t, e.db, e.alice, e.problem2.ID, "answer", "", "accepted", &ended, now.Add(-90*time.Minute))
+	require.NoError(t, e.db.Exec(`UPDATE submissions SET answer = 'choice-d' WHERE id = ?`, endedOther).Error)
+	afterOther, err := e.svc.Detail(context.Background(), submission.Viewer{}, endedOther)
+	require.NoError(t, err)
+	assert.Empty(t, afterOther.Answer)
+	assert.True(t, afterOther.AnswerHidden)
 }
 
 func TestListHidesContestDetailsWhileRunning(t *testing.T) {

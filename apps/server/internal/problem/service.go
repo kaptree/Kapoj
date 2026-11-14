@@ -39,6 +39,9 @@ type Viewer struct {
 	CanViewSolution bool
 	CanManageAll    bool
 	CanManageOwn    bool
+	// CanViewLiveContest includes others' running-contest submissions in the
+	// statistics endpoints. It mirrors submission.view_live_contest.
+	CanViewLiveContest bool
 }
 
 type ListQuery struct {
@@ -59,9 +62,10 @@ type TestcaseUpload struct {
 }
 
 type Stats struct {
-	SubmitCount int     `json:"submitCount"`
-	AcceptCount int     `json:"acceptCount"`
-	AcceptRate  float64 `json:"acceptRate"`
+	SubmitCount  int           `json:"submitCount"`
+	AcceptCount  int           `json:"acceptCount"`
+	AcceptRate   float64       `json:"acceptRate"`
+	StatusCounts []StatusCount `json:"statusCounts"`
 }
 
 // LearningGuard decides whether a problem is referenced by an active learning
@@ -231,10 +235,30 @@ func (s *Service) Statistics(ctx context.Context, v Viewer, id int64) (Stats, er
 	if err != nil {
 		return Stats{}, err
 	}
-	st := Stats{SubmitCount: p.SubmitCount, AcceptCount: p.AcceptCount}
+	st := Stats{
+		SubmitCount:  p.SubmitCount,
+		AcceptCount:  p.AcceptCount,
+		StatusCounts: []StatusCount{},
+	}
 	if p.SubmitCount > 0 {
 		st.AcceptRate = float64(p.AcceptCount) / float64(p.SubmitCount)
 	}
+	counts, err := s.repo.StatusCounts(ctx, id, SubmissionVisibility{
+		ViewerID: v.UserID, CanViewLiveContest: v.CanViewLiveContest, Now: time.Now(),
+	})
+	if err != nil {
+		return Stats{}, err
+	}
+	var visibleTotal int64
+	for _, row := range counts {
+		visibleTotal += row.Count
+	}
+	for i := range counts {
+		if visibleTotal > 0 {
+			counts[i].Percentage = float64(counts[i].Count) / float64(visibleTotal)
+		}
+	}
+	st.StatusCounts = counts
 	return st, nil
 }
 

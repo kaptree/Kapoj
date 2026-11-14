@@ -3336,6 +3336,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/problems/{id}/submission-stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * 题目提交指标（不含代码与提交 ID）
+         * @description 返回可见提交的运行时间、内存、代码长度与提交时间，供统计页排序和对比。 不返回 code/codeHidden/judgeResult/提交 ID，也不提供代码入口。 比赛进行中，他人受保护的赛时提交会被排除；本人提交与拥有 submission.view_live_contest 的查看者不受影响。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    sort?: "time" | "memory" | "code_length" | "created_at";
+                    order?: "asc" | "desc";
+                    page?: number;
+                    page_size?: number;
+                };
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 提交指标分页（按白名单字段排序） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SubmissionStatsResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/problems/{id}/attachments": {
         parameters: {
             query?: never;
@@ -4906,7 +4956,10 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** 测评记录详情；隐藏题的他人提交需 problem.view_hidden，比赛进行中的他人提交需 submission.view_live_contest */
+        /**
+         * 测评记录详情；隐藏题的他人提交需 problem.view_hidden，比赛进行中的他人提交需 submission.view_live_contest
+         * @description 全站默认隐藏他人代码与答案；查看者本人、管理员或已在该题 AC 的用户可见。 比赛进行中仍优先赛时保护，不会因同题 AC 放宽；未满足代码可见条件时只隐藏代码/答案， 耗时、内存、分数与测试点指标仍返回。
+         */
         get: {
             parameters: {
                 query?: never;
@@ -4932,6 +4985,53 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/submissions/{id}/rejudge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 管理员重测提交（submission.rejudge）
+         * @description 仅终态提交可重测；评测中返回 40001，同一提交 30 秒内重复重测返回 40001。 重测不改变代码、语言、题目、用户与比赛，submit_count 不变；旧 AC 计数会回退， 重测后由 judge 幂等恢复。重复 AC 不会重复发放题目金币。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已重新入队 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SubmissionCreatedResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -8734,6 +8834,8 @@ export interface components {
             timeMs: number;
             memoryKb: number;
             message?: string;
+            /** @description 该测试点得分；历史提交可能缺少此字段，前端显示“—”而不是 0 */
+            score?: number | null;
         };
         SubmissionListItem: {
             /** Format: int64 */
@@ -8757,27 +8859,63 @@ export interface components {
             timeUsedMs: number;
             memoryUsedKb: number;
             score: number;
+            /** @description 代码按 UTF-8 字节数；客观题为答案文本字节数 */
+            codeLength: number;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
             judgedAt?: string;
         };
         SubmissionDetail: components["schemas"]["SubmissionListItem"] & {
-            /** @description 比赛进行中对他人的提交不返回；本人、拥有 submission.view_live_contest 者或赛后恢复 */
+            /** @description 默认隐藏他人代码；本人、管理员、拥有 submission.view_live_contest 者或已在该题 AC 的查看者可见。比赛进行中始终受赛时保护。 */
             code?: string;
             codeHidden: boolean;
-            /** @description 客观题提交的答案，仅本人或拥有实时比赛查看权限者可见；代码题为空 */
+            /** @description 客观题提交的答案，可见性规则与代码一致；代码题为空 */
             answer?: string;
             /** @description 答案是否因权限被隐藏 */
             answerHidden: boolean;
             errorMessage?: string;
             judgeResult: components["schemas"]["SubmissionJudgeCase"][];
         };
+        StatusCount: {
+            status: components["schemas"]["SubmissionStatus"];
+            /** Format: int64 */
+            count: number;
+            /** @description 占可见提交总数的 0 到 1 比例；无可见提交时为 0 */
+            percentage: number;
+        };
         Stats: {
             submitCount: number;
             acceptCount: number;
             /** @description 0 到 1，没有提交时为 0 */
             acceptRate: number;
+            /** @description 可见提交的状态分布，按 AC、WA、TLE、MLE、RE、CE、SE、judging、pending 顺序 */
+            statusCounts: components["schemas"]["StatusCount"][];
+        };
+        /** @description 统计页提交指标；不包含提交 ID、代码、测试点或答案。 */
+        SubmissionMetric: {
+            /** Format: int64 */
+            userId: number;
+            username: string;
+            nickname: string;
+            /** @description 公开头像地址；空字符串表示未设置 */
+            avatarUrl: string;
+            equippedBadges: components["schemas"]["EquippedBadge"][];
+            equippedTitle: components["schemas"]["EquippedTitle"] | null;
+            language: components["schemas"]["SubmissionLanguage"];
+            status: components["schemas"]["SubmissionStatus"];
+            timeUsedMs: number;
+            memoryUsedKb: number;
+            codeLength: number;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        SubmissionStatsResponse: components["schemas"]["Envelope"] & {
+            data: {
+                /** Format: int64 */
+                total: number;
+                items: components["schemas"]["SubmissionMetric"][];
+            };
         };
         ProblemPageResponse: components["schemas"]["Envelope"] & {
             data: {

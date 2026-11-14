@@ -3,7 +3,9 @@ package gamification_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -61,6 +63,119 @@ func eventsOfType(p *fakeEventPublisher, typ gamequeue.EventType) []gamequeue.Ev
 		}
 	}
 	return out
+}
+
+func insertSubmission(t *testing.T, env *eventsEnv, status string, createdAt time.Time) int64 {
+	t.Helper()
+	var id int64
+	require.NoError(t, env.db.Raw(
+		`INSERT INTO submissions (user_id, problem_id, language, code, status, created_at)
+		 VALUES (?, ?, 'cpp', 'int main(){}', ?, ?) RETURNING id`,
+		env.user.ID, env.problem, status, createdAt,
+	).Scan(&id).Error)
+	require.NotZero(t, id)
+	return id
+}
+
+func coinBalance(t *testing.T, env *eventsEnv) int64 {
+	t.Helper()
+	var coins int64
+	require.NoError(t, env.db.Raw(`SELECT coins FROM users WHERE id = ?`, env.user.ID).Scan(&coins).Error)
+	return coins
+}
+
+func coinTransactionCount(t *testing.T, env *eventsEnv, reason string) int64 {
+	t.Helper()
+	var count int64
+	require.NoError(t, env.db.Model(&gamification.CoinTransaction{}).
+		Where("user_id = ? AND reason = ?", env.user.ID, reason).Count(&count).Error)
+	return count
+}
+
+func TestHandleGameEventFirstAcceptedAwardsThreeCoins(t *testing.T) {
+	env := newEventsEnv(t, &fakeEventPublisher{})
+	subID := insertSubmission(t, env, "accepted", time.Now())
+
+	require.NoError(t, env.svc.HandleGameEvent(context.Background(), gamequeue.Event{
+		Type: gamequeue.EventSubmissionAccepted, UserID: env.user.ID, SubmissionID: subID,
+	}))
+
+	assert.EqualValues(t, 3, coinBalance(t, env))
+	var tx gamification.CoinTransaction
+	require.NoError(t, env.db.Where("user_id = ? AND reason = ?", env.user.ID, "problem_accepted").
+		First(&tx).Error)
+	assert.EqualValues(t, 3, tx.Amount)
+	assert.Equal(t, "problem", tx.RefType)
+	assert.Equal(t, env.problem, tx.RefID)
+}
+
+func TestHandleGameEventDuplicateAcceptanceAwardsOnce(t *testing.T) {
+	env := newEventsEnv(t, &fakeEventPublisher{})
+	ctx := context.Background()
+	first := insertSubmission(t, env, "accepted", time.Now().Add(-time.Hour))
+	second := insertSubmission(t, env, "accepted", time.Now())
+
+	for _, id := range []int64{first, second, first} {
+		require.NoError(t, env.svc.HandleGameEvent(ctx, gamequeue.Event{
+			Type: gamequeue.EventSubmissionAccepted, UserID: env.user.ID, SubmissionID: id,
+		}))
+	}
+
+	assert.EqualValues(t, 3, coinBalance(t, env))
+	assert.EqualValues(t, 1, coinTransactionCount(t, env, "problem_accepted"))
+}
+
+func TestHandleGameEventHistoricalAcceptanceBlocksLateAward(t *testing.T) {
+	env := newEventsEnv(t, &fakeEventPublisher{})
+	// 上线前已有 AC（没有金币流水）：上线后的重复 AC 不应被当成首次 AC 补发。
+	insertSubmission(t, env, "accepted", time.Now().Add(-48*time.Hour))
+	subID := insertSubmission(t, env, "accepted", time.Now())
+
+	require.NoError(t, env.svc.HandleGameEvent(context.Background(), gamequeue.Event{
+		Type: gamequeue.EventSubmissionAccepted, UserID: env.user.ID, SubmissionID: subID,
+	}))
+
+	assert.Zero(t, coinBalance(t, env))
+	assert.Zero(t, coinTransactionCount(t, env, "problem_accepted"))
+}
+
+func TestHandleGameEventEarlierWrongAnswerDoesNotBlockAward(t *testing.T) {
+	env := newEventsEnv(t, &fakeEventPublisher{})
+	insertSubmission(t, env, "wrong_answer", time.Now().Add(-time.Hour))
+	subID := insertSubmission(t, env, "accepted", time.Now())
+
+	require.NoError(t, env.svc.HandleGameEvent(context.Background(), gamequeue.Event{
+		Type: gamequeue.EventSubmissionAccepted, UserID: env.user.ID, SubmissionID: subID,
+	}))
+
+	assert.EqualValues(t, 3, coinBalance(t, env))
+}
+
+func TestHandleGameEventConcurrentAcceptancesAwardOnce(t *testing.T) {
+	env := newEventsEnv(t, &fakeEventPublisher{})
+	ctx := context.Background()
+	first := insertSubmission(t, env, "accepted", time.Now().Add(-time.Minute))
+	second := insertSubmission(t, env, "accepted", time.Now())
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	for _, id := range []int64{first, second} {
+		wg.Add(1)
+		go func(submissionID int64) {
+			defer wg.Done()
+			errs <- env.svc.HandleGameEvent(ctx, gamequeue.Event{
+				Type: gamequeue.EventSubmissionAccepted, UserID: env.user.ID, SubmissionID: submissionID,
+			})
+		}(id)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+
+	assert.EqualValues(t, 3, coinBalance(t, env))
+	assert.EqualValues(t, 1, coinTransactionCount(t, env, "problem_accepted"))
 }
 
 func TestOnLoginRecordsDayAndPublishesEvent(t *testing.T) {
@@ -222,11 +337,12 @@ func TestFindAcceptedSubmission(t *testing.T) {
 	env := newEventsEnv(t, &fakeEventPublisher{})
 	ctx := context.Background()
 
+	createdAt := time.Now().Add(-time.Minute).UTC().Truncate(time.Microsecond)
 	var acceptedID, wrongID int64
 	require.NoError(t, env.db.Raw(
 		`INSERT INTO submissions (user_id, problem_id, language, code, status, created_at)
-		 VALUES (?, ?, 'cpp', 'int main(){}', 'accepted', now()) RETURNING id`,
-		env.user.ID, env.problem,
+		 VALUES (?, ?, 'cpp', 'int main(){}', 'accepted', ?) RETURNING id`,
+		env.user.ID, env.problem, createdAt,
 	).Scan(&acceptedID).Error)
 	require.NoError(t, env.db.Raw(
 		`INSERT INTO submissions (user_id, problem_id, language, code, status, created_at)
@@ -238,6 +354,8 @@ func TestFindAcceptedSubmission(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, acceptedID, sub.ID)
 	assert.Equal(t, env.user.ID, sub.UserID)
+	assert.Equal(t, env.problem, sub.ProblemID)
+	assert.WithinDuration(t, createdAt, sub.CreatedAt, time.Millisecond)
 
 	_, err = env.repo.FindAcceptedSubmission(ctx, wrongID)
 	assert.ErrorIs(t, err, gamification.ErrSubmissionNotFound)

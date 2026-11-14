@@ -121,6 +121,40 @@ func assertCode(t *testing.T, err error, code int) {
 	}
 }
 
+func TestRejudgeResetsAndRollsBackAcceptedCount(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	createUser(t, e.db, 1)
+	p := e.createProblem(t, publicProblem("rejudge"), 1)
+	sub, err := e.svc.Create(ctx, submission.Viewer{UserID: 1}, 1, codeInput(p.ID, "int main(){}"))
+	require.NoError(t, err)
+	require.NoError(t, e.db.Exec(`
+		UPDATE submissions SET status = 'accepted', accepted_counted = true,
+			judge_result_json = '[{"testcaseId":1,"status":"accepted","score":10}]'::jsonb,
+			judged_at = now() WHERE id = ?`, sub.ID).Error)
+	require.NoError(t, e.db.Exec(`UPDATE problems SET accept_count = 1 WHERE id = ?`, p.ID).Error)
+	e.queue.ids = nil
+
+	got, err := e.svc.Rejudge(ctx, submission.Viewer{UserID: 9, CanRejudge: true}, sub.ID)
+	require.NoError(t, err)
+	assert.Equal(t, submission.StatusPending, got.Status)
+	assert.Equal(t, []int64{sub.ID}, e.queue.ids)
+	assert.Empty(t, got.JudgeResult)
+
+	var counted bool
+	require.NoError(t, e.db.Raw(`SELECT accepted_counted FROM submissions WHERE id = ?`, sub.ID).
+		Scan(&counted).Error)
+	assert.False(t, counted)
+	reloaded, err := e.problems.FindByID(ctx, p.ID)
+	require.NoError(t, err)
+	assert.Zero(t, reloaded.AcceptCount)
+
+	_, err = e.svc.Rejudge(ctx, submission.Viewer{UserID: 9}, sub.ID)
+	assertCode(t, err, 40300)
+	_, err = e.svc.Rejudge(ctx, submission.Viewer{UserID: 9, CanRejudge: true}, sub.ID)
+	assertCode(t, err, 40001)
+}
+
 func TestCreateRejectsHiddenProblem(t *testing.T) {
 	e := newEnv(t)
 	p := publicProblem("hidden")
@@ -187,6 +221,7 @@ func TestCreateIncrementsSubmitCountAndEnqueues(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(7), got.UserID)
 	assert.Equal(t, submission.StatusPending, got.Status)
+	assert.Equal(t, len("int main(){}"), got.CodeLength)
 	assert.Empty(t, got.JudgeResult)
 	assert.Equal(t, []int64{sub.ID}, e.pub.ids, "a pending event is published")
 
@@ -212,6 +247,7 @@ func TestCreateObjectiveSubmission(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, submission.LanguageAnswer, sub.Language)
 	assert.Equal(t, "a", sub.Answer)
+	assert.Equal(t, len("a"), sub.CodeLength, "objective answers count their normalized byte length")
 	assert.Empty(t, sub.Code)
 	assert.Contains(t, e.queue.ids, sub.ID)
 }

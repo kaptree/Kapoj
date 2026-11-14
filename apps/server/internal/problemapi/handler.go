@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
@@ -38,6 +39,11 @@ type ContestAccess interface {
 	IsProblemLocked(ctx context.Context, problemID int64, now time.Time) (bool, error)
 }
 
+// IdentityLookup 批量读取用户公开身份；由 gamification.Service 实现。
+type IdentityLookup interface {
+	Identities(ctx context.Context, userIDs []int64) (map[int64]gamification.Identity, error)
+}
+
 // Options 配置题目接口的可选依赖。
 type Options struct {
 	RBAC        *rbac.Service
@@ -54,6 +60,8 @@ type Options struct {
 	MaxImportUncompressedBytes int64
 	// TestcaseGen 是 AI 出题造数据服务；非 nil 时注册相关路由。
 	TestcaseGen *testcasegen.Service
+	// IdentityLookup 为提交统计明细补充公开徽章/称号。
+	IdentityLookup IdentityLookup
 }
 
 // auditTargetProblem 是内容管理审计的 target type。
@@ -77,7 +85,7 @@ func RegisterRoutes(
 	if o.MaxImportUncompressedBytes > 0 {
 		problem.WithHydroUncompressedLimit(o.MaxImportUncompressedBytes)(s)
 	}
-	h := &handler{svc: s, accepted: accepted, contests: contests, rbac: o.RBAC, solutions: o.Solutions, discussions: o.Discussions, social: o.Social, maxImportFileBytes: maxImport, testcaseGen: o.TestcaseGen}
+	h := &handler{svc: s, accepted: accepted, contests: contests, rbac: o.RBAC, solutions: o.Solutions, discussions: o.Discussions, social: o.Social, identities: o.IdentityLookup, maxImportFileBytes: maxImport, testcaseGen: o.TestcaseGen}
 
 	// resolver 为 nil 时 RequirePermission 会拒绝所有写操作，LoadAccess 为
 	// 空操作；生产环境 router 始终传入 RBAC service。
@@ -96,6 +104,7 @@ func RegisterRoutes(
 	api.GET("/problems", load, h.list)
 	api.GET("/problems/:id", load, h.get)
 	api.GET("/problems/:id/statistics", load, h.statistics)
+	api.GET("/problems/:id/submission-stats", load, h.submissionStats)
 	api.GET("/problems/:id/attachments", load, h.listAttachments)
 	api.GET("/problems/:id/attachments/:aid", load, h.downloadAttachment)
 	api.GET("/problems/:id/assets/:aid", load, h.statementImage)
@@ -153,6 +162,7 @@ type handler struct {
 	solutions   *problem.OfficialSolutionService
 	discussions *problem.DiscussionService
 	social      *social.Service
+	identities  IdentityLookup
 
 	maxImportFileBytes int64
 	testcaseGen        *testcasegen.Service
@@ -179,9 +189,10 @@ func viewer(c *gin.Context) problem.Viewer {
 		CanViewHidden: access.Has(string(rbac.PermProblemViewHidden)) || canManageAll,
 		CanViewLocked: access.Has(string(rbac.PermProblemViewHidden)) ||
 			access.Has(string(rbac.PermContestUpdate)) || canManageAll,
-		CanViewSolution: canViewSolution(access) || canManageAll,
-		CanManageAll:    canManageAll,
-		CanManageOwn:    canManageOwn,
+		CanViewSolution:    canViewSolution(access) || canManageAll,
+		CanManageAll:       canManageAll,
+		CanManageOwn:       canManageOwn,
+		CanViewLiveContest: access.Has(string(rbac.PermSubmissionViewLiveContest)),
 	}
 }
 
@@ -429,6 +440,55 @@ func (h *handler) statistics(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, st)
+}
+
+func (h *handler) submissionStats(c *gin.Context) {
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	locked, _, _, err := h.lockedProblemAccess(c, id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	if locked && !currentCanViewLockedStats(c) {
+		httpx.Fail(c, httpx.ErrNotFound)
+		return
+	}
+	page, size := httpx.ParsePage(c.Request.URL.RawQuery)
+	result, err := h.svc.SubmissionStats(c.Request.Context(), viewer(c), id, problem.SubmissionStatsQuery{
+		Sort: c.Query("sort"), Order: c.Query("order"), Page: page, PageSize: size,
+	})
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	if err := h.decorateMetricIdentities(c.Request.Context(), result.Items); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, result)
+}
+
+func (h *handler) decorateMetricIdentities(ctx context.Context, items []problem.SubmissionMetric) error {
+	if h.identities == nil || len(items) == 0 {
+		return nil
+	}
+	ids := make([]int64, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.UserID)
+	}
+	found, err := h.identities.Identities(ctx, ids)
+	if err != nil {
+		return err
+	}
+	for i := range items {
+		identity := found[items[i].UserID]
+		items[i].EquippedBadges = identity.Badges
+		items[i].EquippedTitle = identity.Title
+	}
+	return nil
 }
 
 func (h *handler) create(c *gin.Context) {

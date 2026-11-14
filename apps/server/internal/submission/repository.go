@@ -11,10 +11,21 @@ import (
 	"gorm.io/gorm/clause"
 
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
+	"github.com/kaptree/kapoj/apps/server/internal/dbtypes"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 )
 
-var ErrNotFound = errors.New("submission not found")
+var (
+	ErrNotFound       = errors.New("submission not found")
+	ErrNotRejudgeable = errors.New("submission is not in a terminal state")
+)
+
+// RejudgeReset is the information needed after a submission is reset.
+type RejudgeReset struct {
+	ID        int64
+	UserID    int64
+	ProblemID int64
+}
 
 // ListRow is a submission joined with its user and problem.
 type ListRow struct {
@@ -34,6 +45,7 @@ type Repository interface {
 	Create(ctx context.Context, sub *Submission) error
 	FindByID(ctx context.Context, id int64) (*Submission, error)
 	MarkSystemError(ctx context.Context, id int64, message string) error
+	ResetForRejudge(ctx context.Context, id int64, now time.Time) (*RejudgeReset, error)
 	List(ctx context.Context, f ListFilter, offset, limit int) ([]ListRow, int64, error)
 	FindDetail(ctx context.Context, id int64) (*DetailRow, error)
 	HasAccepted(ctx context.Context, userID, problemID int64) (bool, error)
@@ -92,6 +104,50 @@ func (r *gormRepository) MarkSystemError(ctx context.Context, id int64, message 
 			"error_message": message,
 			"judged_at":     now,
 		}).Error
+}
+
+// ResetForRejudge locks a terminal submission, rolls back an accepted count
+// once, and returns it to pending. The caller enqueues the job after commit.
+func (r *gormRepository) ResetForRejudge(ctx context.Context, id int64, now time.Time) (*RejudgeReset, error) {
+	var out RejudgeReset
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var sub Submission
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&sub, id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrNotFound
+			}
+			return err
+		}
+		if !sub.Status.Terminal() {
+			return ErrNotRejudgeable
+		}
+		if sub.Status == StatusAccepted && sub.AcceptedCounted {
+			if err := tx.Model(&problem.Problem{}).Where("id = ?", sub.ProblemID).
+				UpdateColumn("accept_count", gorm.Expr("GREATEST(accept_count - 1, 0)")).Error; err != nil {
+				return err
+			}
+		}
+		updates := map[string]any{
+			"status":            StatusPending,
+			"time_used_ms":      0,
+			"memory_used_kb":    0,
+			"score":             0,
+			"error_message":     "",
+			"judge_result_json": dbtypes.List[JudgeCaseResult]{},
+			"judged_at":         nil,
+			"accepted_counted":  false,
+			"rejudged_at":       now,
+		}
+		if err := tx.Model(&Submission{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+			return err
+		}
+		out = RejudgeReset{ID: sub.ID, UserID: sub.UserID, ProblemID: sub.ProblemID}
+		return nil
+	})
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &out, nil
 }
 
 func escapeLike(s string) string {

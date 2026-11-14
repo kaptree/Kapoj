@@ -79,7 +79,7 @@ func TestFinishIsIdempotentAndCountsAcceptOnce(t *testing.T) {
 		MemoryUsedKB: 345,
 		Score:        10,
 		Cases: []model.JudgeCaseResult{
-			{TestcaseID: 1, Status: model.StatusAccepted, TimeMS: 12, MemoryKB: 345},
+			{TestcaseID: 1, Status: model.StatusAccepted, TimeMS: 12, MemoryKB: 345, Score: 10},
 		},
 	}
 	require.NoError(t, repo.Finish(context.Background(), sub, in))
@@ -97,6 +97,7 @@ func TestFinishIsIdempotentAndCountsAcceptOnce(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &cases))
 	require.Len(t, cases, 1)
 	assert.Equal(t, model.StatusAccepted, cases[0].Status)
+	assert.Equal(t, 10, cases[0].Score, "per-testcase score must be persisted")
 
 	require.NoError(t, repo.Finish(context.Background(), sub, in))
 	assert.Equal(t, 1, acceptCount(t, repo, problem), "duplicate finish must not count twice")

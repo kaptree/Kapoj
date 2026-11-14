@@ -59,6 +59,8 @@ func RegisterRoutes(r gin.IRouter, s *submission.Service, streamer submissioneve
 	r.GET("/submissions/stream", h.stream)
 	r.GET("/submissions/:id", load, h.detail)
 	r.POST("/submissions", middleware.RequireAuth(), load, h.create)
+	r.POST("/submissions/:id/rejudge", middleware.RequireAuth(), load,
+		middleware.RequirePermission(resolver, string(rbac.PermSubmissionRejudge)), h.rejudge)
 }
 
 type handler struct {
@@ -112,6 +114,8 @@ func viewer(c *gin.Context) submission.Viewer {
 		v.CanViewHiddenProblems = access.Has(string(rbac.PermProblemViewHidden))
 		v.CanViewLiveContest = access.Has(string(rbac.PermSubmissionViewLiveContest))
 		v.CanManageContest = access.Has(string(rbac.PermContestUpdate))
+		v.CanRejudge = access.IsSuper || access.Has(string(rbac.PermSubmissionRejudge))
+		v.CanViewAllCode = v.CanRejudge || v.CanViewLiveContest || v.CanViewHiddenProblems
 	}
 	return v
 }
@@ -222,6 +226,20 @@ func (h *handler) detail(c *gin.Context) {
 	}
 	detail.ListItem = items[0]
 	httpx.OK(c, detail)
+}
+
+func (h *handler) rejudge(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		httpx.Fail(c, httpx.ErrNotFound)
+		return
+	}
+	sub, err := h.svc.Rejudge(c.Request.Context(), viewer(c), id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, submission.ToCreated(sub))
 }
 
 func (h *handler) create(c *gin.Context) {

@@ -434,6 +434,25 @@ func TestListSubmissionsValidation(t *testing.T) {
 	}
 }
 
+func TestRejudgeRequiresPermission(t *testing.T) {
+	f := newFx(t)
+	f.createRole("rejudge_admin", rbac.PermSubmissionRejudge)
+	admin := f.userWithRole("rejudge_admin")
+	user := f.register("rejudge_plain_user")
+	f.seedUser(t, 100, "rejudge_owner", "Rejudge Owner")
+	p := f.problem(t, "rejudge-http", true, problem.TypeTraditional, 1)
+	id := f.record(t, 100, p.ID, "cpp", "accepted", "int main(){}", nil)
+	require.NoError(t, f.db.Exec(`UPDATE problems SET accept_count = 1 WHERE id = ?`, p.ID).Error)
+
+	w, _ := f.do(http.MethodPost, fmt.Sprintf("/api/submissions/%d/rejudge", id), user, nil)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+
+	w, resp := f.do(http.MethodPost, fmt.Sprintf("/api/submissions/%d/rejudge", id), admin, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.EqualValues(t, id, resp["data"].(map[string]any)["id"])
+	assert.Equal(t, "pending", resp["data"].(map[string]any)["status"])
+}
+
 func TestSubmissionDetailEndpoint(t *testing.T) {
 	f := newFx(t)
 	owner := f.register("detailowner")
@@ -457,7 +476,26 @@ func TestSubmissionDetailEndpoint(t *testing.T) {
 
 	w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/submissions/%d", practiceSub), "", nil)
 	require.Equal(t, http.StatusOK, w.Code)
+	data = resp["data"].(map[string]any)
+	assert.Equal(t, true, data["codeHidden"])
+	_, hasCode = data["code"]
+	assert.False(t, hasCode)
+
+	viewer := f.register("detailviewer")
+	viewerID := f.usernameID(t, "detailviewer")
+	f.record(t, viewerID, p.ID, "cpp", "accepted", "viewer-ac", nil)
+
+	w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/submissions/%d", practiceSub), viewer, nil)
+	require.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "public-code", resp["data"].(map[string]any)["code"])
+
+	// 同题 AC 不能绕过比赛进行中的赛时保护。
+	w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/submissions/%d", contestSub), viewer, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	data = resp["data"].(map[string]any)
+	assert.Equal(t, true, data["codeHidden"])
+	_, hasCode = data["code"]
+	assert.False(t, hasCode)
 
 	w, _ = f.do(http.MethodGet, "/api/submissions/999999", "", nil)
 	assert.Equal(t, http.StatusNotFound, w.Code)

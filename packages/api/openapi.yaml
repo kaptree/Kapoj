@@ -1354,6 +1354,34 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/StatsResponse' }
         '404': { $ref: '#/components/responses/Error' }
+  /problems/{id}/submission-stats:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      summary: 题目提交指标（不含代码与提交 ID）
+      description: >-
+        返回可见提交的运行时间、内存、代码长度与提交时间，供统计页排序和对比。
+        不返回 code/codeHidden/judgeResult/提交 ID，也不提供代码入口。
+        比赛进行中，他人受保护的赛时提交会被排除；本人提交与拥有
+        submission.view_live_contest 的查看者不受影响。
+      security: [{}, { bearer: [] }]
+      parameters:
+        - name: sort
+          in: query
+          schema: { type: string, enum: [time, memory, code_length, created_at], default: created_at }
+        - name: order
+          in: query
+          schema: { type: string, enum: [asc, desc], default: desc }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: 提交指标分页（按白名单字段排序）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubmissionStatsResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
   /problems/{id}/attachments:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
@@ -2054,6 +2082,10 @@ paths:
       - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
     get:
       summary: 测评记录详情；隐藏题的他人提交需 problem.view_hidden，比赛进行中的他人提交需 submission.view_live_contest
+      description: >-
+        全站默认隐藏他人代码与答案；查看者本人、管理员或已在该题 AC 的用户可见。
+        比赛进行中仍优先赛时保护，不会因同题 AC 放宽；未满足代码可见条件时只隐藏代码/答案，
+        耗时、内存、分数与测试点指标仍返回。
       security: [{}, { bearer: [] }]
       responses:
         '200':
@@ -2061,6 +2093,26 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SubmissionDetailResponse' }
+        '404': { $ref: '#/components/responses/Error' }
+  /submissions/{id}/rejudge:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      summary: 管理员重测提交（submission.rejudge）
+      description: >-
+        仅终态提交可重测；评测中返回 40001，同一提交 30 秒内重复重测返回 40001。
+        重测不改变代码、语言、题目、用户与比赛，submit_count 不变；旧 AC 计数会回退，
+        重测后由 judge 幂等恢复。重复 AC 不会重复发放题目金币。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 已重新入队
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubmissionCreatedResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
   /achievements:
     get:
@@ -4266,6 +4318,10 @@ components:
         timeMs: { type: integer }
         memoryKb: { type: integer }
         message: { type: string }
+        score:
+          type: integer
+          nullable: true
+          description: 该测试点得分；历史提交可能缺少此字段，前端显示“—”而不是 0
     SubmissionListItem:
       type: object
       required:
@@ -4283,6 +4339,7 @@ components:
         - timeUsedMs
         - memoryUsedKb
         - score
+        - codeLength
         - createdAt
       properties:
         id: { type: integer, format: int64 }
@@ -4308,6 +4365,7 @@ components:
         timeUsedMs: { type: integer }
         memoryUsedKb: { type: integer }
         score: { type: integer }
+        codeLength: { type: integer, description: 代码按 UTF-8 字节数；客观题为答案文本字节数 }
         createdAt: { type: string, format: date-time }
         judgedAt: { type: string, format: date-time }
     SubmissionDetail:
@@ -4316,21 +4374,85 @@ components:
         - type: object
           required: [codeHidden, answerHidden, judgeResult]
           properties:
-            code: { type: string, description: 比赛进行中对他人的提交不返回；本人、拥有 submission.view_live_contest 者或赛后恢复 }
+            code:
+              type: string
+              description: 默认隐藏他人代码；本人、管理员、拥有 submission.view_live_contest 者或已在该题 AC 的查看者可见。比赛进行中始终受赛时保护。
             codeHidden: { type: boolean }
-            answer: { type: string, description: 客观题提交的答案，仅本人或拥有实时比赛查看权限者可见；代码题为空 }
+            answer:
+              type: string
+              description: 客观题提交的答案，可见性规则与代码一致；代码题为空
             answerHidden: { type: boolean, description: 答案是否因权限被隐藏 }
             errorMessage: { type: string }
             judgeResult:
               type: array
               items: { $ref: '#/components/schemas/SubmissionJudgeCase' }
+    StatusCount:
+      type: object
+      required: [status, count, percentage]
+      properties:
+        status: { $ref: '#/components/schemas/SubmissionStatus' }
+        count: { type: integer, format: int64 }
+        percentage: { type: number, description: 占可见提交总数的 0 到 1 比例；无可见提交时为 0 }
     Stats:
       type: object
-      required: [submitCount, acceptCount, acceptRate]
+      required: [submitCount, acceptCount, acceptRate, statusCounts]
       properties:
         submitCount: { type: integer }
         acceptCount: { type: integer }
         acceptRate: { type: number, description: 0 到 1，没有提交时为 0 }
+        statusCounts:
+          type: array
+          description: 可见提交的状态分布，按 AC、WA、TLE、MLE、RE、CE、SE、judging、pending 顺序
+          items: { $ref: '#/components/schemas/StatusCount' }
+    SubmissionMetric:
+      type: object
+      description: 统计页提交指标；不包含提交 ID、代码、测试点或答案。
+      required:
+        - userId
+        - username
+        - nickname
+        - avatarUrl
+        - equippedBadges
+        - equippedTitle
+        - language
+        - status
+        - timeUsedMs
+        - memoryUsedKb
+        - codeLength
+        - createdAt
+      properties:
+        userId: { type: integer, format: int64 }
+        username: { type: string }
+        nickname: { type: string }
+        avatarUrl: { type: string, description: 公开头像地址；空字符串表示未设置 }
+        equippedBadges:
+          type: array
+          items: { $ref: '#/components/schemas/EquippedBadge' }
+        equippedTitle:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/EquippedTitle'
+        language: { $ref: '#/components/schemas/SubmissionLanguage' }
+        status: { $ref: '#/components/schemas/SubmissionStatus' }
+        timeUsedMs: { type: integer }
+        memoryUsedKb: { type: integer }
+        codeLength: { type: integer }
+        createdAt: { type: string, format: date-time }
+    SubmissionStatsResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              required: [total, items]
+              properties:
+                total: { type: integer, format: int64 }
+                items:
+                  type: array
+                  items: { $ref: '#/components/schemas/SubmissionMetric' }
     ProblemPageResponse:
       allOf:
         - $ref: '#/components/schemas/Envelope'

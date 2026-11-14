@@ -58,6 +58,7 @@ describe('permission catalog', () => {
       'role.delete',
       'role.permissions.update',
       'submission.view_live_contest',
+      'submission.rejudge',
       'gamification.config.manage',
       'learning_path.official.manage',
       'learning_path.admin.read',
@@ -81,6 +82,7 @@ describe('permission catalog', () => {
     expect(PERM.problem.update).toBe('problem.update')
     expect(PERM.problem.delete).toBe('problem.delete')
     expect(PERM.problem.manageAll).toBe('problem.manage_all')
+    expect(PERM.submission.rejudge).toBe('submission.rejudge')
     expect(PERM.contest.viewHidden).toBe('contest.view_hidden')
     expect(PERM.contest.create).toBe('contest.create')
     expect(PERM.contest.update).toBe('contest.update')

@@ -8,11 +8,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
 import { ApiError } from '@/api/http'
-import { getSubmission, listSubmissions } from '@/api/submissions'
+import { getSubmission, listSubmissions, rejudgeSubmission } from '@/api/submissions'
 import type { SubmissionDetail, SubmissionListItem } from '@/api/types'
 import SubmissionsView from './SubmissionsView.vue'
 
 const toast = vi.hoisted(() => ({ add: vi.fn() }))
+const auth = vi.hoisted(() => ({ can: vi.fn<(code: string) => boolean>(() => false) }))
 
 vi.mock('primevue/usetoast', () => ({
   useToast: () => toast,
@@ -20,7 +21,9 @@ vi.mock('primevue/usetoast', () => ({
 vi.mock('@/api/submissions', () => ({
   listSubmissions: vi.fn(),
   getSubmission: vi.fn(),
+  rejudgeSubmission: vi.fn(),
 }))
+vi.mock('@/stores/auth', () => ({ useAuthStore: () => auth }))
 
 class FakeEventSource {
   static instances: FakeEventSource[] = []
@@ -51,6 +54,7 @@ function item(overrides: Partial<SubmissionListItem> = {}): SubmissionListItem {
     timeUsedMs: 100,
     memoryUsedKb: 1024,
     score: 100,
+    codeLength: 13,
     createdAt: '2026-01-01T00:00:00Z',
     ...overrides,
   }
@@ -62,7 +66,9 @@ function detail(overrides: Partial<SubmissionDetail> = {}): SubmissionDetail {
     code: 'int main() {}',
     codeHidden: false,
     answerHidden: false,
-    judgeResult: [{ testcaseId: 1, status: 'accepted', timeMs: 10, memoryKb: 512, message: 'ok' }],
+    judgeResult: [
+      { testcaseId: 1, status: 'accepted', timeMs: 10, memoryKb: 512, message: 'ok', score: 100 },
+    ],
     ...overrides,
   }
 }
@@ -94,8 +100,11 @@ beforeEach(() => {
   FakeEventSource.instances = []
   vi.stubGlobal('EventSource', FakeEventSource)
   toast.add.mockReset()
+  auth.can.mockReset()
+  auth.can.mockReturnValue(false)
   vi.mocked(listSubmissions).mockReset()
   vi.mocked(getSubmission).mockReset()
+  vi.mocked(rejudgeSubmission).mockReset()
   vi.mocked(listSubmissions).mockResolvedValue({ total: 45, items: [item()] })
   vi.mocked(getSubmission).mockResolvedValue(detail())
 })
@@ -261,7 +270,7 @@ describe('SubmissionsView', () => {
     await nextTick()
 
     const body = document.body.textContent ?? ''
-    expect(body).toContain('答案仅提交者本人可见。')
+    expect(body).toContain('该提交的答案暂不可见。')
     expect(document.querySelector('[data-test="submission-answer"]')).toBeNull()
     wrapper.unmount()
   })
@@ -279,6 +288,48 @@ describe('SubmissionsView', () => {
     expect(body).toContain('int main() {}')
     expect(body).toContain('测试点')
     expect(body).toContain('通过')
+    expect(body).toContain('测试点总分：100')
+    expect(body).toContain('100')
+    wrapper.unmount()
+  })
+
+  it('does not fake a testcase total for historical rows without scores', async () => {
+    vi.mocked(getSubmission).mockResolvedValue(
+      detail({
+        judgeResult: [
+          { testcaseId: 1, status: 'accepted', timeMs: 10, memoryKb: 512, message: 'ok' },
+        ],
+      }),
+    )
+    const { wrapper } = await mountPage()
+
+    wrapper.findComponent(DataTable).vm.$emit('row-click', { data: item() })
+    await flushPromises()
+    await nextTick()
+
+    const body = document.body.textContent ?? ''
+    expect(body).toContain('—')
+    expect(body).not.toContain('测试点总分：')
+    wrapper.unmount()
+  })
+
+  it('shows and runs rejudge only for administrators', async () => {
+    auth.can.mockReturnValue(true)
+    vi.mocked(rejudgeSubmission).mockResolvedValue({ id: 1, status: 'pending' })
+    const { wrapper } = await mountPage()
+    wrapper.findComponent(DataTable).vm.$emit('row-click', { data: item() })
+    await flushPromises()
+    await nextTick()
+
+    const button = document.querySelector('[data-test="rejudge"]') as HTMLButtonElement
+    expect(button).toBeTruthy()
+    button.click()
+    await flushPromises()
+
+    expect(rejudgeSubmission).toHaveBeenCalledWith(1)
+    expect(toast.add).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'success', summary: '已提交重测' }),
+    )
     wrapper.unmount()
   })
 
@@ -293,7 +344,7 @@ describe('SubmissionsView', () => {
     await nextTick()
 
     const body = document.body.textContent ?? ''
-    expect(body).toContain('比赛进行中，其他选手的代码与测评详情暂不可见。')
+    expect(body).toContain('该提交的代码暂不可见。')
     expect(body).not.toContain('int main() {}')
     wrapper.unmount()
   })

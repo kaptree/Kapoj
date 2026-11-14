@@ -73,7 +73,7 @@ func countRows(t *testing.T, g *gorm.DB, model any) int64 {
 
 func TestCatalogDefinitions(t *testing.T) {
 	permissions := rbac.AllPermissions()
-	require.Len(t, permissions, 41)
+	require.Len(t, permissions, 42)
 
 	codes := make(map[string]struct{}, len(permissions))
 	for _, def := range permissions {
@@ -127,6 +127,7 @@ func TestPermissionCatalogExactCodes(t *testing.T) {
 		"problem.checker.manage",
 		"problem.manage_all",
 		"submission.view_live_contest",
+		"submission.rejudge",
 		"contest.view_hidden",
 		"contest.create",
 		"contest.update",
@@ -147,7 +148,7 @@ func TestPermissionCatalogExactCodes(t *testing.T) {
 		"mail.settings.manage",
 		"guest.growth.view",
 	}
-	require.Len(t, expected, 41)
+	require.Len(t, expected, 42)
 
 	codes := make([]string, len(rbac.PermissionCodes))
 	for i, code := range rbac.PermissionCodes {
@@ -174,10 +175,10 @@ func TestSiteSettingsPermissionCatalog(t *testing.T) {
 	}
 	require.True(t, found, "权限目录必须包含 site.settings.manage")
 
-	require.Len(t, rbac.PermissionCodes, 41)
-	assert.Equal(t, rbac.PermSiteSettingsManage, rbac.PermissionCodes[38])
-	assert.Equal(t, rbac.PermMailSettingsManage, rbac.PermissionCodes[39])
-	assert.Equal(t, rbac.PermGuestGrowthView, rbac.PermissionCodes[40], "游客权限应追加在目录最后")
+	require.Len(t, rbac.PermissionCodes, 42)
+	assert.Equal(t, rbac.PermSiteSettingsManage, rbac.PermissionCodes[39])
+	assert.Equal(t, rbac.PermMailSettingsManage, rbac.PermissionCodes[40])
+	assert.Equal(t, rbac.PermGuestGrowthView, rbac.PermissionCodes[41], "游客权限应追加在目录最后")
 
 	g := testutil.PG(t)
 	require.NoError(t, rbac.Seed(context.Background(), g))
@@ -209,7 +210,7 @@ func TestSeedCreatesCatalogAndRoles(t *testing.T) {
 			"learning_path.admin.read", "learning_path.official.manage",
 			"problem.checker.manage", "problem.create", "problem.delete",
 			"problem.publish", "problem.testcase.manage", "problem.update",
-			"problem.view_hidden", "problem.manage_all",
+			"problem.view_hidden", "problem.manage_all", "submission.rejudge",
 		},
 		"problem_author": {
 			"problem.checker.manage", "problem.create", "problem.delete",
@@ -219,7 +220,7 @@ func TestSeedCreatesCatalogAndRoles(t *testing.T) {
 			"admin.dashboard.view",
 			"contest.announcement.manage", "contest.create", "contest.delete",
 			"contest.participant.read", "contest.update", "contest.view_hidden",
-			"submission.view_live_contest",
+			"submission.view_live_contest", "submission.rejudge",
 		},
 		"gamification_admin": {
 			"admin.dashboard.view",
@@ -254,7 +255,7 @@ func TestSeedCreatesCatalogAndRoles(t *testing.T) {
 
 	var seedVersion string
 	require.NoError(t, g.Model(&rbac.Meta{}).Where("key = ?", "seed_version").Pluck("value", &seedVersion).Error)
-	assert.Equal(t, "2", seedVersion)
+	assert.Equal(t, "3", seedVersion)
 }
 
 func TestSeedMapsLegacyRoles(t *testing.T) {
@@ -296,12 +297,12 @@ func TestSeedIsIdempotent(t *testing.T) {
 	assert.Equal(t, int64(1), userRoles)
 	assert.Equal(t, []string{"content_admin"}, userRoleCodes(t, g, legacyID))
 	assert.Equal(t, int64(9), roles, "内置角色应为 9 个")
-	assert.Equal(t, int64(41), permissions, "权限目录应为 41 项")
+	assert.Equal(t, int64(42), permissions, "权限目录应为 42 项")
 	assert.Empty(t, rolePermissionCodes(t, g, rbac.RoleCodeGuest), "重复 seed 后 guest 仍无权限")
 
 	var seedVersion string
 	require.NoError(t, g.Model(&rbac.Meta{}).Where("key = ?", "seed_version").Pluck("value", &seedVersion).Error)
-	assert.Equal(t, "2", seedVersion)
+	assert.Equal(t, "3", seedVersion)
 }
 
 func TestSeedDoesNotRestoreRemovedPermission(t *testing.T) {
