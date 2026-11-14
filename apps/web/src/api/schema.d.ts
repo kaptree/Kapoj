@@ -4974,6 +4974,8 @@ export interface paths {
                 /** @description 测评记录详情 */
                 200: {
                     headers: {
+                        /** @description 始终为 private, no-store；响应内容依赖查看者权限 */
+                        "Cache-Control"?: string;
                         [name: string]: unknown;
                     };
                     content: {

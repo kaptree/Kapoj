@@ -476,6 +476,8 @@ func TestSubmissionDetailEndpoint(t *testing.T) {
 
 	w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/submissions/%d", practiceSub), "", nil)
 	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Header().Get("Cache-Control"), "no-store",
+		"viewer-dependent submission detail must not be cached")
 	data = resp["data"].(map[string]any)
 	assert.Equal(t, true, data["codeHidden"])
 	_, hasCode = data["code"]

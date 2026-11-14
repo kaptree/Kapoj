@@ -209,6 +209,9 @@ func (h *handler) stream(c *gin.Context) {
 }
 
 func (h *handler) detail(c *gin.Context) {
+	// The response is viewer-dependent (code visibility), so it must never be
+	// stored by a browser or shared proxy.
+	c.Header("Cache-Control", "private, no-store")
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil || id <= 0 {
 		httpx.Fail(c, httpx.ErrNotFound)

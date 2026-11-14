@@ -2090,6 +2090,10 @@ paths:
       responses:
         '200':
           description: 测评记录详情
+          headers:
+            Cache-Control:
+              description: 始终为 private, no-store；响应内容依赖查看者权限
+              schema: { type: string }
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SubmissionDetailResponse' }
