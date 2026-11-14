@@ -1260,10 +1260,12 @@ paths:
         '413': { $ref: '#/components/responses/Error' }
   /problems/import/hydro:
     post:
-      summary: 导入 HydroOJ 题包（problem.create）；逐题成功/失败，导入后题目默认下线
+      summary: 导入 HydroOJ 题包（problem.create）；支持 .out/.ans 与冲突覆盖
       description: >-
         上传 HydroOJ 导出的 zip 题包（不超过 200MB），按题目文件夹解析 problem.yaml/problem_zh.md/testdata
-        并创建下线题目，创建者为上传者。题包整体非法返回 40001；单题失败进入 failed，不阻断其他题。
+        并创建下线题目，创建者为上传者。测试数据支持 .in/.out 与 .in/.ans；同名 .ans/.out 同时存在时使用 .out。
+        conflictPolicy=ask 时若 slug 已存在只返回 conflicts 不写库；skip 跳过冲突；overwrite 按 overwriteSlugs/skipSlugs
+        覆盖题面与测试数据，保留数字 ID、创建者、提交记录与统计，覆盖后强制下线。题包整体非法返回 40001。
       security: [{ bearer: [] }]
       requestBody:
         required: true
@@ -1274,9 +1276,12 @@ paths:
               required: [file]
               properties:
                 file: { type: string, format: binary, description: HydroOJ 导出的 .zip 题包，不超过 200 MiB }
+                conflictPolicy: { type: string, enum: [ask, skip, overwrite], default: ask }
+                overwriteSlugs: { type: string, description: 'JSON 数组，选择覆盖的 slug；空表示覆盖全部冲突（仍需权限）' }
+                skipSlugs: { type: string, description: 'JSON 数组，选择跳过的 slug' }
       responses:
         '200':
-          description: 导入结果（imported 成功项、failed 失败项）
+          description: 导入结果（imported 成功项、failed 失败项、conflicts 冲突项、skipped 跳过项、warnings 提示）
           content:
             application/json:
               schema: { $ref: '#/components/schemas/HydroImportResponse' }
@@ -1821,6 +1826,38 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/TestcaseResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '413': { $ref: '#/components/responses/Error' }
+  /problems/{id}/testcases/batch:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      summary: 批量上传测试数据（problem.testcase.manage；创建者或管理员）
+      description: >-
+        multipart 字段 files 可重复；每个 .in 必须配对同名 .out 或 .ans，二者同时存在时使用 .out。
+        一次 1–100 对，单文件不超过 16 MiB，总量不超过 200 MiB；任一对不完整则整批失败。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [files]
+              properties:
+                files:
+                  type: array
+                  items: { type: string, format: binary }
+                score: { type: integer, minimum: 0, maximum: 1000, default: 10 }
+      responses:
+        '201':
+          description: 创建成功的测试点
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestcaseListResponse' }
         '400': { $ref: '#/components/responses/Error' }
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
@@ -4316,12 +4353,28 @@ components:
     HydroImportedProblem:
       type: object
       description: 成功导入的题目摘要。
-      required: [id, title, slug, testcaseCount]
+      required: [id, title, slug, testcaseCount, overwritten]
       properties:
         id: { type: integer, format: int64 }
         title: { type: string }
         slug: { type: string }
         testcaseCount: { type: integer }
+        overwritten: { type: boolean, description: 是否覆盖了已有题目 }
+    HydroImportConflict:
+      type: object
+      required: [slug, folder, existingProblemId, existingTitle, canOverwrite]
+      properties:
+        slug: { type: string }
+        folder: { type: string }
+        existingProblemId: { type: integer, format: int64 }
+        existingTitle: { type: string }
+        canOverwrite: { type: boolean }
+    HydroImportSkipped:
+      type: object
+      required: [slug, folder]
+      properties:
+        slug: { type: string }
+        folder: { type: string }
     HydroImportFailure:
       type: object
       description: 未能导入的题目及其原因。
@@ -4337,6 +4390,9 @@ components:
       properties:
         imported: { type: array, items: { $ref: '#/components/schemas/HydroImportedProblem' } }
         failed: { type: array, items: { $ref: '#/components/schemas/HydroImportFailure' } }
+        conflicts: { type: array, items: { $ref: '#/components/schemas/HydroImportConflict' }, description: ask 模式下未写入的冲突列表 }
+        skipped: { type: array, items: { $ref: '#/components/schemas/HydroImportSkipped' } }
+        warnings: { type: array, items: { type: string }, description: 例如同时存在 .ans/.out 时使用 .out }
     HydroImportResponse:
       allOf:
         - $ref: '#/components/schemas/Envelope'

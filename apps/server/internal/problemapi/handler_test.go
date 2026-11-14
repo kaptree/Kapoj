@@ -1074,6 +1074,33 @@ func TestTestcaseContentHTTP(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
+func TestBatchTestcaseHTTP(t *testing.T) {
+	f := newFx(t)
+	author := f.userWithRole("problem_author")
+	other := f.userWithRole("problem_author")
+	id := f.createAs(author, body("batch-http"))
+
+	w, resp := f.multipart(path("/api/problems/%d/testcases/batch", id), author, nil,
+		filePart{"files", "1.in", strings.NewReader("1")},
+		filePart{"files", "1.out", strings.NewReader("2")},
+		filePart{"files", "2.in", strings.NewReader("3")},
+		filePart{"files", "2.ans", strings.NewReader("4")},
+	)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	assert.Len(t, resp["data"].([]any), 2)
+
+	w, _ = f.multipart(path("/api/problems/%d/testcases/batch", id), other, nil,
+		filePart{"files", "3.in", strings.NewReader("5")},
+		filePart{"files", "3.out", strings.NewReader("6")},
+	)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	w, _ = f.multipart(path("/api/problems/%d/testcases/batch", id), author, nil,
+		filePart{"files", "4.in", strings.NewReader("5")},
+	)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
 func TestProblemWritesAudit(t *testing.T) {
 	f := newFx(t)
 	admin := f.token("problem_admin")

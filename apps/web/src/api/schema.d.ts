@@ -3139,8 +3139,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * 导入 HydroOJ 题包（problem.create）；逐题成功/失败，导入后题目默认下线
-         * @description 上传 HydroOJ 导出的 zip 题包（不超过 200MB），按题目文件夹解析 problem.yaml/problem_zh.md/testdata 并创建下线题目，创建者为上传者。题包整体非法返回 40001；单题失败进入 failed，不阻断其他题。
+         * 导入 HydroOJ 题包（problem.create）；支持 .out/.ans 与冲突覆盖
+         * @description 上传 HydroOJ 导出的 zip 题包（不超过 200MB），按题目文件夹解析 problem.yaml/problem_zh.md/testdata 并创建下线题目，创建者为上传者。测试数据支持 .in/.out 与 .in/.ans；同名 .ans/.out 同时存在时使用 .out。 conflictPolicy=ask 时若 slug 已存在只返回 conflicts 不写库；skip 跳过冲突；overwrite 按 overwriteSlugs/skipSlugs 覆盖题面与测试数据，保留数字 ID、创建者、提交记录与统计，覆盖后强制下线。题包整体非法返回 40001。
          */
         post: {
             parameters: {
@@ -3157,11 +3157,20 @@ export interface paths {
                          * @description HydroOJ 导出的 .zip 题包，不超过 200 MiB
                          */
                         file: string;
+                        /**
+                         * @default ask
+                         * @enum {string}
+                         */
+                        conflictPolicy?: "ask" | "skip" | "overwrite";
+                        /** @description JSON 数组，选择覆盖的 slug；空表示覆盖全部冲突（仍需权限） */
+                        overwriteSlugs?: string;
+                        /** @description JSON 数组，选择跳过的 slug */
+                        skipSlugs?: string;
                     };
                 };
             };
             responses: {
-                /** @description 导入结果（imported 成功项、failed 失败项） */
+                /** @description 导入结果（imported 成功项、failed 失败项、conflicts 冲突项、skipped 跳过项、warnings 提示） */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -4382,6 +4391,62 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["TestcaseResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+                413: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/problems/{id}/testcases/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 批量上传测试数据（problem.testcase.manage；创建者或管理员）
+         * @description multipart 字段 files 可重复；每个 .in 必须配对同名 .out 或 .ans，二者同时存在时使用 .out。 一次 1–100 对，单文件不超过 16 MiB，总量不超过 200 MiB；任一对不完整则整批失败。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "multipart/form-data": {
+                        files: string[];
+                        /** @default 10 */
+                        score?: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 创建成功的测试点 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TestcaseListResponse"];
                     };
                 };
                 400: components["responses"]["Error"];
@@ -8731,6 +8796,20 @@ export interface components {
             title: string;
             slug: string;
             testcaseCount: number;
+            /** @description 是否覆盖了已有题目 */
+            overwritten: boolean;
+        };
+        HydroImportConflict: {
+            slug: string;
+            folder: string;
+            /** Format: int64 */
+            existingProblemId: number;
+            existingTitle: string;
+            canOverwrite: boolean;
+        };
+        HydroImportSkipped: {
+            slug: string;
+            folder: string;
         };
         /** @description 未能导入的题目及其原因。 */
         HydroImportFailure: {
@@ -8742,6 +8821,11 @@ export interface components {
         HydroImportResult: {
             imported: components["schemas"]["HydroImportedProblem"][];
             failed: components["schemas"]["HydroImportFailure"][];
+            /** @description ask 模式下未写入的冲突列表 */
+            conflicts?: components["schemas"]["HydroImportConflict"][];
+            skipped?: components["schemas"]["HydroImportSkipped"][];
+            /** @description 例如同时存在 .ans/.out 时使用 .out */
+            warnings?: string[];
         };
         HydroImportResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["HydroImportResult"];

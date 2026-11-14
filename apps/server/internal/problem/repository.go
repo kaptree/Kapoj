@@ -45,6 +45,7 @@ type DeleteResult struct {
 type Repository interface {
 	Create(ctx context.Context, p *Problem) error
 	FindByID(ctx context.Context, id int64) (*Problem, error)
+	FindBySlug(ctx context.Context, slug string) (*Problem, error)
 	List(ctx context.Context, f Filter, offset, limit int) ([]Problem, int64, error)
 	// Update writes only the editable columns, never the checker path,
 	// counters or creator.
@@ -57,6 +58,7 @@ type Repository interface {
 	FindAuthor(ctx context.Context, userID int64) (*AuthorSummary, error)
 
 	AddTestcase(ctx context.Context, tc *Testcase) error
+	AddTestcases(ctx context.Context, problemID int64, cases []*Testcase) error
 	ListTestcases(ctx context.Context, problemID int64) ([]Testcase, error)
 	FindTestcase(ctx context.Context, problemID, id int64) (*Testcase, error)
 	UpdateTestcase(ctx context.Context, problemID, id int64, score *int, isSample *bool) error
@@ -91,6 +93,18 @@ func (r *gormRepository) FindByID(ctx context.Context, id int64) (*Problem, erro
 	var p Problem
 	if err := r.db.WithContext(ctx).First(&p, id).Error; err != nil {
 		return nil, mapErr(err)
+	}
+	return &p, nil
+}
+
+func (r *gormRepository) FindBySlug(ctx context.Context, slug string) (*Problem, error) {
+	var p Problem
+	err := r.db.WithContext(ctx).Where("slug = ?", slug).First(&p).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
 	}
 	return &p, nil
 }
@@ -255,6 +269,28 @@ func (r *gormRepository) AddTestcase(ctx context.Context, tc *Testcase) error {
 		}
 		tc.SortOrder = max + 1
 		return tx.Create(tc).Error
+	})
+}
+
+func (r *gormRepository) AddTestcases(ctx context.Context, problemID int64, cases []*Testcase) error {
+	if len(cases) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var p Problem
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").First(&p, problemID).Error; err != nil {
+			return mapErr(err)
+		}
+		var max int
+		if err := tx.Model(&Testcase{}).Where("problem_id = ?", problemID).
+			Select("COALESCE(MAX(sort_order), 0)").Scan(&max).Error; err != nil {
+			return err
+		}
+		for i, tc := range cases {
+			tc.ProblemID = problemID
+			tc.SortOrder = max + i + 1
+		}
+		return tx.Create(&cases).Error
 	})
 }
 

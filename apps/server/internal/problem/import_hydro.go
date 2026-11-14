@@ -50,10 +50,36 @@ var (
 	errHydroPackageLimit = errors.New("hydro: package exceeds decompressed limit")
 )
 
+// HydroImportOptions controls conflict handling for one import request.
+type HydroImportOptions struct {
+	ConflictPolicy string // ask / skip / overwrite
+	OverwriteSlugs []string
+	SkipSlugs      []string
+	CanManageAll   bool
+}
+
+// HydroImportConflict describes an existing slug that blocks an ask-mode import.
+type HydroImportConflict struct {
+	Slug          string `json:"slug"`
+	Folder        string `json:"folder"`
+	ExistingID    int64  `json:"existingProblemId"`
+	ExistingTitle string `json:"existingTitle"`
+	CanOverwrite  bool   `json:"canOverwrite"`
+}
+
+// HydroImportSkipped records a conflict skipped by the caller.
+type HydroImportSkipped struct {
+	Slug   string `json:"slug"`
+	Folder string `json:"folder"`
+}
+
 // HydroImportResult reports the outcome of a HydroOJ package import.
 type HydroImportResult struct {
-	Imported []HydroImportedProblem `json:"imported"`
-	Failed   []HydroImportFailure   `json:"failed"`
+	Imported  []HydroImportedProblem `json:"imported"`
+	Failed    []HydroImportFailure   `json:"failed"`
+	Conflicts []HydroImportConflict  `json:"conflicts,omitempty"`
+	Skipped   []HydroImportSkipped   `json:"skipped,omitempty"`
+	Warnings  []string               `json:"warnings,omitempty"`
 }
 
 // HydroImportedProblem is a problem successfully created from a HydroOJ package.
@@ -62,6 +88,7 @@ type HydroImportedProblem struct {
 	Title         string `json:"title"`
 	Slug          string `json:"slug"`
 	TestcaseCount int    `json:"testcaseCount"`
+	Overwritten   bool   `json:"overwritten"`
 }
 
 // HydroImportFailure records a problem that could not be imported.
@@ -110,7 +137,17 @@ func WithHydroUncompressedLimit(n int64) Option {
 // problem as an offline problem owned by createdBy. A package that is damaged,
 // empty, over its limits, or carries a dangerous entry is rejected whole with a
 // validation error; otherwise per-problem failures are reported in Failed.
-func (s *Service) ImportHydro(ctx context.Context, createdBy int64, r io.ReaderAt, size int64) (*HydroImportResult, error) {
+func (s *Service) ImportHydro(ctx context.Context, createdBy int64, r io.ReaderAt, size int64, opts ...HydroImportOptions) (*HydroImportResult, error) {
+	opt := HydroImportOptions{ConflictPolicy: "ask"}
+	if len(opts) > 0 {
+		opt = opts[0]
+		if opt.ConflictPolicy == "" {
+			opt.ConflictPolicy = "ask"
+		}
+	}
+	if opt.ConflictPolicy != "ask" && opt.ConflictPolicy != "skip" && opt.ConflictPolicy != "overwrite" {
+		return nil, httpx.ErrValidation("conflictPolicy 必须是 ask、skip 或 overwrite")
+	}
 	if size > maxHydroZipBytes {
 		return nil, httpx.ErrValidation(fmt.Sprintf("题包文件不能超过 %d MiB", maxHydroZipBytes>>20))
 	}
@@ -186,6 +223,60 @@ func (s *Service) ImportHydro(ctx context.Context, createdBy int64, r io.ReaderA
 		}
 	}
 
+	// Resolve existing slugs before writing anything. Ask mode returns the
+	// conflict list without importing; the frontend can resubmit the same file
+	// with skip/overwrite choices.
+	existingBySlug := map[string]*Problem{}
+	skippedSlugs := map[string]bool{}
+	for _, d := range dirs {
+		slug := slugs[d]
+		if !validSlug[d] || slugCounts[slug] > 1 {
+			continue
+		}
+		existing, err := s.repo.FindBySlug(ctx, slug)
+		if err != nil {
+			return nil, err
+		}
+		if existing == nil {
+			continue
+		}
+		existingBySlug[slug] = existing
+		canOverwrite := opt.CanManageAll || existing.CreatedBy == createdBy
+		switch {
+		case hydroContains(opt.SkipSlugs, slug):
+			skippedSlugs[slug] = true
+			delete(existingBySlug, slug)
+			result.Skipped = append(result.Skipped, HydroImportSkipped{Slug: slug, Folder: path.Base(d)})
+		case opt.ConflictPolicy == "ask":
+			result.Conflicts = append(result.Conflicts, HydroImportConflict{
+				Slug: slug, Folder: path.Base(d), ExistingID: existing.ID,
+				ExistingTitle: existing.Title, CanOverwrite: canOverwrite,
+			})
+		case opt.ConflictPolicy == "skip":
+			skippedSlugs[slug] = true
+			delete(existingBySlug, slug)
+			result.Skipped = append(result.Skipped, HydroImportSkipped{Slug: slug, Folder: path.Base(d)})
+		case opt.ConflictPolicy == "overwrite":
+			if hydroContains(opt.OverwriteSlugs, slug) || len(opt.OverwriteSlugs) == 0 {
+				if !canOverwrite {
+					result.Failed = append(result.Failed, HydroImportFailure{
+						Folder: path.Base(d), Title: existing.Title,
+						Error: "无权覆盖他人题目：" + slug,
+					})
+					skippedSlugs[slug] = true
+					delete(existingBySlug, slug)
+				}
+			} else {
+				skippedSlugs[slug] = true
+				delete(existingBySlug, slug)
+				result.Skipped = append(result.Skipped, HydroImportSkipped{Slug: slug, Folder: path.Base(d)})
+			}
+		}
+	}
+	if opt.ConflictPolicy == "ask" && len(result.Conflicts) > 0 {
+		return result, nil
+	}
+
 	var actual int64
 	var importedIDs []int64
 	for _, d := range dirs {
@@ -198,8 +289,10 @@ func (s *Service) ImportHydro(ctx context.Context, createdBy int64, r io.ReaderA
 		case slugCounts[slug] > 1:
 			result.Failed = append(result.Failed, HydroImportFailure{Folder: folder, Error: "题目标识已存在：" + slug})
 			continue
+		case skippedSlugs[slug]:
+			continue
 		}
-		imp, fail, err := s.importHydroProblem(ctx, createdBy, d, byDir[d], byDir[d+"/testdata"], slug, &actual, limit)
+		imp, fail, err := s.importHydroProblem(ctx, createdBy, d, byDir[d], byDir[d+"/testdata"], slug, existingBySlug[slug], &actual, limit, &result.Warnings)
 		if err != nil {
 			// A package-level error (e.g. the decompressed budget) aborts the
 			// whole import; roll back everything committed during this call so
@@ -305,8 +398,10 @@ func (s *Service) importHydroProblem(
 	dir string,
 	files, testFiles []hydroEntry,
 	slug string,
+	existing *Problem,
 	actual *int64,
 	limit int64,
+	warnings *[]string,
 ) (HydroImportedProblem, *HydroImportFailure, error) {
 	folder := path.Base(dir)
 	fail := func(title, msg string) (HydroImportedProblem, *HydroImportFailure, error) {
@@ -347,7 +442,10 @@ func (s *Service) importHydroProblem(
 		return fail(title, msg)
 	}
 
-	pairs, msg := collectHydroTestdata(testFiles)
+	pairs, warning, msg := collectHydroTestdata(testFiles)
+	if warning != "" && warnings != nil {
+		*warnings = append(*warnings, folder+"："+warning)
+	}
 	if msg != "" {
 		return fail(title, msg)
 	}
@@ -362,39 +460,55 @@ func (s *Service) importHydroProblem(
 		MemoryLimitMB: 256,
 		Source:        hydroSource,
 		Tags:          meta.Tags,
+		IsPublic:      false,
 	}
+
+	if existing != nil {
+		oldCases, err := s.repo.ListTestcases(ctx, existing.ID)
+		if err != nil {
+			return fail(title, "读取原测试数据失败")
+		}
+		added, err := s.addHydroTestcases(ctx, existing.ID, pairs, actual, limit)
+		if err != nil {
+			s.cleanupHydroTestcases(ctx, existing.ID, added)
+			if errors.Is(err, errHydroPackageLimit) {
+				return HydroImportedProblem{}, nil, errHydroPackageLimit
+			}
+			return fail(title, hydroTestcaseError(err))
+		}
+		if _, err := s.Update(ctx, existing.ID, in); err != nil {
+			s.cleanupHydroTestcases(ctx, existing.ID, added)
+			return fail(title, hydroCreateError(err, slug))
+		}
+		for _, old := range oldCases {
+			if err := s.DeleteTestcase(ctx, existing.ID, old.ID); err != nil {
+				slog.Warn("hydro overwrite: delete old testcase failed", "problemID", existing.ID, "testcaseID", old.ID, "err", err)
+			}
+		}
+		if len(added) > 0 {
+			if err := s.ReorderTestcases(ctx, existing.ID, added); err != nil {
+				slog.Warn("hydro overwrite: reorder testcases failed", "problemID", existing.ID, "err", err)
+			}
+		}
+		return HydroImportedProblem{
+			ID:            existing.ID,
+			Title:         title,
+			Slug:          slug,
+			TestcaseCount: len(pairs),
+			Overwritten:   true,
+		}, nil, nil
+	}
+
 	p, err := s.Create(ctx, createdBy, in)
 	if err != nil {
 		return fail(title, hydroCreateError(err, slug))
 	}
-
-	for _, pair := range pairs {
-		inRC, err := pair.in.Open()
-		if err != nil {
-			s.cleanupHydroProblem(ctx, p.ID)
-			return fail(title, "测试数据读取失败")
-		}
-		outRC, err := pair.out.Open()
-		if err != nil {
-			_ = inRC.Close()
-			s.cleanupHydroProblem(ctx, p.ID)
-			return fail(title, "测试数据读取失败")
-		}
-		_, err = s.AddTestcase(ctx, p.ID, TestcaseUpload{
-			Input:  &countingReader{r: inRC, n: actual},
-			Output: &countingReader{r: outRC, n: actual},
-			Score:  hydroTestcaseScore,
-		})
-		_ = inRC.Close()
-		_ = outRC.Close()
-		if err != nil {
-			s.cleanupHydroProblem(ctx, p.ID)
-			return fail(title, hydroTestcaseError(err))
-		}
-		if *actual > limit {
-			s.cleanupHydroProblem(ctx, p.ID)
+	if _, err := s.addHydroTestcases(ctx, p.ID, pairs, actual, limit); err != nil {
+		s.cleanupHydroProblem(ctx, p.ID)
+		if errors.Is(err, errHydroPackageLimit) {
 			return HydroImportedProblem{}, nil, errHydroPackageLimit
 		}
+		return fail(title, hydroTestcaseError(err))
 	}
 
 	return HydroImportedProblem{
@@ -403,6 +517,44 @@ func (s *Service) importHydroProblem(
 		Slug:          p.Slug,
 		TestcaseCount: len(pairs),
 	}, nil, nil
+}
+
+func (s *Service) addHydroTestcases(ctx context.Context, problemID int64, pairs []hydroPair, actual *int64, limit int64) ([]int64, error) {
+	added := make([]int64, 0, len(pairs))
+	for _, pair := range pairs {
+		inRC, err := pair.in.Open()
+		if err != nil {
+			return added, err
+		}
+		outRC, err := pair.out.Open()
+		if err != nil {
+			_ = inRC.Close()
+			return added, err
+		}
+		tc, err := s.AddTestcase(ctx, problemID, TestcaseUpload{
+			Input:  &countingReader{r: inRC, n: actual},
+			Output: &countingReader{r: outRC, n: actual},
+			Score:  hydroTestcaseScore,
+		})
+		_ = inRC.Close()
+		_ = outRC.Close()
+		if err != nil {
+			return added, err
+		}
+		added = append(added, tc.ID)
+		if *actual > limit {
+			return added, errHydroPackageLimit
+		}
+	}
+	return added, nil
+}
+
+func (s *Service) cleanupHydroTestcases(ctx context.Context, problemID int64, ids []int64) {
+	for _, id := range ids {
+		if err := s.DeleteTestcase(ctx, problemID, id); err != nil {
+			slog.Warn("hydro import: cleanup testcase failed", "problemID", problemID, "testcaseID", id, "err", err)
+		}
+	}
 }
 
 func (s *Service) cleanupHydroProblem(ctx context.Context, id int64) {
@@ -486,13 +638,15 @@ func readHydroStatement(byBase map[string]*zip.File, actual *int64) (string, str
 	return stmt, ""
 }
 
-func collectHydroTestdata(files []hydroEntry) ([]hydroPair, string) {
-	type entry struct{ in, out *zip.File }
+func collectHydroTestdata(files []hydroEntry) ([]hydroPair, string, string) {
+	type entry struct{ in, out, ans *zip.File }
 	m := map[string]*entry{}
 	for _, e := range files {
+		lower := strings.ToLower(e.base)
+		var name string
 		switch {
-		case strings.HasSuffix(e.base, ".in"):
-			name := strings.TrimSuffix(e.base, ".in")
+		case strings.HasSuffix(lower, ".in"):
+			name = e.base[:len(e.base)-3]
 			if name == "" {
 				continue
 			}
@@ -500,8 +654,8 @@ func collectHydroTestdata(files []hydroEntry) ([]hydroPair, string) {
 				m[name] = &entry{}
 			}
 			m[name].in = e.f
-		case strings.HasSuffix(e.base, ".out"):
-			name := strings.TrimSuffix(e.base, ".out")
+		case strings.HasSuffix(lower, ".out"):
+			name = e.base[:len(e.base)-4]
 			if name == "" {
 				continue
 			}
@@ -509,21 +663,34 @@ func collectHydroTestdata(files []hydroEntry) ([]hydroPair, string) {
 				m[name] = &entry{}
 			}
 			m[name].out = e.f
+		case strings.HasSuffix(lower, ".ans"):
+			name = e.base[:len(e.base)-4]
+			if name == "" {
+				continue
+			}
+			if m[name] == nil {
+				m[name] = &entry{}
+			}
+			m[name].ans = e.f
 		}
 	}
 
 	names := make([]string, 0, len(m))
+	hasDuplicateOutput := false
 	for name, e := range m {
-		if e.in == nil || e.out == nil {
-			return nil, "测试数据 .in/.out 不配对"
+		if e.in == nil || (e.out == nil && e.ans == nil) {
+			return nil, "", "测试数据 .in/.out 或 .in/.ans 不配对"
+		}
+		if e.out != nil && e.ans != nil {
+			hasDuplicateOutput = true
 		}
 		names = append(names, name)
 	}
 	if len(names) == 0 {
-		return nil, "缺少测试数据"
+		return nil, "", "缺少测试数据"
 	}
 	if len(names) > maxHydroTestcases {
-		return nil, fmt.Sprintf("测试点数量不能超过 %d", maxHydroTestcases)
+		return nil, "", fmt.Sprintf("测试点数量不能超过 %d", maxHydroTestcases)
 	}
 	sort.Slice(names, func(i, j int) bool { return lessHydroTestbase(names[i], names[j]) })
 
@@ -531,19 +698,37 @@ func collectHydroTestdata(files []hydroEntry) ([]hydroPair, string) {
 	var total int64
 	for _, name := range names {
 		e := m[name]
-		for _, f := range []*zip.File{e.in, e.out} {
+		// Confirmed behavior: when both .ans and .out exist, .out wins.
+		out := e.out
+		if out == nil {
+			out = e.ans
+		}
+		for _, f := range []*zip.File{e.in, out} {
 			sz := int64(f.UncompressedSize64)
 			if sz > maxHydroTestcaseBytes {
-				return nil, "单个测试文件不能超过 16 MiB"
+				return nil, "", "单个测试文件不能超过 16 MiB"
 			}
 			total += sz
 		}
 		if total > maxHydroProblemTestdataBytes {
-			return nil, fmt.Sprintf("单题测试数据不能超过 %d MiB", maxHydroProblemTestdataBytes>>20)
+			return nil, "", fmt.Sprintf("单题测试数据不能超过 %d MiB", maxHydroProblemTestdataBytes>>20)
 		}
-		pairs = append(pairs, hydroPair{in: e.in, out: e.out})
+		pairs = append(pairs, hydroPair{in: e.in, out: out})
 	}
-	return pairs, ""
+	warning := ""
+	if hasDuplicateOutput {
+		warning = "同时存在 .ans 与 .out，已使用 .out"
+	}
+	return pairs, warning, ""
+}
+
+func hydroContains(values []string, wanted string) bool {
+	for _, value := range values {
+		if strings.TrimSpace(value) == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 // lessHydroTestbase orders test data basenames numerically first, then

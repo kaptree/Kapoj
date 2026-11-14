@@ -176,6 +176,46 @@ func TestAttachmentLifecycle(t *testing.T) {
 	}
 }
 
+func TestBatchTestcases(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	p := e.create(t, input("batch-testcases"))
+	files := []problem.BatchTestcaseFile{
+		{Name: "2.in", Size: 2, Reader: strings.NewReader("in2")},
+		{Name: "2.out", Size: 3, Reader: strings.NewReader("out2")},
+		{Name: "1.in", Size: 2, Reader: strings.NewReader("in1")},
+		{Name: "1.ans", Size: 3, Reader: strings.NewReader("ans1")},
+		{Name: "3.in", Size: 2, Reader: strings.NewReader("in3")},
+		{Name: "3.out", Size: 3, Reader: strings.NewReader("out3")},
+		{Name: "3.ans", Size: 3, Reader: strings.NewReader("ans3")},
+	}
+	cases, err := e.svc.AddTestcasesBatch(ctx, p.ID, files, 20)
+	require.NoError(t, err)
+	require.Len(t, cases, 3)
+	for i, tc := range cases {
+		assert.Equal(t, i+1, tc.SortOrder)
+		assert.Equal(t, 20, tc.Score)
+	}
+	list, err := e.repo.ListTestcases(ctx, p.ID)
+	require.NoError(t, err)
+	require.Len(t, list, 3)
+	read := func(key string) string {
+		rc, err := e.store.Open(ctx, key)
+		require.NoError(t, err)
+		defer func() { _ = rc.Close() }()
+		b, _ := io.ReadAll(rc)
+		return string(b)
+	}
+	assert.Equal(t, "ans1", read(list[0].OutputFile))
+	assert.Equal(t, "out2", read(list[1].OutputFile))
+	assert.Equal(t, "out3", read(list[2].OutputFile), ".out wins when both exist")
+
+	_, err = e.svc.AddTestcasesBatch(ctx, p.ID, []problem.BatchTestcaseFile{
+		{Name: "4.in", Size: 2, Reader: strings.NewReader("in4")},
+	}, 10)
+	assertCode(t, err, 40001)
+}
+
 func TestTestcaseContentEditing(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()

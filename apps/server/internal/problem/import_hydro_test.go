@@ -72,6 +72,11 @@ func importZip(t *testing.T, svc *problem.Service, createdBy int64, data []byte)
 	return svc.ImportHydro(context.Background(), createdBy, bytes.NewReader(data), int64(len(data)))
 }
 
+func importZipOpts(t *testing.T, svc *problem.Service, createdBy int64, data []byte, opts problem.HydroImportOptions) (*problem.HydroImportResult, error) {
+	t.Helper()
+	return svc.ImportHydro(context.Background(), createdBy, bytes.NewReader(data), int64(len(data)), opts)
+}
+
 func hydroProblem(name, title string, testcases int, extra ...zipEntry) []zipEntry {
 	entries := []zipEntry{
 		{name: name + "/problem.yaml", body: []byte("title: " + title + "\ntag:\n  - 循环\n  - DAI\n")},
@@ -175,7 +180,7 @@ func TestImportHydroMultipleAndPartialFailure(t *testing.T) {
 	assert.Equal(t, int64(1), n)
 }
 
-func TestImportHydroSlugConflictDoesNotOverwrite(t *testing.T) {
+func TestImportHydroSlugConflictAskDoesNotOverwrite(t *testing.T) {
 	e := newEnv(t)
 	existing := e.create(t, input("hydro-6760"))
 
@@ -183,12 +188,95 @@ func TestImportHydroSlugConflictDoesNotOverwrite(t *testing.T) {
 	res, err := importZip(t, e.svc, 1, data)
 	require.NoError(t, err)
 	require.Empty(t, res.Imported)
-	require.Len(t, res.Failed, 1)
-	assert.Contains(t, res.Failed[0].Error, "题目标识已存在")
+	require.Empty(t, res.Failed)
+	require.Len(t, res.Conflicts, 1)
+	assert.Equal(t, "hydro-6760", res.Conflicts[0].Slug)
+	assert.Equal(t, existing.ID, res.Conflicts[0].ExistingID)
+	assert.True(t, res.Conflicts[0].CanOverwrite)
 
 	got, err := e.repo.FindByID(context.Background(), existing.ID)
 	require.NoError(t, err)
-	assert.Equal(t, "Problem hydro-6760", got.Title, "existing problem must not be overwritten")
+	assert.Equal(t, "Problem hydro-6760", got.Title, "ask mode must not overwrite")
+}
+
+func TestImportHydroOverwritePreservesIdentityAndStats(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	existing := e.create(t, input("hydro-6760"))
+	e.addCase(t, existing.ID)
+	require.NoError(t, e.db.Exec(
+		`UPDATE problems SET submit_count = 7, accept_count = 3 WHERE id = ?`, existing.ID,
+	).Error)
+
+	data := buildZip(t, hydroProblem("6760", "覆盖后的题", 2)...)
+	res, err := importZipOpts(t, e.svc, 1, data, problem.HydroImportOptions{ConflictPolicy: "overwrite"})
+	require.NoError(t, err)
+	require.Empty(t, res.Failed)
+	require.Len(t, res.Imported, 1)
+	assert.True(t, res.Imported[0].Overwritten)
+	assert.Equal(t, existing.ID, res.Imported[0].ID)
+	assert.Equal(t, 2, res.Imported[0].TestcaseCount)
+
+	got, err := e.repo.FindByID(ctx, existing.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "覆盖后的题", got.Title)
+	assert.Equal(t, int64(1), got.CreatedBy)
+	assert.Equal(t, 7, got.SubmitCount)
+	assert.Equal(t, 3, got.AcceptCount)
+	assert.False(t, got.IsPublic)
+	cases, err := e.repo.ListTestcases(ctx, existing.ID)
+	require.NoError(t, err)
+	require.Len(t, cases, 2)
+}
+
+func TestImportHydroOverwriteRequiresOwnership(t *testing.T) {
+	e := newEnv(t)
+	existing := e.create(t, input("hydro-6760")) // created by user 1
+
+	data := buildZip(t, hydroProblem("6760", "他人覆盖", 1)...)
+	res, err := importZipOpts(t, e.svc, 2, data, problem.HydroImportOptions{ConflictPolicy: "overwrite"})
+	require.NoError(t, err)
+	require.Len(t, res.Failed, 1)
+	assert.Contains(t, res.Failed[0].Error, "无权覆盖")
+	require.Empty(t, res.Imported)
+
+	got, err := e.repo.FindByID(context.Background(), existing.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "Problem hydro-6760", got.Title)
+}
+
+func TestImportHydroAnsAndOutPrecedence(t *testing.T) {
+	e := newEnv(t)
+	data := buildZip(t,
+		zipEntry{name: "ans/problem.yaml", body: []byte("title: ANS\n")},
+		zipEntry{name: "ans/problem_zh.md", body: []byte("statement")},
+		zipEntry{name: "ans/testdata/1.in", body: []byte("in1")},
+		zipEntry{name: "ans/testdata/1.ans", body: []byte("ans1")},
+		zipEntry{name: "ans/testdata/2.in", body: []byte("in2")},
+		zipEntry{name: "ans/testdata/2.out", body: []byte("out2")},
+		zipEntry{name: "ans/testdata/3.in", body: []byte("in3")},
+		zipEntry{name: "ans/testdata/3.out", body: []byte("out3")},
+		zipEntry{name: "ans/testdata/3.ans", body: []byte("ans3")},
+	)
+	res, err := importZip(t, e.svc, 1, data)
+	require.NoError(t, err)
+	require.Len(t, res.Imported, 1)
+	assert.Contains(t, res.Warnings, "ans：同时存在 .ans 与 .out，已使用 .out")
+	assert.Equal(t, 3, res.Imported[0].TestcaseCount)
+
+	cases, err := e.repo.ListTestcases(context.Background(), res.Imported[0].ID)
+	require.NoError(t, err)
+	require.Len(t, cases, 3)
+	read := func(key string) string {
+		rc, err := e.store.Open(context.Background(), key)
+		require.NoError(t, err)
+		defer func() { _ = rc.Close() }()
+		b, _ := io.ReadAll(rc)
+		return string(b)
+	}
+	assert.Equal(t, "ans1", read(cases[0].OutputFile))
+	assert.Equal(t, "out2", read(cases[1].OutputFile))
+	assert.Equal(t, "out3", read(cases[2].OutputFile), ".out wins when both exist")
 }
 
 func TestImportHydroDuplicateFoldersBothFail(t *testing.T) {
