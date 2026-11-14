@@ -12,6 +12,7 @@ import { ApiError } from '@/api/http'
 import { getProblem, getStatistics } from '@/api/problems'
 import type { ContestDetail, ProblemDetail, ProblemStats } from '@/api/types'
 import MarkdownView from '@/components/MarkdownView.vue'
+import ProblemAttachmentsCard from '@/components/ProblemAttachmentsCard.vue'
 import AppDifficultyTag from '@/components/ui/AppDifficultyTag.vue'
 import AppEmptyState from '@/components/ui/AppEmptyState.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
@@ -470,6 +471,8 @@ const authorName = computed(() => {
               </AppSurface>
             </RouterLink>
           </template>
+
+          <ProblemAttachmentsCard v-if="problem" :problem-id="problem.id" />
         </aside>
       </div>
     </div>

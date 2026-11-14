@@ -4,11 +4,13 @@ import type {
   OfficialSolutionInput,
   OfficialSolutionView,
   Page,
+  ProblemAttachment,
   ProblemDetail,
   ProblemInput,
   ProblemListItem,
   ProblemStats,
   ProblemUpdateInput,
+  StatementImageResult,
   Testcase,
   TestcaseGenerationConfirm,
   TestcaseGenerationInput,
@@ -51,6 +53,24 @@ export const deleteProblem = (id: number | string) =>
 
 export const getStatistics = (id: number | string) =>
   http.get<ProblemStats>(`/problems/${id}/statistics`)
+
+export const listProblemAttachments = (id: number | string) =>
+  http.get<ProblemAttachment[]>(`/problems/${id}/attachments`)
+
+export function uploadProblemAttachment(id: number | string, file: File) {
+  const form = new FormData()
+  form.append('file', file)
+  return http.postForm<ProblemAttachment>(`/problems/${id}/attachments`, form)
+}
+
+export const deleteProblemAttachment = (id: number | string, attachmentId: number | string) =>
+  http.delete<null>(`/problems/${id}/attachments/${attachmentId}`)
+
+export function uploadStatementImage(id: number | string, file: File) {
+  const form = new FormData()
+  form.append('file', file)
+  return http.postForm<StatementImageResult>(`/problems/${id}/assets`, form)
+}
 
 export const getOfficialSolution = (id: number | string) =>
   http.get<OfficialSolutionView>(`/problems/${id}/official-solution`)

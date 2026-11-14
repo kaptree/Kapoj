@@ -19,9 +19,16 @@ import { useConfirm } from 'primevue/useconfirm'
 import { useToast } from 'primevue/usetoast'
 
 import { ApiError } from '@/api/http'
-import { createProblem, deleteProblem, getProblem, updateProblem } from '@/api/problems'
+import {
+  createProblem,
+  deleteProblem,
+  getProblem,
+  updateProblem,
+  uploadStatementImage,
+} from '@/api/problems'
 import type { ProblemDetail, ProblemInput, ProblemType } from '@/api/types'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
+import ProblemAttachmentManager from '@/components/ProblemAttachmentManager.vue'
 import SampleEditor from '@/components/SampleEditor.vue'
 import TestcaseManager from '@/components/TestcaseManager.vue'
 import AppEmptyState from '@/components/ui/AppEmptyState.vue'
@@ -159,6 +166,14 @@ watch(
     }
   },
 )
+
+async function uploadStatementImageFile(file: File): Promise<string> {
+  if (problemId.value === null) {
+    throw new Error('请先保存题目，再上传图片')
+  }
+  const result = await uploadStatementImage(problemId.value, file)
+  return result.url
+}
 
 function describe(e: unknown, fallback: string) {
   return e instanceof ApiError ? e.message : fallback
@@ -433,13 +448,20 @@ function remove() {
             </TabList>
             <TabPanels>
               <TabPanel value="description">
-                <MarkdownEditor v-model="form.statementMd" :theme="isDark ? 'dark' : 'light'" />
+                <MarkdownEditor
+                  v-model="form.statementMd"
+                  :theme="isDark ? 'dark' : 'light'"
+                  :problem-id="problemId ?? undefined"
+                  :upload-image="uploadStatementImageFile"
+                />
               </TabPanel>
               <TabPanel value="input">
                 <MarkdownEditor
                   v-model="form.inputFormatMd"
                   height="240px"
                   :theme="isDark ? 'dark' : 'light'"
+                  :problem-id="problemId ?? undefined"
+                  :upload-image="uploadStatementImageFile"
                 />
               </TabPanel>
               <TabPanel value="output">
@@ -447,6 +469,8 @@ function remove() {
                   v-model="form.outputFormatMd"
                   height="240px"
                   :theme="isDark ? 'dark' : 'light'"
+                  :problem-id="problemId ?? undefined"
+                  :upload-image="uploadStatementImageFile"
                 />
               </TabPanel>
               <TabPanel value="samples">
@@ -457,6 +481,8 @@ function remove() {
                   v-model="form.hintMd"
                   height="240px"
                   :theme="isDark ? 'dark' : 'light'"
+                  :problem-id="problemId ?? undefined"
+                  :upload-image="uploadStatementImageFile"
                 />
               </TabPanel>
             </TabPanels>
@@ -501,6 +527,10 @@ function remove() {
           :checker-uploaded="checkerUploaded"
           @changed="reloadFlags"
         />
+      </AppSurface>
+
+      <AppSurface v-if="isEdit" padding="lg" class="attachments">
+        <ProblemAttachmentManager :problem-id="problemId!" />
       </AppSurface>
     </template>
   </div>
