@@ -49,7 +49,11 @@ describe('MarkdownEditor', () => {
 
     const callback = vi.fn()
     const file = new File(['image'], 'statement.png', { type: 'image/png' })
-    await w.findComponent(MdEditor).props('onUploadImg')([file], callback)
+    const upload = w.findComponent(MdEditor).props('onUploadImg') as (
+      files: File[],
+      cb: (urls: string[]) => void,
+    ) => void
+    await upload([file], callback)
 
     expect(uploadImage).toHaveBeenCalledWith(file)
     expect(callback).toHaveBeenCalledWith(['/api/problems/12/assets/1'])
