@@ -10,11 +10,7 @@ import { useConfirm } from 'primevue/useconfirm'
 import { useToast } from 'primevue/usetoast'
 
 import { ApiError } from '@/api/http'
-import {
-  createOnlineTestcase,
-  getTestcaseContent,
-  updateTestcaseContent,
-} from '@/api/problems'
+import { createOnlineTestcase, getTestcaseContent, updateTestcaseContent } from '@/api/problems'
 import type { Testcase } from '@/api/types'
 import { formatBytes } from '@/utils/format'
 

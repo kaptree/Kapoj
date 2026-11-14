@@ -481,7 +481,13 @@ function goAiGenerate() {
           分数
           <InputNumber v-model="batchScore" :min="0" :max="1000" size="small" />
         </label>
-        <Button label="清空" severity="secondary" text :disabled="batchUploading" @click="clearBatch" />
+        <Button
+          label="清空"
+          severity="secondary"
+          text
+          :disabled="batchUploading"
+          @click="clearBatch"
+        />
         <Button
           label="批量上传"
           :loading="batchUploading"

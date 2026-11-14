@@ -21,7 +21,11 @@ async function load() {
   }
 }
 
-watch(() => props.problemId, () => void load(), { immediate: true })
+watch(
+  () => props.problemId,
+  () => void load(),
+  { immediate: true },
+)
 </script>
 
 <template>

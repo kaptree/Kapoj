@@ -3,11 +3,7 @@ import PrimeVue from 'primevue/config'
 import Textarea from 'primevue/textarea'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import {
-  createOnlineTestcase,
-  getTestcaseContent,
-  updateTestcaseContent,
-} from '@/api/problems'
+import { createOnlineTestcase, getTestcaseContent, updateTestcaseContent } from '@/api/problems'
 import type { Testcase } from '@/api/types'
 import TestcaseEditDialog from './TestcaseEditDialog.vue'
 
@@ -34,11 +30,7 @@ function testcase(overrides: Partial<Testcase> = {}): Testcase {
   }
 }
 
-function mountDialog(props: {
-  visible?: boolean
-  problemId?: number
-  testcase?: Testcase | null
-}) {
+function mountDialog(props: { visible?: boolean; problemId?: number; testcase?: Testcase | null }) {
   return mount(TestcaseEditDialog, {
     props: {
       visible: true,
@@ -133,9 +125,7 @@ describe('TestcaseEditDialog', () => {
     dialogButton('取消').click()
     await flushPromises()
 
-    expect(confirm.require).toHaveBeenCalledWith(
-      expect.objectContaining({ header: '放弃修改' }),
-    )
+    expect(confirm.require).toHaveBeenCalledWith(expect.objectContaining({ header: '放弃修改' }))
     wrapper.unmount()
   })
 })

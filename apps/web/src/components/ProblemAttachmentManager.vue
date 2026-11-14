@@ -43,7 +43,11 @@ async function load() {
   }
 }
 
-watch(() => props.problemId, () => void load(), { immediate: true })
+watch(
+  () => props.problemId,
+  () => void load(),
+  { immediate: true },
+)
 
 async function uploadFiles(files: File[]) {
   if (!files.length || uploading.value) return
@@ -161,13 +165,7 @@ function remove(item: ProblemAttachment) {
           </span>
         </div>
         <div class="attachment-item__actions">
-          <Button
-            label="复制链接"
-            icon="pi pi-link"
-            text
-            size="small"
-            @click="copyLink(item)"
-          />
+          <Button label="复制链接" icon="pi pi-link" text size="small" @click="copyLink(item)" />
           <Button
             label="删除"
             icon="pi pi-trash"
@@ -179,7 +177,9 @@ function remove(item: ProblemAttachment) {
         </div>
       </li>
     </ul>
-    <p v-else class="attachment-manager__empty">还没有附件。样例文件、PDF、图片等都可以放在这里。</p>
+    <p v-else class="attachment-manager__empty">
+      还没有附件。样例文件、PDF、图片等都可以放在这里。
+    </p>
   </div>
 </template>
 

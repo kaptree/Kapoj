@@ -92,9 +92,7 @@ async function applyConflicts() {
   conflictVisible.value = false
   const conflicts = result.value?.conflicts ?? []
   const selected = new Set(overwriteSlugs.value)
-  const skipSlugs = conflicts
-    .map((item) => item.slug)
-    .filter((slug) => !selected.has(slug))
+  const skipSlugs = conflicts.map((item) => item.slug).filter((slug) => !selected.has(slug))
   await runImport({
     conflictPolicy: 'overwrite',
     overwriteSlugs: [...selected],
@@ -187,15 +185,18 @@ function reset() {
         />
       </div>
 
-      <p class="limit-note">
-        导入的题目默认下线，创建者为当前用户；同名题目标识会先询问是否覆盖。
-      </p>
+      <p class="limit-note">导入的题目默认下线，创建者为当前用户；同名题目标识会先询问是否覆盖。</p>
     </AppSurface>
 
     <template v-if="result">
       <AppSurface v-if="result.warnings?.length" padding="lg" class="result-surface">
         <h2 class="result-title">导入提示</h2>
-        <Message v-for="warning in result.warnings" :key="warning" severity="warn" :closable="false">
+        <Message
+          v-for="warning in result.warnings"
+          :key="warning"
+          severity="warn"
+          :closable="false"
+        >
           {{ warning }}
         </Message>
       </AppSurface>
@@ -305,7 +306,9 @@ function reset() {
           </template>
         </Column>
         <Column header="标识" style="min-width: 130px">
-          <template #body="{ data }"><span class="mono">{{ data.slug }}</span></template>
+          <template #body="{ data }"
+            ><span class="mono">{{ data.slug }}</span></template
+          >
         </Column>
         <Column header="已有题目" style="min-width: 160px">
           <template #body="{ data }">{{ data.existingTitle }}</template>

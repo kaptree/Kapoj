@@ -83,7 +83,10 @@ describe('ProblemAttachmentManager', () => {
     const wrapper = mountManager()
     await flushPromises()
 
-    await wrapper.findAll('button').find((b) => b.text().includes('删除'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('删除'))!
+      .trigger('click')
     expect(confirm.require).toHaveBeenCalledWith(expect.objectContaining({ header: '删除附件' }))
     const options = confirm.require.mock.calls[0]![0] as { accept: () => Promise<void> }
     await options.accept()

@@ -60,9 +60,7 @@ describe('parseProblemQuery', () => {
 
 describe('toRouteQuery', () => {
   it('omits default values', () => {
-    expect(
-      toRouteQuery({ keyword: '', tag: '', difficulty: null, scope: '', page: 1 }),
-    ).toEqual({})
+    expect(toRouteQuery({ keyword: '', tag: '', difficulty: null, scope: '', page: 1 })).toEqual({})
   })
 
   it('writes everything else as strings', () => {
