@@ -20,7 +20,7 @@ import type {
   SubmissionListItem,
   SubmissionStatus,
 } from '@/api/types'
-import IdentityShowcase from '@/components/IdentityShowcase.vue'
+import UserIdentityName from '@/components/UserIdentityName.vue'
 import AppEmptyState from '@/components/ui/AppEmptyState.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
@@ -358,13 +358,13 @@ onBeforeUnmount(() => {
         <Column header="提交者" style="width: 120px">
           <template #body="{ data }">
             <div class="user-cell">
-              <RouterLink :to="{ name: 'user-profile', params: { id: data.userId } }" @click.stop>
-                {{ data.nickname || data.username }}
-              </RouterLink>
-              <IdentityShowcase
-                :badges="data.equippedBadges"
+              <UserIdentityName
+                :nickname="data.nickname"
+                :username="data.username"
                 :title="data.equippedTitle"
+                :badges="data.equippedBadges"
                 size="small"
+                :link-to="{ name: 'user-profile', params: { id: data.userId } }"
               />
             </div>
           </template>
@@ -455,11 +455,13 @@ onBeforeUnmount(() => {
           <div class="detail-user">
             <dt>用户</dt>
             <dd>
-              <span>{{ detail.nickname || detail.username }}</span>
-              <IdentityShowcase
-                :badges="detail.equippedBadges"
+              <UserIdentityName
+                :nickname="detail.nickname"
+                :username="detail.username"
                 :title="detail.equippedTitle"
+                :badges="detail.equippedBadges"
                 size="small"
+                :link-to="{ name: 'user-profile', params: { id: detail.userId } }"
               />
             </dd>
           </div>

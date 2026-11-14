@@ -22,8 +22,7 @@ import {
   listWealthLeaderboard,
 } from '@/api/leaderboard'
 import type { EquippedBadge, EquippedTitle, RatingLevel, RatingSeasonView } from '@/api/types'
-import IdentityShowcase from '@/components/IdentityShowcase.vue'
-import RatingLevelName from '@/components/RatingLevelName.vue'
+import UserIdentityName from '@/components/UserIdentityName.vue'
 import AppEmptyState from '@/components/ui/AppEmptyState.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
@@ -439,15 +438,12 @@ watch(activeTab, (key) => {
           >
             <span class="board-row__rank">{{ row.rank }}</span>
             <span class="board-row__user">
-              <RatingLevelName
-                v-if="board.key === 'rating' && row.level"
-                :name="row.nickname || row.username"
-                :level="row.level"
-              />
-              <span v-else class="board-row__name">{{ row.nickname || row.username }}</span>
-              <IdentityShowcase
-                :badges="row.equippedBadges"
+              <UserIdentityName
+                :nickname="row.nickname"
+                :username="row.username"
                 :title="row.equippedTitle"
+                :badges="row.equippedBadges"
+                :rating-level="board.key === 'rating' ? (row.level ?? null) : null"
                 size="small"
               />
             </span>
@@ -531,22 +527,14 @@ watch(activeTab, (key) => {
                     <Column header="用户" style="min-width: 180px">
                       <template #body="{ data }">
                         <div class="user-cell">
-                          <RouterLink
-                            :to="{ name: 'user-profile', params: { id: data.userId } }"
-                            class="user-link"
-                            :class="{ 'user-link--rating': board.key === 'rating' }"
-                          >
-                            <RatingLevelName
-                              v-if="board.key === 'rating' && data.level"
-                              :name="data.nickname || data.username"
-                              :level="data.level"
-                            />
-                            <template v-else>{{ data.nickname || data.username }}</template>
-                          </RouterLink>
-                          <IdentityShowcase
-                            :badges="data.equippedBadges"
+                          <UserIdentityName
+                            :nickname="data.nickname"
+                            :username="data.username"
                             :title="data.equippedTitle"
+                            :badges="data.equippedBadges"
+                            :rating-level="board.key === 'rating' ? (data.level ?? null) : null"
                             size="small"
+                            :link-to="{ name: 'user-profile', params: { id: data.userId } }"
                           />
                         </div>
                       </template>

@@ -55,7 +55,7 @@ function avatarLabel(badge: EquippedBadge): string | undefined {
     :class="`identity-showcase--${size}`"
   >
     <span v-if="title" class="identity-title" :style="{ color: titleColor }">
-      {{ title.name }}
+      【{{ title.name }}】
     </span>
     <span v-for="badge in badges" :key="badge.id" class="identity-badge">
       <Avatar

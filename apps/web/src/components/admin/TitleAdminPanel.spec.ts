@@ -196,10 +196,7 @@ describe('TitleAdminPanel', () => {
     dialogButton('保存')!.click()
     await flushPromises()
 
-    expect(updateTitle).toHaveBeenCalledWith(
-      1,
-      expect.objectContaining({ color: '#abcdef' }),
-    )
+    expect(updateTitle).toHaveBeenCalledWith(1, expect.objectContaining({ color: '#abcdef' }))
     wrapper.unmount()
   })
 

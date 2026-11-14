@@ -15,6 +15,7 @@ import ProfileEvaluationDialog from '@/components/profile/ProfileEvaluationDialo
 import ProfileWordCloud from '@/components/profile/ProfileWordCloud.vue'
 import FollowListDialog from '@/components/social/FollowListDialog.vue'
 import IdentityShowcase from '@/components/IdentityShowcase.vue'
+import UserIdentityName from '@/components/UserIdentityName.vue'
 import RatingHistoryCard from '@/components/RatingHistoryCard.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
@@ -213,7 +214,15 @@ watch(
           />
           <div class="profile-hero__names">
             <p class="profile-hero__eyebrow">USER // PROFILE</p>
-            <h1 class="profile-hero__title">{{ profile.nickname }}</h1>
+            <h1 class="profile-hero__title">
+              <UserIdentityName
+                :nickname="profile.nickname"
+                :username="profile.username"
+                :title="profile.equippedTitle"
+                :badges="[]"
+                size="default"
+              />
+            </h1>
             <p class="profile-hero__handle">@{{ profile.username }}</p>
           </div>
         </div>
@@ -231,11 +240,7 @@ watch(
 
       <AppSurface padding="lg" class="profile-surface">
         <div class="profile-intro">
-          <IdentityShowcase
-            :badges="profile.equippedBadges"
-            :title="profile.equippedTitle"
-            size="small"
-          />
+          <IdentityShowcase :badges="profile.equippedBadges" :title="null" size="small" />
           <p class="profile-bio" :class="{ muted: !profile.bio }">
             {{ profile.bio || '这个人还没有写简介。' }}
           </p>

@@ -28,7 +28,7 @@ describe('IdentityShowcase', () => {
       title: { id: 3, name: '卷王', color: '#7C3AED' },
     })
 
-    expect(wrapper.find('.identity-title').text()).toBe('卷王')
+    expect(wrapper.find('.identity-title').text()).toBe('【卷王】')
     expect((wrapper.find('.identity-title').element as HTMLElement).style.color).toBe(
       'rgb(124, 58, 237)',
     )

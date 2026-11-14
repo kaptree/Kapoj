@@ -11,7 +11,7 @@ import type { ContestRankCell, ContestRankRow, ContestRanklist } from '@/api/typ
 import AppEmptyState from '@/components/ui/AppEmptyState.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
-import IdentityShowcase from '@/components/IdentityShowcase.vue'
+import UserIdentityName from '@/components/UserIdentityName.vue'
 import { formatDateTime } from '@/utils/format'
 
 const props = defineProps<{ contestId: number; refreshTick: number }>()
@@ -117,10 +117,11 @@ onBeforeUnmount(() => {
         <Column header="选手" style="min-width: 160px">
           <template #body="{ data }">
             <div class="player-cell">
-              <span class="player-name">{{ data.nickname || data.username }}</span>
-              <IdentityShowcase
-                :badges="data.equippedBadges"
+              <UserIdentityName
+                :nickname="data.nickname"
+                :username="data.username"
                 :title="data.equippedTitle"
+                :badges="data.equippedBadges"
                 size="small"
               />
             </div>

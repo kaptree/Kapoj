@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
 import Avatar from 'primevue/avatar'
+import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
@@ -117,11 +118,13 @@ const CertificateCardStub = {
 
 async function mountPage(path = '/users/7') {
   const router = createRouter({ history: createMemoryHistory(), routes })
+  const pinia = createPinia()
+  setActivePinia(pinia)
   await router.push(path)
   await router.isReady()
   const wrapper = mount(UserProfileView, {
     global: {
-      plugins: [router, PrimeVue],
+      plugins: [router, PrimeVue, pinia],
       stubs: {
         FollowListDialog: true,
         ProfileWordCloud: WordCloudStub,
