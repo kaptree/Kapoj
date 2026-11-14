@@ -1031,7 +1031,7 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 
 **实现状态（M2-B）**：比赛进行中，其他用户的比赛提交在列表与详情中隐藏代码、错误信息、测试点详情、耗时、内存与得分，只保留状态和语言；本人、管理员和比赛结束后完整可见。OI 赛时非管理员榜单只返回本人行。
 
-**公开身份展示（M3 已完成）**：`GET /submissions`、`GET /submissions/:id` 与 `GET /contests/:id/ranklist` 的每一行返回提交者/选手的 `equippedBadges`（数组，最多 `KAPOJ_MAX_EQUIPPED_BADGES` 个）与 `equippedTitle`（无装备时为 null），按页批量查询避免 N+1，已装备但后来下线的徽章/称号仍展示。测评记录页在提交者昵称下方、榜单页在选手昵称下方用 `IdentityShowcase` 渲染，详情抽屉同样展示；空装备时不显示占位。
+**公开身份展示（M3 已完成，2026-11-14 调整）**：`GET /submissions`、`GET /submissions/:id` 与 `GET /contests/:id/ranklist` 的每一行返回提交者/选手的 `equippedBadges`（数组，最多 `KAPOJ_MAX_EQUIPPED_BADGES` 个）与 `equippedTitle`（无装备时为 null），按页批量查询避免 N+1，已装备但后来下线的徽章/称号仍展示。测评记录、排行榜、比赛榜单、个人主页等公开身份位置统一使用 `UserIdentityName` 渲染为“【称号】昵称 + 徽章”：称号在昵称前并带全角括号，徽章在昵称后；无称号时不显示括号，空装备时不显示占位。
 
 **Codex 提示词（测评记录）**
 
@@ -1227,7 +1227,7 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 - **通知**：类型 `solution_reply`（回复我的帖子）、`solution_like`（赞我的帖子）、`follow`（关注我）；`dedupe_key` 全局唯一分别为 `reply:<replyId>`、`like:<actor>:<post>`、`follow:<actor>:<followee>`，保证重复赞/关注/同一回复不重复通知。自己触发自己的动作不生成通知（自回复不通知，但回复活跃度仍计分）。回复通知在论坛回复创建成功后 best-effort 写入；点赞/关注通知在事务内写入。`link` 为站内相对路径（如 `/problems/1/solutions/9`、`/users/3`），通知标题由前端按 type 生成。通知只读自己；标记已读幂等；帖子软删除后通知保留。
 - **活跃度**：回复 +3（`ref_type=solution_reply`/`ref_id=replyID`）、点赞 +1（`solution_post`/`postID`）、关注 +2（`user`/`followeeID`），每类每日上限 20；`activity_logs` 唯一约束 `(user_id, action, ref_type, ref_id)` 去重，取消赞/取消关注不扣分；写活跃度 best-effort，失败只日志不阻断主操作，成功写活跃度后递增活跃度榜缓存版本。
 - **共享分**：题解帖子每获得 1 个赞，作者共享分 +5（`shared_items(type=solution)` upsert `like_count`）；取消赞扣回；帖子删除移除共享项并递增共享榜缓存版本。共享分公式 `20 * 比赛共享数 + 5 * 题解点赞数` 的第二项自此生效。
-- **前端**：题解列表/详情点赞按钮（已赞高亮、乐观更新失败回滚 + Toast、游客跳登录）；用户主页关注按钮与粉丝/关注 Dialog（两个 Tab、分页、非本人且登录才显示关注）；`NotificationBell` 仅登录显示未读数 badge、60 秒轮询、卸载清理、点击进 `/notifications`；`/notifications` 页分页列表、点击标记已读并跳转 link、全部已读、空/错/载入态；路由 `notifications` 需登录，游客跳登录。不新增 UI 依赖（PrimeVue UI-32）。
+- **前端**：题解列表/详情点赞按钮（已赞高亮、乐观更新失败回滚 + Toast、游客跳登录）；用户主页关注按钮与粉丝/关注 Dialog（两个 Tab、分页、非本人且登录才显示关注）；`NotificationBell` 与 `/notifications` 页共用 `useNotificationsStore` 的未读数，点击单条通知或“全部已读”后角标立即减一/归零；铃铛保留 60 秒轮询兜底、卸载清理、点击进 `/notifications`；`/notifications` 页分页列表、点击标记已读并跳转 link、全部已读、空/错/载入态；路由 `notifications` 需登录，游客跳登录。不新增 UI 依赖（PrimeVue UI-32）。
 
 ---
 
@@ -1346,7 +1346,7 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 **实现状态（M3-B 后端、M3-C 前端已完成）**
 
 - 接口：`GET /badges`（公开，可选登录；登录时含 `owned`/`equipped`；`includeInactive=true` 需要 `gamification.badge.manage`）、`POST /badges`、`PUT /badges/:id`、`DELETE /badges/:id`（`gamification.badge.manage`）、`POST /badges/:id/image`（`gamification.badge.manage`，multipart 字段 `file`）、`GET /badges/:id/image`（公开）、`POST /badges/:id/purchase|equip|unequip`（登录）、`GET /users/:id/badges`（公开）。
-- 装备上限由 `KAPOJ_MAX_EQUIPPED_BADGES` 配置（1–10，默认 3）；装备前锁定用户行并重新统计，避免并发超限；已装备时重复装备、未装备时卸下均幂等成功。
+- 装备上限由 `KAPOJ_MAX_EQUIPPED_BADGES` 配置（1–10，默认 3）；装备前锁定用户行并重新统计，避免并发超限；已装备时重复装备、未装备时卸下均幂等成功。徽章显示大小由 `site_settings.badge_size` 配置（16–48 px，默认 22 px），通过 `GET /api/site` 的 `appearance.badgeSize` 下发，后台 `/admin/site` 的“外观”Tab 修改。
 - 购买在同一事务内锁定徽章行与用户行，校验上架、未拥有、限量库存与余额，扣库存/扣金币/写 `coin_transactions`（`reason=badge_purchase`、`ref_type=badge`）/写 `user_badges`；已拥有、库存不足、余额不足或已下线返回 40001。
 - 管理端更新在同一事务内锁定徽章行并只更新提交字段：`stock` 省略时保留当前库存（包括并发购买扣减），`imageUrl` 留空时保留现有图片，`isActive` 省略时保留上下架状态，避免覆盖并发购买、图片上传或软删除。
 - 图片仅支持 PNG/JPEG/WebP/GIF 且不超过 2 MiB；保存为存储键 `badges/<id>`，`image_url` 写为 `/api/badges/<id>/image`，公开读取响应带 `Cache-Control: public, max-age=3600`。外链或文件缺失返回 40400。
@@ -1390,6 +1390,7 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 **实现状态（M3-B 后端、M3-C 前端已完成）**
 
 - 接口：`GET /titles`（公开，可选登录；登录时含解锁/购买/装备状态与条件进度；`includeInactive=true` 需要 `gamification.title.manage`）、`POST /titles`、`PUT /titles/:id`、`DELETE /titles/:id`（`gamification.title.manage`）、`POST /titles/:id/purchase|equip|unequip`（登录）。
+- 称号颜色：请求接受 `#RRGGBB` 或 `RRGGBB`，服务端统一规范化为 `#RRGGBB` 后保存；前台预览与列表使用同一规范化值。该修复解决 PrimeVue ColorPicker 在 `format="hex"` 下返回不带 `#` 的值导致无法保存的问题。
 - 解锁条件：`rating`（当前 Rating ≥ 阈值）、`ac_count`（去重 AC 题目数 ≥ 阈值）、`achievement`（已解锁指定 code 的成就）；读取列表时先补算解锁，不扣金币。M4-A 已实现 Rating 结算，Rating 条件自然可达。
 - 购买要求已解锁且未购买，在同一事务内扣金币、写 `coin_transactions`（`reason=title_purchase`、`ref_type=title`）并记录购买时间；已下线但已解锁的称号仍可购买。
 - 装备要求已购买；同一事务内先卸下该用户全部称号，再装备目标称号，并发下始终最多 1 个；重复装备幂等成功。
