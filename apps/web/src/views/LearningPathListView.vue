@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import Button from 'primevue/button'
+import DatePicker from 'primevue/datepicker'
+import InputText from 'primevue/inputtext'
 import Message from 'primevue/message'
+import Paginator from 'primevue/paginator'
 import SelectButton from 'primevue/selectbutton'
 import Tag from 'primevue/tag'
 
 import { ApiError } from '@/api/http'
-import { listLearningPaths } from '@/api/learning'
+import { listLearningPaths, type LearningPathScope } from '@/api/learning'
 import type { LearningPathItem } from '@/api/types'
 import AppEmptyState from '@/components/ui/AppEmptyState.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
@@ -17,13 +21,19 @@ import { PERM } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { learningPathVisibilityLabel } from '@/utils/learning'
 
-type Filter = 'all' | 'official' | 'custom' | 'mine'
+const PAGE_SIZE = 12
 
+const route = useRoute()
+const router = useRouter()
 const auth = useAuthStore()
 
 const items = ref<LearningPathItem[]>([])
-const mineItems = ref<LearningPathItem[]>([])
-const filter = ref<Filter>('all')
+const filter = ref<LearningPathScope>(scopeFromQuery())
+const keyword = ref(typeof route.query.keyword === 'string' ? route.query.keyword : '')
+const createdFrom = ref<Date | null>(dateFromQuery(route.query.createdFrom))
+const createdTo = ref<Date | null>(dateFromQuery(route.query.createdTo))
+const page = ref(positivePage(route.query.page))
+const total = ref(0)
 const loading = ref(false)
 const error = ref('')
 
@@ -31,7 +41,7 @@ const isLoggedIn = computed(() => auth.isLoggedIn)
 const canManage = computed(() => auth.can(PERM.learningPath.official.manage))
 
 const filterOptions = computed(() => {
-  const options: { label: string; value: Filter }[] = [
+  const options: { label: string; value: LearningPathScope }[] = [
     { label: '全部', value: 'all' },
     { label: '官方', value: 'official' },
     { label: '自定义', value: 'custom' },
@@ -40,27 +50,62 @@ const filterOptions = computed(() => {
   return options
 })
 
-const visibleItems = computed<LearningPathItem[]>(() => {
-  if (filter.value === 'mine') return mineItems.value
-  if (filter.value === 'official') return items.value.filter((item) => item.isOfficial)
-  if (filter.value === 'custom') return items.value.filter((item) => !item.isOfficial)
-  return items.value
-})
-
-const total = computed(() => visibleItems.value.length)
-
 let latest = 0
+
+function scopeFromQuery(): LearningPathScope {
+  const value = route.query.scope
+  return value === 'official' || value === 'custom' || value === 'mine' ? value : 'all'
+}
+
+function positivePage(raw: unknown): number {
+  const value = Number(typeof raw === 'string' ? raw : 1)
+  return Number.isInteger(value) && value > 0 ? value : 1
+}
+
+function dateFromQuery(raw: unknown): Date | null {
+  if (typeof raw !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null
+  const [year, month, day] = raw.split('-').map(Number)
+  const date = new Date(year!, month! - 1, day!)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function dateParam(value: Date | null): string | undefined {
+  if (!value) return undefined
+  const year = value.getFullYear()
+  const month = String(value.getMonth() + 1).padStart(2, '0')
+  const day = String(value.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function syncQuery() {
+  void router.replace({
+    name: 'learning-paths',
+    query: {
+      scope: filter.value === 'all' ? undefined : filter.value,
+      keyword: keyword.value.trim() || undefined,
+      createdFrom: dateParam(createdFrom.value),
+      createdTo: dateParam(createdTo.value),
+      page: page.value > 1 ? String(page.value) : undefined,
+    },
+  })
+}
 
 async function load() {
   const seq = ++latest
   loading.value = true
   error.value = ''
-  const mine = filter.value === 'mine'
   try {
-    const data = await listLearningPaths(mine ? { mine: true } : {})
+    const data = await listLearningPaths({
+      scope: filter.value,
+      keyword: keyword.value.trim() || undefined,
+      createdFrom: dateParam(createdFrom.value),
+      createdTo: dateParam(createdTo.value),
+      page: page.value,
+      pageSize: PAGE_SIZE,
+    })
     if (seq !== latest) return
-    if (mine) mineItems.value = data.items
-    else items.value = data.items
+    items.value = data.items
+    total.value = data.total
   } catch (e) {
     if (seq !== latest) return
     error.value = e instanceof ApiError ? e.message : '加载学习路线失败，请稍后再试'
@@ -69,8 +114,28 @@ async function load() {
   }
 }
 
+function applyFilters() {
+  page.value = 1
+  syncQuery()
+  void load()
+}
+
+function resetFilters() {
+  filter.value = 'all'
+  keyword.value = ''
+  createdFrom.value = null
+  createdTo.value = null
+  applyFilters()
+}
+
+function onPage(event: { page: number }) {
+  page.value = event.page + 1
+  syncQuery()
+  void load()
+}
+
 function canEdit(item: LearningPathItem): boolean {
-  return item.author.id === auth.user?.id || canManage.value
+  return item.canEdit || item.author.id === auth.user?.id || canManage.value
 }
 
 function visibilitySeverity(item: LearningPathItem): 'info' | 'warn' {
@@ -78,13 +143,13 @@ function visibilitySeverity(item: LearningPathItem): 'info' | 'warn' {
   return 'warn'
 }
 
-onMounted(load)
+function priceLabel(item: LearningPathItem): string {
+  return item.priceCoins > 0 ? `${item.priceCoins} 金币` : '免费'
+}
 
-watch(filter, (next, prev) => {
-  // Only re-fetch when the data source changes (all <-> mine); 官方/自定义 are
-  // filtered client-side from the already loaded list.
-  if (next === 'mine' || prev === 'mine') void load()
-})
+watch(filter, () => applyFilters())
+
+onMounted(load)
 </script>
 
 <template>
@@ -116,13 +181,43 @@ watch(filter, (next, prev) => {
       />
     </div>
 
-    <AppSurface padding="lg" class="learning-paths-surface">
-      <AppErrorState v-if="error && !visibleItems.length" :description="error" @retry="load" />
+    <form class="filters" @submit.prevent="applyFilters">
+      <InputText
+        v-model="keyword"
+        data-test="path-keyword"
+        placeholder="搜索标题或简介"
+        maxlength="100"
+        fluid
+      />
+      <DatePicker
+        v-model="createdFrom"
+        data-test="path-created-from"
+        placeholder="创建起始日"
+        date-format="yy-mm-dd"
+        show-icon
+        fluid
+      />
+      <DatePicker
+        v-model="createdTo"
+        data-test="path-created-to"
+        placeholder="创建结束日"
+        date-format="yy-mm-dd"
+        show-icon
+        fluid
+      />
+      <div class="filters__actions">
+        <Button type="submit" label="搜索" icon="pi pi-search" />
+        <Button type="button" label="重置" severity="secondary" text @click="resetFilters" />
+      </div>
+    </form>
 
-      <AppLoadingState v-else-if="loading && !visibleItems.length" label="正在加载学习路线" />
+    <AppSurface padding="lg" class="learning-paths-surface">
+      <AppErrorState v-if="error && !items.length" :description="error" @retry="load" />
+
+      <AppLoadingState v-else-if="loading && !items.length" label="正在加载学习路线" />
 
       <AppEmptyState
-        v-else-if="!error && !visibleItems.length"
+        v-else-if="!error && !items.length"
         icon="pi pi-sitemap"
         title="暂无学习路线"
         description="当前筛选条件下还没有可展示的学习路线。"
@@ -133,7 +228,7 @@ watch(filter, (next, prev) => {
 
         <div class="path-grid">
           <AppSurface
-            v-for="item in visibleItems"
+            v-for="item in items"
             :key="item.id"
             as="article"
             padding="md"
@@ -157,10 +252,23 @@ watch(filter, (next, prev) => {
                 <RouterLink :to="`/learning-paths/${item.id}`" class="path-title">
                   {{ item.title }}
                 </RouterLink>
-                <Tag
-                  :value="learningPathVisibilityLabel(item)"
-                  :severity="visibilitySeverity(item)"
-                />
+                <div class="path-tags">
+                  <Tag
+                    :value="learningPathVisibilityLabel(item)"
+                    :severity="visibilitySeverity(item)"
+                  />
+                  <Tag
+                    :value="priceLabel(item)"
+                    :severity="item.priceCoins > 0 ? 'warn' : 'success'"
+                    data-test="path-price"
+                  />
+                  <Tag
+                    v-if="item.priceCoins > 0"
+                    :value="item.purchased ? '已购买' : '未购买'"
+                    :severity="item.purchased ? 'success' : 'secondary'"
+                    data-test="path-purchased"
+                  />
+                </div>
               </div>
 
               <p class="path-desc">{{ item.descriptionMd }}</p>
@@ -169,6 +277,9 @@ watch(filter, (next, prev) => {
                 <span class="path-author">{{ item.author.nickname || item.author.username }}</span>
                 <span class="path-progress"
                   >已完成 {{ item.myCompletedCount }} / {{ item.nodeCount }} 节点</span
+                >
+                <span class="path-social" data-test="path-social"
+                  >参与 {{ item.participantCount }} · 推荐 {{ item.recommendCount }}</span
                 >
               </div>
 
@@ -182,6 +293,17 @@ watch(filter, (next, prev) => {
             </div>
           </AppSurface>
         </div>
+
+        <Paginator
+          v-if="total > PAGE_SIZE"
+          :rows="PAGE_SIZE"
+          :total-records="total"
+          :first="(page - 1) * PAGE_SIZE"
+          :page-link-size="5"
+          template="PrevPageLink PageLinks NextPageLink"
+          class="pager"
+          @page="onPage"
+        />
       </template>
     </AppSurface>
   </div>
@@ -197,6 +319,34 @@ watch(filter, (next, prev) => {
 
 .toolbar {
   display: flex;
+}
+
+.filters {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) repeat(2, minmax(140px, 180px)) auto;
+  gap: var(--kapoj-space-2);
+  align-items: center;
+}
+
+.filters__actions {
+  display: flex;
+  gap: var(--kapoj-space-1);
+  align-items: center;
+}
+
+.path-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kapoj-space-1);
+  justify-content: flex-end;
+}
+
+.path-social {
+  color: var(--kapoj-text-muted);
+}
+
+.pager {
+  margin-top: var(--kapoj-space-3);
 }
 
 .result-count {
@@ -322,9 +472,31 @@ watch(filter, (next, prev) => {
   text-decoration: underline;
 }
 
+@media (max-width: 860px) {
+  .filters {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .filters__actions {
+    grid-column: 1 / -1;
+  }
+}
+
 @media (max-width: 640px) {
   .path-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .path-head {
+    flex-direction: column;
+  }
+
+  .path-tags {
+    justify-content: flex-start;
   }
 }
 </style>

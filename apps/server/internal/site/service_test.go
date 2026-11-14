@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"strings"
 	"testing"
 	"time"
 
@@ -71,14 +72,62 @@ func TestSiteAppearanceSettings(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 22, view.Appearance.BadgeSize)
 
-	view, err = svc.UpdateAppearance(ctx, 1, site.Appearance{BadgeSize: 40})
+	updated, err := svc.UpdateAppearance(ctx, 1, site.Appearance{BadgeSize: 40})
 	require.NoError(t, err)
-	assert.Equal(t, 40, view.Appearance.BadgeSize)
+	assert.Equal(t, 40, updated.Appearance.BadgeSize)
 
 	_, err = svc.UpdateAppearance(ctx, 1, site.Appearance{BadgeSize: 15})
 	assertCode(t, err, 40001)
 	_, err = svc.UpdateAppearance(ctx, 1, site.Appearance{BadgeSize: 49})
 	assertCode(t, err, 40001)
+}
+
+func TestDeploymentSettingsValidationAndPublicSubset(t *testing.T) {
+	svc, _, _ := newSite(t)
+	ctx := context.Background()
+
+	public, err := svc.Public(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, public.Deployment.CDNDomain)
+	admin, err := svc.Admin(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, admin.Deployment.SiteDomain)
+
+	view, err := svc.UpdateDeployment(ctx, 1, site.Deployment{
+		SiteDomain:   "https://oj.example.com/",
+		APIDomain:    "https://api.example.com",
+		CDNDomain:    "https://cdn.example.com/",
+		AssetsDomain: "https://assets.example.com",
+		ForceHTTPS:   true,
+		Notes:        "主站与 CDN 使用不同证书。",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "https://oj.example.com", view.Deployment.SiteDomain)
+	assert.Equal(t, "https://cdn.example.com", view.Deployment.CDNDomain)
+
+	public, err = svc.Public(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, "https://cdn.example.com", public.Deployment.CDNDomain)
+	assert.Equal(t, "https://assets.example.com", public.Deployment.AssetsDomain)
+
+	again, err := svc.Admin(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, "主站与 CDN 使用不同证书。", again.Deployment.Notes)
+	assert.True(t, again.Deployment.ForceHTTPS)
+
+	for _, in := range []site.Deployment{
+		{SiteDomain: ""},
+		{SiteDomain: "oj.example.com"},
+		{SiteDomain: "ftp://oj.example.com"},
+		{SiteDomain: "https://oj.example.com/path"},
+		{SiteDomain: "https://oj.example.com?x=1"},
+		{SiteDomain: "https://oj.example.com#top"},
+		{SiteDomain: "https://user:pass@oj.example.com"},
+		{SiteDomain: "https://oj.example.com", Notes: strings.Repeat("注", 501)},
+	} {
+		_, err := svc.UpdateDeployment(ctx, 1, in)
+		assertCode(t, err, 40001)
+	}
 }
 
 func TestSiteHomeValidation(t *testing.T) {

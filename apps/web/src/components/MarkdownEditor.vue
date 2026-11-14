@@ -3,6 +3,7 @@ import { computed, useId, ref } from 'vue'
 import { MdEditor, type ToolbarNames } from 'md-editor-v3'
 
 import '@/markdown'
+import { resolveAssetUrl } from '@/utils/asset'
 import { sanitizeHtml } from '@/utils/sanitize'
 
 const model = defineModel<string>({ required: true })
@@ -59,6 +60,7 @@ async function uploadImages(files: File[], callback: (urls: string[]) => void) {
     :id="id"
     v-model="model"
     :sanitize="sanitizeHtml"
+    :transform-img-url="resolveAssetUrl"
     :toolbars-exclude="toolbarsExclude"
     :style="{ height }"
     :theme="theme"

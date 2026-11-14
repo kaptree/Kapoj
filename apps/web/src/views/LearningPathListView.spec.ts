@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
 import SelectButton from 'primevue/selectbutton'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { reactive } from 'vue'
 
 import { ApiError } from '@/api/http'
 import { listLearningPaths } from '@/api/learning'
@@ -21,6 +22,13 @@ vi.mock('@/stores/auth', () => ({
 vi.mock('@/api/learning', () => ({
   listLearningPaths: vi.fn(),
 }))
+
+const route = reactive({ query: {} as Record<string, string> })
+const replace = vi.fn()
+vi.mock('vue-router', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('vue-router')>()
+  return { ...actual, useRoute: () => route, useRouter: () => ({ replace }) }
+})
 
 function me(overrides: Partial<Me> = {}): Me {
   return {
@@ -57,6 +65,13 @@ function path(overrides: Partial<LearningPathItem> = {}): LearningPathItem {
     nodeCount: 3,
     myCompletedCount: 1,
     sortOrder: 0,
+    priceCoins: 0,
+    purchased: false,
+    participantCount: 0,
+    recommendCount: 0,
+    recommendedByMe: false,
+    canEdit: false,
+    canEditSort: false,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
     ...overrides,
@@ -80,6 +95,8 @@ beforeEach(() => {
   auth.can.mockReset()
   auth.can.mockReturnValue(false)
   vi.mocked(listLearningPaths).mockReset()
+  route.query = {}
+  replace.mockReset()
 })
 
 describe('LearningPathListView', () => {
@@ -91,7 +108,14 @@ describe('LearningPathListView', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    expect(listLearningPaths).toHaveBeenCalledWith({})
+    expect(listLearningPaths).toHaveBeenCalledWith({
+      scope: 'all',
+      keyword: undefined,
+      createdFrom: undefined,
+      createdTo: undefined,
+      page: 1,
+      pageSize: 12,
+    })
     expect(wrapper.text()).toContain('算法入门')
     expect(wrapper.text()).toContain('管理员')
     expect(wrapper.text()).toContain('已完成 1 / 3 节点')
@@ -118,26 +142,20 @@ describe('LearningPathListView', () => {
     wrapper.unmount()
   })
 
-  it('filters 官方/自定义 client-side and reloads with mine=true for 我创建的', async () => {
+  it('reloads with the selected server-side scope', async () => {
     vi.mocked(listLearningPaths).mockResolvedValue({
-      total: 2,
-      items: [
-        path({ id: 1, isOfficial: true, title: '官方路线' }),
-        path({ id: 2, isOfficial: false, isPublic: true, title: '自定义路线' }),
-      ],
+      total: 1,
+      items: [path({ id: 1, isOfficial: true, title: '官方路线' })],
     })
     const wrapper = mountView()
     await flushPromises()
 
     wrapper.findComponent(SelectButton).vm.$emit('update:modelValue', 'official')
     await flushPromises()
+    expect(listLearningPaths).toHaveBeenLastCalledWith(
+      expect.objectContaining({ scope: 'official', page: 1 }),
+    )
     expect(wrapper.text()).toContain('官方路线')
-    expect(wrapper.text()).not.toContain('自定义路线')
-
-    wrapper.findComponent(SelectButton).vm.$emit('update:modelValue', 'custom')
-    await flushPromises()
-    expect(wrapper.text()).toContain('自定义路线')
-    expect(wrapper.text()).not.toContain('官方路线')
 
     vi.mocked(listLearningPaths).mockResolvedValue({
       total: 1,
@@ -145,8 +163,29 @@ describe('LearningPathListView', () => {
     })
     wrapper.findComponent(SelectButton).vm.$emit('update:modelValue', 'mine')
     await flushPromises()
-    expect(listLearningPaths).toHaveBeenLastCalledWith({ mine: true })
+    expect(listLearningPaths).toHaveBeenLastCalledWith(
+      expect.objectContaining({ scope: 'mine', page: 1 }),
+    )
     expect(wrapper.text()).toContain('我的路线')
+    wrapper.unmount()
+  })
+
+  it('writes keyword and date filters to the URL and reloads', async () => {
+    vi.mocked(listLearningPaths).mockResolvedValue({ total: 0, items: [] })
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.find('[data-test="path-keyword"]').setValue('图论')
+    await wrapper.find('form.filters').trigger('submit')
+    await flushPromises()
+
+    expect(replace).toHaveBeenCalledWith({
+      name: 'learning-paths',
+      query: { keyword: '图论', page: undefined },
+    })
+    expect(listLearningPaths).toHaveBeenLastCalledWith(
+      expect.objectContaining({ keyword: '图论', page: 1 }),
+    )
     wrapper.unmount()
   })
 
@@ -212,6 +251,28 @@ describe('LearningPathListView', () => {
     expect(failed.findComponent(AppErrorState).exists()).toBe(true)
     expect(failed.findAll('.path-grid').length).toBe(0)
     failed.unmount()
+  })
+
+  it('shows price, participation, recommendation and purchase state', async () => {
+    vi.mocked(listLearningPaths).mockResolvedValue({
+      total: 1,
+      items: [
+        path({
+          priceCoins: 50,
+          purchased: true,
+          participantCount: 12,
+          recommendCount: 4,
+        }),
+      ],
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="path-price"]').text()).toContain('50 金币')
+    expect(wrapper.find('[data-test="path-purchased"]').text()).toContain('已购买')
+    expect(wrapper.find('[data-test="path-social"]').text()).toContain('参与 12')
+    expect(wrapper.find('[data-test="path-social"]').text()).toContain('推荐 4')
+    wrapper.unmount()
   })
 
   it('uses myCompletedCount for the completion label', async () => {

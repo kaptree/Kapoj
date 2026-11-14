@@ -703,12 +703,22 @@ func TestDeleteWithSubmissionsKeepsFiles(t *testing.T) {
 }
 
 type fakeGuard struct {
-	blocked bool
-	err     error
+	blocked     bool
+	paidBlocked bool
+	paidAllowed bool
+	err         error
 }
 
 func (g fakeGuard) IsProblemInActivePath(context.Context, int64) (bool, error) {
 	return g.blocked, g.err
+}
+
+func (g fakeGuard) IsProblemInPaidPath(context.Context, int64) (bool, error) {
+	return g.paidBlocked, nil
+}
+
+func (g fakeGuard) CanAccessPaidProblem(context.Context, int64, int64) (bool, error) {
+	return g.paidAllowed, nil
 }
 
 func TestProblemUpdateBlocksUnpublishWhenReferenced(t *testing.T) {
@@ -769,6 +779,45 @@ func TestProblemDeleteBlocksWhenReferenced(t *testing.T) {
 	assert.False(t, offlined)
 	_, err = e.repo.FindByID(ctx, p.ID)
 	assert.Error(t, err, "未引用时删除正常执行")
+}
+
+func TestProblemPublishBlockedByPaidPath(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	svc := problem.NewService(e.repo, e.store,
+		problem.WithLearningGuard(&fakeGuard{paidBlocked: true}))
+
+	p := e.create(t, input("paid-publish"))
+	e.addCase(t, p.ID)
+	in := input("paid-publish")
+	in.IsPublic = true
+	_, err := svc.Update(ctx, p.ID, in)
+	assertCode(t, err, 40001)
+
+	got, err := e.repo.FindByID(ctx, p.ID)
+	require.NoError(t, err)
+	assert.False(t, got.IsPublic)
+
+	allowed := problem.NewService(e.repo, e.store, problem.WithLearningGuard(&fakeGuard{}))
+	_, err = allowed.Update(ctx, p.ID, in)
+	require.NoError(t, err)
+}
+
+func TestPrivateProblemVisibleToPaidPurchaser(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	p := e.create(t, input("paid-access"))
+	svc := problem.NewService(e.repo, e.store,
+		problem.WithLearningGuard(&fakeGuard{paidAllowed: true}))
+
+	got, err := svc.Get(ctx, problem.Viewer{UserID: 9}, p.ID)
+	require.NoError(t, err)
+	assert.Equal(t, p.ID, got.ID)
+
+	blocked := problem.NewService(e.repo, e.store,
+		problem.WithLearningGuard(&fakeGuard{paidAllowed: false}))
+	_, err = blocked.Get(ctx, problem.Viewer{UserID: 9}, p.ID)
+	assertCode(t, err, 40400)
 }
 
 func TestProblemGuardErrorPropagates(t *testing.T) {

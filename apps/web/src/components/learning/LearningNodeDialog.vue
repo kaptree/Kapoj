@@ -29,6 +29,8 @@ const props = defineProps<{
   nodes: LearningPathNodeItem[]
   editing: LearningPathNodeItem | null
   parentId: number | null
+  paid?: boolean
+  canManageAll?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -132,9 +134,19 @@ watch(
   { immediate: true },
 )
 
+function problemQuery(keyword: string, pageSize: number) {
+  const base = keyword ? { keyword, pageSize } : { pageSize }
+  if (!props.paid) return base
+  return {
+    ...base,
+    scope: props.canManageAll ? ('all' as const) : ('mine' as const),
+    includeHidden: true,
+  }
+}
+
 async function loadProblems() {
   try {
-    const page = await listProblems({ pageSize: 100 })
+    const page = await listProblems(problemQuery('', 100))
     for (const problem of page.items as ProblemListItem[]) addOption(problem.id, problem.title)
   } catch {
     // Existing options remain usable; a failed preload is harmless.
@@ -144,7 +156,7 @@ async function loadProblems() {
 async function searchProblems(keyword: string) {
   problemLoading.value = true
   try {
-    const page = await listProblems({ keyword, pageSize: 20 })
+    const page = await listProblems(problemQuery(keyword, 20))
     for (const problem of page.items as ProblemListItem[]) addOption(problem.id, problem.title)
   } catch {
     // Ignore transient search failures.

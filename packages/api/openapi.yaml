@@ -2638,17 +2638,25 @@ paths:
         返回当前查看者可见的活跃路线：官方路线、公开自定义路线，以及自己创建的私有路线。
         私有路线仅作者与拥有 learning_path.admin.read 或 learning_path.official.manage 者可见；`mine=true` 只返回自己创建的路线。
         `includeInactive=true` 需要 learning_path.admin.read 或 learning_path.official.manage，用于查看已下架（软删除）路线；普通用户传入会被忽略。
-        排序为官方优先，其次 `sortOrder`、`id`。登录用户读取前服务端会重算该用户可见路线的进度并写回，`myCompletedCount` 为最新完成节点数；游客为 0。
+        排序为官方优先，其次 `sortOrder`、创建时间倒序。登录用户读取前服务端会重算该用户可见路线的进度并写回，`myCompletedCount` 为最新完成节点数；游客为 0。
+        列表返回价格、购买状态、参与/推荐人数与当前用户是否已推荐。
       security: [{}, { bearer: [] }]
       parameters:
         - { name: mine, in: query, schema: { type: boolean, default: false }, description: 仅返回当前登录用户创建的路线；游客返回空列表 }
         - { name: includeInactive, in: query, schema: { type: boolean, default: false }, description: 包含已下架路线；需要 learning_path.admin.read 或 learning_path.official.manage }
+        - { name: scope, in: query, schema: { type: string, enum: [all, official, custom, mine], default: all }, description: 官方/自定义/我创建的筛选；mine 等价于 mine=true }
+        - { name: keyword, in: query, schema: { type: string, maxLength: 100 }, description: 按标题或简介字面量匹配，忽略大小写；转义 % 与 _ }
+        - { name: createdFrom, in: query, schema: { type: string, format: date }, description: 创建日期下界（UTC，含当日） }
+        - { name: createdTo, in: query, schema: { type: string, format: date }, description: 创建日期上界（UTC，含当日） }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
       responses:
         '200':
-          description: 学习路线列表（不分页）
+          description: 学习路线分页
           content:
             application/json:
               schema: { $ref: '#/components/schemas/LearningPathListResponse' }
+        '400': { $ref: '#/components/responses/Error' }
     post:
       summary: 创建学习路线（登录；官方路线需 learning_path.official.manage）
       description: >-
@@ -2696,7 +2704,8 @@ paths:
         learning_path.official.manage 者可编辑，已下架路线仅拥有 learning_path.official.manage
         者可编辑/恢复（learning_path.admin.read 只读，不参与写授权）。
         标题、描述、封面与 `sortOrder` 为整体替换（未提交的 `sortOrder` 变为 0）；
-        `isPublic`/`isActive` 未提交时保持原值。`isOfficial` 仅可在创建时由拥有 learning_path.official.manage 者设置，创建后不可修改：
+        `isPublic`/`isActive` 未提交时保持原值；`priceCoins` 为整体替换，大于 0 时路线引用的所有题目必须未公开，
+        普通用户的 `sortOrder` 会被忽略。`isOfficial` 仅可在创建时由拥有 learning_path.official.manage 者设置，创建后不可修改：
         拥有 learning_path.official.manage 者提交不同值返回 40001（不能把自定义路线提升为官方或取消官方标记），非管理员提交不同值返回 40300。
         官方路线强制公开。公开自定义路线或恢复上架前会校验节点引用的题目仍存在且公开，否则返回 40001。
       security: [{ bearer: [] }]
@@ -2750,6 +2759,7 @@ paths:
         `completed`；根节点默认 `active`，子节点仅在父节点 `completed` 后为 `active`、否则 `locked`。
         已完成节点锁存：之后修改节点题目或提高 `requiredCount` 不回退已完成用户（`solvedCount` 保留
         完成时的值），未完成/进行中节点按新配置重算。游客不写进度：根节点 `active`、其余 `locked`、`solvedCount=0`。
+        付费路线在未购买且非作者/管理员时返回 `locked=true`、`nodes=[]`，不泄露节点与题目摘要。
       security: [{}, { bearer: [] }]
       responses:
         '200':
@@ -2757,6 +2767,52 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/LearningTreeResponse' }
+        '404': { $ref: '#/components/responses/Error' }
+  /learning-paths/{id}/purchase:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    post:
+      summary: 购买付费学习路线（登录）
+      description: >-
+        免费路线、作者与管理员不扣币；已购买用户重复调用幂等。付费路线在单一事务内扣币、
+        写购买记录并重算参与人数；余额不足返回 40001 且整体回滚。价格修改不影响已购买用户。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 购买后的路线与金币余额
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LearningPathPurchaseResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /learning-paths/{id}/recommend:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    post:
+      summary: 推荐学习路线（登录；不能自荐）
+      description: 每个用户对同一路线只能推荐一次；付费路线需要先购买或具备作者/管理员访问权。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 更新后的路线元信息
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LearningPathResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+    delete:
+      summary: 取消推荐学习路线（登录）
+      description: 幂等；不存在推荐记录时也返回成功。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 更新后的路线元信息
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LearningPathResponse' }
+        '401': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
   /learning-paths/{id}/nodes:
     parameters:
@@ -2766,7 +2822,8 @@ paths:
       description: >-
         只有路线作者或拥有 learning_path.official.manage 者可以写入；官方路线与已下架路线
         仅拥有 learning_path.official.manage 者可以写入（learning_path.admin.read 只读，不参与写授权）。
-        校验：标题 1–100 字、描述不超过 50000 字；`problemIds` 为 1–50 道不重复且存在、公开的题目；
+        校验：标题 1–100 字、描述不超过 50000 字；`problemIds` 为 1–50 道不重复且存在的题目，
+        免费路线要求题目公开，付费路线要求题目未公开；
         `requiredCount` 为 1–题目数，未提交时默认等于题目数；`parentId` 必须属于同一路线，
         不能是自身或形成环，节点树最大深度 8 层；`parentId` 未提交时为根节点。
       security: [{ bearer: [] }]
@@ -3263,7 +3320,7 @@ paths:
   /admin/site:
     get:
       summary: 站点管理视图（site.settings.manage）
-      description: 与公开视图结构一致，额外用于管理页读取原始页脚字段、访问量与运行天数。
+      description: 公开视图 + 完整部署设置（含主站/API 域名与备注），用于管理页读取原始页脚字段、访问量、运行天数与部署配置。
       security: [{ bearer: [] }]
       responses:
         '200':
@@ -3327,6 +3384,38 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SiteAdminResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /admin/site/deployment:
+    get:
+      summary: 读取部署设置（site.settings.manage）
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 部署设置
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteDeploymentResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+    put:
+      summary: 保存部署设置（site.settings.manage，写审计）
+      description: >-
+        仅保存域名、CDN、强制 HTTPS 与备注，不保存云厂商密钥。域名必须是
+        http/https origin，不能包含路径、查询参数、锚点或用户信息；尾部 / 会被归一化去掉。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SiteDeployment' }
+      responses:
+        '200':
+          description: 保存后的部署设置
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteDeploymentResponse' }
         '400': { $ref: '#/components/responses/Error' }
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
@@ -5399,6 +5488,13 @@ components:
         - nodeCount
         - myCompletedCount
         - sortOrder
+        - priceCoins
+        - purchased
+        - participantCount
+        - recommendCount
+        - recommendedByMe
+        - canEdit
+        - canEditSort
         - createdAt
         - updatedAt
       properties:
@@ -5413,6 +5509,13 @@ components:
         nodeCount: { type: integer, description: 节点总数 }
         myCompletedCount: { type: integer, description: 服务端重算的当前用户已完成节点数；游客为 0 }
         sortOrder: { type: integer }
+        priceCoins: { type: integer, format: int64, description: 0 表示免费；作者/管理员免费访问 }
+        purchased: { type: boolean, description: 当前用户是否已购买；作者/管理员免费访问但不会因此记为已购买 }
+        participantCount: { type: integer, description: 购买用户与有进度用户去重后的参与人数 }
+        recommendCount: { type: integer, description: 推荐人数 }
+        recommendedByMe: { type: boolean, description: 当前用户是否已推荐 }
+        canEdit: { type: boolean, description: 当前用户可编辑路线元信息 }
+        canEditSort: { type: boolean, description: 当前用户可调整排序（learning_path.official.manage） }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     LearningPathInput:
@@ -5430,7 +5533,8 @@ components:
         isOfficial: { type: boolean, description: 仅创建时拥有 learning_path.official.manage 者可设置；创建后不可修改；设为 true 时强制公开 }
         isPublic: { type: boolean, description: 公开后出现在路线列表，其他用户可查看树并按自己的进度挑战 }
         isActive: { type: boolean, description: 创建/更新时仅拥有 learning_path.official.manage 者可设置；false 为软删除，true 为恢复上架 }
-        sortOrder: { type: integer }
+        sortOrder: { type: integer, description: 普通用户提交会被忽略并按服务端自动追加；仅 learning_path.official.manage 可调整 }
+        priceCoins: { type: integer, format: int64, minimum: 0, maximum: 1000000, default: 0, description: 付费金币；大于 0 时路线引用的题目必须未公开 }
     LearningNodeStatus:
       type: string
       description: 节点状态；`locked` 未解锁、`active` 进行中、`completed` 已完成（锁存，不回退）。
@@ -5505,19 +5609,33 @@ components:
           minItems: 1
           maxItems: 50
           uniqueItems: true
-          description: 1–50 道不重复、存在且公开的题目
+          description: 1–50 道不重复、存在的题目；免费路线要求公开，付费路线要求未公开
           items: { type: integer, format: int64 }
         sortOrder: { type: integer }
         requiredCount: { type: integer, minimum: 1, description: 1–题目数；未提交时默认等于题目数 }
     LearningTree:
       type: object
-      description: 学习路线树；`path` 为路线元信息，`nodes` 为根节点数组。
+      description: 学习路线树；付费路线未购买时 `locked=true` 且 `nodes` 为空。
       required: [path, nodes]
       properties:
         path: { $ref: '#/components/schemas/LearningPathItem' }
         nodes:
           type: array
           items: { $ref: '#/components/schemas/LearningPathNodeItem' }
+        locked: { type: boolean, description: 付费路线尚未购买；前端展示购买入口 }
+    LearningPathPurchaseResult:
+      type: object
+      required: [path, coins]
+      properties:
+        path: { $ref: '#/components/schemas/LearningPathItem' }
+        coins: { type: integer, format: int64, description: 购买后的金币余额 }
+    LearningPathPurchaseResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/LearningPathPurchaseResult' }
     LearningPathListResponse:
       allOf:
         - $ref: '#/components/schemas/Envelope'
@@ -6283,6 +6401,24 @@ components:
       required: [badgeSize]
       properties:
         badgeSize: { type: integer, minimum: 16, maximum: 48, default: 22, description: 徽章显示大小（px） }
+    SitePublicDeployment:
+      type: object
+      description: 公开部署子集，仅用于前端拼接 CDN/资源地址；不包含备注或主站/API 域名。
+      required: [cdnDomain, assetsDomain]
+      properties:
+        cdnDomain: { type: string, description: 空表示不使用 CDN }
+        assetsDomain: { type: string, description: 空表示回退 CDN，再回退同源 }
+    SiteDeployment:
+      type: object
+      description: 部署设置；不包含云厂商密钥、数据库密码或 JWT 密钥。
+      required: [siteDomain, apiDomain, cdnDomain, assetsDomain, forceHttps, notes]
+      properties:
+        siteDomain: { type: string, description: 主站域名（必填）；保存时去掉尾部 / }
+        apiDomain: { type: string, description: 空表示同源 API }
+        cdnDomain: { type: string, description: 空表示不使用 CDN }
+        assetsDomain: { type: string, description: 空表示回退 CDN }
+        forceHttps: { type: boolean }
+        notes: { type: string, maxLength: 500, description: 运维备注；公开接口不返回 }
     SitePublicView:
       type: object
       description: 公开站点配置。
@@ -6293,13 +6429,24 @@ components:
         home: { $ref: '#/components/schemas/SiteHomeContent' }
         footer: { $ref: '#/components/schemas/SiteFooterView' }
         appearance: { $ref: '#/components/schemas/SiteAppearance' }
+        deployment: { $ref: '#/components/schemas/SitePublicDeployment' }
         startedAt: { type: string, format: date-time, description: 站点运行起始日（UTC） }
         runningDays: { type: integer, description: 'max(0, floor((now - startedAt)/24h))' }
         visitCount: { type: integer, format: int64 }
     SiteAdminView:
-      description: 管理视图；与公开视图结构一致，管理页借此读取页脚原始字段、访问量与运行天数。
+      description: 管理视图；在公开视图基础上包含完整部署设置（含主站/API 域名与备注）。
       allOf:
         - $ref: '#/components/schemas/SitePublicView'
+        - type: object
+          properties:
+            deployment: { $ref: '#/components/schemas/SiteDeployment' }
+    SiteDeploymentResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/SiteDeployment' }
     SiteFooterInput:
       type: object
       description: 页脚更新请求体。

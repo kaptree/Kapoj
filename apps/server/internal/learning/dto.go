@@ -34,6 +34,13 @@ type PathItem struct {
 	NodeCount        int         `json:"nodeCount"`
 	MyCompletedCount int         `json:"myCompletedCount"`
 	SortOrder        int         `json:"sortOrder"`
+	PriceCoins       int64       `json:"priceCoins"`
+	Purchased        bool        `json:"purchased"`
+	ParticipantCount int         `json:"participantCount"`
+	RecommendCount   int         `json:"recommendCount"`
+	RecommendedByMe  bool        `json:"recommendedByMe"`
+	CanEdit          bool        `json:"canEdit"`
+	CanEditSort      bool        `json:"canEditSort"`
 	CreatedAt        time.Time   `json:"createdAt"`
 	UpdatedAt        time.Time   `json:"updatedAt"`
 }
@@ -48,6 +55,7 @@ type PathInput struct {
 	IsPublic      *bool  `json:"isPublic"`
 	IsActive      *bool  `json:"isActive"`
 	SortOrder     int    `json:"sortOrder"`
+	PriceCoins    int64  `json:"priceCoins"`
 }
 
 // NodeInput 是创建/更新学习路线节点的可编辑字段。RequiredCount 未提交时
@@ -88,8 +96,28 @@ type NodeItem struct {
 	Children      []NodeItem       `json:"children"`
 }
 
-// Tree 是学习路线的结构与题单元信息。
+// Tree 是学习路线的结构与题单元信息。Locked 表示付费路线尚未购买，
+// 此时 Nodes 为空，前端应展示购买入口。
 type Tree struct {
-	Path  PathItem   `json:"path"`
-	Nodes []NodeItem `json:"nodes"`
+	Path   PathItem   `json:"path"`
+	Nodes  []NodeItem `json:"nodes"`
+	Locked bool       `json:"locked"`
+}
+
+// PurchaseResult is returned after a paid-path purchase attempt.
+type PurchaseResult struct {
+	Path  PathItem `json:"path"`
+	Coins int64    `json:"coins"`
+}
+
+// ListQuery controls learning path search, scope and pagination.
+type ListQuery struct {
+	Keyword         string
+	CreatedFrom     *time.Time
+	CreatedTo       *time.Time
+	Scope           string
+	IncludeInactive bool
+	Mine            bool
+	Page            int
+	PageSize        int
 }

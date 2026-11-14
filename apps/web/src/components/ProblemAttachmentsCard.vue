@@ -4,6 +4,7 @@ import { ref, watch } from 'vue'
 import { listProblemAttachments } from '@/api/problems'
 import type { ProblemAttachment } from '@/api/types'
 import AppSurface from '@/components/ui/AppSurface.vue'
+import { resolveAssetUrl } from '@/utils/asset'
 import { formatBytes } from '@/utils/format'
 
 const props = defineProps<{ problemId: number }>()
@@ -36,7 +37,7 @@ watch(
     </div>
     <ul class="attachment-card__list">
       <li v-for="item in items" :key="item.id">
-        <a :href="item.url" download>{{ item.filename }}</a>
+        <a :href="resolveAssetUrl(item.url)" download>{{ item.filename }}</a>
         <span>{{ formatBytes(item.size) }}</span>
       </li>
     </ul>

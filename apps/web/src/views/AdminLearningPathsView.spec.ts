@@ -39,6 +39,13 @@ function path(overrides: Partial<LearningPathItem> = {}): LearningPathItem {
     nodeCount: 5,
     myCompletedCount: 2,
     sortOrder: 0,
+    priceCoins: 0,
+    purchased: false,
+    participantCount: 0,
+    recommendCount: 0,
+    recommendedByMe: false,
+    canEdit: false,
+    canEditSort: false,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-02T00:00:00Z',
     ...overrides,
@@ -191,6 +198,7 @@ describe('AdminLearningPathsView', () => {
       coverUrl: '',
       isPublic: false,
       sortOrder: 3,
+      priceCoins: 0,
       isActive: true,
     })
     expect(listLearningPaths).toHaveBeenCalledTimes(3)

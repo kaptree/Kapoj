@@ -41,10 +41,22 @@ func (s *Service) Public(ctx context.Context) (*PublicView, error) {
 	return s.view(settings, count), nil
 }
 
-// Admin returns the complete admin view. It is the same shape as the public
-// view; the admin page reads the raw footer fields and counters from it.
+// Admin returns the complete admin view: the public view plus full deployment
+// settings. The public subset (CDN/assets domains) is still present in
+// PublicView.Deployment but is shadowed by the full field in JSON.
 func (s *Service) Admin(ctx context.Context) (*AdminView, error) {
-	return s.Public(ctx)
+	settings, err := s.repo.Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+	count, err := s.repo.VisitCount(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &AdminView{
+		PublicView: *s.view(settings, count),
+		Deployment: settings.Deployment.Data,
+	}, nil
 }
 
 // UpdateHome validates and stores the whole home page content.
@@ -105,6 +117,23 @@ func (s *Service) UpdateAppearance(ctx context.Context, actorID int64, in Appear
 	return s.Admin(ctx)
 }
 
+// UpdateDeployment validates and stores the deployment metadata.
+func (s *Service) UpdateDeployment(ctx context.Context, actorID int64, in Deployment) (*AdminView, error) {
+	if err := validateDeployment(&in); err != nil {
+		return nil, err
+	}
+	settings, err := s.repo.Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+	settings.Deployment = dbtypes.JSON[Deployment]{Data: in}
+	settings.UpdatedBy = actorID
+	if err := s.repo.Update(ctx, settings); err != nil {
+		return nil, err
+	}
+	return s.Admin(ctx)
+}
+
 // RecordVisit atomically increments the total visit counter and returns the new
 // value. showVisits only controls footer display, never counting.
 func (s *Service) RecordVisit(ctx context.Context) (int64, error) {
@@ -142,7 +171,11 @@ func (s *Service) view(settings *Settings, visitCount int64) *PublicView {
 			Text:         settings.FooterText,
 			ShowVisits:   settings.ShowVisits,
 		},
-		Appearance:  Appearance{BadgeSize: badgeSize},
+		Appearance: Appearance{BadgeSize: badgeSize},
+		Deployment: PublicDeployment{
+			CDNDomain:    settings.Deployment.Data.CDNDomain,
+			AssetsDomain: settings.Deployment.Data.AssetsDomain,
+		},
 		StartedAt:   startedAt,
 		RunningDays: runningDays,
 		VisitCount:  visitCount,

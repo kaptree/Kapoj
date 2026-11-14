@@ -23,6 +23,7 @@ import {
   deleteAdminSiteLogo,
   getAdminSite,
   updateAdminSiteAppearance,
+  updateAdminSiteDeployment,
   updateAdminSiteFooter,
   updateAdminSiteHome,
   uploadAdminSiteFavicon,
@@ -31,6 +32,7 @@ import {
 import type {
   SiteAdminView,
   SiteAppearance,
+  SiteDeployment,
   SiteFooterInput,
   SiteHomeContent,
   SiteLink,
@@ -93,6 +95,7 @@ const view = ref<SiteAdminView | null>(null)
 const homeSaving = ref(false)
 const footerSaving = ref(false)
 const appearanceSaving = ref(false)
+const deploymentSaving = ref(false)
 const uploadingLogo = ref(false)
 const removingLogo = ref(false)
 const uploadingFavicon = ref(false)
@@ -103,6 +106,7 @@ const faviconInput = ref<HTMLInputElement | null>(null)
 
 const homeErrors = ref<FieldErrors>({})
 const footerErrors = ref<FieldErrors>({})
+const deploymentErrors = ref<FieldErrors>({})
 
 function emptyLink(): SiteLink {
   return { icon: 'pi pi-arrow-right', iconPos: 'left', title: '', description: '', to: '/' }
@@ -178,6 +182,32 @@ const homeForm = ref<SiteHomeContent>(emptyHome())
 const footerForm = ref<FooterForm>(emptyFooter())
 const appearanceForm = ref<SiteAppearance>({ badgeSize: 22 })
 
+function emptyDeployment(): SiteDeployment {
+  return {
+    siteDomain: '',
+    apiDomain: '',
+    cdnDomain: '',
+    assetsDomain: '',
+    forceHttps: false,
+    notes: '',
+  }
+}
+
+const deploymentForm = ref<SiteDeployment>(emptyDeployment())
+
+const deploymentText = computed(() => JSON.stringify(deploymentForm.value, null, 2))
+const httpsWarning = computed(
+  () =>
+    deploymentForm.value.forceHttps &&
+    [
+      deploymentForm.value.siteDomain,
+      deploymentForm.value.apiDomain,
+      deploymentForm.value.cdnDomain,
+    ]
+      .filter(Boolean)
+      .some((domain) => domain.trim().startsWith('http://')),
+)
+
 const logoUrl = computed(() => view.value?.logoUrl ?? '')
 const faviconUrl = computed(() => view.value?.faviconUrl ?? '')
 const runningDays = computed(() => view.value?.runningDays ?? 0)
@@ -189,8 +219,10 @@ function applyView(next: SiteAdminView) {
   homeForm.value = cloneHome(next.home)
   footerForm.value = footerFromView(next)
   appearanceForm.value = { badgeSize: next.appearance?.badgeSize ?? 22 }
+  deploymentForm.value = { ...emptyDeployment(), ...next.deployment }
   homeErrors.value = {}
   footerErrors.value = {}
+  deploymentErrors.value = {}
 }
 
 /** Keep the public store in sync so this SPA's header/footer update immediately. */
@@ -349,6 +381,102 @@ async function saveFooter() {
     })
   } finally {
     footerSaving.value = false
+  }
+}
+
+function checkDeploymentDomain(
+  errors: FieldErrors,
+  key: keyof SiteDeployment,
+  label: string,
+  value: string,
+  required: boolean,
+) {
+  const raw = value.trim().replace(/\/+$/, '')
+  if (!raw) {
+    if (required) errors[key] = `${label}不能为空`
+    return
+  }
+  try {
+    const parsed = new URL(raw)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      errors[key] = `${label}必须使用 http 或 https`
+      return
+    }
+    if (parsed.username || parsed.password) {
+      errors[key] = `${label}不能包含用户名或密码`
+      return
+    }
+    if (parsed.pathname !== '/' || parsed.search || parsed.hash) {
+      errors[key] = `${label}只能填写域名，不能包含路径、参数或锚点`
+    }
+  } catch {
+    errors[key] = `${label}格式不正确`
+  }
+}
+
+function validateDeployment(): boolean {
+  const errors: FieldErrors = {}
+  checkDeploymentDomain(errors, 'siteDomain', '主站域名', deploymentForm.value.siteDomain, true)
+  checkDeploymentDomain(errors, 'apiDomain', 'API 域名', deploymentForm.value.apiDomain, false)
+  checkDeploymentDomain(errors, 'cdnDomain', 'CDN 域名', deploymentForm.value.cdnDomain, false)
+  checkDeploymentDomain(
+    errors,
+    'assetsDomain',
+    '资源域名',
+    deploymentForm.value.assetsDomain,
+    false,
+  )
+  if ([...deploymentForm.value.notes].length > 500) {
+    errors.notes = '部署备注不能超过 500 个字符'
+  }
+  deploymentErrors.value = errors
+  return Object.keys(errors).length === 0
+}
+
+function normalizedDeployment(): SiteDeployment {
+  const clean = (value: string) => value.trim().replace(/\/+$/, '')
+  return {
+    siteDomain: clean(deploymentForm.value.siteDomain),
+    apiDomain: clean(deploymentForm.value.apiDomain),
+    cdnDomain: clean(deploymentForm.value.cdnDomain),
+    assetsDomain: clean(deploymentForm.value.assetsDomain),
+    forceHttps: deploymentForm.value.forceHttps,
+    notes: deploymentForm.value.notes.trim(),
+  }
+}
+
+async function saveDeployment() {
+  if (!validateDeployment()) return
+  deploymentSaving.value = true
+  try {
+    const next = await updateAdminSiteDeployment(normalizedDeployment())
+    if (view.value) {
+      view.value = { ...view.value, deployment: next }
+      site.setConfig({
+        ...view.value,
+        deployment: { cdnDomain: next.cdnDomain, assetsDomain: next.assetsDomain },
+      })
+    }
+    deploymentForm.value = { ...emptyDeployment(), ...next }
+    toast.add({ severity: 'success', summary: '部署设置已保存', life: 3000 })
+  } catch (e) {
+    toast.add({
+      severity: 'error',
+      summary: '保存失败',
+      detail: apiErrorMessage(e, '保存部署设置失败，请稍后再试'),
+      life: 4000,
+    })
+  } finally {
+    deploymentSaving.value = false
+  }
+}
+
+async function copyDeployment() {
+  try {
+    await navigator.clipboard.writeText(deploymentText.value)
+    toast.add({ severity: 'success', summary: '部署配置已复制', life: 3000 })
+  } catch {
+    toast.add({ severity: 'warn', summary: '复制失败，请手动选择配置', life: 3000 })
   }
 }
 
@@ -553,6 +681,7 @@ onMounted(() => {
           <Tab value="appearance">外观</Tab>
           <Tab value="home">首页</Tab>
           <Tab value="footer">页脚</Tab>
+          <Tab value="deployment">部署</Tab>
         </TabList>
 
         <TabPanels>
@@ -714,6 +843,152 @@ onMounted(() => {
                   label="保存外观"
                   icon="pi pi-check"
                   :loading="appearanceSaving"
+                />
+              </div>
+            </form>
+          </TabPanel>
+
+          <TabPanel value="deployment">
+            <form class="site-form" data-test="deployment-form" @submit.prevent="saveDeployment">
+              <section class="section">
+                <h2 class="section__title">部署域名</h2>
+                <Message severity="info" :closable="false">
+                  这里只记录部署信息，不会开通云服务器、修改 DNS、申请证书或刷新 CDN；不保存云厂商
+                  AccessKey、数据库密码或 JWT 密钥。
+                </Message>
+                <div class="field-grid">
+                  <AppFormField
+                    label="主站域名"
+                    input-id="deployment-site"
+                    required
+                    :error="deploymentErrors.siteDomain"
+                    hint="例如 https://oj.example.com"
+                  >
+                    <InputText
+                      id="deployment-site"
+                      v-model="deploymentForm.siteDomain"
+                      data-test="deployment-site"
+                      fluid
+                      placeholder="https://oj.example.com"
+                    />
+                  </AppFormField>
+                  <AppFormField
+                    label="API 域名"
+                    input-id="deployment-api"
+                    optional
+                    :error="deploymentErrors.apiDomain"
+                    hint="留空表示同源"
+                  >
+                    <InputText
+                      id="deployment-api"
+                      v-model="deploymentForm.apiDomain"
+                      data-test="deployment-api"
+                      fluid
+                      placeholder="https://api.example.com"
+                    />
+                  </AppFormField>
+                  <AppFormField
+                    label="CDN 域名"
+                    input-id="deployment-cdn"
+                    optional
+                    :error="deploymentErrors.cdnDomain"
+                    hint="留空表示不使用 CDN"
+                  >
+                    <InputText
+                      id="deployment-cdn"
+                      v-model="deploymentForm.cdnDomain"
+                      data-test="deployment-cdn"
+                      fluid
+                      placeholder="https://cdn.example.com"
+                    />
+                  </AppFormField>
+                  <AppFormField
+                    label="资源/附件域名"
+                    input-id="deployment-assets"
+                    optional
+                    :error="deploymentErrors.assetsDomain"
+                    hint="留空回退 CDN"
+                  >
+                    <InputText
+                      id="deployment-assets"
+                      v-model="deploymentForm.assetsDomain"
+                      data-test="deployment-assets"
+                      fluid
+                      placeholder="https://assets.example.com"
+                    />
+                  </AppFormField>
+                </div>
+
+                <div class="toggle-block">
+                  <span class="toggle-label">安全</span>
+                  <div class="toggle-row">
+                    <span class="toggle-field">
+                      <ToggleSwitch
+                        v-model="deploymentForm.forceHttps"
+                        input-id="deployment-https"
+                        data-test="deployment-https"
+                      />
+                      <label for="deployment-https">强制 HTTPS</label>
+                    </span>
+                  </div>
+                </div>
+
+                <Message
+                  v-if="httpsWarning"
+                  severity="warn"
+                  :closable="false"
+                  data-test="https-warning"
+                >
+                  已勾选强制 HTTPS，但仍有域名使用 http://，请确认证书与重定向配置。
+                </Message>
+
+                <AppFormField
+                  label="部署备注"
+                  input-id="deployment-notes"
+                  optional
+                  :error="deploymentErrors.notes"
+                  :hint="`${deploymentForm.notes.length}/500`"
+                >
+                  <Textarea
+                    id="deployment-notes"
+                    v-model="deploymentForm.notes"
+                    data-test="deployment-notes"
+                    rows="4"
+                    maxlength="500"
+                    fluid
+                    placeholder="证书、DNS、CDN 刷新等运维备注"
+                  />
+                </AppFormField>
+
+                <div class="deployment-preview">
+                  <div class="deployment-preview__head">
+                    <h3>配置预览</h3>
+                    <Button
+                      type="button"
+                      label="复制配置"
+                      icon="pi pi-copy"
+                      size="small"
+                      text
+                      data-test="deployment-copy"
+                      @click="copyDeployment"
+                    />
+                  </div>
+                  <pre data-test="deployment-preview">{{ deploymentText }}</pre>
+                </div>
+
+                <ul class="deployment-checklist">
+                  <li>DNS 已解析到服务器，证书覆盖主站/API/CDN 域名。</li>
+                  <li>CDN 已配置跨域与缓存策略，附件下载保留 Content-Disposition。</li>
+                  <li>强制 HTTPS redirect 与 HSTS 在反向代理层生效。</li>
+                </ul>
+              </section>
+
+              <div class="form-actions">
+                <Button
+                  type="submit"
+                  label="保存部署设置"
+                  icon="pi pi-check"
+                  :loading="deploymentSaving"
                 />
               </div>
             </form>
@@ -1649,6 +1924,50 @@ onMounted(() => {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+.deployment-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kapoj-space-2);
+  padding: var(--kapoj-space-3);
+  background: var(--kapoj-bg-elevated);
+  border: 1px solid var(--kapoj-border);
+  border-radius: var(--kapoj-radius-sm);
+}
+
+.deployment-preview__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kapoj-space-2);
+}
+
+.deployment-preview__head h3 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.deployment-preview pre {
+  max-height: 240px;
+  margin: 0;
+  overflow: auto;
+  color: var(--kapoj-text-secondary);
+  font-family: var(--kapoj-font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.deployment-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 1.1rem;
+  margin: 0;
+  color: var(--kapoj-text-muted);
+  font-size: 12px;
 }
 
 @media (max-width: 640px) {

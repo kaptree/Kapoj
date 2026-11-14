@@ -6277,7 +6277,7 @@ export interface paths {
         };
         /**
          * 学习路线列表（游客可访问，可选登录）
-         * @description 返回当前查看者可见的活跃路线：官方路线、公开自定义路线，以及自己创建的私有路线。 私有路线仅作者与拥有 learning_path.admin.read 或 learning_path.official.manage 者可见；`mine=true` 只返回自己创建的路线。 `includeInactive=true` 需要 learning_path.admin.read 或 learning_path.official.manage，用于查看已下架（软删除）路线；普通用户传入会被忽略。 排序为官方优先，其次 `sortOrder`、`id`。登录用户读取前服务端会重算该用户可见路线的进度并写回，`myCompletedCount` 为最新完成节点数；游客为 0。
+         * @description 返回当前查看者可见的活跃路线：官方路线、公开自定义路线，以及自己创建的私有路线。 私有路线仅作者与拥有 learning_path.admin.read 或 learning_path.official.manage 者可见；`mine=true` 只返回自己创建的路线。 `includeInactive=true` 需要 learning_path.admin.read 或 learning_path.official.manage，用于查看已下架（软删除）路线；普通用户传入会被忽略。 排序为官方优先，其次 `sortOrder`、创建时间倒序。登录用户读取前服务端会重算该用户可见路线的进度并写回，`myCompletedCount` 为最新完成节点数；游客为 0。 列表返回价格、购买状态、参与/推荐人数与当前用户是否已推荐。
          */
         get: {
             parameters: {
@@ -6286,6 +6286,16 @@ export interface paths {
                     mine?: boolean;
                     /** @description 包含已下架路线；需要 learning_path.admin.read 或 learning_path.official.manage */
                     includeInactive?: boolean;
+                    /** @description 官方/自定义/我创建的筛选；mine 等价于 mine=true */
+                    scope?: "all" | "official" | "custom" | "mine";
+                    /** @description 按标题或简介字面量匹配，忽略大小写；转义 % 与 _ */
+                    keyword?: string;
+                    /** @description 创建日期下界（UTC，含当日） */
+                    createdFrom?: string;
+                    /** @description 创建日期上界（UTC，含当日） */
+                    createdTo?: string;
+                    page?: number;
+                    page_size?: number;
                 };
                 header?: never;
                 path?: never;
@@ -6293,7 +6303,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description 学习路线列表（不分页） */
+                /** @description 学习路线分页 */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -6302,6 +6312,7 @@ export interface paths {
                         "application/json": components["schemas"]["LearningPathListResponse"];
                     };
                 };
+                400: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -6380,7 +6391,7 @@ export interface paths {
         };
         /**
          * 更新学习路线（作者/learning_path.official.manage）
-         * @description 只有作者或拥有 learning_path.official.manage 者可以编辑；官方路线仅拥有 learning_path.official.manage 者可编辑，已下架路线仅拥有 learning_path.official.manage 者可编辑/恢复（learning_path.admin.read 只读，不参与写授权）。 标题、描述、封面与 `sortOrder` 为整体替换（未提交的 `sortOrder` 变为 0）； `isPublic`/`isActive` 未提交时保持原值。`isOfficial` 仅可在创建时由拥有 learning_path.official.manage 者设置，创建后不可修改： 拥有 learning_path.official.manage 者提交不同值返回 40001（不能把自定义路线提升为官方或取消官方标记），非管理员提交不同值返回 40300。 官方路线强制公开。公开自定义路线或恢复上架前会校验节点引用的题目仍存在且公开，否则返回 40001。
+         * @description 只有作者或拥有 learning_path.official.manage 者可以编辑；官方路线仅拥有 learning_path.official.manage 者可编辑，已下架路线仅拥有 learning_path.official.manage 者可编辑/恢复（learning_path.admin.read 只读，不参与写授权）。 标题、描述、封面与 `sortOrder` 为整体替换（未提交的 `sortOrder` 变为 0）； `isPublic`/`isActive` 未提交时保持原值；`priceCoins` 为整体替换，大于 0 时路线引用的所有题目必须未公开， 普通用户的 `sortOrder` 会被忽略。`isOfficial` 仅可在创建时由拥有 learning_path.official.manage 者设置，创建后不可修改： 拥有 learning_path.official.manage 者提交不同值返回 40001（不能把自定义路线提升为官方或取消官方标记），非管理员提交不同值返回 40300。 官方路线强制公开。公开自定义路线或恢复上架前会校验节点引用的题目仍存在且公开，否则返回 40001。
          */
         put: {
             parameters: {
@@ -6458,7 +6469,7 @@ export interface paths {
         };
         /**
          * 学习路线树（游客可访问，可选登录）
-         * @description 返回路线元信息、节点层级、节点题目摘要与当前用户进度。可见性与路线详情一致： 私有路线仅作者或拥有 learning_path.admin.read / learning_path.official.manage 者可见， 已下架路线需要 learning_path.admin.read 或 learning_path.official.manage，否则返回 40400。 节点只返回公开题目的 `problemId/title/slug/difficulty`，不返回题解。 公开树对非作者且无学习路线管理/只读权限者仅返回公开题目 id；作者、拥有 learning_path.admin.read 或 learning_path.official.manage 者保留完整存储列表 （含已下线/缺失题目）用于编辑。登录用户读取前服务端重算并写回进度： `solvedCount` 为该节点题目中去重 AC 的题数，`solvedCount >= requiredCount` 时 `status` 为 `completed`；根节点默认 `active`，子节点仅在父节点 `completed` 后为 `active`、否则 `locked`。 已完成节点锁存：之后修改节点题目或提高 `requiredCount` 不回退已完成用户（`solvedCount` 保留 完成时的值），未完成/进行中节点按新配置重算。游客不写进度：根节点 `active`、其余 `locked`、`solvedCount=0`。
+         * @description 返回路线元信息、节点层级、节点题目摘要与当前用户进度。可见性与路线详情一致： 私有路线仅作者或拥有 learning_path.admin.read / learning_path.official.manage 者可见， 已下架路线需要 learning_path.admin.read 或 learning_path.official.manage，否则返回 40400。 节点只返回公开题目的 `problemId/title/slug/difficulty`，不返回题解。 公开树对非作者且无学习路线管理/只读权限者仅返回公开题目 id；作者、拥有 learning_path.admin.read 或 learning_path.official.manage 者保留完整存储列表 （含已下线/缺失题目）用于编辑。登录用户读取前服务端重算并写回进度： `solvedCount` 为该节点题目中去重 AC 的题数，`solvedCount >= requiredCount` 时 `status` 为 `completed`；根节点默认 `active`，子节点仅在父节点 `completed` 后为 `active`、否则 `locked`。 已完成节点锁存：之后修改节点题目或提高 `requiredCount` 不回退已完成用户（`solvedCount` 保留 完成时的值），未完成/进行中节点按新配置重算。游客不写进度：根节点 `active`、其余 `locked`、`solvedCount=0`。 付费路线在未购买且非作者/管理员时返回 `locked=true`、`nodes=[]`，不泄露节点与题目摘要。
          */
         get: {
             parameters: {
@@ -6491,6 +6502,125 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/learning-paths/{id}/purchase": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 购买付费学习路线（登录）
+         * @description 免费路线、作者与管理员不扣币；已购买用户重复调用幂等。付费路线在单一事务内扣币、 写购买记录并重算参与人数；余额不足返回 40001 且整体回滚。价格修改不影响已购买用户。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 购买后的路线与金币余额 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LearningPathPurchaseResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/learning-paths/{id}/recommend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 推荐学习路线（登录；不能自荐）
+         * @description 每个用户对同一路线只能推荐一次；付费路线需要先购买或具备作者/管理员访问权。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 更新后的路线元信息 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LearningPathResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        /**
+         * 取消推荐学习路线（登录）
+         * @description 幂等；不存在推荐记录时也返回成功。
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 更新后的路线元信息 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LearningPathResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/learning-paths/{id}/nodes": {
         parameters: {
             query?: never;
@@ -6504,7 +6634,7 @@ export interface paths {
         put?: never;
         /**
          * 创建学习路线节点（作者/learning_path.official.manage）
-         * @description 只有路线作者或拥有 learning_path.official.manage 者可以写入；官方路线与已下架路线 仅拥有 learning_path.official.manage 者可以写入（learning_path.admin.read 只读，不参与写授权）。 校验：标题 1–100 字、描述不超过 50000 字；`problemIds` 为 1–50 道不重复且存在、公开的题目； `requiredCount` 为 1–题目数，未提交时默认等于题目数；`parentId` 必须属于同一路线， 不能是自身或形成环，节点树最大深度 8 层；`parentId` 未提交时为根节点。
+         * @description 只有路线作者或拥有 learning_path.official.manage 者可以写入；官方路线与已下架路线 仅拥有 learning_path.official.manage 者可以写入（learning_path.admin.read 只读，不参与写授权）。 校验：标题 1–100 字、描述不超过 50000 字；`problemIds` 为 1–50 道不重复且存在的题目， 免费路线要求题目公开，付费路线要求题目未公开； `requiredCount` 为 1–题目数，未提交时默认等于题目数；`parentId` 必须属于同一路线， 不能是自身或形成环，节点树最大深度 8 层；`parentId` 未提交时为根节点。
          */
         post: {
             parameters: {
@@ -7697,7 +7827,7 @@ export interface paths {
         };
         /**
          * 站点管理视图（site.settings.manage）
-         * @description 与公开视图结构一致，额外用于管理页读取原始页脚字段、访问量与运行天数。
+         * @description 公开视图 + 完整部署设置（含主站/API 域名与备注），用于管理页读取原始页脚字段、访问量、运行天数与部署配置。
          */
         get: {
             parameters: {
@@ -7853,6 +7983,74 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["SiteAdminResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/site/deployment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取部署设置（site.settings.manage） */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 部署设置 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SiteDeploymentResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        /**
+         * 保存部署设置（site.settings.manage，写审计）
+         * @description 仅保存域名、CDN、强制 HTTPS 与备注，不保存云厂商密钥。域名必须是 http/https origin，不能包含路径、查询参数、锚点或用户信息；尾部 / 会被归一化去掉。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SiteDeployment"];
+                };
+            };
+            responses: {
+                /** @description 保存后的部署设置 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SiteDeploymentResponse"];
                     };
                 };
                 400: components["responses"]["Error"];
@@ -9666,6 +9864,23 @@ export interface components {
             /** @description 服务端重算的当前用户已完成节点数；游客为 0 */
             myCompletedCount: number;
             sortOrder: number;
+            /**
+             * Format: int64
+             * @description 0 表示免费；作者/管理员免费访问
+             */
+            priceCoins: number;
+            /** @description 当前用户是否已购买；作者/管理员免费访问但不会因此记为已购买 */
+            purchased: boolean;
+            /** @description 购买用户与有进度用户去重后的参与人数 */
+            participantCount: number;
+            /** @description 推荐人数 */
+            recommendCount: number;
+            /** @description 当前用户是否已推荐 */
+            recommendedByMe: boolean;
+            /** @description 当前用户可编辑路线元信息 */
+            canEdit: boolean;
+            /** @description 当前用户可调整排序（learning_path.official.manage） */
+            canEditSort: boolean;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -9684,7 +9899,14 @@ export interface components {
             isPublic?: boolean;
             /** @description 创建/更新时仅拥有 learning_path.official.manage 者可设置；false 为软删除，true 为恢复上架 */
             isActive?: boolean;
+            /** @description 普通用户提交会被忽略并按服务端自动追加；仅 learning_path.official.manage 可调整 */
             sortOrder?: number;
+            /**
+             * Format: int64
+             * @description 付费金币；大于 0 时路线引用的题目必须未公开
+             * @default 0
+             */
+            priceCoins: number;
         };
         /**
          * @description 节点状态；`locked` 未解锁、`active` 进行中、`completed` 已完成（锁存，不回退）。
@@ -9734,16 +9956,29 @@ export interface components {
              * @description 父节点 id，必须属于同一路线且不能形成环；null 表示根节点
              */
             parentId?: number | null;
-            /** @description 1–50 道不重复、存在且公开的题目 */
+            /** @description 1–50 道不重复、存在的题目；免费路线要求公开，付费路线要求未公开 */
             problemIds: number[];
             sortOrder?: number;
             /** @description 1–题目数；未提交时默认等于题目数 */
             requiredCount?: number;
         };
-        /** @description 学习路线树；`path` 为路线元信息，`nodes` 为根节点数组。 */
+        /** @description 学习路线树；付费路线未购买时 `locked=true` 且 `nodes` 为空。 */
         LearningTree: {
             path: components["schemas"]["LearningPathItem"];
             nodes: components["schemas"]["LearningPathNodeItem"][];
+            /** @description 付费路线尚未购买；前端展示购买入口 */
+            locked?: boolean;
+        };
+        LearningPathPurchaseResult: {
+            path: components["schemas"]["LearningPathItem"];
+            /**
+             * Format: int64
+             * @description 购买后的金币余额
+             */
+            coins: number;
+        };
+        LearningPathPurchaseResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["LearningPathPurchaseResult"];
         };
         LearningPathListResponse: components["schemas"]["Envelope"] & {
             data: {
@@ -10379,6 +10614,27 @@ export interface components {
              */
             badgeSize: number;
         };
+        /** @description 公开部署子集，仅用于前端拼接 CDN/资源地址；不包含备注或主站/API 域名。 */
+        SitePublicDeployment: {
+            /** @description 空表示不使用 CDN */
+            cdnDomain: string;
+            /** @description 空表示回退 CDN，再回退同源 */
+            assetsDomain: string;
+        };
+        /** @description 部署设置；不包含云厂商密钥、数据库密码或 JWT 密钥。 */
+        SiteDeployment: {
+            /** @description 主站域名（必填）；保存时去掉尾部 / */
+            siteDomain: string;
+            /** @description 空表示同源 API */
+            apiDomain: string;
+            /** @description 空表示不使用 CDN */
+            cdnDomain: string;
+            /** @description 空表示回退 CDN */
+            assetsDomain: string;
+            forceHttps: boolean;
+            /** @description 运维备注；公开接口不返回 */
+            notes: string;
+        };
         /** @description 公开站点配置。 */
         SitePublicView: {
             /** @description 空表示未上传；非空时带 ?v=<unix> 版本参数 */
@@ -10388,6 +10644,7 @@ export interface components {
             home: components["schemas"]["SiteHomeContent"];
             footer: components["schemas"]["SiteFooterView"];
             appearance: components["schemas"]["SiteAppearance"];
+            deployment?: components["schemas"]["SitePublicDeployment"];
             /**
              * Format: date-time
              * @description 站点运行起始日（UTC）
@@ -10398,8 +10655,13 @@ export interface components {
             /** Format: int64 */
             visitCount: number;
         };
-        /** @description 管理视图；与公开视图结构一致，管理页借此读取页脚原始字段、访问量与运行天数。 */
-        SiteAdminView: components["schemas"]["SitePublicView"];
+        /** @description 管理视图；在公开视图基础上包含完整部署设置（含主站/API 域名与备注）。 */
+        SiteAdminView: components["schemas"]["SitePublicView"] & {
+            deployment?: components["schemas"]["SiteDeployment"];
+        };
+        SiteDeploymentResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["SiteDeployment"];
+        };
         /** @description 页脚更新请求体。 */
         SiteFooterInput: {
             icpNumber: string;

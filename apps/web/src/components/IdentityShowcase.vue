@@ -5,6 +5,7 @@ import vTooltip from 'primevue/tooltip'
 
 import type { EquippedBadge, EquippedTitle } from '@/api/types'
 import { useSiteStore } from '@/stores/site'
+import { resolveAssetUrl } from '@/utils/asset'
 import { badgeImageSrc, badgeInitial, safeTitleColor } from '@/utils/gamification'
 
 const props = withDefaults(
@@ -40,7 +41,9 @@ function onBadgeError(id: number) {
 }
 
 function badgeImage(badge: EquippedBadge): string | undefined {
-  return failedImageIds.value.includes(badge.id) ? undefined : badgeImageSrc(badge.imageUrl)
+  if (failedImageIds.value.includes(badge.id)) return undefined
+  const src = badgeImageSrc(badge.imageUrl)
+  return src ? resolveAssetUrl(src) : undefined
 }
 
 function avatarLabel(badge: EquippedBadge): string | undefined {

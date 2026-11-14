@@ -46,9 +46,10 @@ func newLogger(w io.Writer) logger.Interface {
 }
 
 const (
-	emailVerifiedBackfillKey    = "email_verified_at_backfill_v1"
-	submissionFieldsBackfillKey = "submission_fields_backfill_v1"
-	migrationAdvisoryLock       = int64(0x6b61706f6a)
+	emailVerifiedBackfillKey      = "email_verified_at_backfill_v1"
+	submissionFieldsBackfillKey   = "submission_fields_backfill_v1"
+	learningPathCountsBackfillKey = "learning_path_counts_backfill_v1"
+	migrationAdvisoryLock         = int64(0x6b61706f6a)
 )
 
 // Migration records one-off data migrations that must run exactly once.
@@ -84,6 +85,7 @@ func Migrate(g *gorm.DB) error {
 			&gamification.Title{}, &gamification.UserTitle{},
 			&learning.LearningPath{}, &learning.LearningPathNode{},
 			&learning.UserLearningProgress{},
+			&learning.LearningPathPurchase{}, &learning.LearningPathRecommendation{},
 			&rbac.Role{}, &rbac.Permission{}, &rbac.RolePermission{},
 			&rbac.UserRole{}, &rbac.AdminAuditLog{}, &rbac.Meta{},
 			&ai.Provider{}, &ai.UserConfig{}, &ai.Hint{}, &ai.Settings{},
@@ -97,8 +99,40 @@ func Migrate(g *gorm.DB) error {
 		if err := backfillEmailVerified(tx); err != nil {
 			return err
 		}
-		return backfillSubmissionFields(tx)
+		if err := backfillSubmissionFields(tx); err != nil {
+			return err
+		}
+		return backfillLearningPathCounts(tx)
 	})
+}
+
+func backfillLearningPathCounts(tx *gorm.DB) error {
+	var count int64
+	if err := tx.Model(&Migration{}).Where("key = ?", learningPathCountsBackfillKey).Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	if err := tx.Exec(`
+		UPDATE learning_paths AS p
+		SET participant_count = (
+			SELECT COUNT(*) FROM (
+				SELECT user_id FROM learning_path_purchases WHERE path_id = p.id
+				UNION
+				SELECT user_id FROM user_learning_progress WHERE path_id = p.id
+			) AS participants
+		)`).Error; err != nil {
+		return err
+	}
+	if err := tx.Exec(`
+		UPDATE learning_paths AS p
+		SET recommend_count = (
+			SELECT COUNT(*) FROM learning_path_recommendations WHERE path_id = p.id
+		)`).Error; err != nil {
+		return err
+	}
+	return tx.Create(&Migration{Key: learningPathCountsBackfillKey, AppliedAt: time.Now().UTC()}).Error
 }
 
 func backfillSubmissionFields(tx *gorm.DB) error {

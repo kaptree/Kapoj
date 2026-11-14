@@ -32,7 +32,7 @@ func (s *Service) CreateNode(ctx context.Context, v Viewer, pathID int64, in Nod
 	if err := validateNodeHierarchy(nodes, 0, in.ParentID); err != nil {
 		return nil, err
 	}
-	if err := s.validateNodeProblems(ctx, in.ProblemIDs); err != nil {
+	if err := s.validateNodeProblems(ctx, path.PriceCoins > 0, in.ProblemIDs); err != nil {
 		return nil, err
 	}
 	required, err := nodeRequiredCount(in)
@@ -76,7 +76,7 @@ func (s *Service) UpdateNode(ctx context.Context, v Viewer, pathID, nodeID int64
 	if err := validateNodeHierarchy(nodes, n.ID, in.ParentID); err != nil {
 		return nil, err
 	}
-	if err := s.validateNodeProblems(ctx, in.ProblemIDs); err != nil {
+	if err := s.validateNodeProblems(ctx, path.PriceCoins > 0, in.ProblemIDs); err != nil {
 		return nil, err
 	}
 	required, err := nodeRequiredCount(in)
@@ -125,16 +125,30 @@ func (s *Service) Tree(ctx context.Context, v Viewer, pathID int64) (*Tree, erro
 			return nil, err
 		}
 	}
-	path, err := s.FindPath(ctx, v, pathID)
+	rawPath, err := s.visiblePath(ctx, v, pathID)
 	if err != nil {
 		return nil, err
+	}
+	path, err := s.item(ctx, v, pathID)
+	if err != nil {
+		return nil, err
+	}
+	allowed, err := s.CanAccessPath(ctx, v, rawPath)
+	if err != nil {
+		return nil, err
+	}
+	if !allowed {
+		return &Tree{Path: *path, Nodes: []NodeItem{}, Locked: true}, nil
 	}
 	nodes, err := s.repo.ListNodes(ctx, path.ID)
 	if err != nil {
 		return nil, err
 	}
 	ids := uniqueProblemIDs(nodes)
-	summaries, err := s.repo.ProblemSummaries(ctx, ids)
+	// A paid path exposes its private problems to viewers who passed the access
+	// check above (author, administrator or purchaser). Free paths keep the
+	// existing public-only behavior.
+	summaries, err := s.repo.ProblemSummaries(ctx, ids, rawPath.PriceCoins > 0)
 	if err != nil {
 		return nil, err
 	}
@@ -224,13 +238,27 @@ func nodeRequiredCount(in NodeInput) (int, error) {
 	return *in.RequiredCount, nil
 }
 
-func (s *Service) validateNodeProblems(ctx context.Context, ids []int64) error {
-	summaries, err := s.repo.ProblemSummaries(ctx, ids)
+func (s *Service) validateNodeProblems(ctx context.Context, paid bool, ids []int64) error {
+	states, err := s.repo.ProblemStates(ctx, ids)
 	if err != nil {
 		return err
 	}
-	if len(summaries) != len(ids) {
-		return invalid("题目不存在或未公开")
+	if len(states) != len(ids) {
+		return invalid("题目不存在")
+	}
+	var public []string
+	for _, id := range ids {
+		state := states[id]
+		if paid {
+			if state.IsPublic {
+				public = append(public, state.Title)
+			}
+		} else if !state.IsPublic {
+			return invalid("题目不存在或未公开")
+		}
+	}
+	if len(public) > 0 {
+		return invalid("付费路线只能引用未公开题目：%s", strings.Join(public, "、"))
 	}
 	return nil
 }
@@ -405,7 +433,7 @@ func newNodeItem(n *LearningPathNode, summaries map[int64]ProblemSummary, fullPr
 }
 
 func (s *Service) nodeItem(ctx context.Context, n *LearningPathNode) (*NodeItem, error) {
-	summaries, err := s.repo.ProblemSummaries(ctx, n.ProblemIDs)
+	summaries, err := s.repo.ProblemSummaries(ctx, n.ProblemIDs, true)
 	if err != nil {
 		return nil, err
 	}

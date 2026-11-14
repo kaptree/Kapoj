@@ -13,15 +13,18 @@ const props = defineProps<{
   hint?: string
   optional?: boolean
   required?: boolean
+  /** Override the generated id; useful when the field is outside a slot. */
+  inputId?: string
 }>()
 
 defineSlots<{
   default(props: FieldSlotProps): unknown
 }>()
 
-const id = useId()
-const errorId = `${id}-error`
-const hintId = `${id}-hint`
+const generatedId = useId()
+const id = computed(() => props.inputId || generatedId)
+const errorId = `${id.value}-error`
+const hintId = `${id.value}-hint`
 const invalid = computed(() => Boolean(props.error))
 const describedby = computed(() => {
   if (props.error) return errorId

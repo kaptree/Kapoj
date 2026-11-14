@@ -1,19 +1,26 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
+import ToastService from 'primevue/toastservice'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, reactive } from 'vue'
 
 import { ApiError } from '@/api/http'
-import { getLearningTree } from '@/api/learning'
+import {
+  getLearningTree,
+  purchaseLearningPath,
+  recommendLearningPath,
+  unrecommendLearningPath,
+} from '@/api/learning'
 import type { LearningPathItem, LearningPathNodeItem, LearningTree, Me } from '@/api/types'
 import AppEmptyState from '@/components/ui/AppEmptyState.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
 import LearningPathDetailView from './LearningPathDetailView.vue'
 
-const route = reactive({ params: { id: '3' } })
+const route = reactive({ params: { id: '3' }, fullPath: '/learning-paths/3' })
 const auth = vi.hoisted(() => ({
   isLoggedIn: true,
   user: null as Me | null,
+  fetchMe: vi.fn(),
 }))
 
 vi.mock('vue-router', async (importOriginal) => {
@@ -23,6 +30,9 @@ vi.mock('vue-router', async (importOriginal) => {
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => auth }))
 vi.mock('@/api/learning', () => ({
   getLearningTree: vi.fn(),
+  purchaseLearningPath: vi.fn(),
+  recommendLearningPath: vi.fn(),
+  unrecommendLearningPath: vi.fn(),
 }))
 vi.mock('@/components/MarkdownView.vue', () => ({
   default: {
@@ -44,6 +54,13 @@ function path(overrides: Partial<LearningPathItem> = {}): LearningPathItem {
     nodeCount: 3,
     myCompletedCount: 1,
     sortOrder: 0,
+    priceCoins: 0,
+    purchased: false,
+    participantCount: 0,
+    recommendCount: 0,
+    recommendedByMe: false,
+    canEdit: false,
+    canEditSort: false,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
     ...overrides,
@@ -74,7 +91,7 @@ function node(overrides: Partial<LearningPathNodeItem> = {}): LearningPathNodeIt
 function mountView() {
   return mount(LearningPathDetailView, {
     global: {
-      plugins: [PrimeVue],
+      plugins: [PrimeVue, ToastService],
       stubs: {
         RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
       },
@@ -109,6 +126,10 @@ beforeEach(() => {
   auth.isLoggedIn = true
   auth.user = null
   vi.mocked(getLearningTree).mockReset()
+  vi.mocked(purchaseLearningPath).mockReset()
+  vi.mocked(recommendLearningPath).mockReset()
+  vi.mocked(unrecommendLearningPath).mockReset()
+  auth.fetchMe.mockReset()
 })
 
 describe('LearningPathDetailView', () => {
@@ -371,6 +392,76 @@ describe('LearningPathDetailView', () => {
 
     expect(wrapper.text()).toContain('NODE // 01')
     expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'nearest' })
+    wrapper.unmount()
+  })
+
+  it('shows a purchase CTA for a locked paid path and reloads after buying', async () => {
+    vi.mocked(getLearningTree).mockResolvedValueOnce({
+      path: path({ priceCoins: 30, purchased: false }),
+      nodes: [],
+      locked: true,
+    })
+    vi.mocked(purchaseLearningPath).mockResolvedValue({
+      path: path({ priceCoins: 30, purchased: true }),
+      coins: 70,
+    })
+    vi.mocked(getLearningTree).mockResolvedValueOnce({
+      path: path({ priceCoins: 30, purchased: true }),
+      nodes: [node({ id: 1, title: '解锁节点', status: 'active' })],
+      locked: false,
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="path-locked"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('30 金币')
+    await wrapper.find('[data-test="path-purchase"]').trigger('click')
+    await flushPromises()
+
+    expect(purchaseLearningPath).toHaveBeenCalledWith(3)
+    expect(auth.fetchMe).toHaveBeenCalled()
+    expect(getLearningTree).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[data-test="path-locked"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('解锁节点')
+    wrapper.unmount()
+  })
+
+  it('toggles a recommendation for a logged-in non-author', async () => {
+    auth.user = {
+      id: 9,
+      username: 'bob',
+      nickname: 'Bob',
+      email: 'bob@example.com',
+      emailVerified: true,
+      avatarUrl: '',
+      avatarUploaded: false,
+      bio: '',
+      role: 'user',
+      roles: [],
+      permissions: [],
+      isSuperAdmin: false,
+      rating: 1500,
+      coins: 0,
+      status: 'active',
+      createdAt: '2025-01-01T00:00:00Z',
+    }
+    vi.mocked(getLearningTree).mockResolvedValue({
+      path: path({ priceCoins: 0, recommendCount: 1, recommendedByMe: false }),
+      nodes: [node({ id: 1, status: 'active' })],
+    })
+    vi.mocked(recommendLearningPath).mockResolvedValue(
+      path({ priceCoins: 0, recommendCount: 2, recommendedByMe: true }),
+    )
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="path-recommend"]').text()).toContain('推荐')
+    await wrapper.find('[data-test="path-recommend"]').trigger('click')
+    await flushPromises()
+
+    expect(recommendLearningPath).toHaveBeenCalledWith(3)
+    expect(wrapper.find('[data-test="path-recommends"]').text()).toContain('推荐 2')
+    expect(wrapper.find('[data-test="path-recommend"]').text()).toContain('取消推荐')
     wrapper.unmount()
   })
 

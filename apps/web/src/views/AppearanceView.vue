@@ -43,6 +43,7 @@ import {
   formatCoins,
   safeTitleColor,
 } from '@/utils/gamification'
+import { resolveAssetUrl } from '@/utils/asset'
 
 const PAGE_SIZE = 20
 const auth = useAuthStore()
@@ -101,7 +102,9 @@ function badgeLabel(item: BadgeItem): string | undefined {
 }
 
 function badgeImage(item: BadgeItem): string | undefined {
-  return failedImages.value.includes(item.id) ? undefined : badgeImageSrc(item.imageUrl)
+  if (failedImages.value.includes(item.id)) return undefined
+  const src = badgeImageSrc(item.imageUrl)
+  return src ? resolveAssetUrl(src) : undefined
 }
 
 function onBadgeImageError(id: number) {

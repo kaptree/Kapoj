@@ -24,6 +24,7 @@ import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
 import { useAuthStore } from '@/stores/auth'
+import { resolveAssetUrl } from '@/utils/asset'
 import { badgeImageSrc, badgeInitial, formatCoins } from '@/utils/gamification'
 
 const route = useRoute()
@@ -72,7 +73,9 @@ const equipSummary = computed(() =>
 )
 
 function imageSrc(item: BadgeItem): string | undefined {
-  return failedImages.value.includes(item.id) ? undefined : badgeImageSrc(item.imageUrl)
+  if (failedImages.value.includes(item.id)) return undefined
+  const src = badgeImageSrc(item.imageUrl)
+  return src ? resolveAssetUrl(src) : undefined
 }
 
 function onImageError(id: number) {

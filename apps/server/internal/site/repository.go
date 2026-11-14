@@ -83,6 +83,7 @@ func (r *gormRepository) Update(ctx context.Context, settings *Settings) error {
 			"show_visits":          settings.ShowVisits,
 			"badge_size":           settings.BadgeSize,
 			"home_json":            settings.Home,
+			"deployment_json":      settings.Deployment,
 			"updated_by":           settings.UpdatedBy,
 			"updated_at":           settings.UpdatedAt,
 		}).Error

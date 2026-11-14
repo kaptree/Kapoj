@@ -279,7 +279,7 @@ func TestPathValidation(t *testing.T) {
 		Title: " 合法路线 ", DescriptionMD: "描述", CoverURL: "https://example.com/cover.png", SortOrder: 7,
 	})
 	assert.Equal(t, "合法路线", item.Title)
-	assert.Equal(t, 7, item.SortOrder)
+	assert.NotZero(t, item.SortOrder, "普通用户的排序由服务端自动分配")
 
 	// 更新未提交的官方/上下架字段保持原值。
 	public := e.createPath(t, authorView, learning.PathInput{Title: "公开路线", IsPublic: boolPtr(true)})

@@ -3,6 +3,7 @@ package learningapi
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -43,6 +44,9 @@ func RegisterRoutes(r gin.IRouter, s *learning.Service, opts ...Options) {
 	r.GET("/learning-paths", load, h.list)
 	r.GET("/learning-paths/:id", load, h.find)
 	r.GET("/learning-paths/:id/tree", load, h.tree)
+	r.POST("/learning-paths/:id/purchase", middleware.RequireAuth(), load, h.purchase)
+	r.POST("/learning-paths/:id/recommend", middleware.RequireAuth(), load, h.recommend)
+	r.DELETE("/learning-paths/:id/recommend", middleware.RequireAuth(), load, h.unrecommend)
 	r.POST("/learning-paths", middleware.RequireAuth(), load, audit, h.create)
 	r.PUT("/learning-paths/:id", middleware.RequireAuth(), load, audit, h.update)
 	r.DELETE("/learning-paths/:id", middleware.RequireAuth(), load, audit, h.delete)
@@ -82,13 +86,49 @@ func pathID(c *gin.Context) (int64, bool) {
 }
 
 func (h *handler) list(c *gin.Context) {
-	items, err := h.svc.ListPaths(c.Request.Context(), viewer(c),
-		c.Query("includeInactive") == "true", c.Query("mine") == "true")
+	from, err := dateQuery(c, "createdFrom", false)
 	if err != nil {
 		httpx.Fail(c, err)
 		return
 	}
-	httpx.OK(c, httpx.Page[learning.PathItem]{Total: int64(len(items)), Items: items})
+	to, err := dateQuery(c, "createdTo", true)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	page, size := httpx.ParsePage(c.Request.URL.RawQuery)
+	result, err := h.svc.SearchPaths(c.Request.Context(), viewer(c), learning.ListQuery{
+		Keyword:         c.Query("keyword"),
+		CreatedFrom:     from,
+		CreatedTo:       to,
+		Scope:           c.Query("scope"),
+		IncludeInactive: c.Query("includeInactive") == "true",
+		Mine:            c.Query("mine") == "true",
+		Page:            page,
+		PageSize:        size,
+	})
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, result)
+}
+
+// dateQuery parses an ISO date in UTC. For createdTo it returns the exclusive
+// next-day boundary so the whole selected day is included.
+func dateQuery(c *gin.Context, name string, nextDay bool) (*time.Time, error) {
+	raw := c.Query(name)
+	if raw == "" {
+		return nil, nil
+	}
+	value, err := time.ParseInLocation("2006-01-02", raw, time.UTC)
+	if err != nil {
+		return nil, httpx.ErrValidation(name + " 必须是 YYYY-MM-DD 日期")
+	}
+	if nextDay {
+		value = value.AddDate(0, 0, 1)
+	}
+	return &value, nil
 }
 
 func (h *handler) find(c *gin.Context) {
@@ -97,6 +137,45 @@ func (h *handler) find(c *gin.Context) {
 		return
 	}
 	item, err := h.svc.FindPath(c.Request.Context(), viewer(c), id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, item)
+}
+
+func (h *handler) purchase(c *gin.Context) {
+	id, ok := pathID(c)
+	if !ok {
+		return
+	}
+	result, err := h.svc.Purchase(c.Request.Context(), viewer(c), id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, result)
+}
+
+func (h *handler) recommend(c *gin.Context) {
+	id, ok := pathID(c)
+	if !ok {
+		return
+	}
+	item, err := h.svc.Recommend(c.Request.Context(), viewer(c), id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, item)
+}
+
+func (h *handler) unrecommend(c *gin.Context) {
+	id, ok := pathID(c)
+	if !ok {
+		return
+	}
+	item, err := h.svc.Unrecommend(c.Request.Context(), viewer(c), id)
 	if err != nil {
 		httpx.Fail(c, err)
 		return

@@ -64,6 +64,7 @@ const isEdit = computed(() => pathId.value !== null)
 
 const canManageOfficial = computed(() => auth.can(PERM.learningPath.official.manage))
 const showOfficialToggle = computed(() => !isEdit.value && canManageOfficial.value)
+const isPaidPath = computed(() => form.priceCoins > 0)
 
 const form = reactive({
   title: '',
@@ -72,6 +73,7 @@ const form = reactive({
   isPublic: false,
   isOfficial: false,
   sortOrder: 0,
+  priceCoins: 0,
 })
 
 const loading = ref(false)
@@ -115,6 +117,7 @@ function resetForm() {
   form.isPublic = false
   form.isOfficial = route.query.official === 'true' && canManageOfficial.value
   form.sortOrder = 0
+  form.priceCoins = 0
 }
 
 function fillForm(item: LearningPathItem) {
@@ -124,6 +127,7 @@ function fillForm(item: LearningPathItem) {
   form.isPublic = item.isPublic
   form.isOfficial = item.isOfficial
   form.sortOrder = item.sortOrder
+  form.priceCoins = item.priceCoins
 }
 
 async function load() {
@@ -192,6 +196,7 @@ async function save() {
       coverUrl: form.coverUrl.trim(),
       isPublic: form.isOfficial || form.isPublic,
       sortOrder: form.sortOrder,
+      priceCoins: form.priceCoins,
     }
     if (showOfficialToggle.value) {
       input.isOfficial = form.isOfficial
@@ -417,8 +422,29 @@ async function doDeleteNode(node: LearningPathNodeItem) {
             />
           </AppFormField>
 
-          <AppFormField v-slot="{ id }" label="排序">
-            <InputNumber v-model="form.sortOrder" :input-id="id" :min="0" fluid />
+          <AppFormField
+            v-slot="{ id }"
+            label="付费金币"
+            hint="0 表示免费；付费路线只能引用未公开题目"
+          >
+            <InputNumber
+              v-model="form.priceCoins"
+              :input-id="id"
+              data-test="path-price"
+              :min="0"
+              :max="1000000"
+              fluid
+            />
+          </AppFormField>
+
+          <AppFormField v-if="canManageOfficial" v-slot="{ id }" label="排序">
+            <InputNumber
+              v-model="form.sortOrder"
+              :input-id="id"
+              data-test="path-sort"
+              :min="0"
+              fluid
+            />
           </AppFormField>
 
           <div class="toggle-block">
@@ -539,6 +565,8 @@ async function doDeleteNode(node: LearningPathNodeItem) {
       :nodes="nodes"
       :editing="nodeEditing"
       :parent-id="nodeParentId"
+      :paid="isPaidPath"
+      :can-manage-all="canManageOfficial"
       @saved="onNodeSaved"
     />
   </div>

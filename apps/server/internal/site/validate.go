@@ -2,6 +2,7 @@ package site
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 	"unicode"
@@ -28,7 +29,52 @@ const (
 	maxFooterURLLen    = 500
 	maxFooterCopyLen   = 200
 	maxFooterTextLen   = 1000
+
+	maxDeploymentNotesLen = 500
 )
+
+// validateDeployment normalizes origin domains and notes. Domains are origin
+// only: scheme + host (plus optional port), no path, query, fragment or
+// userinfo.
+func validateDeployment(in *Deployment) error {
+	var err error
+	if in.SiteDomain, err = normalizeDomain("主站域名", in.SiteDomain, true); err != nil {
+		return err
+	}
+	if in.APIDomain, err = normalizeDomain("API 域名", in.APIDomain, false); err != nil {
+		return err
+	}
+	if in.CDNDomain, err = normalizeDomain("CDN 域名", in.CDNDomain, false); err != nil {
+		return err
+	}
+	if in.AssetsDomain, err = normalizeDomain("资源域名", in.AssetsDomain, false); err != nil {
+		return err
+	}
+	in.Notes = strings.TrimSpace(in.Notes)
+	if err := requireMax("部署备注", in.Notes, maxDeploymentNotesLen, true); err != nil {
+		return err
+	}
+	return nil
+}
+
+func normalizeDomain(label, raw string, required bool) (string, error) {
+	raw = strings.TrimSpace(raw)
+	raw = strings.TrimRight(raw, "/")
+	if raw == "" {
+		if required {
+			return "", httpx.ErrValidation(label + "不能为空")
+		}
+		return "", nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return "", httpx.ErrValidation(label + "必须是 http:// 或 https:// 开头的合法 URL")
+	}
+	if u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
+		return "", httpx.ErrValidation(label + "只能填写域名，不能包含路径、查询参数或锚点")
+	}
+	return raw, nil
+}
 
 // validateHome trims all text and enforces the home page rules from the
 // design document. The receiver is updated in place with normalized values.

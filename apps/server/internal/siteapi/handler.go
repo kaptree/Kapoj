@@ -42,6 +42,8 @@ func RegisterRoutes(public, api, uploads gin.IRouter, svc *site.Service, auth *r
 	api.PUT("/admin/site/home", admin(h.updateHome)...)
 	api.PUT("/admin/site/footer", admin(h.updateFooter)...)
 	api.PUT("/admin/site/appearance", admin(h.updateAppearance)...)
+	api.GET("/admin/site/deployment", admin(h.getDeployment)...)
+	api.PUT("/admin/site/deployment", admin(h.updateDeployment)...)
 	api.DELETE("/admin/site/logo", admin(h.deleteLogo)...)
 	api.DELETE("/admin/site/favicon", admin(h.deleteFavicon)...)
 
@@ -112,6 +114,29 @@ func (h *handler) updateAppearance(c *gin.Context) {
 	}
 	h.recordAudit(c, rbac.AuditTargetSiteSettings, "修改外观设置")
 	httpx.OK(c, view)
+}
+
+func (h *handler) getDeployment(c *gin.Context) {
+	view, err := h.svc.Admin(c.Request.Context())
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, view.Deployment)
+}
+
+func (h *handler) updateDeployment(c *gin.Context) {
+	in, ok := httpx.BindJSON[site.Deployment](c)
+	if !ok {
+		return
+	}
+	view, err := h.svc.UpdateDeployment(c.Request.Context(), actorID(c), in)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	h.recordAudit(c, rbac.AuditTargetSiteSettings, "修改部署设置")
+	httpx.OK(c, view.Deployment)
 }
 
 func (h *handler) uploadLogo(c *gin.Context) {

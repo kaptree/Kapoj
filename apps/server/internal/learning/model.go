@@ -15,17 +15,22 @@ const (
 
 // LearningPath 是一条官方或用户自定义学习路线。
 type LearningPath struct {
-	ID            int64     `gorm:"primaryKey"`
-	Title         string    `gorm:"size:100;not null"`
-	DescriptionMD string    `gorm:"column:description_md;type:text;not null;default:''"`
-	CoverURL      string    `gorm:"size:512;not null;default:''"`
-	IsOfficial    bool      `gorm:"not null"`
-	IsPublic      bool      `gorm:"not null"`
-	IsActive      bool      `gorm:"not null;index:idx_learning_paths_active"`
-	CreatedBy     int64     `gorm:"not null;index:idx_learning_paths_created_by"`
-	SortOrder     int       `gorm:"not null;default:0"`
-	CreatedAt     time.Time `gorm:"type:timestamptz;not null"`
-	UpdatedAt     time.Time `gorm:"type:timestamptz;not null"`
+	ID            int64  `gorm:"primaryKey"`
+	Title         string `gorm:"size:100;not null"`
+	DescriptionMD string `gorm:"column:description_md;type:text;not null;default:''"`
+	CoverURL      string `gorm:"size:512;not null;default:''"`
+	IsOfficial    bool   `gorm:"not null"`
+	IsPublic      bool   `gorm:"not null"`
+	IsActive      bool   `gorm:"not null;index:idx_learning_paths_active"`
+	CreatedBy     int64  `gorm:"not null;index:idx_learning_paths_created_by"`
+	SortOrder     int    `gorm:"not null;default:0"`
+	PriceCoins    int64  `gorm:"column:price_coins;not null;default:0"`
+	// ParticipantCount and RecommendCount are denormalized counters. They are
+	// rebuilt inside purchase/recommend/progress transactions.
+	ParticipantCount int       `gorm:"column:participant_count;not null;default:0"`
+	RecommendCount   int       `gorm:"column:recommend_count;not null;default:0"`
+	CreatedAt        time.Time `gorm:"type:timestamptz;not null"`
+	UpdatedAt        time.Time `gorm:"type:timestamptz;not null"`
 }
 
 func (LearningPath) TableName() string { return "learning_paths" }
@@ -60,3 +65,26 @@ type UserLearningProgress struct {
 }
 
 func (UserLearningProgress) TableName() string { return "user_learning_progress" }
+
+// LearningPathPurchase records one user's permanent access to a paid path.
+type LearningPathPurchase struct {
+	ID        int64     `gorm:"primaryKey"`
+	UserID    int64     `gorm:"not null;uniqueIndex:uniq_learning_path_purchases,priority:1;index:idx_learning_path_purchases_path"`
+	PathID    int64     `gorm:"column:path_id;not null;uniqueIndex:uniq_learning_path_purchases,priority:2;index:idx_learning_path_purchases_path"`
+	PricePaid int64     `gorm:"column:price_paid;not null"`
+	CreatedAt time.Time `gorm:"type:timestamptz;not null"`
+}
+
+func (LearningPathPurchase) TableName() string { return "learning_path_purchases" }
+
+// LearningPathRecommendation records one user's recommendation of a path.
+type LearningPathRecommendation struct {
+	ID        int64     `gorm:"primaryKey"`
+	UserID    int64     `gorm:"not null;uniqueIndex:uniq_learning_path_recommendations,priority:1"`
+	PathID    int64     `gorm:"column:path_id;not null;uniqueIndex:uniq_learning_path_recommendations,priority:2;index:idx_learning_path_recommendations_path"`
+	CreatedAt time.Time `gorm:"type:timestamptz;not null"`
+}
+
+func (LearningPathRecommendation) TableName() string {
+	return "learning_path_recommendations"
+}

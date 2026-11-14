@@ -13,6 +13,7 @@ const (
 	maxTitleRunes       = 100
 	maxDescriptionRunes = 50000
 	maxCoverURLBytes    = 512
+	maxPriceCoins       = 1_000_000
 )
 
 func invalid(format string, args ...any) error {
@@ -36,6 +37,9 @@ func (in PathInput) Normalize() (PathInput, error) {
 			u.Host == "" || len(in.CoverURL) > maxCoverURLBytes {
 			return in, invalid("封面地址需为 http 或 https 链接，且不超过 512 个字符")
 		}
+	}
+	if in.PriceCoins < 0 || in.PriceCoins > maxPriceCoins {
+		return in, invalid("付费金币需为 0–%d", maxPriceCoins)
 	}
 	return in, nil
 }

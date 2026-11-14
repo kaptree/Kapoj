@@ -55,6 +55,37 @@ describe('site store', () => {
     expect(store.visitCount).toBe(42)
   })
 
+  it('resolves same-origin asset paths through the configured CDN origin', async () => {
+    siteApi.getSite.mockResolvedValue(
+      siteView({
+        logoUrl: '/api/site/logo?v=1',
+        deployment: { cdnDomain: 'https://cdn.example.com', assetsDomain: '' },
+      }),
+    )
+    const store = useSiteStore()
+    await store.ensureLoaded()
+
+    expect(store.assetsBaseUrl).toBe('https://cdn.example.com')
+    expect(store.logoUrl).toBe('https://cdn.example.com/api/site/logo?v=1')
+    expect(store.assetUrl('/api/badges/1/image')).toBe('https://cdn.example.com/api/badges/1/image')
+    expect(store.assetUrl('https://other.example.com/a.png')).toBe(
+      'https://other.example.com/a.png',
+    )
+
+    store.setConfig(
+      siteView({
+        deployment: {
+          cdnDomain: 'https://cdn.example.com',
+          assetsDomain: 'https://assets.example.com',
+        },
+      }),
+    )
+    await nextTick()
+    expect(store.assetUrl('/api/users/1/avatar')).toBe(
+      'https://assets.example.com/api/users/1/avatar',
+    )
+  })
+
   it('falls back to defaults when the request fails', async () => {
     siteApi.getSite.mockRejectedValue(new Error('network'))
     const store = useSiteStore()

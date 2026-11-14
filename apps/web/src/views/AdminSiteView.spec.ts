@@ -13,6 +13,7 @@ import {
   deleteAdminSiteLogo,
   getAdminSite,
   updateAdminSiteAppearance,
+  updateAdminSiteDeployment,
   updateAdminSiteFooter,
   updateAdminSiteHome,
   uploadAdminSiteFavicon,
@@ -33,6 +34,7 @@ vi.mock('@/api/site', () => ({
   recordSiteVisit: vi.fn(),
   getAdminSite: vi.fn(),
   updateAdminSiteAppearance: vi.fn(),
+  updateAdminSiteDeployment: vi.fn(),
   updateAdminSiteHome: vi.fn(),
   updateAdminSiteFooter: vi.fn(),
   uploadAdminSiteLogo: vi.fn(),
@@ -376,7 +378,10 @@ describe('AdminSiteView', () => {
     wrapper
       .findComponent(DatePicker)
       .vm.$emit('update:modelValue', new Date('2026-02-03T00:00:00Z'))
-    wrapper.findComponent(ToggleSwitch).vm.$emit('update:modelValue', false)
+    wrapper
+      .find('form[data-test="footer-form"]')
+      .findComponent(ToggleSwitch)
+      .vm.$emit('update:modelValue', false)
     vi.mocked(updateAdminSiteFooter).mockResolvedValue(siteView())
 
     await wrapper.find('form[data-test="footer-form"]').trigger('submit')
@@ -394,6 +399,46 @@ describe('AdminSiteView', () => {
     wrapper.unmount()
   })
 
+  it('validates and saves deployment settings', async () => {
+    const wrapper = await mountPage()
+    await openTab(wrapper, '部署')
+
+    await wrapper.find('[data-test="deployment-site"]').setValue('https://oj.example.com/')
+    await wrapper.find('[data-test="deployment-cdn"]').setValue('http://cdn.example.com')
+    await wrapper.find('#deployment-https').setValue(true)
+    await wrapper.find('[data-test="deployment-notes"]').setValue('主站证书续期')
+    expect(wrapper.find('[data-test="https-warning"]').exists()).toBe(true)
+
+    vi.mocked(updateAdminSiteDeployment).mockResolvedValue({
+      siteDomain: 'https://oj.example.com',
+      apiDomain: '',
+      cdnDomain: 'http://cdn.example.com',
+      assetsDomain: '',
+      forceHttps: true,
+      notes: '主站证书续期',
+    })
+    await wrapper.find('form[data-test="deployment-form"]').trigger('submit')
+    await flushPromises()
+
+    expect(updateAdminSiteDeployment).toHaveBeenCalledWith({
+      siteDomain: 'https://oj.example.com',
+      apiDomain: '',
+      cdnDomain: 'http://cdn.example.com',
+      assetsDomain: '',
+      forceHttps: true,
+      notes: '主站证书续期',
+    })
+    expect(toast.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }))
+
+    vi.mocked(updateAdminSiteDeployment).mockClear()
+    await wrapper.find('[data-test="deployment-site"]').setValue('https://oj.example.com/path')
+    await wrapper.find('form[data-test="deployment-form"]').trigger('submit')
+    await flushPromises()
+    expect(updateAdminSiteDeployment).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('只能填写域名')
+    wrapper.unmount()
+  })
+
   it('shows load error and retries', async () => {
     vi.mocked(getAdminSite)
       .mockRejectedValueOnce(new ApiError(500, 50000, '服务器错误'))
@@ -407,11 +452,12 @@ describe('AdminSiteView', () => {
     await flushPromises()
 
     expect(getAdminSite).toHaveBeenCalledTimes(2)
-    expect(wrapper.findAll('[role="tab"]')).toHaveLength(4)
+    expect(wrapper.findAll('[role="tab"]')).toHaveLength(5)
     expect(wrapper.text()).toContain('品牌')
     expect(wrapper.text()).toContain('外观')
     expect(wrapper.text()).toContain('首页')
     expect(wrapper.text()).toContain('页脚')
+    expect(wrapper.text()).toContain('部署')
     wrapper.unmount()
   })
 })

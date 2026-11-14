@@ -2,6 +2,7 @@ import { http } from './client'
 import type {
   SiteAdminView,
   SiteAppearance,
+  SiteDeployment,
   SiteFooterInput,
   SiteHomeContent,
   SitePublicView,
@@ -27,6 +28,13 @@ export const updateAdminSiteFooter = (input: SiteFooterInput) =>
 /** Update the shared appearance settings, currently the badge size. */
 export const updateAdminSiteAppearance = (input: SiteAppearance) =>
   http.put<SiteAdminView>('/admin/site/appearance', input)
+
+/** Read deployment metadata (site.settings.manage). */
+export const getAdminSiteDeployment = () => http.get<SiteDeployment>('/admin/site/deployment')
+
+/** Save deployment domains/CDN/HTTPS/notes (site.settings.manage). */
+export const updateAdminSiteDeployment = (input: SiteDeployment) =>
+  http.put<SiteDeployment>('/admin/site/deployment', input)
 
 /** Upload or replace the site logo as multipart/form-data (site.settings.manage). */
 export const uploadAdminSiteLogo = (file: File) => {

@@ -4,13 +4,22 @@ import type {
   LearningPathInput,
   LearningPathItem,
   LearningPathNodeItem,
+  LearningPathPurchaseResult,
   LearningTree,
   Page,
 } from './types'
 
+export type LearningPathScope = 'all' | 'official' | 'custom' | 'mine'
+
 export interface ListLearningPathsQuery {
   mine?: boolean
   includeInactive?: boolean
+  scope?: LearningPathScope
+  keyword?: string
+  createdFrom?: string
+  createdTo?: string
+  page?: number
+  pageSize?: number
 }
 
 export const listLearningPaths = (q: ListLearningPathsQuery = {}) =>
@@ -18,6 +27,12 @@ export const listLearningPaths = (q: ListLearningPathsQuery = {}) =>
     params: {
       mine: q.mine ? 'true' : undefined,
       includeInactive: q.includeInactive ? 'true' : undefined,
+      scope: q.scope,
+      keyword: q.keyword || undefined,
+      createdFrom: q.createdFrom,
+      createdTo: q.createdTo,
+      page: q.page,
+      page_size: q.pageSize,
     },
   })
 
@@ -35,6 +50,15 @@ export const updateLearningPath = (id: number | string, input: LearningPathInput
 
 export const deleteLearningPath = (id: number | string) =>
   http.delete<{ deleted: boolean }>(`/learning-paths/${id}`)
+
+export const purchaseLearningPath = (id: number | string) =>
+  http.post<LearningPathPurchaseResult>(`/learning-paths/${id}/purchase`)
+
+export const recommendLearningPath = (id: number | string) =>
+  http.post<LearningPathItem>(`/learning-paths/${id}/recommend`)
+
+export const unrecommendLearningPath = (id: number | string) =>
+  http.delete<LearningPathItem>(`/learning-paths/${id}/recommend`)
 
 export const createLearningNode = (pathId: number | string, input: LearningNodeInput) =>
   http.post<LearningPathNodeItem>(`/learning-paths/${pathId}/nodes`, input)

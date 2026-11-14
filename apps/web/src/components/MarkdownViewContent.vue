@@ -3,6 +3,7 @@ import { useId } from 'vue'
 import { MdPreview } from 'md-editor-v3'
 
 import '@/markdown'
+import { resolveAssetUrl } from '@/utils/asset'
 import { sanitizeHtml } from '@/utils/sanitize'
 
 withDefaults(
@@ -27,6 +28,7 @@ const headingId = ({ index }: { index: number }) => `md-${id}-${index}`
     class="markdown-view"
     :model-value="source"
     :sanitize="sanitizeHtml"
+    :transform-img-url="resolveAssetUrl"
     :md-heading-id="headingId"
     :theme="theme"
     language="zh-CN"

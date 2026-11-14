@@ -13,6 +13,7 @@ import type { SocialUserSummary } from '@/api/types'
 import AppEmptyState from '@/components/ui/AppEmptyState.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
+import { resolveAssetUrl } from '@/utils/asset'
 
 const PAGE_SIZE = 20
 
@@ -119,7 +120,7 @@ function onPage(event: { page: number }) {
           <li v-for="user in items" :key="user.id">
             <RouterLink :to="`/users/${user.id}`" class="follow-user">
               <Avatar
-                :image="user.avatarUrl || undefined"
+                :image="user.avatarUrl ? resolveAssetUrl(user.avatarUrl) : undefined"
                 :label="displayName(user).slice(0, 1)"
                 shape="circle"
                 class="follow-user__avatar"

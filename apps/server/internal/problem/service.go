@@ -73,6 +73,12 @@ type Stats struct {
 // disables the guard.
 type LearningGuard interface {
 	IsProblemInActivePath(ctx context.Context, problemID int64) (bool, error)
+	// IsProblemInPaidPath reports whether an active paid learning path
+	// references the problem; such a problem must stay private.
+	IsProblemInPaidPath(ctx context.Context, problemID int64) (bool, error)
+	// CanAccessPaidProblem reports whether the user bought or authored a paid
+	// path that references the private problem.
+	CanAccessPaidProblem(ctx context.Context, userID, problemID int64) (bool, error)
 }
 
 // Option customizes a problem Service.
@@ -140,7 +146,7 @@ func (s *Service) Update(ctx context.Context, id int64, in Input) (*Problem, err
 	wasPublic := p.IsPublic
 	apply(p, in)
 	// Taking a public problem offline is guarded against active learning path
-	// references; publishing or keeping it public is never blocked.
+	// references.
 	if wasPublic && !p.IsPublic && s.learningGuard != nil {
 		referenced, err := s.learningGuard.IsProblemInActivePath(ctx, id)
 		if err != nil {
@@ -148,6 +154,17 @@ func (s *Service) Update(ctx context.Context, id int64, in Input) (*Problem, err
 		}
 		if referenced {
 			return nil, httpx.ErrValidation("题目被学习路线引用，不能下线/删除")
+		}
+	}
+	// A problem referenced by an active paid path must stay private so users
+	// cannot bypass the path purchase.
+	if p.IsPublic && s.learningGuard != nil {
+		paid, err := s.learningGuard.IsProblemInPaidPath(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if paid {
+			return nil, httpx.ErrValidation("题目被付费学习路线引用，不能公开")
 		}
 	}
 	// Publishability is checked by the repository inside the same transaction
@@ -167,6 +184,15 @@ func (s *Service) Get(ctx context.Context, v Viewer, id int64) (*Problem, error)
 	}
 	if !p.IsPublic && !v.CanViewHidden && !v.CanManageAll &&
 		!(v.CanManageOwn && p.CreatedBy == v.UserID) {
+		if s.learningGuard != nil && v.UserID > 0 {
+			allowed, err := s.learningGuard.CanAccessPaidProblem(ctx, v.UserID, id)
+			if err != nil {
+				return nil, err
+			}
+			if allowed {
+				return p, nil
+			}
+		}
 		return nil, httpx.ErrNotFound
 	}
 	return p, nil

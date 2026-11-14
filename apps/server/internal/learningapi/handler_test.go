@@ -447,6 +447,60 @@ func itoa(id int64) string {
 	return strconv.FormatInt(id, 10)
 }
 
+func TestLearningPathPurchaseRecommendAndFilters(t *testing.T) {
+	f := newFx(t)
+	author := f.user("paid-author", user.RoleUser)
+	buyer := f.user("paid-buyer", user.RoleUser)
+	authorToken := f.token(author, user.RoleUser)
+	buyerToken := f.token(buyer, user.RoleUser)
+
+	var problemID int64
+	require.NoError(t, f.db.Raw(
+		`INSERT INTO problems (title, slug, statement_md, type, difficulty, time_limit_ms, memory_limit_mb, is_public, created_at, updated_at)
+		 VALUES ('付费题', 'paid-problem', '题干', 'objective', 1, 1000, 256, false, now(), now()) RETURNING id`,
+	).Scan(&problemID).Error)
+
+	w, resp := f.do(http.MethodPost, "/api/learning-paths", authorToken, map[string]any{
+		"title": "付费路线", "isPublic": true, "priceCoins": 40,
+	})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	pathID := int64(responseData(t, resp)["id"].(float64))
+	path := "/api/learning-paths/" + strconv.FormatInt(pathID, 10)
+
+	w, _ = f.do(http.MethodPost, path+"/nodes", authorToken, map[string]any{
+		"title": "节点", "problemIds": []int64{problemID},
+	})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+
+	w, resp = f.do(http.MethodGet, path+"/tree", "", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, true, responseData(t, resp)["locked"])
+	assert.Empty(t, responseData(t, resp)["nodes"])
+
+	require.NoError(t, f.db.Exec(`UPDATE users SET coins = 100 WHERE id = ?`, buyer).Error)
+	w, resp = f.do(http.MethodPost, path+"/purchase", buyerToken, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.EqualValues(t, 60, responseData(t, resp)["coins"])
+	assert.Equal(t, true, responseData(t, resp)["path"].(map[string]any)["purchased"])
+
+	w, resp = f.do(http.MethodPost, path+"/recommend", buyerToken, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.EqualValues(t, 1, responseData(t, resp)["recommendCount"])
+
+	w, resp = f.do(http.MethodGet, "/api/learning-paths?keyword=%E4%BB%98%E8%B4%B9&scope=custom&page=1&page_size=10", buyerToken, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	page := responseData(t, resp)
+	assert.EqualValues(t, 1, page["total"])
+	item := page["items"].([]any)[0].(map[string]any)
+	assert.EqualValues(t, 40, item["priceCoins"])
+	assert.Equal(t, true, item["purchased"], "the buyer sees purchased=true")
+
+	w, _ = f.do(http.MethodGet, "/api/learning-paths?createdFrom=not-a-date", "", nil)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	w, _ = f.do(http.MethodGet, "/api/learning-paths?scope=bogus", "", nil)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
 func TestLearningPathAPINodesAndTree(t *testing.T) {
 	f := newFx(t)
 	authorID := f.user("node-author", user.RoleUser)

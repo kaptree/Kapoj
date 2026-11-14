@@ -27,6 +27,7 @@ type Settings struct {
 	ShowVisits         bool                      `gorm:"column:show_visits;not null;default:true"`
 	BadgeSize          int                       `gorm:"column:badge_size;not null;default:22"`
 	Home               dbtypes.JSON[HomeContent] `gorm:"column:home_json;type:jsonb;not null;default:'{}'"`
+	Deployment         dbtypes.JSON[Deployment]  `gorm:"column:deployment_json;type:jsonb;not null;default:'{}'"`
 	UpdatedBy          int64                     `gorm:"column:updated_by;not null;default:0"`
 	UpdatedAt          time.Time                 `gorm:"type:timestamptz;not null"`
 }

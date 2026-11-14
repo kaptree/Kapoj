@@ -3,6 +3,7 @@ package learning
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -17,6 +18,12 @@ type ListFilter struct {
 	ViewerID        int64
 	IncludeInactive bool
 	Mine            bool
+	Scope           string
+	Keyword         string
+	CreatedFrom     *time.Time
+	CreatedTo       *time.Time
+	Offset          int
+	Limit           int
 }
 
 // Repository owns learning path persistence and read queries.
@@ -27,11 +34,17 @@ func NewRepository(db *gorm.DB) *Repository { return &Repository{db: db} }
 // pathItemColumns selects path metadata plus author, node count and the
 // viewer's stored completed-node count. The first argument is the viewer ID.
 const pathItemColumns = `p.id, p.title, p.description_md, p.cover_url,
-	p.is_official, p.is_public, p.is_active, p.sort_order, p.created_at, p.updated_at,
+	p.is_official, p.is_public, p.is_active, p.sort_order,
+	p.price_coins, p.participant_count, p.recommend_count,
+	p.created_at, p.updated_at,
 	u.id AS author_id, u.username AS author_username, u.nickname AS author_nickname,
 	(SELECT COUNT(*) FROM learning_path_nodes AS n WHERE n.path_id = p.id) AS node_count,
 	(SELECT COUNT(*) FROM user_learning_progress AS pr
-		WHERE pr.path_id = p.id AND pr.user_id = ? AND pr.status = ?) AS my_completed_count`
+		WHERE pr.path_id = p.id AND pr.user_id = ? AND pr.status = ?) AS my_completed_count,
+	EXISTS(SELECT 1 FROM learning_path_purchases AS lp
+		WHERE lp.path_id = p.id AND lp.user_id = ?) AS purchased,
+	EXISTS(SELECT 1 FROM learning_path_recommendations AS lr
+		WHERE lr.path_id = p.id AND lr.user_id = ?) AS recommended_by_me`
 
 type pathRow struct {
 	ID               int64
@@ -42,6 +55,9 @@ type pathRow struct {
 	IsPublic         bool
 	IsActive         bool
 	SortOrder        int
+	PriceCoins       int64
+	ParticipantCount int
+	RecommendCount   int
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	AuthorID         int64
@@ -49,6 +65,8 @@ type pathRow struct {
 	AuthorNickname   string
 	NodeCount        int
 	MyCompletedCount int
+	Purchased        bool
+	RecommendedByMe  bool
 }
 
 func (r pathRow) item() PathItem {
@@ -68,6 +86,11 @@ func (r pathRow) item() PathItem {
 		NodeCount:        r.NodeCount,
 		MyCompletedCount: r.MyCompletedCount,
 		SortOrder:        r.SortOrder,
+		PriceCoins:       r.PriceCoins,
+		ParticipantCount: r.ParticipantCount,
+		RecommendCount:   r.RecommendCount,
+		Purchased:        r.Purchased,
+		RecommendedByMe:  r.RecommendedByMe,
 		CreatedAt:        r.CreatedAt,
 		UpdatedAt:        r.UpdatedAt,
 	}
@@ -87,7 +110,7 @@ func (r *Repository) FindByID(ctx context.Context, id int64) (*LearningPath, err
 
 var pathUpdateColumns = []string{
 	"title", "description_md", "cover_url", "is_official", "is_public",
-	"is_active", "sort_order", "updated_at",
+	"is_active", "sort_order", "price_coins", "updated_at",
 }
 
 func (r *Repository) Update(ctx context.Context, p *LearningPath) error {
@@ -115,10 +138,10 @@ func (r *Repository) SetActive(ctx context.Context, id int64, active bool) error
 	return nil
 }
 
-// List returns learning paths ordered by official first, then sort order and id.
-func (r *Repository) List(ctx context.Context, f ListFilter) ([]PathItem, error) {
+// List returns learning paths ordered by official first, then sort order and
+// newest first. The total is returned before pagination for the API envelope.
+func (r *Repository) List(ctx context.Context, f ListFilter) ([]PathItem, int64, error) {
 	q := r.db.WithContext(ctx).Table("learning_paths AS p").
-		Select(pathItemColumns, f.ViewerID, ProgressCompleted).
 		Joins("JOIN users AS u ON u.id = p.created_by")
 
 	if !f.IncludeInactive {
@@ -126,26 +149,52 @@ func (r *Repository) List(ctx context.Context, f ListFilter) ([]PathItem, error)
 			Where("(p.is_official = ? OR p.is_public = ? OR p.created_by = ?)",
 				true, true, f.ViewerID)
 	}
-	if f.Mine {
+	if f.Mine || f.Scope == "mine" {
 		q = q.Where("p.created_by = ?", f.ViewerID)
 	}
+	switch f.Scope {
+	case "official":
+		q = q.Where("p.is_official = ?", true)
+	case "custom":
+		q = q.Where("p.is_official = ?", false)
+	}
+	if keyword := strings.TrimSpace(f.Keyword); keyword != "" {
+		pattern := "%" + escapeLike(keyword) + "%"
+		q = q.Where(`(p.title ILIKE ? ESCAPE '\' OR p.description_md ILIKE ? ESCAPE '\')`,
+			pattern, pattern)
+	}
+	if f.CreatedFrom != nil {
+		q = q.Where("p.created_at >= ?", *f.CreatedFrom)
+	}
+	if f.CreatedTo != nil {
+		q = q.Where("p.created_at < ?", *f.CreatedTo)
+	}
 
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 	var rows []pathRow
-	if err := q.Order("p.is_official DESC, p.sort_order ASC, p.id ASC").Scan(&rows).Error; err != nil {
-		return nil, err
+	query := q.Select(pathItemColumns, f.ViewerID, ProgressCompleted, f.ViewerID, f.ViewerID).
+		Order("p.is_official DESC, p.sort_order ASC, p.created_at DESC, p.id DESC")
+	if f.Limit > 0 {
+		query = query.Offset(f.Offset).Limit(f.Limit)
+	}
+	if err := query.Scan(&rows).Error; err != nil {
+		return nil, 0, err
 	}
 	items := make([]PathItem, len(rows))
 	for i := range rows {
 		items[i] = rows[i].item()
 	}
-	return items, nil
+	return items, total, nil
 }
 
 // Item returns one path's metadata with author and counts.
 func (r *Repository) Item(ctx context.Context, viewerID, id int64) (*PathItem, error) {
 	var row pathRow
 	err := r.db.WithContext(ctx).Table("learning_paths AS p").
-		Select(pathItemColumns, viewerID, ProgressCompleted).
+		Select(pathItemColumns, viewerID, ProgressCompleted, viewerID, viewerID).
 		Joins("JOIN users AS u ON u.id = p.created_by").
 		Where("p.id = ?", id).
 		Scan(&row).Error
@@ -256,23 +305,51 @@ func (r *Repository) ListNodes(ctx context.Context, pathID int64) ([]LearningPat
 	return nodes, err
 }
 
-// ProblemSummaries returns public problem summaries keyed by problem id.
-// Missing or private problems are simply absent from the result.
-func (r *Repository) ProblemSummaries(ctx context.Context, ids []int64) (map[int64]ProblemSummary, error) {
+// ProblemSummaries returns problem summaries keyed by problem id. When
+// includePrivate is false only public problems are returned; paid-path authors,
+// administrators and purchasers pass true to read the private problems they may
+// access through the path.
+func (r *Repository) ProblemSummaries(ctx context.Context, ids []int64, includePrivate bool) (map[int64]ProblemSummary, error) {
 	out := make(map[int64]ProblemSummary, len(ids))
 	if len(ids) == 0 {
 		return out, nil
 	}
 	var rows []ProblemSummary
-	err := r.db.WithContext(ctx).Table("problems").
-		Select("id AS problem_id, title, slug, difficulty").
-		Where("id IN ? AND is_public = ?", ids, true).
-		Scan(&rows).Error
+	q := r.db.WithContext(ctx).Table("problems").
+		Select("id AS problem_id, title, slug, difficulty")
+	if !includePrivate {
+		q = q.Where("is_public = ?", true)
+	}
+	err := q.Where("id IN ?", ids).Scan(&rows).Error
 	if err != nil {
 		return nil, err
 	}
 	for _, row := range rows {
 		out[row.ProblemID] = row
+	}
+	return out, nil
+}
+
+// ProblemState is the internal visibility state used while validating nodes.
+type ProblemState struct {
+	ID       int64  `gorm:"column:id"`
+	Title    string `gorm:"column:title"`
+	IsPublic bool   `gorm:"column:is_public"`
+}
+
+// ProblemStates returns existence and visibility for the given problem IDs.
+func (r *Repository) ProblemStates(ctx context.Context, ids []int64) (map[int64]ProblemState, error) {
+	out := make(map[int64]ProblemState, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	var rows []ProblemState
+	if err := r.db.WithContext(ctx).Table("problems").
+		Select("id, title, is_public").Where("id IN ?", ids).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		out[row.ID] = row
 	}
 	return out, nil
 }
@@ -347,6 +424,10 @@ func (r *Repository) UpsertProgress(ctx context.Context, rows []UserLearningProg
 		Columns:   []clause.Column{{Name: "user_id"}, {Name: "node_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{"status", "solved_count", "completed_at", "updated_at"}),
 	}).Create(&rows).Error
+}
+
+func escapeLike(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
 }
 
 func mapRepoError(err error) error {

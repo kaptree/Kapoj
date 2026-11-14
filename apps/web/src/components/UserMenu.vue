@@ -8,6 +8,7 @@ import type { MenuItem } from 'primevue/menuitem'
 
 import { useAuthStore } from '@/stores/auth'
 import { ADMIN_ACCESS_PERMISSIONS } from '@/permissions'
+import { resolveAssetUrl } from '@/utils/asset'
 import { formatCoins } from '@/utils/gamification'
 
 interface MenuHandle {
@@ -123,7 +124,7 @@ async function logout() {
       @click="toggleMenu"
     >
       <Avatar
-        :image="auth.user.avatarUrl || undefined"
+        :image="auth.user.avatarUrl ? resolveAssetUrl(auth.user.avatarUrl) : undefined"
         :label="auth.user.nickname.slice(0, 1)"
         shape="square"
         class="user-menu__avatar"

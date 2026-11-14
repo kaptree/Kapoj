@@ -38,6 +38,13 @@ describe('learning utils', () => {
       nodeCount: 1,
       myCompletedCount: 0,
       sortOrder: 0,
+      priceCoins: 0,
+      purchased: false,
+      participantCount: 0,
+      recommendCount: 0,
+      recommendedByMe: false,
+      canEdit: false,
+      canEditSort: false,
       createdAt: '2026-01-01T00:00:00Z',
       updatedAt: '2026-01-01T00:00:00Z',
     }

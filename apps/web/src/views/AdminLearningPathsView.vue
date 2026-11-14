@@ -136,6 +136,7 @@ async function doRestore(item: LearningPathItem) {
       coverUrl: item.coverUrl,
       isPublic: item.isPublic,
       sortOrder: item.sortOrder,
+      priceCoins: item.priceCoins,
       isActive: true,
     })
     toast.add({ severity: 'success', summary: '路线已恢复上架', life: 3000 })
@@ -241,6 +242,16 @@ onMounted(load)
         <Column header="我的完成" style="width: 90px">
           <template #body="{ data }">
             <span class="num">{{ data.myCompletedCount }}</span>
+          </template>
+        </Column>
+        <Column header="价格" style="width: 90px">
+          <template #body="{ data }">
+            <span class="num">{{ data.priceCoins > 0 ? `${data.priceCoins} 金币` : '免费' }}</span>
+          </template>
+        </Column>
+        <Column header="参与/推荐" style="width: 110px">
+          <template #body="{ data }">
+            <span class="num">{{ data.participantCount }} / {{ data.recommendCount }}</span>
           </template>
         </Column>
         <Column header="更新时间" style="width: 180px">

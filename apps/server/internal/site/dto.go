@@ -57,18 +57,40 @@ type Appearance struct {
 	BadgeSize int `json:"badgeSize"`
 }
 
-// PublicView is the public site configuration returned to visitors.
-type PublicView struct {
-	LogoURL     string      `json:"logoUrl"`
-	FaviconURL  string      `json:"faviconUrl"`
-	Home        HomeContent `json:"home"`
-	Footer      FooterView  `json:"footer"`
-	Appearance  Appearance  `json:"appearance"`
-	StartedAt   time.Time   `json:"startedAt"`
-	RunningDays int         `json:"runningDays"`
-	VisitCount  int64       `json:"visitCount"`
+// Deployment is the admin-managed deployment metadata. It never contains cloud
+// credentials, database passwords or JWT secrets.
+type Deployment struct {
+	SiteDomain   string `json:"siteDomain"`
+	APIDomain    string `json:"apiDomain"`
+	CDNDomain    string `json:"cdnDomain"`
+	AssetsDomain string `json:"assetsDomain"`
+	ForceHTTPS   bool   `json:"forceHttps"`
+	Notes        string `json:"notes"`
 }
 
-// AdminView is the complete admin read model. The admin page needs the same
-// fields as the public view (footer + startedAt + visitCount).
-type AdminView = PublicView
+// PublicDeployment is the public subset used for asset URL resolution. Notes
+// and origin domains stay admin-only.
+type PublicDeployment struct {
+	CDNDomain    string `json:"cdnDomain"`
+	AssetsDomain string `json:"assetsDomain"`
+}
+
+// PublicView is the public site configuration returned to visitors.
+type PublicView struct {
+	LogoURL     string           `json:"logoUrl"`
+	FaviconURL  string           `json:"faviconUrl"`
+	Home        HomeContent      `json:"home"`
+	Footer      FooterView       `json:"footer"`
+	Appearance  Appearance       `json:"appearance"`
+	Deployment  PublicDeployment `json:"deployment"`
+	StartedAt   time.Time        `json:"startedAt"`
+	RunningDays int              `json:"runningDays"`
+	VisitCount  int64            `json:"visitCount"`
+}
+
+// AdminView is the complete admin read model. It embeds the public view and
+// adds the full deployment configuration (including notes and origin domains).
+type AdminView struct {
+	PublicView
+	Deployment Deployment `json:"deployment"`
+}

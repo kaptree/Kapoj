@@ -212,6 +212,48 @@ func TestSiteAppearanceHTTP(t *testing.T) {
 	assert.EqualValues(t, 40, appearance["badgeSize"])
 }
 
+func TestSiteDeploymentHTTP(t *testing.T) {
+	f := newSiteFx(t)
+	userToken := f.tokenForRole(t, "site_user", nil)
+	w, _ := f.do(http.MethodGet, "/api/admin/site/deployment", userToken, nil)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	w, _ = f.do(http.MethodPut, "/api/admin/site/deployment", userToken, map[string]any{})
+	assert.Equal(t, http.StatusForbidden, w.Code)
+
+	managerToken := f.tokenForRole(t, "site_manager", []string{"site.settings.manage"})
+	w, resp := f.do(http.MethodPut, "/api/admin/site/deployment", managerToken, map[string]any{
+		"siteDomain":   "https://oj.example.com/",
+		"cdnDomain":    "https://cdn.example.com",
+		"assetsDomain": "https://assets.example.com",
+		"forceHttps":   true,
+		"notes":        "DEPLOY-NOTES",
+	})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data := resp["data"].(map[string]any)
+	assert.Equal(t, "https://oj.example.com", data["siteDomain"])
+	assert.Equal(t, "DEPLOY-NOTES", data["notes"])
+
+	w, resp = f.do(http.MethodGet, "/api/admin/site/deployment", managerToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "https://cdn.example.com", resp["data"].(map[string]any)["cdnDomain"])
+
+	_, public := f.do(http.MethodGet, "/api/site", "", nil)
+	deployment := public["data"].(map[string]any)["deployment"].(map[string]any)
+	assert.Equal(t, "https://cdn.example.com", deployment["cdnDomain"])
+	_, hasNotes := deployment["notes"]
+	assert.False(t, hasNotes, "public deployment must not expose notes")
+
+	w, _ = f.do(http.MethodPut, "/api/admin/site/deployment", managerToken, map[string]any{
+		"siteDomain": "https://oj.example.com/path",
+	})
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var audit rbac.AdminAuditLog
+	require.NoError(t, f.db.Where("action = ? AND target_type = ? AND summary = ?",
+		"site.settings.manage", "site_settings", "修改部署设置").Order("id DESC").First(&audit).Error)
+	assert.NotZero(t, audit.ActorID)
+}
+
 func TestSiteWriteAudit(t *testing.T) {
 	f := newSiteFx(t)
 	token := f.tokenForRole(t, "site_manager", []string{"site.settings.manage"})

@@ -9,6 +9,7 @@ import { GUEST_PERM } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useGuestStore } from '@/stores/guest'
 import { useSiteStore } from '@/stores/site'
+import { resolveAssetUrl } from '@/utils/asset'
 import { formatCoins } from '@/utils/gamification'
 
 interface HomeLink {
@@ -105,7 +106,7 @@ const visibleGrowthLinks = computed(() => {
     >
       <div class="profile-strip__identity">
         <Avatar
-          :image="auth.user.avatarUrl || undefined"
+          :image="auth.user.avatarUrl ? resolveAssetUrl(auth.user.avatarUrl) : undefined"
           :label="auth.user.nickname.slice(0, 1)"
           shape="square"
           size="xlarge"

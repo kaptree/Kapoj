@@ -21,6 +21,7 @@ import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
 import { useAuthStore } from '@/stores/auth'
+import { resolveAssetUrl } from '@/utils/asset'
 
 const route = useRoute()
 const router = useRouter()
@@ -204,7 +205,9 @@ watch(
       <section class="profile-hero">
         <div class="profile-hero__identity">
           <Avatar
-            :image="!avatarFailed && profile.avatarUrl ? profile.avatarUrl : undefined"
+            :image="
+              !avatarFailed && profile.avatarUrl ? resolveAssetUrl(profile.avatarUrl) : undefined
+            "
             :label="!avatarFailed && profile.avatarUrl ? undefined : initial"
             size="xlarge"
             shape="circle"

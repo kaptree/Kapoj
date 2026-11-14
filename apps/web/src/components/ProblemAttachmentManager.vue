@@ -12,6 +12,7 @@ import {
   uploadProblemAttachment,
 } from '@/api/problems'
 import type { ProblemAttachment } from '@/api/types'
+import { resolveAssetUrl } from '@/utils/asset'
 import { formatBytes } from '@/utils/format'
 
 const props = defineProps<{ problemId: number }>()
@@ -82,7 +83,7 @@ function onDrop(event: DragEvent) {
 }
 
 async function copyLink(item: ProblemAttachment) {
-  const absolute = new URL(item.url, window.location.origin).toString()
+  const absolute = new URL(resolveAssetUrl(item.url), window.location.origin).toString()
   try {
     await navigator.clipboard.writeText(absolute)
     toast.add({ severity: 'success', summary: '下载链接已复制', life: 3000 })
@@ -160,7 +161,9 @@ function remove(item: ProblemAttachment) {
       <li v-for="item in attachments" :key="item.id" class="attachment-item">
         <i class="pi pi-paperclip" aria-hidden="true" />
         <div class="attachment-item__body">
-          <a :href="item.url" class="attachment-item__name" download>{{ item.filename }}</a>
+          <a :href="resolveAssetUrl(item.url)" class="attachment-item__name" download>
+            {{ item.filename }}
+          </a>
           <span class="attachment-item__meta">
             {{ formatBytes(item.size) }} · {{ item.contentType || '未知类型' }}
           </span>

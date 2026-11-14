@@ -71,6 +71,13 @@ function path(overrides: Partial<LearningPathItem> = {}): LearningPathItem {
     nodeCount: 2,
     myCompletedCount: 0,
     sortOrder: 0,
+    priceCoins: 0,
+    purchased: false,
+    participantCount: 0,
+    recommendCount: 0,
+    recommendedByMe: false,
+    canEdit: false,
+    canEditSort: false,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
     ...overrides,
@@ -185,6 +192,22 @@ describe('LearningPathEditView', () => {
     wrapper.unmount()
   })
 
+  it('shows a price field to authors but sort order only to official managers', async () => {
+    vi.mocked(getLearningTree).mockResolvedValue({ path: path(), nodes: [] })
+    let { wrapper } = await mountPage('/learning-paths/3/edit')
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="path-price"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="path-sort"]').exists()).toBe(false)
+    wrapper.unmount()
+
+    auth.can.mockImplementation((code) => code === PERM.learningPath.official.manage)
+    ;({ wrapper } = await mountPage('/learning-paths/3/edit'))
+    await flushPromises()
+    expect(wrapper.find('[data-test="path-sort"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('creates a path then redirects to its edit page', async () => {
     const { wrapper, router } = await mountPage('/learning-paths/new')
 
@@ -202,6 +225,7 @@ describe('LearningPathEditView', () => {
       coverUrl: 'https://example.com/c.png',
       isPublic: true,
       sortOrder: 0,
+      priceCoins: 0,
     })
     expect(router.currentRoute.value.fullPath).toBe('/learning-paths/99/edit')
     wrapper.unmount()
@@ -246,6 +270,7 @@ describe('LearningPathEditView', () => {
       coverUrl: '',
       isPublic: true,
       sortOrder: 0,
+      priceCoins: 0,
     })
     expect(router.currentRoute.value.fullPath).toBe('/learning-paths/3/edit')
     wrapper.unmount()

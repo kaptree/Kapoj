@@ -2,7 +2,13 @@ import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 
 import { getSite, recordSiteVisit } from '@/api/site'
-import type { SiteFooterView, SiteHomeContent, SitePublicView } from '@/api/types'
+import { resolveAssetUrl, setAssetBase } from '@/utils/asset'
+import type {
+  SiteFooterView,
+  SiteHomeContent,
+  SitePublicDeployment,
+  SitePublicView,
+} from '@/api/types'
 
 /** Session marker so one browser session only reports a single visit. */
 export const SITE_VISITED_KEY = 'kapoj:site-visited'
@@ -165,8 +171,25 @@ export const useSiteStore = defineStore('site', () => {
     config.value ? normalizeHome(config.value.home) : DEFAULT_HOME,
   )
   const footer = computed<SiteFooterView>(() => config.value?.footer ?? DEFAULT_FOOTER)
-  const logoUrl = computed(() => config.value?.logoUrl ?? '')
-  const faviconUrl = computed(() => config.value?.faviconUrl ?? '')
+  const deployment = computed<SitePublicDeployment>(
+    () => config.value?.deployment ?? { cdnDomain: '', assetsDomain: '' },
+  )
+  const assetsBaseUrl = computed(() => deployment.value.assetsDomain || deployment.value.cdnDomain)
+
+  watch(
+    assetsBaseUrl,
+    (base) => {
+      setAssetBase(base)
+    },
+    { immediate: true },
+  )
+
+  function assetUrl(path: string): string {
+    return resolveAssetUrl(path)
+  }
+
+  const logoUrl = computed(() => resolveAssetUrl(config.value?.logoUrl ?? ''))
+  const faviconUrl = computed(() => resolveAssetUrl(config.value?.faviconUrl ?? ''))
   const badgeSize = computed(() => config.value?.appearance?.badgeSize ?? 22)
   const runningDays = computed(() => config.value?.runningDays ?? 0)
   const visitCount = computed(() => latestVisitCount.value ?? config.value?.visitCount ?? 0)
@@ -227,6 +250,9 @@ export const useSiteStore = defineStore('site', () => {
     config,
     home,
     footer,
+    deployment,
+    assetsBaseUrl,
+    assetUrl,
     logoUrl,
     faviconUrl,
     badgeSize,

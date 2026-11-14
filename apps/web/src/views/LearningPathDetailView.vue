@@ -3,9 +3,15 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import Button from 'primevue/button'
 import Tag from 'primevue/tag'
+import { useToast } from 'primevue/usetoast'
 
 import { ApiError } from '@/api/http'
-import { getLearningTree } from '@/api/learning'
+import {
+  getLearningTree,
+  purchaseLearningPath,
+  recommendLearningPath,
+  unrecommendLearningPath,
+} from '@/api/learning'
 import type { LearningPathNodeItem, LearningTree } from '@/api/types'
 import AppEmptyState from '@/components/ui/AppEmptyState.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
@@ -28,9 +34,12 @@ import {
 
 const route = useRoute()
 const auth = useAuthStore()
+const toast = useToast()
 const { isDark } = useTheme()
 const isMobile = useMediaQuery('(max-width: 899px)')
 const showSolved = computed(() => auth.isLoggedIn)
+const isLoggedIn = computed(() => auth.isLoggedIn)
+const loginRedirect = computed(() => route.fullPath)
 
 const id = computed(() => {
   const raw = route.params.id
@@ -39,8 +48,11 @@ const id = computed(() => {
 
 const path = ref<LearningTree['path'] | null>(null)
 const nodes = ref<LearningPathNodeItem[]>([])
+const locked = ref(false)
 const loading = ref(false)
 const error = ref('')
+const purchasing = ref(false)
+const recommending = ref(false)
 const selectedId = ref<number | null>(null)
 const descriptionExpanded = ref(false)
 const panelRef = ref<{ scrollToProblems: () => void } | null>(null)
@@ -66,6 +78,7 @@ async function load() {
     if (seq !== latest) return
     path.value = data.path
     nodes.value = data.nodes
+    locked.value = Boolean(data.locked)
     const flatNodes = flattenLearningNodes(data.nodes)
     selectedId.value =
       (flatNodes.find((node) => node.status === 'active') ?? flatNodes[0])?.id ?? null
@@ -86,6 +99,7 @@ watch(
   () => {
     path.value = null
     nodes.value = []
+    locked.value = false
     selectedId.value = null
     descriptionExpanded.value = false
     error.value = ''
@@ -105,6 +119,62 @@ function onMore(node: LearningPathNodeItem) {
 
 function visibilitySeverity(): 'info' | 'warn' {
   return path.value?.isPublic ? 'info' : 'warn'
+}
+
+const priceLabel = computed(() =>
+  path.value && path.value.priceCoins > 0 ? `${path.value.priceCoins} 金币` : '免费',
+)
+
+const canRecommend = computed(
+  () =>
+    auth.isLoggedIn &&
+    !!path.value &&
+    path.value.author.id !== auth.user?.id &&
+    (!locked.value || path.value.purchased),
+)
+
+async function buyPath() {
+  if (!path.value || purchasing.value) return
+  purchasing.value = true
+  try {
+    const result = await purchaseLearningPath(path.value.id)
+    path.value = result.path
+    try {
+      await auth.fetchMe()
+    } catch {
+      // The purchase already succeeded; a stale coin badge is recoverable.
+    }
+    toast.add({ severity: 'success', summary: '购买成功', life: 3000 })
+    await load()
+  } catch (e) {
+    toast.add({
+      severity: 'error',
+      summary: '购买失败',
+      detail: e instanceof ApiError ? e.message : '购买失败，请稍后再试',
+      life: 4000,
+    })
+  } finally {
+    purchasing.value = false
+  }
+}
+
+async function toggleRecommend() {
+  if (!path.value || recommending.value) return
+  recommending.value = true
+  try {
+    path.value = path.value.recommendedByMe
+      ? await unrecommendLearningPath(path.value.id)
+      : await recommendLearningPath(path.value.id)
+  } catch (e) {
+    toast.add({
+      severity: 'error',
+      summary: '操作失败',
+      detail: e instanceof ApiError ? e.message : '推荐操作失败，请稍后再试',
+      life: 4000,
+    })
+  } finally {
+    recommending.value = false
+  }
 }
 </script>
 
@@ -127,6 +197,27 @@ function visibilitySeverity(): 'info' | 'warn' {
       <div class="path-overview">
         <div class="path-visibility">
           <Tag :value="learningPathVisibilityLabel(path)" :severity="visibilitySeverity()" />
+          <Tag
+            :value="priceLabel"
+            :severity="path.priceCoins > 0 ? 'warn' : 'success'"
+            data-test="path-price"
+          />
+          <span class="path-count" data-test="path-participants"
+            >参与 {{ path.participantCount }}</span
+          >
+          <span class="path-count" data-test="path-recommends">推荐 {{ path.recommendCount }}</span>
+          <Button
+            type="button"
+            size="small"
+            :label="path.recommendedByMe ? '取消推荐' : '推荐'"
+            :icon="path.recommendedByMe ? 'pi pi-thumbs-down' : 'pi pi-thumbs-up'"
+            :severity="path.recommendedByMe ? 'secondary' : 'primary'"
+            :outlined="path.recommendedByMe"
+            :disabled="!canRecommend"
+            :loading="recommending"
+            data-test="path-recommend"
+            @click="toggleRecommend"
+          />
         </div>
         <LearningPathSummary
           :path="path"
@@ -161,7 +252,33 @@ function visibilitySeverity(): 'info' | 'warn' {
       <AppLoadingState v-else-if="loading && !path" label="正在加载学习路线" />
 
       <template v-else-if="path">
-        <AppEmptyState v-if="nodes.length === 0" title="该路线还没有节点" />
+        <section v-if="locked" class="locked-panel" data-test="path-locked">
+          <div>
+            <p class="section-eyebrow">PAID PATH</p>
+            <h2>购买后解锁完整路线</h2>
+            <p>
+              该路线售价 <strong>{{ priceLabel }}</strong
+              >。购买后可永久访问全部节点与题目；作者和管理员可直接访问。
+            </p>
+          </div>
+          <Button
+            v-if="isLoggedIn"
+            label="购买并解锁"
+            icon="pi pi-lock-open"
+            :loading="purchasing"
+            data-test="path-purchase"
+            @click="buyPath"
+          />
+          <Button
+            v-else
+            as="router-link"
+            :to="{ name: 'login', query: { redirect: loginRedirect } }"
+            label="登录后购买"
+            icon="pi pi-sign-in"
+          />
+        </section>
+
+        <AppEmptyState v-else-if="nodes.length === 0" title="该路线还没有节点" />
 
         <LearningMobileTree
           v-else-if="isMobile"
@@ -210,7 +327,36 @@ function visibilitySeverity(): 'info' | 'warn' {
 
 .path-visibility {
   display: flex;
+  flex-wrap: wrap;
+  gap: var(--kapoj-space-2);
   align-items: center;
+}
+
+.path-count {
+  color: var(--kapoj-text-muted);
+  font-size: 12px;
+}
+
+.locked-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kapoj-space-4);
+  padding: var(--kapoj-space-5);
+  background: var(--kapoj-bg-elevated);
+  border: 1px solid var(--kapoj-border);
+  border-radius: var(--kapoj-radius-md);
+}
+
+.locked-panel h2 {
+  margin: 0 0 var(--kapoj-space-1);
+  font-size: 1.1rem;
+}
+
+.locked-panel p {
+  margin: 0;
+  color: var(--kapoj-text-secondary);
 }
 
 .path-description {

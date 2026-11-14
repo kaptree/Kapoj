@@ -18,6 +18,7 @@ import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppStatusTag from '@/components/ui/AppStatusTag.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
+import { resolveAssetUrl } from '@/utils/asset'
 import { formatDateTime } from '@/utils/format'
 import { languageLabel, statusLabel } from '@/utils/submission'
 
@@ -112,6 +113,10 @@ function barWidth(count: number): string {
 
 function codeLengthLabel(length: number): string {
   return `${length} B`
+}
+
+function resolvedAvatar(url: string | undefined): string | undefined {
+  return url ? resolveAssetUrl(url) : undefined
 }
 
 function statusColor(status: SubmissionStatus): string {
@@ -376,7 +381,7 @@ watch(
             <template #body="{ data }">
               <div class="user-cell">
                 <Avatar
-                  :image="data.avatarUrl || undefined"
+                  :image="resolvedAvatar(data.avatarUrl)"
                   :label="(data.nickname || data.username || '?').slice(0, 1)"
                   shape="circle"
                   class="user-avatar"

@@ -121,10 +121,14 @@ func (s *Service) EvaluateUser(ctx context.Context, userID int64) error {
 	}
 
 	var rows []UserLearningProgress
+	newPathIDs := make(map[int64]struct{})
 	for _, n := range nodes {
 		res := eval(n.ID)
 		if !res.write {
 			continue
+		}
+		if _, seen := existing[n.ID]; !seen {
+			newPathIDs[n.PathID] = struct{}{}
 		}
 		row := UserLearningProgress{
 			UserID:      userID,
@@ -139,5 +143,15 @@ func (s *Service) EvaluateUser(ctx context.Context, userID int64) error {
 		}
 		rows = append(rows, row)
 	}
-	return s.repo.UpsertProgress(ctx, rows)
+	if err := s.repo.UpsertProgress(ctx, rows); err != nil {
+		return err
+	}
+	if len(newPathIDs) > 0 {
+		ids := make([]int64, 0, len(newPathIDs))
+		for id := range newPathIDs {
+			ids = append(ids, id)
+		}
+		return s.repo.RecalculateParticipantCount(ctx, ids)
+	}
+	return nil
 }
