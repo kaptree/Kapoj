@@ -363,7 +363,8 @@ onMounted(() => {
       overview.value?.restores.some((job) => job.status === 'running') ||
       [overview.value?.platformPackage, overview.value?.accountsPackage].some(
         (pkg) => pkg?.status === 'running',
-      )
+      ) ||
+      (overview.value?.accountPackages ?? []).some((pkg) => pkg.status === 'running')
     if (running) void load()
   }, 3000)
 })
