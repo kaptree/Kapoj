@@ -1,5 +1,11 @@
 import { http } from './client'
-import type { SiteAdminView, SiteFooterInput, SiteHomeContent, SitePublicView } from './types'
+import type {
+  SiteAdminView,
+  SiteAppearance,
+  SiteFooterInput,
+  SiteHomeContent,
+  SitePublicView,
+} from './types'
 
 /** Public site configuration: branding, home content, footer, uptime and visits. */
 export const getSite = () => http.get<SitePublicView>('/site')
@@ -17,6 +23,10 @@ export const updateAdminSiteHome = (input: SiteHomeContent) =>
 /** Update the footer fields and running start date (site.settings.manage). */
 export const updateAdminSiteFooter = (input: SiteFooterInput) =>
   http.put<SiteAdminView>('/admin/site/footer', input)
+
+/** Update the shared appearance settings, currently the badge size. */
+export const updateAdminSiteAppearance = (input: SiteAppearance) =>
+  http.put<SiteAdminView>('/admin/site/appearance', input)
 
 /** Upload or replace the site logo as multipart/form-data (site.settings.manage). */
 export const uploadAdminSiteLogo = (file: File) => {

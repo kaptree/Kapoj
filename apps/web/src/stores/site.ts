@@ -167,6 +167,7 @@ export const useSiteStore = defineStore('site', () => {
   const footer = computed<SiteFooterView>(() => config.value?.footer ?? DEFAULT_FOOTER)
   const logoUrl = computed(() => config.value?.logoUrl ?? '')
   const faviconUrl = computed(() => config.value?.faviconUrl ?? '')
+  const badgeSize = computed(() => config.value?.appearance?.badgeSize ?? 22)
   const runningDays = computed(() => config.value?.runningDays ?? 0)
   const visitCount = computed(() => latestVisitCount.value ?? config.value?.visitCount ?? 0)
 
@@ -228,6 +229,7 @@ export const useSiteStore = defineStore('site', () => {
     footer,
     logoUrl,
     faviconUrl,
+    badgeSize,
     runningDays,
     visitCount,
     ensureLoaded,

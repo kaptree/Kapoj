@@ -85,6 +85,7 @@ function siteView(overrides: Partial<SitePublicView> = {}): SitePublicView {
       growthLinks: DEFAULT_HOME.growthLinks.map((link) => ({ ...link })),
     },
     footer: { ...DEFAULT_FOOTER },
+    appearance: { badgeSize: 22 },
     startedAt: '2026-01-01T00:00:00Z',
     runningDays: 312,
     visitCount: 42,

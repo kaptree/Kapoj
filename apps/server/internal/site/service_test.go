@@ -63,6 +63,24 @@ func TestSiteSettingsLazyDefaults(t *testing.T) {
 	assert.Equal(t, view.StartedAt, again.StartedAt)
 }
 
+func TestSiteAppearanceSettings(t *testing.T) {
+	svc, _, _ := newSite(t)
+	ctx := context.Background()
+
+	view, err := svc.Public(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 22, view.Appearance.BadgeSize)
+
+	view, err = svc.UpdateAppearance(ctx, 1, site.Appearance{BadgeSize: 40})
+	require.NoError(t, err)
+	assert.Equal(t, 40, view.Appearance.BadgeSize)
+
+	_, err = svc.UpdateAppearance(ctx, 1, site.Appearance{BadgeSize: 15})
+	assertCode(t, err, 40001)
+	_, err = svc.UpdateAppearance(ctx, 1, site.Appearance{BadgeSize: 49})
+	assertCode(t, err, 40001)
+}
+
 func TestSiteHomeValidation(t *testing.T) {
 	svc, _, _ := newSite(t)
 	ctx := context.Background()

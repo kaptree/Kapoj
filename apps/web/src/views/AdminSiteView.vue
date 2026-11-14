@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import Button from 'primevue/button'
 import DatePicker from 'primevue/datepicker'
+import InputNumber from 'primevue/inputnumber'
 import InputText from 'primevue/inputtext'
 import Message from 'primevue/message'
 import Select from 'primevue/select'
@@ -21,12 +22,19 @@ import {
   deleteAdminSiteFavicon,
   deleteAdminSiteLogo,
   getAdminSite,
+  updateAdminSiteAppearance,
   updateAdminSiteFooter,
   updateAdminSiteHome,
   uploadAdminSiteFavicon,
   uploadAdminSiteLogo,
 } from '@/api/site'
-import type { SiteAdminView, SiteFooterInput, SiteHomeContent, SiteLink } from '@/api/types'
+import type {
+  SiteAdminView,
+  SiteAppearance,
+  SiteFooterInput,
+  SiteHomeContent,
+  SiteLink,
+} from '@/api/types'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppFormField from '@/components/ui/AppFormField.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
@@ -84,6 +92,7 @@ const view = ref<SiteAdminView | null>(null)
 
 const homeSaving = ref(false)
 const footerSaving = ref(false)
+const appearanceSaving = ref(false)
 const uploadingLogo = ref(false)
 const removingLogo = ref(false)
 const uploadingFavicon = ref(false)
@@ -167,6 +176,7 @@ function footerFromView(next: SiteAdminView): FooterForm {
 
 const homeForm = ref<SiteHomeContent>(emptyHome())
 const footerForm = ref<FooterForm>(emptyFooter())
+const appearanceForm = ref<SiteAppearance>({ badgeSize: 22 })
 
 const logoUrl = computed(() => view.value?.logoUrl ?? '')
 const faviconUrl = computed(() => view.value?.faviconUrl ?? '')
@@ -178,6 +188,7 @@ function applyView(next: SiteAdminView) {
   view.value = next
   homeForm.value = cloneHome(next.home)
   footerForm.value = footerFromView(next)
+  appearanceForm.value = { badgeSize: next.appearance?.badgeSize ?? 22 }
   homeErrors.value = {}
   footerErrors.value = {}
 }
@@ -338,6 +349,35 @@ async function saveFooter() {
     })
   } finally {
     footerSaving.value = false
+  }
+}
+
+async function saveAppearance() {
+  const size = appearanceForm.value.badgeSize
+  if (!Number.isInteger(size) || size < 16 || size > 48) {
+    toast.add({
+      severity: 'warn',
+      summary: '徽章大小需为 16–48 px',
+      life: 3000,
+    })
+    return
+  }
+
+  appearanceSaving.value = true
+  try {
+    const next = await updateAdminSiteAppearance({ badgeSize: size })
+    applyMutation(next)
+    appearanceForm.value = { badgeSize: next.appearance?.badgeSize ?? 22 }
+    toast.add({ severity: 'success', summary: '外观设置已保存', life: 3000 })
+  } catch (e) {
+    toast.add({
+      severity: 'error',
+      summary: '保存失败',
+      detail: apiErrorMessage(e, '保存外观设置失败，请稍后再试'),
+      life: 4000,
+    })
+  } finally {
+    appearanceSaving.value = false
   }
 }
 
@@ -510,6 +550,7 @@ onMounted(() => {
       <Tabs v-model:value="tab">
         <TabList>
           <Tab value="branding">品牌</Tab>
+          <Tab value="appearance">外观</Tab>
           <Tab value="home">首页</Tab>
           <Tab value="footer">页脚</Tab>
         </TabList>
@@ -627,6 +668,55 @@ onMounted(() => {
                 </section>
               </div>
             </div>
+          </TabPanel>
+
+          <TabPanel value="appearance">
+            <form class="site-form" data-test="appearance-form" @submit.prevent="saveAppearance">
+              <section class="section">
+                <h2 class="section__title">身份展示</h2>
+                <Message severity="info" :closable="false">
+                  徽章大小会应用到测评记录、排行榜、比赛榜单、个人主页与装扮预览。
+                </Message>
+                <div class="field-grid">
+                  <AppFormField v-slot="{ id }" label="徽章大小">
+                    <InputNumber
+                      :id="id"
+                      v-model="appearanceForm.badgeSize"
+                      input-id="badge-size"
+                      data-test="badge-size"
+                      :min="16"
+                      :max="48"
+                      suffix=" px"
+                      show-buttons
+                      fluid
+                    />
+                  </AppFormField>
+                </div>
+                <div class="appearance-preview" data-test="appearance-preview">
+                  <span class="appearance-preview__label">预览</span>
+                  <span
+                    class="appearance-preview__badge"
+                    :style="{
+                      width: `${appearanceForm.badgeSize}px`,
+                      height: `${appearanceForm.badgeSize}px`,
+                      fontSize: `${Math.max(8, Math.round(appearanceForm.badgeSize * 0.5))}px`,
+                    }"
+                  >
+                    徽
+                  </span>
+                  <span class="appearance-preview__name">【称号】昵称</span>
+                </div>
+              </section>
+
+              <div class="form-actions">
+                <Button
+                  type="submit"
+                  label="保存外观"
+                  icon="pi pi-check"
+                  :loading="appearanceSaving"
+                />
+              </div>
+            </form>
           </TabPanel>
 
           <TabPanel value="home">
@@ -1469,6 +1559,37 @@ onMounted(() => {
 .form-actions {
   display: flex;
   justify-content: flex-end;
+}
+
+.appearance-preview {
+  display: flex;
+  align-items: center;
+  gap: var(--kapoj-space-2);
+  margin-top: var(--kapoj-space-4);
+  padding: var(--kapoj-space-3);
+  background: var(--kapoj-bg-elevated);
+  border: 1px solid var(--kapoj-border);
+  border-radius: var(--kapoj-radius-sm);
+}
+
+.appearance-preview__label {
+  color: var(--kapoj-text-muted);
+  font-size: 12px;
+}
+
+.appearance-preview__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--kapoj-primary);
+  font-weight: 700;
+  background: var(--kapoj-primary-soft);
+  border-radius: 4px;
+}
+
+.appearance-preview__name {
+  color: var(--kapoj-text);
+  font-weight: 600;
 }
 
 .toggle-row {

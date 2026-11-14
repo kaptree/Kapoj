@@ -81,6 +81,7 @@ func (r *gormRepository) Update(ctx context.Context, settings *Settings) error {
 			"footer_copyright":     settings.FooterCopyright,
 			"footer_text":          settings.FooterText,
 			"show_visits":          settings.ShowVisits,
+			"badge_size":           settings.BadgeSize,
 			"home_json":            settings.Home,
 			"updated_by":           settings.UpdatedBy,
 			"updated_at":           settings.UpdatedAt,
@@ -128,6 +129,7 @@ func ensureSettings(tx *gorm.DB) error {
 		StartedAt:       now,
 		FooterCopyright: DefaultFooterInput().Copyright,
 		ShowVisits:      true,
+		BadgeSize:       defaultBadgeSize,
 		Home:            dbtypes.JSON[HomeContent]{Data: DefaultHomeContent()},
 		UpdatedAt:       now,
 	}

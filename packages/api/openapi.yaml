@@ -3047,6 +3047,25 @@ paths:
         '400': { $ref: '#/components/responses/Error' }
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
+  /admin/site/appearance:
+    put:
+      summary: 更新身份展示外观（site.settings.manage）
+      description: 设置徽章显示大小，范围 16–48 px，默认 22 px；返回最新管理视图。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SiteAppearance' }
+      responses:
+        '200':
+          description: 更新后的管理视图
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteAdminResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
   /admin/site/logo:
     post:
       summary: 上传或替换站点 Logo（site.settings.manage；multipart）
@@ -5834,15 +5853,22 @@ components:
         copyright: { type: string, maxLength: 200 }
         text: { type: string, maxLength: 1000, description: 自定义说明，保留换行 }
         showVisits: { type: boolean, description: 仅控制页脚是否显示访问量，不停止计数 }
+    SiteAppearance:
+      type: object
+      description: 公开身份元素的外观设置。
+      required: [badgeSize]
+      properties:
+        badgeSize: { type: integer, minimum: 16, maximum: 48, default: 22, description: 徽章显示大小（px） }
     SitePublicView:
       type: object
       description: 公开站点配置。
-      required: [logoUrl, faviconUrl, home, footer, startedAt, runningDays, visitCount]
+      required: [logoUrl, faviconUrl, home, footer, appearance, startedAt, runningDays, visitCount]
       properties:
         logoUrl: { type: string, description: 空表示未上传；非空时带 ?v=<unix> 版本参数 }
         faviconUrl: { type: string, description: 空表示未上传；非空时带 ?v=<unix> 版本参数 }
         home: { $ref: '#/components/schemas/SiteHomeContent' }
         footer: { $ref: '#/components/schemas/SiteFooterView' }
+        appearance: { $ref: '#/components/schemas/SiteAppearance' }
         startedAt: { type: string, format: date-time, description: 站点运行起始日（UTC） }
         runningDays: { type: integer, description: 'max(0, floor((now - startedAt)/24h))' }
         visitCount: { type: integer, format: int64 }

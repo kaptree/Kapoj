@@ -188,6 +188,30 @@ func TestSitePublicAndAdminHTTP(t *testing.T) {
 	assert.Equal(t, "UPDATED", resp["data"].(map[string]any)["home"].(map[string]any)["eyebrow"])
 }
 
+func TestSiteAppearanceHTTP(t *testing.T) {
+	f := newSiteFx(t)
+
+	_, resp := f.do(http.MethodGet, "/api/site", "", nil)
+	appearance := resp["data"].(map[string]any)["appearance"].(map[string]any)
+	assert.EqualValues(t, 22, appearance["badgeSize"])
+
+	userToken := f.tokenForRole(t, "site_user", nil)
+	w, _ := f.do(http.MethodPut, "/api/admin/site/appearance", userToken, map[string]int{"badgeSize": 40})
+	assert.Equal(t, http.StatusForbidden, w.Code)
+
+	managerToken := f.tokenForRole(t, "site_manager", []string{"site.settings.manage"})
+	w, resp = f.do(http.MethodPut, "/api/admin/site/appearance", managerToken, map[string]int{"badgeSize": 40})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.EqualValues(t, 40, resp["data"].(map[string]any)["appearance"].(map[string]any)["badgeSize"])
+
+	w, _ = f.do(http.MethodPut, "/api/admin/site/appearance", managerToken, map[string]int{"badgeSize": 15})
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	_, resp = f.do(http.MethodGet, "/api/site", "", nil)
+	appearance = resp["data"].(map[string]any)["appearance"].(map[string]any)
+	assert.EqualValues(t, 40, appearance["badgeSize"])
+}
+
 func TestSiteWriteAudit(t *testing.T) {
 	f := newSiteFx(t)
 	token := f.tokenForRole(t, "site_manager", []string{"site.settings.manage"})

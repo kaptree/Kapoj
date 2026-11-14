@@ -1,15 +1,21 @@
 import { mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import { describe, expect, it } from 'vitest'
 
-import type { EquippedBadge, EquippedTitle } from '@/api/types'
+import type { EquippedBadge, EquippedTitle, SitePublicView } from '@/api/types'
+import { useSiteStore } from '@/stores/site'
 import IdentityShowcase from './IdentityShowcase.vue'
 
-function mountShowcase(props: {
-  badges: EquippedBadge[]
-  title: EquippedTitle | null
-  size?: 'small' | 'default'
-}) {
-  return mount(IdentityShowcase, { props })
+function mountShowcase(
+  props: {
+    badges: EquippedBadge[]
+    title: EquippedTitle | null
+    size?: 'small' | 'default'
+  },
+  pinia = createPinia(),
+) {
+  setActivePinia(pinia)
+  return mount(IdentityShowcase, { props, global: { plugins: [pinia] } })
 }
 
 describe('IdentityShowcase', () => {
@@ -79,5 +85,36 @@ describe('IdentityShowcase', () => {
     expect(wrapper.find('.identity-showcase').classes()).toContain('identity-showcase--small')
     expect(avatar.style.width).toBe('18px')
     expect(avatar.style.height).toBe('18px')
+  })
+
+  it('uses the badge size from the site settings', () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useSiteStore(pinia).setConfig({
+      appearance: { badgeSize: 40 },
+    } as unknown as SitePublicView)
+
+    const wrapper = mountShowcase(
+      {
+        badges: [{ id: 1, name: '早鸟', imageUrl: '' }],
+        title: null,
+      },
+      pinia,
+    )
+    const avatar = wrapper.find('.identity-badge__avatar').element as HTMLElement
+    expect(avatar.style.width).toBe('40px')
+    expect(avatar.style.height).toBe('40px')
+
+    const small = mountShowcase(
+      {
+        badges: [{ id: 1, name: '早鸟', imageUrl: '' }],
+        title: null,
+        size: 'small',
+      },
+      pinia,
+    )
+    const smallAvatar = small.find('.identity-badge__avatar').element as HTMLElement
+    expect(smallAvatar.style.width).toBe('36px')
+    expect(smallAvatar.style.height).toBe('36px')
   })
 })

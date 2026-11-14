@@ -41,6 +41,7 @@ func RegisterRoutes(public, api, uploads gin.IRouter, svc *site.Service, auth *r
 	api.GET("/admin/site", admin(h.getAdmin)...)
 	api.PUT("/admin/site/home", admin(h.updateHome)...)
 	api.PUT("/admin/site/footer", admin(h.updateFooter)...)
+	api.PUT("/admin/site/appearance", admin(h.updateAppearance)...)
 	api.DELETE("/admin/site/logo", admin(h.deleteLogo)...)
 	api.DELETE("/admin/site/favicon", admin(h.deleteFavicon)...)
 
@@ -96,6 +97,20 @@ func (h *handler) updateFooter(c *gin.Context) {
 		return
 	}
 	h.recordAudit(c, rbac.AuditTargetSiteSettings, "修改页脚内容")
+	httpx.OK(c, view)
+}
+
+func (h *handler) updateAppearance(c *gin.Context) {
+	in, ok := httpx.BindJSON[site.Appearance](c)
+	if !ok {
+		return
+	}
+	view, err := h.svc.UpdateAppearance(c.Request.Context(), actorID(c), in)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	h.recordAudit(c, rbac.AuditTargetSiteSettings, "修改外观设置")
 	httpx.OK(c, view)
 }
 

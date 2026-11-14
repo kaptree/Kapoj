@@ -23,6 +23,7 @@ function siteView(overrides: {
     faviconUrl: '',
     home: DEFAULT_HOME,
     footer: { ...DEFAULT_FOOTER, ...overrides.footer },
+    appearance: { badgeSize: 22 },
     startedAt: '2026-01-01T00:00:00Z',
     runningDays: overrides.runningDays ?? 0,
     visitCount: overrides.visitCount ?? 0,

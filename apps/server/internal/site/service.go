@@ -6,7 +6,14 @@ import (
 	"time"
 
 	"github.com/kaptree/kapoj/apps/server/internal/dbtypes"
+	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
+)
+
+const (
+	defaultBadgeSize = 22
+	minBadgeSize     = 16
+	maxBadgeSize     = 48
 )
 
 // Service implements site configuration reads and writes.
@@ -80,6 +87,24 @@ func (s *Service) UpdateFooter(ctx context.Context, actorID int64, in FooterInpu
 	return s.Admin(ctx)
 }
 
+// UpdateAppearance validates and stores visual settings shared by public
+// identity components.
+func (s *Service) UpdateAppearance(ctx context.Context, actorID int64, in Appearance) (*AdminView, error) {
+	if in.BadgeSize < minBadgeSize || in.BadgeSize > maxBadgeSize {
+		return nil, httpx.ErrValidation(fmt.Sprintf("徽章大小需为 %d–%d px", minBadgeSize, maxBadgeSize))
+	}
+	settings, err := s.repo.Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+	settings.BadgeSize = in.BadgeSize
+	settings.UpdatedBy = actorID
+	if err := s.repo.Update(ctx, settings); err != nil {
+		return nil, err
+	}
+	return s.Admin(ctx)
+}
+
 // RecordVisit atomically increments the total visit counter and returns the new
 // value. showVisits only controls footer display, never counting.
 func (s *Service) RecordVisit(ctx context.Context) (int64, error) {
@@ -102,6 +127,11 @@ func (s *Service) view(settings *Settings, visitCount int64) *PublicView {
 		home = DefaultHomeContent()
 	}
 
+	badgeSize := settings.BadgeSize
+	if badgeSize < minBadgeSize || badgeSize > maxBadgeSize {
+		badgeSize = defaultBadgeSize
+	}
+
 	view := &PublicView{
 		Home: home,
 		Footer: FooterView{
@@ -112,6 +142,7 @@ func (s *Service) view(settings *Settings, visitCount int64) *PublicView {
 			Text:         settings.FooterText,
 			ShowVisits:   settings.ShowVisits,
 		},
+		Appearance:  Appearance{BadgeSize: badgeSize},
 		StartedAt:   startedAt,
 		RunningDays: runningDays,
 		VisitCount:  visitCount,

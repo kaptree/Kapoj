@@ -51,12 +51,19 @@ type FooterView struct {
 	ShowVisits   bool   `json:"showVisits"`
 }
 
+// Appearance controls the visual size of public identity elements. It is
+// stored in site_settings so every page reads the same value.
+type Appearance struct {
+	BadgeSize int `json:"badgeSize"`
+}
+
 // PublicView is the public site configuration returned to visitors.
 type PublicView struct {
 	LogoURL     string      `json:"logoUrl"`
 	FaviconURL  string      `json:"faviconUrl"`
 	Home        HomeContent `json:"home"`
 	Footer      FooterView  `json:"footer"`
+	Appearance  Appearance  `json:"appearance"`
 	StartedAt   time.Time   `json:"startedAt"`
 	RunningDays int         `json:"runningDays"`
 	VisitCount  int64       `json:"visitCount"`

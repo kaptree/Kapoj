@@ -2,14 +2,17 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import DatePicker from 'primevue/datepicker'
+import InputNumber from 'primevue/inputnumber'
 import Select from 'primevue/select'
 import ToggleSwitch from 'primevue/toggleswitch'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 
 import {
   deleteAdminSiteFavicon,
   deleteAdminSiteLogo,
   getAdminSite,
+  updateAdminSiteAppearance,
   updateAdminSiteFooter,
   updateAdminSiteHome,
   uploadAdminSiteFavicon,
@@ -29,6 +32,7 @@ vi.mock('@/api/site', () => ({
   getSite: vi.fn(),
   recordSiteVisit: vi.fn(),
   getAdminSite: vi.fn(),
+  updateAdminSiteAppearance: vi.fn(),
   updateAdminSiteHome: vi.fn(),
   updateAdminSiteFooter: vi.fn(),
   uploadAdminSiteLogo: vi.fn(),
@@ -98,6 +102,7 @@ function siteView(overrides: Partial<SiteAdminView> = {}): SiteAdminView {
       text: '本站说明',
       showVisits: true,
     },
+    appearance: { badgeSize: 22 },
     startedAt: '2026-01-01T00:00:00Z',
     runningDays: 12,
     visitCount: 3456,
@@ -151,6 +156,7 @@ beforeEach(() => {
   toast.add.mockReset()
   confirm.require.mockReset()
   vi.mocked(getAdminSite).mockReset()
+  vi.mocked(updateAdminSiteAppearance).mockReset()
   vi.mocked(updateAdminSiteHome).mockReset()
   vi.mocked(updateAdminSiteFooter).mockReset()
   vi.mocked(uploadAdminSiteLogo).mockReset()
@@ -196,6 +202,39 @@ describe('AdminSiteView', () => {
       }),
     )
     expect(toast.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }))
+    wrapper.unmount()
+  })
+
+  it('validates and saves the badge size', async () => {
+    const wrapper = await mountPage()
+    await openTab(wrapper, '外观')
+
+    expect(inputValue(wrapper, '#badge-size')).toBe('22 px')
+
+    const sizeInput = wrapper.findComponent(InputNumber)
+    sizeInput.vm.$emit('update:modelValue', 10)
+    await nextTick()
+    await wrapper.find('form[data-test="appearance-form"]').trigger('submit')
+    await flushPromises()
+
+    expect(updateAdminSiteAppearance).not.toHaveBeenCalled()
+    expect(toast.add).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'warn', summary: '徽章大小需为 16–48 px' }),
+    )
+
+    vi.mocked(updateAdminSiteAppearance).mockResolvedValue(
+      siteView({ appearance: { badgeSize: 40 } }),
+    )
+    sizeInput.vm.$emit('update:modelValue', 40)
+    await nextTick()
+    await wrapper.find('form[data-test="appearance-form"]').trigger('submit')
+    await flushPromises()
+
+    expect(updateAdminSiteAppearance).toHaveBeenCalledWith({ badgeSize: 40 })
+    expect(useSiteStore().badgeSize).toBe(40)
+    expect(toast.add).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'success', summary: '外观设置已保存' }),
+    )
     wrapper.unmount()
   })
 
@@ -368,8 +407,9 @@ describe('AdminSiteView', () => {
     await flushPromises()
 
     expect(getAdminSite).toHaveBeenCalledTimes(2)
-    expect(wrapper.findAll('[role="tab"]')).toHaveLength(3)
+    expect(wrapper.findAll('[role="tab"]')).toHaveLength(4)
     expect(wrapper.text()).toContain('品牌')
+    expect(wrapper.text()).toContain('外观')
     expect(wrapper.text()).toContain('首页')
     expect(wrapper.text()).toContain('页脚')
     wrapper.unmount()

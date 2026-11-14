@@ -20,6 +20,7 @@ function siteView(logoUrl: string): SitePublicView {
     faviconUrl: '',
     home: DEFAULT_HOME,
     footer: { ...DEFAULT_FOOTER },
+    appearance: { badgeSize: 22 },
     startedAt: '2026-01-01T00:00:00Z',
     runningDays: 1,
     visitCount: 1,

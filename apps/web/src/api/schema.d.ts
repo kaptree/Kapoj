@@ -7267,6 +7267,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/site/appearance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 更新身份展示外观（site.settings.manage）
+         * @description 设置徽章显示大小，范围 16–48 px，默认 22 px；返回最新管理视图。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SiteAppearance"];
+                };
+            };
+            responses: {
+                /** @description 更新后的管理视图 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SiteAdminResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/site/logo": {
         parameters: {
             query?: never;
@@ -9662,6 +9708,14 @@ export interface components {
             /** @description 仅控制页脚是否显示访问量，不停止计数 */
             showVisits: boolean;
         };
+        /** @description 公开身份元素的外观设置。 */
+        SiteAppearance: {
+            /**
+             * @description 徽章显示大小（px）
+             * @default 22
+             */
+            badgeSize: number;
+        };
         /** @description 公开站点配置。 */
         SitePublicView: {
             /** @description 空表示未上传；非空时带 ?v=<unix> 版本参数 */
@@ -9670,6 +9724,7 @@ export interface components {
             faviconUrl: string;
             home: components["schemas"]["SiteHomeContent"];
             footer: components["schemas"]["SiteFooterView"];
+            appearance: components["schemas"]["SiteAppearance"];
             /**
              * Format: date-time
              * @description 站点运行起始日（UTC）

@@ -4,6 +4,7 @@ import Avatar from 'primevue/avatar'
 import vTooltip from 'primevue/tooltip'
 
 import type { EquippedBadge, EquippedTitle } from '@/api/types'
+import { useSiteStore } from '@/stores/site'
 import { badgeImageSrc, badgeInitial, safeTitleColor } from '@/utils/gamification'
 
 const props = withDefaults(
@@ -15,7 +16,12 @@ const props = withDefaults(
   { size: 'default' },
 )
 
-const avatarSize = computed(() => (props.size === 'small' ? 18 : 22))
+const site = useSiteStore()
+
+const avatarSize = computed(() => {
+  const base = site.badgeSize
+  return props.size === 'small' ? Math.max(14, base - 4) : base
+})
 
 const avatarStyle = computed(() => ({
   width: `${avatarSize.value}px`,
