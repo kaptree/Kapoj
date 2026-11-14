@@ -38,6 +38,10 @@ services:
       KAPOJ_REDIS_ADDR: redis:6379
       KAPOJ_JWT_SECRET: ${KAPOJ_JWT_SECRET:-}
       KAPOJ_STORAGE_DIR: /data
+      # Keep secrets on the same data directory so recreating the
+      # container does not lose the AI/mail encryption keys.
+      KAPOJ_AI_KEY_FILE: /data/ai.key
+      KAPOJ_MAIL_KEY_FILE: /data/mail.key
     ports:
       - "8080:8080"
     volumes:
