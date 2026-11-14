@@ -216,11 +216,11 @@ Run: `corepack pnpm --filter web test && corepack pnpm --filter web lint && core
 
 ### Task 6: 文档、全量验证与部署
 
-- [ ] 更新 `docs/持续开发需求.md` Phase D 状态与实施记录。
-- [ ] 全量后端：server/judge 顺序执行 `go test -p 1 ./...`。
-- [ ] 前端全量测试、lint、build。
-- [ ] `git diff --check`；只提交本阶段文件，不触碰用户未提交改动。
-- [ ] 重建并重启 `kapoj-server`/`kapoj-judge`，线上验证购买、锁定树、CDN 配置与权限。
+- [x] 更新 `docs/持续开发需求.md` Phase D 状态与实施记录。
+- [x] 全量后端：server/judge 顺序执行 `go test -p 1 ./...`。
+- [x] 前端全量测试、lint、build。
+- [x] `git diff --check`；只提交本阶段文件，不触碰用户未提交改动。
+- [x] 重建并重启 `kapoj-server`/`kapoj-judge`，线上验证购买、锁定树、CDN 配置与权限。
 
 ## Self-Review
 
