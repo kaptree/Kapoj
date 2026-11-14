@@ -49,7 +49,7 @@ import (
 
 const (
 	maxBodyBytes        = 1 << 20   // JSON endpoints
-	maxProblemJSONBytes = 4 << 20   // problem create/update: statements and samples
+	maxProblemJSONBytes = 6 << 20   // problem create/update and inline testcase content
 	maxUploadBytes      = 40 << 20  // file upload endpoints: two 16 MiB files plus form fields
 	maxImportBodyBytes  = 210 << 20 // HydroOJ package upload: 200 MiB file plus multipart overhead
 )

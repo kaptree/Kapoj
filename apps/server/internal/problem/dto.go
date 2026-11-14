@@ -51,6 +51,16 @@ type TestcaseDTO struct {
 	OutputSize int64 `json:"outputSize"`
 }
 
+// TestcaseContent is the inline-editor view of one testcase.
+type TestcaseContent struct {
+	Input      string `json:"input"`
+	Output     string `json:"output"`
+	InputSize  int64  `json:"inputSize"`
+	OutputSize int64  `json:"outputSize"`
+	Score      int    `json:"score"`
+	IsSample   bool   `json:"isSample"`
+}
+
 func ToListItem(p *Problem) ListItem {
 	tags := []string(p.Tags)
 	if tags == nil {

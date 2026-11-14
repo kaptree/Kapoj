@@ -1765,6 +1765,67 @@ paths:
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
+  /problems/{id}/testcases/{tid}/content:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      - { name: tid, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      summary: 读取测试点输入/输出文本（problem.testcase.manage；创建者或管理员）
+      description: 单文件超过 2 MiB 或非 UTF-8 文本返回 40001。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 测试点内容
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestcaseContentResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+    put:
+      summary: 保存测试点输入/输出文本（problem.testcase.manage；创建者或管理员）
+      description: 输入/输出都必须提交；单文件不超过 2 MiB；允许空文本；成功后删除旧文件。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TestcaseContentInput' }
+      responses:
+        '200':
+          description: 已保存
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '413': { $ref: '#/components/responses/Error' }
+  /problems/{id}/testcases/online:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      summary: 在线新建测试点（problem.testcase.manage；创建者或管理员）
+      description: 输入/输出文本均必填（可为空），单文件不超过 2 MiB；分数默认 10。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OnlineTestcaseInput' }
+      responses:
+        '201':
+          description: 已创建
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestcaseResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '413': { $ref: '#/components/responses/Error' }
   /problems/{id}/testcases/reorder:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
@@ -4100,6 +4161,30 @@ components:
       properties:
         score: { type: integer, minimum: 0, maximum: 1000 }
         isSample: { type: boolean }
+    TestcaseContent:
+      type: object
+      required: [input, output, inputSize, outputSize, score, isSample]
+      properties:
+        input: { type: string }
+        output: { type: string }
+        inputSize: { type: integer, format: int64 }
+        outputSize: { type: integer, format: int64 }
+        score: { type: integer }
+        isSample: { type: boolean }
+    TestcaseContentInput:
+      type: object
+      required: [input, output]
+      properties:
+        input: { type: string }
+        output: { type: string }
+    OnlineTestcaseInput:
+      type: object
+      required: [input, output]
+      properties:
+        input: { type: string }
+        output: { type: string }
+        score: { type: integer, minimum: 0, maximum: 1000, default: 10 }
+        isSample: { type: boolean, default: false }
     ReorderRequest:
       type: object
       required: [ids]
@@ -4291,6 +4376,13 @@ components:
           required: [data]
           properties:
             data: { type: array, items: { $ref: '#/components/schemas/Testcase' } }
+    TestcaseContentResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/TestcaseContent' }
     SubmissionCreatedResponse:
       allOf:
         - $ref: '#/components/schemas/Envelope'

@@ -9,17 +9,20 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
 )
 
 const (
-	maxTestcaseBytes = 16 << 20
-	maxCheckerBytes  = 256 << 10
-	maxScore         = 1000
-	maxListPage      = 1_000_000
+	maxTestcaseBytes       = 16 << 20
+	maxInlineTestcaseBytes = 2 << 20
+	maxCheckerBytes        = 256 << 10
+	maxScore               = 1000
+	maxListPage            = 1_000_000
 )
 
 // Viewer describes who is looking. The zero value is a guest or ordinary
@@ -261,6 +264,104 @@ func (s *Service) AddTestcase(ctx context.Context, id int64, up TestcaseUpload) 
 		return nil, mapRepoErr(err)
 	}
 	return tc, nil
+}
+
+// GetTestcaseContent reads one testcase for the split online editor.
+func (s *Service) GetTestcaseContent(ctx context.Context, problemID, testcaseID int64) (*TestcaseContent, error) {
+	tc, err := s.repo.FindTestcase(ctx, problemID, testcaseID)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	input, inputSize, err := s.readInlineTestcase(ctx, tc.InputFile)
+	if err != nil {
+		return nil, err
+	}
+	output, outputSize, err := s.readInlineTestcase(ctx, tc.OutputFile)
+	if err != nil {
+		return nil, err
+	}
+	return &TestcaseContent{
+		Input: input, Output: output, InputSize: inputSize, OutputSize: outputSize,
+		Score: tc.Score, IsSample: tc.IsSample,
+	}, nil
+}
+
+func (s *Service) readInlineTestcase(ctx context.Context, key string) (string, int64, error) {
+	f, err := s.store.Open(ctx, key)
+	if errors.Is(err, storage.ErrNotFound) {
+		return "", 0, httpx.ErrNotFound
+	}
+	if err != nil {
+		return "", 0, err
+	}
+	defer func() { _ = f.Close() }()
+	data, err := io.ReadAll(io.LimitReader(f, maxInlineTestcaseBytes+1))
+	if err != nil {
+		return "", 0, err
+	}
+	if len(data) > maxInlineTestcaseBytes {
+		return "", 0, httpx.ErrValidation("测试数据超过 2 MiB，请下载或替换文件")
+	}
+	if !utf8.Valid(data) {
+		return "", 0, httpx.ErrValidation("测试数据不是 UTF-8 文本，不能在线编辑")
+	}
+	return string(data), int64(len(data)), nil
+}
+
+// UpdateTestcaseContent rewrites both files, then swaps the database keys and
+// deletes the old files only after the database update succeeds.
+func (s *Service) UpdateTestcaseContent(ctx context.Context, problemID, testcaseID int64, input, output string) error {
+	if err := validateInlineTestcase(input, "输入数据"); err != nil {
+		return err
+	}
+	if err := validateInlineTestcase(output, "输出数据"); err != nil {
+		return err
+	}
+	tc, err := s.repo.FindTestcase(ctx, problemID, testcaseID)
+	if err != nil {
+		return mapRepoErr(err)
+	}
+	base := fmt.Sprintf("problems/%d/testcases/%s", problemID, randomHex())
+	inputKey, outputKey := base+".in", base+".out"
+	inputSize, err := s.put(ctx, inputKey, strings.NewReader(input), maxInlineTestcaseBytes, "输入数据")
+	if err != nil {
+		return err
+	}
+	outputSize, err := s.put(ctx, outputKey, strings.NewReader(output), maxInlineTestcaseBytes, "输出数据")
+	if err != nil {
+		s.deleteFiles(ctx, []string{inputKey})
+		return err
+	}
+	if err := s.repo.UpdateTestcaseFiles(ctx, problemID, testcaseID, inputKey, outputKey, inputSize, outputSize); err != nil {
+		s.deleteFiles(ctx, []string{inputKey, outputKey})
+		return mapRepoErr(err)
+	}
+	s.deleteFiles(ctx, []string{tc.InputFile, tc.OutputFile})
+	return nil
+}
+
+// AddOnlineTestcase creates a testcase from textarea content.
+func (s *Service) AddOnlineTestcase(ctx context.Context, problemID int64, input, output string, score int, isSample bool) (*Testcase, error) {
+	if err := validateInlineTestcase(input, "输入数据"); err != nil {
+		return nil, err
+	}
+	if err := validateInlineTestcase(output, "输出数据"); err != nil {
+		return nil, err
+	}
+	return s.AddTestcase(ctx, problemID, TestcaseUpload{
+		Input: strings.NewReader(input), Output: strings.NewReader(output),
+		Score: score, IsSample: isSample,
+	})
+}
+
+func validateInlineTestcase(value, what string) error {
+	if len(value) > maxInlineTestcaseBytes {
+		return httpx.ErrValidation(what + "不能超过 2 MiB")
+	}
+	if !utf8.ValidString(value) {
+		return httpx.ErrValidation(what + "必须是 UTF-8 文本")
+	}
+	return nil
 }
 
 // put stores r under key and turns a size overflow into a validation error.

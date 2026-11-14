@@ -1045,6 +1045,35 @@ func TestProblemAttachmentHTTP(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
 
+func TestTestcaseContentHTTP(t *testing.T) {
+	f := newFx(t)
+	author := f.userWithRole("problem_author")
+	other := f.userWithRole("problem_author")
+	id := f.createAs(author, body("testcase-content"))
+	tcID := f.addCase(id)
+
+	base := path("/api/problems/%d/testcases/%d/content", id, tcID)
+	w, resp := f.do(http.MethodGet, base, author, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, "1 2", resp["data"].(map[string]any)["input"])
+	w, _ = f.do(http.MethodGet, base, other, nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	w, _ = f.do(http.MethodPut, base, author, map[string]string{"input": " 1 2\n", "output": "3\n"})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	_, resp = f.do(http.MethodGet, base, author, nil)
+	assert.Equal(t, " 1 2\n", resp["data"].(map[string]any)["input"])
+
+	w, resp = f.do(http.MethodPost, path("/api/problems/%d/testcases/online", id), author,
+		map[string]any{"input": "", "output": "answer", "score": 20, "isSample": true})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	assert.EqualValues(t, 20, resp["data"].(map[string]any)["score"])
+
+	w, _ = f.do(http.MethodPost, path("/api/problems/%d/testcases/online", id), author,
+		map[string]any{"input": strings.Repeat("x", (2<<20)+1), "output": "out"})
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
 func TestProblemWritesAudit(t *testing.T) {
 	f := newFx(t)
 	admin := f.token("problem_admin")

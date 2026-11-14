@@ -60,6 +60,7 @@ type Repository interface {
 	ListTestcases(ctx context.Context, problemID int64) ([]Testcase, error)
 	FindTestcase(ctx context.Context, problemID, id int64) (*Testcase, error)
 	UpdateTestcase(ctx context.Context, problemID, id int64, score *int, isSample *bool) error
+	UpdateTestcaseFiles(ctx context.Context, problemID, id int64, inputFile, outputFile string, inputSize, outputSize int64) error
 	DeleteTestcase(ctx context.Context, problemID, id int64) (*Testcase, error)
 	ReorderTestcases(ctx context.Context, problemID int64, ids []int64) error
 	CountTestcases(ctx context.Context, problemID int64) (int, error)
@@ -289,6 +290,22 @@ func (r *gormRepository) UpdateTestcase(ctx context.Context, problemID, id int64
 	}
 	res := r.db.WithContext(ctx).Model(&Testcase{}).
 		Where("problem_id = ? AND id = ?", problemID, id).Updates(cols)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrTestcaseNotFound
+	}
+	return nil
+}
+
+func (r *gormRepository) UpdateTestcaseFiles(ctx context.Context, problemID, id int64, inputFile, outputFile string, inputSize, outputSize int64) error {
+	res := r.db.WithContext(ctx).Model(&Testcase{}).
+		Where("problem_id = ? AND id = ?", problemID, id).
+		Updates(map[string]any{
+			"input_file": inputFile, "output_file": outputFile,
+			"input_size": inputSize, "output_size": outputSize,
+		})
 	if res.Error != nil {
 		return res.Error
 	}

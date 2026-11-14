@@ -121,6 +121,9 @@ func RegisterRoutes(
 	api.DELETE("/problems/:id", require(string(rbac.PermProblemDelete)), audit(string(rbac.PermProblemDelete)), h.delete)
 
 	api.GET("/problems/:id/testcases", require(string(rbac.PermProblemTestcaseManage)), h.listTestcases)
+	api.GET("/problems/:id/testcases/:tid/content", require(string(rbac.PermProblemTestcaseManage)), h.getTestcaseContent)
+	problemJSON.PUT("/problems/:id/testcases/:tid/content", require(string(rbac.PermProblemTestcaseManage)), audit(string(rbac.PermProblemTestcaseManage)), h.updateTestcaseContent)
+	problemJSON.POST("/problems/:id/testcases/online", require(string(rbac.PermProblemTestcaseManage)), audit(string(rbac.PermProblemTestcaseManage)), h.addOnlineTestcase)
 	api.PUT("/problems/:id/testcases/:tid", require(string(rbac.PermProblemTestcaseManage)), audit(string(rbac.PermProblemTestcaseManage)), h.updateTestcase)
 	api.POST("/problems/:id/testcases/reorder", require(string(rbac.PermProblemTestcaseManage)), audit(string(rbac.PermProblemTestcaseManage)), h.reorderTestcases)
 	api.DELETE("/problems/:id/testcases/:tid", require(string(rbac.PermProblemTestcaseManage)), audit(string(rbac.PermProblemTestcaseManage)), h.deleteTestcase)

@@ -176,6 +176,39 @@ func TestAttachmentLifecycle(t *testing.T) {
 	}
 }
 
+func TestTestcaseContentEditing(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	p := e.create(t, input("inline-testcase"))
+	tc := e.addCase(t, p.ID)
+
+	content, err := e.svc.GetTestcaseContent(ctx, p.ID, tc.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "1 2", content.Input)
+	assert.Equal(t, "3", content.Output)
+
+	require.NoError(t, e.svc.UpdateTestcaseContent(ctx, p.ID, tc.ID, "  1 2\n", "3\n"))
+	content, err = e.svc.GetTestcaseContent(ctx, p.ID, tc.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "  1 2\n", content.Input)
+	assert.Equal(t, "3\n", content.Output)
+	assert.Equal(t, int64(len("  1 2\n")), content.InputSize)
+
+	created, err := e.svc.AddOnlineTestcase(ctx, p.ID, "", "answer", 20, true)
+	require.NoError(t, err)
+	assert.Equal(t, 20, created.Score)
+	assert.True(t, created.IsSample)
+	content, err = e.svc.GetTestcaseContent(ctx, p.ID, created.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "", content.Input)
+	assert.Equal(t, "answer", content.Output)
+
+	_, err = e.svc.AddOnlineTestcase(ctx, p.ID, strings.Repeat("x", maxInlineTestcaseBytesForTest+1), "out", 10, false)
+	assertCode(t, err, 40001)
+}
+
+const maxInlineTestcaseBytesForTest = 2 << 20
+
 func TestViewerOwnershipAndListScopes(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()

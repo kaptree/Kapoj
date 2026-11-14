@@ -4261,6 +4261,142 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/problems/{id}/testcases/{tid}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                tid: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * 读取测试点输入/输出文本（problem.testcase.manage；创建者或管理员）
+         * @description 单文件超过 2 MiB 或非 UTF-8 文本返回 40001。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                    tid: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 测试点内容 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TestcaseContentResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        /**
+         * 保存测试点输入/输出文本（problem.testcase.manage；创建者或管理员）
+         * @description 输入/输出都必须提交；单文件不超过 2 MiB；允许空文本；成功后删除旧文件。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                    tid: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["TestcaseContentInput"];
+                };
+            };
+            responses: {
+                /** @description 已保存 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+                413: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/problems/{id}/testcases/online": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 在线新建测试点（problem.testcase.manage；创建者或管理员）
+         * @description 输入/输出文本均必填（可为空），单文件不超过 2 MiB；分数默认 10。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["OnlineTestcaseInput"];
+                };
+            };
+            responses: {
+                /** @description 已创建 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TestcaseResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+                413: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/problems/{id}/testcases/reorder": {
         parameters: {
             query?: never;
@@ -8477,6 +8613,28 @@ export interface components {
             score?: number;
             isSample?: boolean;
         };
+        TestcaseContent: {
+            input: string;
+            output: string;
+            /** Format: int64 */
+            inputSize: number;
+            /** Format: int64 */
+            outputSize: number;
+            score: number;
+            isSample: boolean;
+        };
+        TestcaseContentInput: {
+            input: string;
+            output: string;
+        };
+        OnlineTestcaseInput: {
+            input: string;
+            output: string;
+            /** @default 10 */
+            score: number;
+            /** @default false */
+            isSample: boolean;
+        };
         ReorderRequest: {
             ids: number[];
         };
@@ -8601,6 +8759,9 @@ export interface components {
         };
         TestcaseListResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["Testcase"][];
+        };
+        TestcaseContentResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["TestcaseContent"];
         };
         SubmissionCreatedResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["SubmissionCreated"];
