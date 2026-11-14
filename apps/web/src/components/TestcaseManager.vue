@@ -21,6 +21,7 @@ import {
   uploadTestcase,
 } from '@/api/problems'
 import type { ProblemType, Testcase } from '@/api/types'
+import TestcaseEditDialog from '@/components/TestcaseEditDialog.vue'
 import { formatBytes } from '@/utils/format'
 
 const props = defineProps<{ problemId: number; type: ProblemType; checkerUploaded: boolean }>()
@@ -43,6 +44,24 @@ const isSample = ref(false)
 const inputEl = ref<HTMLInputElement>()
 const outputEl = ref<HTMLInputElement>()
 const checkerEl = ref<HTMLInputElement>()
+
+const editVisible = ref(false)
+const editing = ref<Testcase | null>(null)
+
+function openCreate() {
+  editing.value = null
+  editVisible.value = true
+}
+
+function openEdit(tc: Testcase) {
+  editing.value = tc
+  editVisible.value = true
+}
+
+async function onEdited() {
+  await load()
+  emit('changed')
+}
 
 function fail(e: unknown, fallback: string) {
   toast.add({
@@ -195,13 +214,16 @@ function goAiGenerate() {
   <div class="tc">
     <div class="tc-header">
       <h2>测试点</h2>
-      <Button
-        v-if="type === 'traditional'"
-        label="AI 造数据"
-        text
-        :disabled="busy"
-        @click="goAiGenerate"
-      />
+      <div class="tc-header__actions">
+        <Button label="在线创建测试点" text :disabled="busy" @click="openCreate" />
+        <Button
+          v-if="type === 'traditional'"
+          label="AI 造数据"
+          text
+          :disabled="busy"
+          @click="goAiGenerate"
+        />
+      </div>
     </div>
 
     <Message v-if="loadError" severity="error" :closable="false">
@@ -245,6 +267,13 @@ function goAiGenerate() {
         <Column header="操作" style="min-width: 170px">
           <template #body="{ data, index }">
             <div class="ops">
+              <Button
+                label="查看/编辑"
+                text
+                size="small"
+                :disabled="busy"
+                @click="openEdit(data)"
+              />
               <Button
                 label="上移"
                 text
@@ -335,6 +364,14 @@ function goAiGenerate() {
         <p class="hint">checker 源码（C++，不超过 256 KiB）。</p>
       </section>
     </template>
+
+    <TestcaseEditDialog
+      :visible="editVisible"
+      :problem-id="problemId"
+      :testcase="editing"
+      @update:visible="editVisible = $event"
+      @saved="onEdited"
+    />
   </div>
 </template>
 
@@ -357,6 +394,13 @@ function goAiGenerate() {
   color: var(--kapoj-text);
   font-size: 1rem;
   font-weight: 600;
+}
+
+.tc-header__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--kapoj-space-1);
 }
 
 .load-error {

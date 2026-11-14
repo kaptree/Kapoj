@@ -2,6 +2,7 @@ import { http } from './client'
 import type {
   HydroImportResult,
   OfficialSolutionInput,
+  OnlineTestcaseInput,
   OfficialSolutionView,
   Page,
   ProblemAttachment,
@@ -12,6 +13,8 @@ import type {
   ProblemUpdateInput,
   StatementImageResult,
   Testcase,
+  TestcaseContent,
+  TestcaseContentInput,
   TestcaseGenerationConfirm,
   TestcaseGenerationInput,
   TestcaseGenerationPreview,
@@ -83,6 +86,18 @@ export const purchaseOfficialSolution = (id: number | string) =>
 
 export const listTestcases = (id: number | string) =>
   http.get<Testcase[]>(`/problems/${id}/testcases`)
+
+export const getTestcaseContent = (id: number | string, testcaseId: number | string) =>
+  http.get<TestcaseContent>(`/problems/${id}/testcases/${testcaseId}/content`)
+
+export const updateTestcaseContent = (
+  id: number | string,
+  testcaseId: number | string,
+  input: TestcaseContentInput,
+) => http.put<null>(`/problems/${id}/testcases/${testcaseId}/content`, input)
+
+export const createOnlineTestcase = (id: number | string, input: OnlineTestcaseInput) =>
+  http.post<Testcase>(`/problems/${id}/testcases/online`, input)
 
 export interface TestcaseUploadInput {
   input: File
