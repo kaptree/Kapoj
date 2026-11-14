@@ -289,6 +289,14 @@ problem_testcases (
 )
 -- 唯一约束：(problem_id, sort_order)
 
+-- Phase B（2026-11-14）：公开附件与题面图片；测试数据仍只存 problem_testcases
+problem_attachments (
+  id, problem_id, kind,           -- attachment / statement_image
+  filename, storage_key, content_type, size,
+  created_by, created_at
+)
+-- 索引：(problem_id, kind)；storage_key 不返回前端
+
 -- 题目资源区新增（2026-11-07，官方题解与解题思路论坛）
 problem_solution_unlocks (
   id, user_id, problem_id, price_paid, created_at
@@ -851,6 +859,15 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 - 关联比赛：`GET /api/contests?problemId=<正整数>` 返回包含该题且当前用户可见的比赛（公开 OR 本人已报名 OR `contest.view_hidden`/super 联合可见性，不复用 `mine=true` 的互斥语义）；无参数保持原行为。
 - 提交统计页复用 `GET /problems/:id/statistics`。
 
+**实现状态（Phase B：题库权限、附件、测试数据与导入，2026-11-14）**
+
+- 权限：新增 `problem.manage_all`（管理全部题目）与内置角色 `problem_author`（出题人）。出题人可创建、编辑、发布、下线、删除自己的题目并管理测试数据/checker；未持有 `problem.manage_all` 时服务端按 `created_by` 做 ownership 校验，他人隐藏题返回 404。`content_admin` 拥有 `problem.manage_all`；Seed 升到 v2，仅迁移新权限/新角色，不恢复管理员删除的旧授权。
+- 列表：`GET /api/problems?scope=public|mine|all&includeHidden=`。`mine` 只返回自己的题（默认包含隐藏题），`all` 需要 `problem.manage_all`；出题人通过 `includeHidden=true` 只能看到自己的隐藏题。题目详情新增 `canEdit`，前端题库页按权限显示范围切换与隐藏开关。
+- 附件：新增 `problem_attachments`（`attachment`/`statement_image`）与 `GET/POST/DELETE /problems/:id/attachments`、`GET /problems/:id/assets/:aid`、`POST /problems/:id/assets`。普通附件 20 MiB、题面图片 5 MiB，单个题目最多 50 个附件；测试数据仍为私有，不会混入附件列表。编辑器支持粘贴/选择图片后上传并插入 Markdown；新建题目需先保存再上传。
+- 测试数据在线编辑：新增 `GET/PUT /problems/:id/testcases/:tid/content` 与 `POST /problems/:id/testcases/online`；单文件上限 2 MiB，允许空输入/输出；更新先写新文件，DB 成功后删除旧文件。
+- 批量上传：`POST /problems/:id/testcases/batch`（multipart `files`，1–100 对）按 basename 配对 `.in` + `.out`/`.ans`，同名 `.out` 优先；任意一对不完整则整批失败并清理文件。
+- 导入：`POST /problems/import/hydro` 支持 `.in/.ans`、同名 `.out` 优先、`conflictPolicy=ask|skip|overwrite`、`overwriteSlugs`/`skipSlugs`；覆盖保留数字 ID/创建者/提交统计，替换题面与测试数据并强制下线；无权限覆盖他人题目返回 failed。
+
 **Codex 提示词（题库与题目）**
 
 ```text
@@ -1090,6 +1107,8 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 > `ai.settings.manage`（第 36 个权限码，AI 管理开关新增，分组「AI」）用于启用/关闭平台 AI 功能；默认只授予 `super_admin`（super 绕过），不自动授予 `content_admin`。修改设置写审计 action=`ai.settings.manage`、target=`ai_settings`。开关语义见 §6.6。
 >
 > `certificate.manage`（第 37 个权限码，M5-7 证书认证新增，分组「证书」）用于审核证书认证与维护证书类型；默认只授予 `super_admin`（super 绕过），不自动授予 `content_admin`。审核写审计 action=`certificate.manage`、target=`certificate`，类型 CRUD 写审计 target=`certificate_type`。语义见 §5.6。
+>
+> Phase B（2026-11-14）新增 `problem.manage_all`（分组「题库」）与内置角色 `problem_author`（出题人）；`content_admin` 增加 `problem.manage_all`。未持有 `problem.manage_all` 的题目管理权限按题目 `created_by` 限制为本人题目。权限目录总数以 `rbac.AllPermissions()` 为准，本文顶部旧的“37 个”计数未再逐项重排。
 
 **内置角色（7 个，均由首次 Seed 创建，`is_system=true`）**
 
@@ -1770,6 +1789,7 @@ problem/
 - 限制：题包文件 ≤200 MiB、解压总量 ≤1 GiB、条目 ≤5000、题目文件夹 ≤100、单题测试点 ≤500、单个测试文件 ≤16 MiB、单题测试数据 ≤200 MiB、`problem.yaml` ≤1 MiB、题面 ≤100,000 字符。防 zip slip：拒绝绝对路径、反斜杠、`.`/`..` 路径段、符号链接、加密条目、非常规文件，忽略 `__MACOSX/` 与隐藏文件；实际解压字节按读取计数校验，防止伪造 `UncompressedSize64`。整包损坏/加密/无题目文件夹/超限返回 40001，body 超 210 MiB 由中间件返回 413。
 - 部分成功：题包可解析且至少发现一个题目文件夹时返回 200，`imported`/`failed` 逐题结果；slug 冲突（`题目标识已存在：hydro-xxxx`）、缺文件、非法 slug、测试数据不配对等单题失败进入 `failed`，不阻断其他题；若整包级错误（如实际解压超限）发生在已导入部分题目之后，回滚本次已导入题目及其测试文件再返回 40001，不残留部分数据。每个成功题目 best-effort 写 `problem.create` 审计。
 - 作者摘要：`GET /problems/:id` 公开返回可选 `author {id, username, nickname}`（所有能看到该题的用户，不含 email）；`created_by <= 0` 或用户不存在时省略 author；仅 GET 详情填充，POST/PUT 可省略。
+- Phase B（2026-11-14）：测试数据支持 `.in/.ans` 与 `.in/.out`，同名 `.out` 优先并写入 `warnings`；导入新增 `conflictPolicy=ask|skip|overwrite`、`overwriteSlugs`、`skipSlugs`。`ask` 有冲突时只返回 `conflicts` 不写库；`overwrite` 保留数字 ID、创建者、提交记录与统计，替换题面/测试数据并强制下线；无权限覆盖他人题目进入 `failed`。导入结果增加 `conflicts/skipped/warnings` 与 `imported[].overwritten`。
 
 **Codex 提示词（题目导入）**
 
