@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { ActivityDay, UserActivity } from '@/api/types'
 import ContributionGrid from './ContributionGrid.vue'
+import contributionSource from './ContributionGrid.vue?raw'
 
 const START_DATE = '2025-11-13'
 const END_DATE = '2026-11-12'
@@ -56,6 +57,26 @@ function dayCell(wrapper: ReturnType<typeof mountGrid>, date: string) {
   return wrapper.get(`.contribution-cells .contribution-cell[aria-label^="${date}："]`)
 }
 
+function hexLuminance(hex: string): number {
+  const value = hex.replace('#', '')
+  const channels = [0, 2, 4].map((start) => parseInt(value.slice(start, start + 2), 16) / 255)
+  const [r, g, b] = channels.map((channel) =>
+    channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
+  )
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+function darkPalette(): number[] {
+  const start = contributionSource.indexOf('.contribution-grid {')
+  const end = contributionSource.indexOf(':global(:root:not(.app-dark))')
+  const block = contributionSource.slice(start, end)
+  return [1, 2, 3, 4].map((level) => {
+    const match = block.match(new RegExp(`--contrib-${level}:\\s*(#[0-9A-Fa-f]{6})`))
+    if (!match) throw new Error(`missing --contrib-${level}`)
+    return hexLuminance(match[1])
+  })
+}
+
 describe('ContributionGrid', () => {
   it('renders one 365-day grid, padding missing days with level 0', () => {
     const wrapper = mountGrid()
@@ -94,6 +115,14 @@ describe('ContributionGrid', () => {
 
     const weekdays = wrapper.findAll('.contribution-weekday').map((label) => label.text())
     expect(weekdays.join('')).toBe('一三五')
+  })
+
+  it('uses a darker color for more submissions in the dark theme', () => {
+    const palette = darkPalette()
+
+    for (let index = 1; index < palette.length; index += 1) {
+      expect(palette[index]).toBeLessThan(palette[index - 1])
+    }
   })
 
   it('renders the summary, legend and accessible title', () => {

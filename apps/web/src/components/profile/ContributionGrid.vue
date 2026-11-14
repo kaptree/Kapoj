@@ -194,10 +194,12 @@ function cellLabel(day: ActivityDay): string {
 <style scoped>
 .contribution-grid {
   --contrib-0: var(--kapoj-bg-elevated);
-  --contrib-1: #0e4429;
-  --contrib-2: #006d32;
-  --contrib-3: #26a641;
-  --contrib-4: #39d353;
+  /* Dark theme: fewer submissions use the lightest green, more use the
+     deepest green. The light theme override below keeps the same direction. */
+  --contrib-1: #39d353;
+  --contrib-2: #26a641;
+  --contrib-3: #006d32;
+  --contrib-4: #0e4429;
 
   display: flex;
   flex-direction: column;
