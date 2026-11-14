@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -114,6 +115,65 @@ func TestCreateForcesHidden(t *testing.T) {
 	p := e.create(t, in)
 	assert.False(t, p.IsPublic)
 	assert.Equal(t, int64(1), p.CreatedBy)
+}
+
+func TestAttachmentLifecycle(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	p := e.create(t, input("attachments"))
+	owner := problem.Viewer{UserID: 1, CanManageOwn: true}
+
+	a, err := e.svc.AddAttachment(ctx, p.ID, 1, problem.AttachmentUpload{
+		Filename: "sample.txt", ContentType: "text/plain", Reader: strings.NewReader("hello"),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "sample.txt", a.Filename)
+	assert.Equal(t, int64(5), a.Size)
+	assert.Contains(t, a.StorageKey, "problems/"+strconv.FormatInt(p.ID, 10)+"/attachments/")
+
+	list, err := e.svc.ListAttachments(ctx, owner, p.ID)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.Equal(t, a.ID, list[0].ID)
+
+	_, err = e.svc.ListAttachments(ctx, problem.Viewer{}, p.ID)
+	assertCode(t, err, 40400)
+
+	content, err := e.svc.OpenAttachment(ctx, owner, p.ID, a.ID)
+	require.NoError(t, err)
+	data, err := io.ReadAll(content.Reader)
+	require.NoError(t, err)
+	_ = content.Reader.Close()
+	assert.Equal(t, "hello", string(data))
+
+	img, err := e.svc.AddStatementImage(ctx, p.ID, 1, problem.AttachmentUpload{
+		Filename: "statement.png", Reader: strings.NewReader("\x89PNG\r\n\x1a\nimage"),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "image/png", img.ContentType)
+
+	_, err = e.svc.AddStatementImage(ctx, p.ID, 1, problem.AttachmentUpload{
+		Filename: "bad.txt", Reader: strings.NewReader("not an image"),
+	})
+	assertCode(t, err, 40001)
+
+	require.NoError(t, e.svc.DeleteAttachment(ctx, p.ID, a.ID))
+	list, err = e.svc.ListAttachments(ctx, owner, p.ID)
+	require.NoError(t, err)
+	assert.Empty(t, list)
+	for _, file := range e.files(t) {
+		assert.NotContains(t, file, a.StorageKey)
+	}
+
+	kept, err := e.svc.AddAttachment(ctx, p.ID, 1, problem.AttachmentUpload{
+		Filename: "cleanup.txt", Reader: strings.NewReader("cleanup"),
+	})
+	require.NoError(t, err)
+	_, err = e.svc.Delete(ctx, p.ID)
+	require.NoError(t, err)
+	for _, file := range e.files(t) {
+		assert.NotContains(t, file, kept.StorageKey)
+	}
 }
 
 func TestViewerOwnershipAndListScopes(t *testing.T) {

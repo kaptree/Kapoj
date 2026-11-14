@@ -68,7 +68,7 @@ func Migrate(g *gorm.DB) error {
 			return err
 		}
 		if err := tx.AutoMigrate(
-			&user.User{}, &problem.Problem{}, &problem.Testcase{},
+			&user.User{}, &problem.Problem{}, &problem.Testcase{}, &problem.ProblemAttachment{},
 			&problem.ProblemSolutionUnlock{},
 			&problem.SolutionPost{}, &problem.SolutionReply{}, &problem.SolutionPostLike{},
 			&contest.Contest{}, &contest.ContestProblem{}, &contest.ContestParticipant{},

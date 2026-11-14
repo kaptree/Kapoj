@@ -96,6 +96,10 @@ func RegisterRoutes(
 	api.GET("/problems", load, h.list)
 	api.GET("/problems/:id", load, h.get)
 	api.GET("/problems/:id/statistics", load, h.statistics)
+	api.GET("/problems/:id/attachments", load, h.listAttachments)
+	api.GET("/problems/:id/attachments/:aid", load, h.downloadAttachment)
+	api.GET("/problems/:id/assets/:aid", load, h.statementImage)
+	api.DELETE("/problems/:id/attachments/:aid", require(string(rbac.PermProblemUpdate)), audit(string(rbac.PermProblemUpdate)), h.deleteAttachment)
 
 	api.GET("/problems/:id/official-solution", load, h.getOfficialSolution)
 	api.PUT("/problems/:id/official-solution", middleware.RequireAuth(), load, h.updateOfficialSolution)
@@ -123,6 +127,8 @@ func RegisterRoutes(
 
 	uploads.POST("/problems/:id/testcases", require(string(rbac.PermProblemTestcaseManage)), audit(string(rbac.PermProblemTestcaseManage)), h.addTestcase)
 	uploads.POST("/problems/:id/checker", require(string(rbac.PermProblemCheckerManage)), audit(string(rbac.PermProblemCheckerManage)), h.uploadChecker)
+	uploads.POST("/problems/:id/attachments", require(string(rbac.PermProblemUpdate)), audit(string(rbac.PermProblemUpdate)), h.uploadAttachment)
+	uploads.POST("/problems/:id/assets", require(string(rbac.PermProblemUpdate)), audit(string(rbac.PermProblemUpdate)), h.uploadStatementImage)
 
 	if h.testcaseGen != nil {
 		api.POST("/problems/:id/testcase-generations", require(string(rbac.PermProblemTestcaseManage)), audit(string(rbac.PermProblemTestcaseManage)), h.createTestcaseGeneration)

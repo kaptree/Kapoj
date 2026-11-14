@@ -996,6 +996,55 @@ func TestOtherAuthorCannotReadAnswersOrEdit(t *testing.T) {
 	assert.Contains(t, data, "answers")
 }
 
+func TestProblemAttachmentHTTP(t *testing.T) {
+	f := newFx(t)
+	author := f.userWithRole("problem_author")
+	other := f.userWithRole("problem_author")
+	id := f.createAs(author, body("attachment-http"))
+	f.addCase(id)
+
+	w, resp := f.multipart(path("/api/problems/%d/attachments", id), author, nil,
+		filePart{"file", "sample.txt", strings.NewReader("hello")})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	attachmentID := int64(resp["data"].(map[string]any)["id"].(float64))
+
+	_, resp = f.do(http.MethodGet, path("/api/problems/%d/attachments", id), author, nil)
+	attachments := resp["data"].([]any)
+	require.Len(t, attachments, 1)
+	assert.Equal(t, "sample.txt", attachments[0].(map[string]any)["filename"])
+
+	// 另一个出题人不能上传或删除。
+	w, _ = f.multipart(path("/api/problems/%d/attachments", id), other, nil,
+		filePart{"file", "other.txt", strings.NewReader("no")})
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	w, _ = f.do(http.MethodDelete, path("/api/problems/%d/attachments/%d", id, attachmentID), other, nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	// 公开题附件可下载；隐藏题对游客仍 404。
+	w, _ = f.do(http.MethodGet, path("/api/problems/%d/attachments/%d", id, attachmentID), author, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "hello", w.Body.String())
+	w, _ = f.do(http.MethodGet, path("/api/problems/%d/attachments/%d", id, attachmentID), "", nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	// 题面图片走独立接口。
+	w, resp = f.multipart(path("/api/problems/%d/assets", id), author, nil,
+		filePart{"file", "statement.png", strings.NewReader("\x89PNG\r\n\x1a\nimage")})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	data := resp["data"].(map[string]any)
+	assert.Contains(t, data["markdown"], data["url"])
+	w, _ = f.do(http.MethodGet, data["url"].(string), author, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "image/png", w.Header().Get("Content-Type"))
+
+	// 测试数据不会出现在附件列表。
+	_, resp = f.do(http.MethodGet, path("/api/problems/%d/attachments", id), author, nil)
+	assert.Len(t, resp["data"].([]any), 1)
+
+	w, _ = f.do(http.MethodDelete, path("/api/problems/%d/attachments/%d", id, attachmentID), author, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+}
+
 func TestProblemWritesAudit(t *testing.T) {
 	f := newFx(t)
 	admin := f.token("problem_admin")

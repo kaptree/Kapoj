@@ -3327,6 +3327,255 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/problems/{id}/attachments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * 题目公开附件列表（随题目可见性）
+         * @description 仅返回普通附件，不包含测试数据或题面图片；隐藏题仅创建者/管理员可见。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 附件列表 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProblemAttachmentListResponse"];
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        /**
+         * 上传题目附件（problem.update；创建者或管理员）
+         * @description multipart 字段 file；单个附件不超过 20 MiB，每个题目最多 50 个附件。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "multipart/form-data": {
+                        /** Format: binary */
+                        file: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 已上传 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProblemAttachmentResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/problems/{id}/attachments/{aid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                aid: number;
+            };
+            cookie?: never;
+        };
+        /** 下载题目附件（随题目可见性） */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                    aid: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 文件二进制 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/octet-stream": string;
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        /** 删除题目附件（problem.update；创建者或管理员） */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                    aid: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已删除 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Envelope"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/problems/{id}/assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 上传题面图片（problem.update；创建者或管理员）
+         * @description multipart 字段 file；仅 PNG/JPEG/WebP/GIF，不超过 5 MiB；返回 url 与可插入 Markdown 的语法。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "multipart/form-data": {
+                        /** Format: binary */
+                        file: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 已上传 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StatementImageResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/problems/{id}/assets/{aid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                aid: number;
+            };
+            cookie?: never;
+        };
+        /** 读取题面图片（随题目可见性） */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                    aid: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 图片二进制 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "image/png": string;
+                        "image/jpeg": string;
+                        "image/webp": string;
+                        "image/gif": string;
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/problems/{id}/official-solution": {
         parameters: {
             query?: never;
@@ -8180,6 +8429,31 @@ export interface components {
             /** @description 当前用户是否可以编辑/管理该题目（创建者本人或 problem.manage_all） */
             canEdit: boolean;
             author?: components["schemas"]["ProblemAuthor"];
+        };
+        ProblemAttachment: {
+            /** Format: int64 */
+            id: number;
+            filename: string;
+            contentType: string;
+            /** Format: int64 */
+            size: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** @description 站内下载/读取地址 */
+            url: string;
+        };
+        ProblemAttachmentListResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["ProblemAttachment"][];
+        };
+        ProblemAttachmentResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["ProblemAttachment"];
+        };
+        StatementImageResult: {
+            url: string;
+            markdown: string;
+        };
+        StatementImageResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["StatementImageResult"];
         };
         /** @description 题目创建者的公开摘要；仅含 id/username/nickname，不含邮箱。 */
         ProblemAuthor: {

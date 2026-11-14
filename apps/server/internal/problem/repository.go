@@ -63,6 +63,12 @@ type Repository interface {
 	DeleteTestcase(ctx context.Context, problemID, id int64) (*Testcase, error)
 	ReorderTestcases(ctx context.Context, problemID int64, ids []int64) error
 	CountTestcases(ctx context.Context, problemID int64) (int, error)
+
+	CreateAttachment(ctx context.Context, a *ProblemAttachment) error
+	ListAttachments(ctx context.Context, problemID int64, kind string) ([]ProblemAttachment, error)
+	FindAttachment(ctx context.Context, problemID, id int64) (*ProblemAttachment, error)
+	DeleteAttachment(ctx context.Context, problemID, id int64) (*ProblemAttachment, error)
+	CountAttachments(ctx context.Context, problemID int64) (int64, error)
 }
 
 type gormRepository struct{ db *gorm.DB }
@@ -217,6 +223,16 @@ func (r *gormRepository) Delete(ctx context.Context, id int64) (DeleteResult, er
 		if p.CheckerPath != "" {
 			result.FileKeys = append(result.FileKeys, p.CheckerPath)
 		}
+		var attachments []ProblemAttachment
+		if err := tx.Where("problem_id = ?", id).Find(&attachments).Error; err != nil {
+			return err
+		}
+		for _, a := range attachments {
+			result.FileKeys = append(result.FileKeys, a.StorageKey)
+		}
+		if err := tx.Where("problem_id = ?", id).Delete(&ProblemAttachment{}).Error; err != nil {
+			return err
+		}
 		return tx.Delete(&Problem{}, id).Error
 	})
 	if err != nil {
@@ -354,6 +370,47 @@ func (r *gormRepository) CountTestcases(ctx context.Context, problemID int64) (i
 	var n int64
 	err := r.db.WithContext(ctx).Model(&Testcase{}).Where("problem_id = ?", problemID).Count(&n).Error
 	return int(n), err
+}
+
+func (r *gormRepository) CreateAttachment(ctx context.Context, a *ProblemAttachment) error {
+	return r.db.WithContext(ctx).Create(a).Error
+}
+
+func (r *gormRepository) ListAttachments(ctx context.Context, problemID int64, kind string) ([]ProblemAttachment, error) {
+	var items []ProblemAttachment
+	err := r.db.WithContext(ctx).
+		Where("problem_id = ? AND kind = ?", problemID, kind).
+		Order("id").Find(&items).Error
+	return items, err
+}
+
+func (r *gormRepository) FindAttachment(ctx context.Context, problemID, id int64) (*ProblemAttachment, error) {
+	var a ProblemAttachment
+	err := r.db.WithContext(ctx).Where("problem_id = ? AND id = ?", problemID, id).First(&a).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &a, nil
+}
+
+func (r *gormRepository) DeleteAttachment(ctx context.Context, problemID, id int64) (*ProblemAttachment, error) {
+	a, err := r.FindAttachment(ctx, problemID, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.db.WithContext(ctx).Delete(&ProblemAttachment{}, a.ID).Error; err != nil {
+		return nil, err
+	}
+	return a, nil
+}
+
+func (r *gormRepository) CountAttachments(ctx context.Context, problemID int64) (int64, error) {
+	var n int64
+	err := r.db.WithContext(ctx).Model(&ProblemAttachment{}).Where("problem_id = ?", problemID).Count(&n).Error
+	return n, err
 }
 
 func mapErr(err error) error {
