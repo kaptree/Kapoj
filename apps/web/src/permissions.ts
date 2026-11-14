@@ -13,6 +13,7 @@ export const PERM = {
   },
   system: {
     settings: { manage: 'system.settings.manage' },
+    backup: { manage: 'system.backup.manage' },
   },
   user: {
     read: 'user.read',
@@ -122,6 +123,7 @@ export const ADMIN_ACCESS_PERMISSIONS: string[] = [
   PERM.admin.dashboard.view,
   PERM.admin.audit.view,
   PERM.system.settings.manage,
+  PERM.system.backup.manage,
   PERM.user.read,
   PERM.user.update,
   PERM.user.ban,

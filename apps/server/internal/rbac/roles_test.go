@@ -42,7 +42,7 @@ func TestListPermissionsAndRoles(t *testing.T) {
 	svc := rbac.NewService(g)
 
 	permissions := svc.ListPermissions(ctx)
-	require.Len(t, permissions, 42)
+	require.Len(t, permissions, 43)
 
 	codes := make(map[string]struct{}, len(permissions))
 	groups := make([]string, 0, 8)

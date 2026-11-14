@@ -3317,6 +3317,158 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SiteVisitResponse' }
+  /admin/backups:
+    get:
+      summary: 备份概览（system.backup.manage）
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 最新备份包、定时任务与恢复任务
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BackupOverviewResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /admin/backups/platform:
+    post:
+      summary: 创建全平台备份（system.backup.manage）
+      security: [{ bearer: [] }]
+      responses:
+        '202':
+          description: 已进入备份队列
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BackupPackageResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /admin/backups/accounts:
+    post:
+      summary: 创建账号备份（system.backup.manage；userId 为空表示全部账号）
+      security: [{ bearer: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BackupCreateAccountRequest' }
+      responses:
+        '202':
+          description: 已进入备份队列
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BackupPackageResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /admin/backups/{id}/download:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      summary: 下载备份 ZIP（system.backup.manage）
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: ZIP 文件流
+          content:
+            application/zip:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /admin/backups/schedules/{kind}:
+    parameters:
+      - { name: kind, in: path, required: true, schema: { type: string, enum: [platform, accounts] } }
+    put:
+      summary: 更新备份预设定时任务（system.backup.manage）
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BackupScheduleInput' }
+      responses:
+        '200':
+          description: 更新后的定时任务
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BackupScheduleResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /admin/backups/restore/platform:
+    post:
+      summary: 恢复全平台备份（system.backup.manage；上传 ZIP 或 packageId）
+      security: [{ bearer: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BackupRestoreRequest' }
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, confirm]
+              properties:
+                file: { type: string, format: binary }
+                confirm: { type: string, description: 必须为 RESTORE }
+      responses:
+        '202':
+          description: 恢复任务已创建
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BackupRestoreJobResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /admin/backups/restore/account:
+    post:
+      summary: 恢复账号备份（system.backup.manage；上传 ZIP 或 packageId，必须提供 userId）
+      security: [{ bearer: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BackupRestoreAccountRequest' }
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, userId]
+              properties:
+                file: { type: string, format: binary }
+                userId: { type: integer, format: int64 }
+      responses:
+        '202':
+          description: 恢复任务已创建
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BackupRestoreJobResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /admin/backups/restores/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      summary: 查询恢复任务状态（system.backup.manage）
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 恢复任务
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BackupRestoreJobResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /admin/backups/restart:
+    post:
+      summary: 触发受控重启（system.backup.manage）
+      security: [{ bearer: [] }]
+      responses:
+        '202':
+          description: 即将重启
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
   /admin/site:
     get:
       summary: 站点管理视图（site.settings.manage）
@@ -6447,6 +6599,127 @@ components:
           required: [data]
           properties:
             data: { $ref: '#/components/schemas/SiteDeployment' }
+    BackupPackage:
+      type: object
+      required: [id, kind, filename, sizeBytes, status, createdBy, createdAt]
+      properties:
+        id: { type: integer, format: int64 }
+        kind: { type: string, enum: [platform, accounts, account] }
+        userId: { type: integer, format: int64 }
+        filename: { type: string }
+        sizeBytes: { type: integer, format: int64 }
+        status: { type: string, enum: [running, ready, failed] }
+        error: { type: string }
+        schemaHash: { type: string }
+        createdBy: { type: integer, format: int64 }
+        createdAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time }
+    BackupSchedule:
+      type: object
+      required: [id, kind, enabled, frequency, runHour, runMinute, weekday, dayOfMonth]
+      properties:
+        id: { type: integer, format: int64 }
+        kind: { type: string, enum: [platform, accounts] }
+        enabled: { type: boolean }
+        frequency: { type: string, enum: [daily, weekly, monthly] }
+        runHour: { type: integer, minimum: 0, maximum: 23 }
+        runMinute: { type: integer, minimum: 0, maximum: 59 }
+        weekday: { type: integer, minimum: 0, maximum: 6 }
+        dayOfMonth: { type: integer, minimum: 1, maximum: 31 }
+        nextRunAt: { type: string, format: date-time }
+        lastRunAt: { type: string, format: date-time }
+        lastStatus: { type: string }
+        lastError: { type: string }
+        updatedBy: { type: integer, format: int64 }
+        updatedAt: { type: string, format: date-time }
+    BackupScheduleInput:
+      type: object
+      required: [enabled, frequency, runHour, runMinute, weekday, dayOfMonth]
+      properties:
+        enabled: { type: boolean }
+        frequency: { type: string, enum: [daily, weekly, monthly] }
+        runHour: { type: integer }
+        runMinute: { type: integer }
+        weekday: { type: integer }
+        dayOfMonth: { type: integer }
+    BackupRestoreJob:
+      type: object
+      required: [id, kind, status, createdBy, createdAt, restartRequired]
+      properties:
+        id: { type: integer, format: int64 }
+        kind: { type: string, enum: [platform, account] }
+        packageId: { type: integer, format: int64 }
+        uploadedFile: { type: string }
+        targetUserId: { type: integer, format: int64 }
+        status: { type: string, enum: [running, success, failed] }
+        error: { type: string }
+        createdBy: { type: integer, format: int64 }
+        createdAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time }
+        restartRequired: { type: boolean }
+    BackupOverview:
+      type: object
+      required: [platformPackage, accountsPackage, accountPackages, schedules, restores]
+      properties:
+        platformPackage:
+          nullable: true
+          allOf: [{ $ref: '#/components/schemas/BackupPackage' }]
+        accountsPackage:
+          nullable: true
+          allOf: [{ $ref: '#/components/schemas/BackupPackage' }]
+        accountPackages:
+          type: array
+          items: { $ref: '#/components/schemas/BackupPackage' }
+        schedules:
+          type: array
+          items: { $ref: '#/components/schemas/BackupSchedule' }
+        restores:
+          type: array
+          items: { $ref: '#/components/schemas/BackupRestoreJob' }
+    BackupCreateAccountRequest:
+      type: object
+      properties:
+        userId: { type: integer, format: int64, description: 为空表示全部账号 }
+    BackupRestoreRequest:
+      type: object
+      required: [confirm]
+      properties:
+        packageId: { type: integer, format: int64 }
+        confirm: { type: string, description: 必须为 RESTORE，确认全平台恢复 }
+    BackupRestoreAccountRequest:
+      type: object
+      required: [userId]
+      properties:
+        packageId: { type: integer, format: int64 }
+        userId: { type: integer, format: int64 }
+    BackupPackageResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/BackupPackage' }
+    BackupScheduleResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/BackupSchedule' }
+    BackupOverviewResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/BackupOverview' }
+    BackupRestoreJobResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/BackupRestoreJob' }
     SiteFooterInput:
       type: object
       description: 页脚更新请求体。

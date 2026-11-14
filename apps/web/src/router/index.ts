@@ -376,6 +376,16 @@ export const router = createRouter({
           },
         },
         {
+          path: 'backups',
+          name: 'admin-backups',
+          component: () => import('@/views/AdminBackupView.vue'),
+          meta: {
+            requiresAuth: true,
+            permission: PERM.system.backup.manage,
+            title: '数据备份',
+          },
+        },
+        {
           path: 'mail',
           name: 'admin-mail',
           component: () => import('@/views/AdminMailView.vue'),

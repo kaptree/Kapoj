@@ -7818,6 +7818,394 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/backups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 备份概览（system.backup.manage） */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 最新备份包、定时任务与恢复任务 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BackupOverviewResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/backups/platform": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 创建全平台备份（system.backup.manage） */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已进入备份队列 */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BackupPackageResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/backups/accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 创建账号备份（system.backup.manage；userId 为空表示全部账号） */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["BackupCreateAccountRequest"];
+                };
+            };
+            responses: {
+                /** @description 已进入备份队列 */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BackupPackageResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/backups/{id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** 下载备份 ZIP（system.backup.manage） */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description ZIP 文件流 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/zip": string;
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/backups/schedules/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: "platform" | "accounts";
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** 更新备份预设定时任务（system.backup.manage） */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    kind: "platform" | "accounts";
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["BackupScheduleInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的定时任务 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BackupScheduleResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/backups/restore/platform": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 恢复全平台备份（system.backup.manage；上传 ZIP 或 packageId） */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["BackupRestoreRequest"];
+                    "multipart/form-data": {
+                        /** Format: binary */
+                        file: string;
+                        /** @description 必须为 RESTORE */
+                        confirm: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 恢复任务已创建 */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BackupRestoreJobResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/backups/restore/account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 恢复账号备份（system.backup.manage；上传 ZIP 或 packageId，必须提供 userId） */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["BackupRestoreAccountRequest"];
+                    "multipart/form-data": {
+                        /** Format: binary */
+                        file: string;
+                        /** Format: int64 */
+                        userId: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 恢复任务已创建 */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BackupRestoreJobResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/backups/restores/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** 查询恢复任务状态（system.backup.manage） */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 恢复任务 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BackupRestoreJobResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/backups/restart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 触发受控重启（system.backup.manage） */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 即将重启 */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Envelope"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/site": {
         parameters: {
             query?: never;
@@ -10661,6 +11049,118 @@ export interface components {
         };
         SiteDeploymentResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["SiteDeployment"];
+        };
+        BackupPackage: {
+            /** Format: int64 */
+            id: number;
+            /** @enum {string} */
+            kind: "platform" | "accounts" | "account";
+            /** Format: int64 */
+            userId?: number;
+            filename: string;
+            /** Format: int64 */
+            sizeBytes: number;
+            /** @enum {string} */
+            status: "running" | "ready" | "failed";
+            error?: string;
+            schemaHash?: string;
+            /** Format: int64 */
+            createdBy: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            completedAt?: string;
+        };
+        BackupSchedule: {
+            /** Format: int64 */
+            id: number;
+            /** @enum {string} */
+            kind: "platform" | "accounts";
+            enabled: boolean;
+            /** @enum {string} */
+            frequency: "daily" | "weekly" | "monthly";
+            runHour: number;
+            runMinute: number;
+            weekday: number;
+            dayOfMonth: number;
+            /** Format: date-time */
+            nextRunAt?: string;
+            /** Format: date-time */
+            lastRunAt?: string;
+            lastStatus?: string;
+            lastError?: string;
+            /** Format: int64 */
+            updatedBy?: number;
+            /** Format: date-time */
+            updatedAt?: string;
+        };
+        BackupScheduleInput: {
+            enabled: boolean;
+            /** @enum {string} */
+            frequency: "daily" | "weekly" | "monthly";
+            runHour: number;
+            runMinute: number;
+            weekday: number;
+            dayOfMonth: number;
+        };
+        BackupRestoreJob: {
+            /** Format: int64 */
+            id: number;
+            /** @enum {string} */
+            kind: "platform" | "account";
+            /** Format: int64 */
+            packageId?: number;
+            uploadedFile?: string;
+            /** Format: int64 */
+            targetUserId?: number;
+            /** @enum {string} */
+            status: "running" | "success" | "failed";
+            error?: string;
+            /** Format: int64 */
+            createdBy: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            completedAt?: string;
+            restartRequired: boolean;
+        };
+        BackupOverview: {
+            platformPackage: components["schemas"]["BackupPackage"] | null;
+            accountsPackage: components["schemas"]["BackupPackage"] | null;
+            accountPackages: components["schemas"]["BackupPackage"][];
+            schedules: components["schemas"]["BackupSchedule"][];
+            restores: components["schemas"]["BackupRestoreJob"][];
+        };
+        BackupCreateAccountRequest: {
+            /**
+             * Format: int64
+             * @description 为空表示全部账号
+             */
+            userId?: number;
+        };
+        BackupRestoreRequest: {
+            /** Format: int64 */
+            packageId?: number;
+            /** @description 必须为 RESTORE，确认全平台恢复 */
+            confirm: string;
+        };
+        BackupRestoreAccountRequest: {
+            /** Format: int64 */
+            packageId?: number;
+            /** Format: int64 */
+            userId: number;
+        };
+        BackupPackageResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["BackupPackage"];
+        };
+        BackupScheduleResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["BackupSchedule"];
+        };
+        BackupOverviewResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["BackupOverview"];
+        };
+        BackupRestoreJobResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["BackupRestoreJob"];
         };
         /** @description 页脚更新请求体。 */
         SiteFooterInput: {

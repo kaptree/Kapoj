@@ -32,6 +32,11 @@ type Config struct {
 	MailKeyFile        string
 	MailTimeout        time.Duration
 	TrustedProxies     []string
+
+	BackupDir                  string
+	BackupMaxUploadBytes       int64
+	BackupMaxUncompressedBytes int64
+	BackupMaxEntries           int
 }
 
 const minSecretLen = 32
@@ -62,6 +67,10 @@ func Load() (*Config, error) {
 	v.SetDefault("mail_key_file", "data/mail.key")
 	v.SetDefault("mail_timeout", "20s")
 	v.SetDefault("trusted_proxies", "")
+	v.SetDefault("backup_dir", "")
+	v.SetDefault("backup_max_upload_bytes", int64(2<<30))
+	v.SetDefault("backup_max_uncompressed_bytes", int64(20<<30))
+	v.SetDefault("backup_max_entries", 200_000)
 
 	trustedProxies, err := parseTrustedProxies(v.GetString("trusted_proxies"))
 	if err != nil {
@@ -69,26 +78,30 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		HTTPAddr:           v.GetString("http_addr"),
-		DatabaseURL:        v.GetString("database_url"),
-		RedisAddr:          v.GetString("redis_addr"),
-		StorageDir:         v.GetString("storage_dir"),
-		JWTSecret:          v.GetString("jwt_secret"),
-		AccessTokenTTL:     v.GetDuration("access_token_ttl"),
-		RefreshTokenTTL:    v.GetDuration("refresh_token_ttl"),
-		SubmitCooldown:     v.GetDuration("submit_cooldown"),
-		GameConcurrency:    v.GetInt("game_concurrency"),
-		MaxEquippedBadges:  v.GetInt("max_equipped_badges"),
-		RatingScanInterval: v.GetDuration("rating_scan_interval"),
-		RatingJudgeGrace:   v.GetDuration("rating_judge_grace"),
-		AIEncryptionKey:    v.GetString("ai_encryption_key"),
-		AIKeyFile:          v.GetString("ai_key_file"),
-		AIRequestTimeout:   v.GetDuration("ai_request_timeout"),
-		AICooldown:         v.GetDuration("ai_cooldown"),
-		MailEncryptionKey:  v.GetString("mail_encryption_key"),
-		MailKeyFile:        v.GetString("mail_key_file"),
-		MailTimeout:        v.GetDuration("mail_timeout"),
-		TrustedProxies:     trustedProxies,
+		HTTPAddr:                   v.GetString("http_addr"),
+		DatabaseURL:                v.GetString("database_url"),
+		RedisAddr:                  v.GetString("redis_addr"),
+		StorageDir:                 v.GetString("storage_dir"),
+		JWTSecret:                  v.GetString("jwt_secret"),
+		AccessTokenTTL:             v.GetDuration("access_token_ttl"),
+		RefreshTokenTTL:            v.GetDuration("refresh_token_ttl"),
+		SubmitCooldown:             v.GetDuration("submit_cooldown"),
+		GameConcurrency:            v.GetInt("game_concurrency"),
+		MaxEquippedBadges:          v.GetInt("max_equipped_badges"),
+		RatingScanInterval:         v.GetDuration("rating_scan_interval"),
+		RatingJudgeGrace:           v.GetDuration("rating_judge_grace"),
+		AIEncryptionKey:            v.GetString("ai_encryption_key"),
+		AIKeyFile:                  v.GetString("ai_key_file"),
+		AIRequestTimeout:           v.GetDuration("ai_request_timeout"),
+		AICooldown:                 v.GetDuration("ai_cooldown"),
+		MailEncryptionKey:          v.GetString("mail_encryption_key"),
+		MailKeyFile:                v.GetString("mail_key_file"),
+		MailTimeout:                v.GetDuration("mail_timeout"),
+		TrustedProxies:             trustedProxies,
+		BackupDir:                  v.GetString("backup_dir"),
+		BackupMaxUploadBytes:       v.GetInt64("backup_max_upload_bytes"),
+		BackupMaxUncompressedBytes: v.GetInt64("backup_max_uncompressed_bytes"),
+		BackupMaxEntries:           v.GetInt("backup_max_entries"),
 	}
 
 	if len(cfg.JWTSecret) < minSecretLen {

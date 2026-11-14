@@ -15,6 +15,8 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/ai"
 	"github.com/kaptree/kapoj/apps/server/internal/aiapi"
 	"github.com/kaptree/kapoj/apps/server/internal/auth"
+	"github.com/kaptree/kapoj/apps/server/internal/backup"
+	"github.com/kaptree/kapoj/apps/server/internal/backupapi"
 	"github.com/kaptree/kapoj/apps/server/internal/certificate"
 	"github.com/kaptree/kapoj/apps/server/internal/certificateapi"
 	"github.com/kaptree/kapoj/apps/server/internal/config"
@@ -70,6 +72,7 @@ type Deps struct {
 	TestcaseGen *testcasegen.Service
 	Certificate *certificate.Service
 	Mail        *mail.Service
+	Backup      *backup.Service
 }
 
 func New(d Deps) *gin.Engine {
@@ -122,6 +125,11 @@ func New(d Deps) *gin.Engine {
 	problemJSON := r.Group("/api", authenticated(maxProblemJSONBytes)...)
 	uploads := r.Group("/api", authenticated(maxUploadBytes)...)
 	imports := r.Group("/api", authenticated(maxImportBodyBytes)...)
+	backupUploadLimit := d.Config.BackupMaxUploadBytes
+	if backupUploadLimit <= 0 {
+		backupUploadLimit = 2 << 30
+	}
+	backupUploads := r.Group("/api", authenticated(backupUploadLimit+(1<<20))...)
 	userSvc := user.NewService(users, user.WithStorage(d.Storage))
 	userOpts := userapi.Options{RBAC: d.RBAC}
 	if d.Game != nil {
@@ -219,6 +227,9 @@ func New(d Deps) *gin.Engine {
 		submissionOpts.ActivityHook = d.Activity
 	}
 	submissionapi.RegisterRoutes(api, submissionSvc, streamer, submissionOpts)
+	if d.Backup != nil {
+		backupapi.RegisterRoutes(api, backupUploads, d.Backup, d.RBAC)
+	}
 	return r
 }
 

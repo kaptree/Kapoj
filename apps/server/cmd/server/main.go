@@ -17,6 +17,7 @@ import (
 
 	"github.com/kaptree/kapoj/apps/server/internal/activity"
 	"github.com/kaptree/kapoj/apps/server/internal/ai"
+	"github.com/kaptree/kapoj/apps/server/internal/backup"
 	"github.com/kaptree/kapoj/apps/server/internal/certificate"
 	"github.com/kaptree/kapoj/apps/server/internal/config"
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
@@ -35,8 +36,19 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/testcasegen"
 )
 
+var errRestart = errors.New("restart requested")
+
 func main() {
-	if err := run(); err != nil {
+	err := run()
+	if errors.Is(err, errRestart) {
+		executable, execErr := os.Executable()
+		if execErr == nil {
+			execErr = syscall.Exec(executable, os.Args, os.Environ())
+		}
+		slog.Error("server restart failed", "err", execErr)
+		os.Exit(1)
+	}
+	if err != nil {
 		slog.Error("server stopped", "err", err)
 		os.Exit(1)
 	}
@@ -92,6 +104,22 @@ func run() error {
 	})
 	learningSvc := learning.NewService(learning.NewRepository(g))
 	rbacSvc := rbac.NewService(g)
+	backupSvc, err := backup.NewService(g, cfg.DatabaseURL, backup.Options{
+		StorageDir:           cfg.StorageDir,
+		BackupDir:            cfg.BackupDir,
+		MaxUploadBytes:       cfg.BackupMaxUploadBytes,
+		MaxUncompressedBytes: cfg.BackupMaxUncompressedBytes,
+		MaxEntries:           cfg.BackupMaxEntries,
+	})
+	if err != nil {
+		return err
+	}
+	if err := backupSvc.Ensure(context.Background()); err != nil {
+		return err
+	}
+	backupQueue := backup.NewClient(cfg.RedisAddr)
+	defer func() { _ = backupQueue.Close() }()
+	backupSvc.SetQueue(backupQueue)
 	certSvc := certificate.NewService(certificate.NewGormRepository(g), store)
 	mailKeys, err := secret.NewKeyManager(cfg.MailEncryptionKey, cfg.MailKeyFile)
 	if err != nil {
@@ -145,6 +173,22 @@ func run() error {
 	slog.Info("kapoj game worker started",
 		"queue", gamequeue.QueueName, "concurrency", cfg.GameConcurrency)
 
+	backupServer := asynq.NewServer(
+		asynq.RedisClientOpt{Addr: cfg.RedisAddr},
+		asynq.Config{
+			Concurrency:     1,
+			Queues:          map[string]int{backup.QueueName: 1},
+			ShutdownTimeout: 10 * time.Second,
+		},
+	)
+	backupMux := asynq.NewServeMux()
+	backup.Register(backupMux, backupSvc)
+	if err := backupServer.Start(backupMux); err != nil {
+		return err
+	}
+	defer backupServer.Shutdown()
+	slog.Info("kapoj backup worker started", "queue", backup.QueueName)
+
 	gin.SetMode(gin.ReleaseMode)
 	baseCtx, cancelBase := context.WithCancel(context.Background())
 	defer cancelBase()
@@ -154,7 +198,7 @@ func run() error {
 			DB: g, Redis: rdb, Storage: store, Config: cfg, Enqueuer: queue, Game: gameSvc,
 			Rating: ratingSvc, Activity: activitySvc, Learning: learningSvc, RBAC: rbacSvc,
 			AI: aiSvc, AISettings: aiSettings, TestcaseGen: testcaseGenSvc, Certificate: certSvc,
-			Mail: mailSvc,
+			Mail: mailSvc, Backup: backupSvc,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -166,6 +210,9 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go ratingSvc.Run(ctx)
+	workCtx, cancelWork := context.WithCancel(ctx)
+	defer cancelWork()
+	go backupSvc.RunScheduler(workCtx, 30*time.Second)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -176,13 +223,26 @@ func run() error {
 		close(errCh)
 	}()
 
+	restart := false
 	select {
 	case err := <-errCh:
 		return err
 	case <-ctx.Done():
+	case <-backupSvc.RestartRequested():
+		restart = true
+		cancelWork()
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	return srv.Shutdown(shutdownCtx)
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		return err
+	}
+	if sqlDB, err := g.DB(); err == nil {
+		_ = sqlDB.Close()
+	}
+	if restart {
+		return errRestart
+	}
+	return nil
 }

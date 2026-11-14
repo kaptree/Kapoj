@@ -28,6 +28,11 @@ func Created(c *gin.Context, data any) {
 	c.JSON(http.StatusCreated, envelope{Code: 0, Message: "ok", Data: data})
 }
 
+// Accepted reports a queued asynchronous job.
+func Accepted(c *gin.Context, data any) {
+	c.JSON(http.StatusAccepted, envelope{Code: 0, Message: "ok", Data: data})
+}
+
 // FailWithData writes an AppError response that also carries a data payload.
 func FailWithData(c *gin.Context, e *AppError, data any) {
 	c.AbortWithStatusJSON(e.Status, envelope{Code: e.Code, Message: e.Message, Data: data})

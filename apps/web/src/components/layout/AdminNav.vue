@@ -97,6 +97,13 @@ const mailItem: AdminNavItem = {
   icon: 'pi pi-envelope',
 }
 
+const backupItem: AdminNavItem = {
+  key: 'backups',
+  path: '/admin/backups',
+  label: '数据备份',
+  icon: 'pi pi-database',
+}
+
 const groups = computed<AdminNavGroup[]>(() => {
   const contentItems: AdminNavItem[] = []
   if (auth.canAny(PROBLEM_MANAGE_PERMISSIONS)) {
@@ -147,8 +154,11 @@ const groups = computed<AdminNavGroup[]>(() => {
   if (auth.can(PERM.site.settings.manage)) {
     items.push({ key: 'site', label: '站点', items: [siteItem] })
   }
-  if (auth.can(PERM.mail.settings.manage)) {
-    items.push({ key: 'system', label: '系统', items: [mailItem] })
+  const systemItems: AdminNavItem[] = []
+  if (auth.can(PERM.mail.settings.manage)) systemItems.push(mailItem)
+  if (auth.can(PERM.system.backup.manage)) systemItems.push(backupItem)
+  if (systemItems.length > 0) {
+    items.push({ key: 'system', label: '系统', items: systemItems })
   }
   return items
 })

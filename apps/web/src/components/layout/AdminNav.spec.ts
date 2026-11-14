@@ -203,4 +203,16 @@ describe('AdminNav', () => {
     expect(wrapper.text()).toContain('邮件设置')
     wrapper.unmount()
   })
+
+  it('shows the backup entry only with system.backup.manage', async () => {
+    let wrapper = await mountNav()
+    expect(wrapper.text()).not.toContain('数据备份')
+
+    auth.can.mockImplementation((code) => code === PERM.system.backup.manage)
+    wrapper = await mountNav()
+    expect(auth.can).toHaveBeenCalledWith(PERM.system.backup.manage)
+    expect(wrapper.find('a[href="/admin/backups"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('数据备份')
+    wrapper.unmount()
+  })
 })
