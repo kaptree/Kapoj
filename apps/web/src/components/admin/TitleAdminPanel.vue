@@ -169,6 +169,13 @@ function openEdit(item: TitleItem) {
   if (achievements.value.length === 0) void loadAchievements()
 }
 
+// PrimeVue's ColorPicker emits a bare six-digit hex string when format="hex".
+// Normalize it immediately so validation, preview and the API all see #RRGGBB.
+function onColorChange(value: string) {
+  const raw = value.trim()
+  form.value.color = raw && !raw.startsWith('#') ? `#${raw}` : raw
+}
+
 function validate(): string | null {
   const current = form.value
   if (!current.name.trim()) return '请填写称号名称'
@@ -351,7 +358,11 @@ onMounted(() => {
         <div class="field">
           <span class="field-label">颜色 <span class="required">*</span></span>
           <div class="color-field">
-            <ColorPicker v-model="form.color" format="hex" />
+            <ColorPicker
+              :model-value="form.color"
+              format="hex"
+              @update:model-value="onColorChange"
+            />
             <span
               class="color-preview"
               :style="{ color: safeTitleColor(form.color, 'var(--kapoj-text)') }"

@@ -158,7 +158,7 @@ describe('TitleAdminPanel', () => {
     await flushPromises()
 
     setField(dialog().querySelector('#title-name')!, '新称号')
-    wrapper.findComponent(ColorPicker).vm.$emit('update:modelValue', '#112233')
+    wrapper.findComponent(ColorPicker).vm.$emit('update:modelValue', '112233')
     wrapper.findAllComponents(Select)[0]!.vm.$emit('update:modelValue', 'rating')
     await nextTick()
     wrapper
@@ -183,6 +183,22 @@ describe('TitleAdminPanel', () => {
     })
     expect(toast.add).toHaveBeenCalledWith(
       expect.objectContaining({ severity: 'success', summary: '称号已创建' }),
+    )
+    wrapper.unmount()
+  })
+
+  it('normalizes a title color without a leading hash when editing', async () => {
+    const wrapper = await mountPanel()
+    await actionButton(wrapper, '编辑', 0)!.trigger('click')
+    await flushPromises()
+
+    wrapper.findComponent(ColorPicker).vm.$emit('update:modelValue', 'abcdef')
+    dialogButton('保存')!.click()
+    await flushPromises()
+
+    expect(updateTitle).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ color: '#abcdef' }),
     )
     wrapper.unmount()
   })

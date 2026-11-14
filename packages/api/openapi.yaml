@@ -2269,7 +2269,7 @@ paths:
         '403': { $ref: '#/components/responses/Error' }
     post:
       summary: 创建称号（gamification.title.manage）
-      description: '名称 1–100 字；颜色必须为 #RRGGBB；价格 0–1000000；解锁条件必须为正整数阈值、Rating 或符合成就 code 格式的字符串。'
+      description: '名称 1–100 字；颜色接受 #RRGGBB 或 RRGGBB（保存为 #RRGGBB）；价格 0–1000000；解锁条件必须为正整数阈值、Rating 或符合成就 code 格式的字符串。'
       security: [{ bearer: [] }]
       requestBody:
         required: true
@@ -4322,7 +4322,7 @@ components:
       required: [name, color, unlockConditionType, unlockConditionConfig]
       properties:
         name: { type: string, minLength: 1, maxLength: 100 }
-        color: { type: string, pattern: '^#[0-9A-Fa-f]{6}$', description: 称号颜色 }
+        color: { type: string, pattern: '^#?[0-9A-Fa-f]{6}$', description: '称号颜色；接受 #RRGGBB 或 RRGGBB，服务端保存为 #RRGGBB' }
         unlockConditionType: { $ref: '#/components/schemas/TitleUnlockType' }
         unlockConditionConfig: { $ref: '#/components/schemas/TitleUnlockConfig' }
         priceCoins: { type: integer, format: int64, minimum: 0, maximum: 1000000 }

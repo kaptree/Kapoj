@@ -511,7 +511,6 @@ func TestTitleCRUDValidation(t *testing.T) {
 	}{
 		{"名称为空", func(in *gamification.TitleInput) { in.Name = "  " }},
 		{"名称过长", func(in *gamification.TitleInput) { in.Name = string(make([]rune, 101)) }},
-		{"颜色缺少井号", func(in *gamification.TitleInput) { in.Color = "7C3AED" }},
 		{"颜色长度错误", func(in *gamification.TitleInput) { in.Color = "#7C3AE" }},
 		{"颜色非法字符", func(in *gamification.TitleInput) { in.Color = "#GGGGGG" }},
 		{"价格为负", func(in *gamification.TitleInput) { in.PriceCoins = -1 }},
@@ -576,4 +575,23 @@ func TestTitleCRUDValidation(t *testing.T) {
 	assertCode(t, e.svc.DeleteTitle(ctx, userViewer, created.ID), 40300)
 	assertCode(t, e.svc.DeleteTitle(ctx, adminViewer(e.admin.ID), missingID), 40400)
 	require.NoError(t, e.svc.DeleteTitle(ctx, adminViewer(e.admin.ID), created.ID))
+}
+
+func TestTitleColorNormalizes(t *testing.T) {
+	e := newTitleEnv(t)
+	ctx := context.Background()
+
+	created, err := e.svc.CreateTitle(ctx, adminViewer(e.admin.ID), titleInput(
+		"颜色规范化", "7C3AED",
+		gamification.TitleUnlockACCount, gamification.TitleUnlockConfig{Threshold: 1}, 0,
+	))
+	require.NoError(t, err)
+	assert.Equal(t, "#7C3AED", created.Color)
+
+	updated, err := e.svc.UpdateTitle(ctx, adminViewer(e.admin.ID), created.ID, titleInput(
+		"颜色规范化更新", "ABCDEF",
+		gamification.TitleUnlockACCount, gamification.TitleUnlockConfig{Threshold: 1}, 0,
+	))
+	require.NoError(t, err)
+	assert.Equal(t, "#ABCDEF", updated.Color)
 }

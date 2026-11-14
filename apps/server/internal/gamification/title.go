@@ -283,10 +283,21 @@ func (s *Service) findTitle(ctx context.Context, id int64) (*Title, error) {
 	return title, nil
 }
 
+// normalizeTitleColor accepts the six-digit form emitted by the color picker
+// and stores the canonical #RRGGBB form. Invalid values are left untouched so
+// the caller's validation produces the usual error.
+func normalizeTitleColor(raw string) string {
+	color := strings.TrimSpace(raw)
+	if len(color) == 6 {
+		color = "#" + color
+	}
+	return color
+}
+
 // normalizeTitleInput 校验并规范化管理员输入，并只保留当前解锁类型使用的配置字段。
 func normalizeTitleInput(in TitleInput) (TitleInput, error) {
 	in.Name = strings.TrimSpace(in.Name)
-	in.Color = strings.TrimSpace(in.Color)
+	in.Color = normalizeTitleColor(in.Color)
 	in.UnlockConditionConfig.AchievementCode = strings.TrimSpace(in.UnlockConditionConfig.AchievementCode)
 
 	if err := validateText("称号名称", in.Name, 1, 100); err != nil {

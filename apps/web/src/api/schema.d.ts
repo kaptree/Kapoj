@@ -5465,7 +5465,7 @@ export interface paths {
         put?: never;
         /**
          * 创建称号（gamification.title.manage）
-         * @description 名称 1–100 字；颜色必须为 #RRGGBB；价格 0–1000000；解锁条件必须为正整数阈值、Rating 或符合成就 code 格式的字符串。
+         * @description 名称 1–100 字；颜色接受 #RRGGBB 或 RRGGBB（保存为 #RRGGBB）；价格 0–1000000；解锁条件必须为正整数阈值、Rating 或符合成就 code 格式的字符串。
          */
         post: {
             parameters: {
@@ -8442,7 +8442,7 @@ export interface components {
         };
         TitleInput: {
             name: string;
-            /** @description 称号颜色 */
+            /** @description 称号颜色；接受 #RRGGBB 或 RRGGBB，服务端保存为 #RRGGBB */
             color: string;
             unlockConditionType: components["schemas"]["TitleUnlockType"];
             unlockConditionConfig: components["schemas"]["TitleUnlockConfig"];
