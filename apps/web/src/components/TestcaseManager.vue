@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, shallowRef, watch } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import Button from 'primevue/button'
 import Column from 'primevue/column'
@@ -19,6 +19,7 @@ import {
   updateTestcase,
   uploadChecker,
   uploadTestcase,
+  uploadTestcasesBatch,
 } from '@/api/problems'
 import type { ProblemType, Testcase } from '@/api/types'
 import TestcaseEditDialog from '@/components/TestcaseEditDialog.vue'
@@ -47,6 +48,59 @@ const checkerEl = ref<HTMLInputElement>()
 
 const editVisible = ref(false)
 const editing = ref<Testcase | null>(null)
+
+const batchFiles = ref<File[]>([])
+const batchScore = ref(10)
+const batchUploading = ref(false)
+const batchDragActive = ref(false)
+const batchInput = ref<HTMLInputElement>()
+const batchError = ref('')
+
+interface BatchPairPreview {
+  name: string
+  input: string
+  output: string
+  ok: boolean
+}
+
+const batchPreview = computed<BatchPairPreview[]>(() => {
+  type Entry = { input?: File; out?: File; ans?: File }
+  const entries = new Map<string, Entry>()
+  for (const file of batchFiles.value) {
+    const lower = file.name.toLowerCase()
+    let name = ''
+    let slot: keyof Entry | null = null
+    if (lower.endsWith('.in')) {
+      name = file.name.slice(0, -3)
+      slot = 'input'
+    } else if (lower.endsWith('.out')) {
+      name = file.name.slice(0, -4)
+      slot = 'out'
+    } else if (lower.endsWith('.ans')) {
+      name = file.name.slice(0, -4)
+      slot = 'ans'
+    }
+    if (!name || !slot) continue
+    const entry = entries.get(name) ?? {}
+    entry[slot] = file
+    entries.set(name, entry)
+  }
+  return [...entries.entries()]
+    .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+    .map(([name, entry]) => {
+      const output = entry.out ?? entry.ans
+      return {
+        name,
+        input: entry.input?.name ?? '缺少 .in',
+        output: output?.name ?? '缺少 .out/.ans',
+        ok: Boolean(entry.input && output),
+      }
+    })
+})
+
+const batchValid = computed(
+  () => batchPreview.value.length > 0 && batchPreview.value.every((pair) => pair.ok),
+)
 
 function openCreate() {
   editing.value = null
@@ -134,6 +188,48 @@ async function upload() {
   toast.add({ severity: 'success', summary: '测试点已上传', life: 3000 })
   await load()
   emit('changed')
+}
+
+function addBatchFiles(files: File[]) {
+  batchError.value = ''
+  batchFiles.value = [...batchFiles.value, ...files]
+}
+
+function onBatchChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  addBatchFiles([...(input.files ?? [])])
+  input.value = ''
+}
+
+function onBatchDrop(event: DragEvent) {
+  batchDragActive.value = false
+  addBatchFiles([...(event.dataTransfer?.files ?? [])])
+}
+
+function clearBatch() {
+  batchFiles.value = []
+  batchError.value = ''
+  if (batchInput.value) batchInput.value.value = ''
+}
+
+async function uploadBatch() {
+  if (!batchValid.value || batchUploading.value) {
+    batchError.value = '每个 .in 必须对应一个 .out 或 .ans'
+    return
+  }
+  batchUploading.value = true
+  batchError.value = ''
+  try {
+    await uploadTestcasesBatch(props.problemId, batchFiles.value, batchScore.value)
+    toast.add({ severity: 'success', summary: '批量测试点已上传', life: 3000 })
+    clearBatch()
+    await load()
+    emit('changed')
+  } catch (e) {
+    batchError.value = e instanceof ApiError ? e.message : '批量上传失败，请稍后再试'
+  } finally {
+    batchUploading.value = false
+  }
 }
 
 async function changeScore(tc: Testcase, value: number | null | undefined) {
@@ -339,6 +435,63 @@ function goAiGenerate() {
       <p class="hint">输入、输出文件各不超过 16 MiB。</p>
     </section>
 
+    <section class="uploader batch-uploader">
+      <h3>批量上传测试数据</h3>
+      <div
+        class="batch-drop"
+        :class="{ 'batch-drop--active': batchDragActive }"
+        role="button"
+        tabindex="0"
+        data-test="batch-drop"
+        @click="batchInput?.click()"
+        @keydown.enter.prevent="batchInput?.click()"
+        @keydown.space.prevent="batchInput?.click()"
+        @dragover.prevent="batchDragActive = true"
+        @dragleave.prevent="batchDragActive = false"
+        @drop.prevent="onBatchDrop"
+      >
+        <i class="pi pi-cloud-upload" aria-hidden="true" />
+        <span>点击或拖入多个 .in / .out / .ans 文件</span>
+        <small>每个 .in 必须对应一个 .out 或 .ans；同名同时存在时使用 .out</small>
+        <input
+          ref="batchInput"
+          type="file"
+          multiple
+          class="file-input"
+          accept=".in,.out,.ans"
+          data-test="batch-input"
+          @change="onBatchChange"
+        />
+      </div>
+
+      <ul v-if="batchPreview.length" class="batch-preview" data-test="batch-preview">
+        <li v-for="pair in batchPreview" :key="pair.name" :class="{ 'is-bad': !pair.ok }">
+          <span class="mono">{{ pair.name }}</span>
+          <span>{{ pair.input }}</span>
+          <span>↔</span>
+          <span>{{ pair.output }}</span>
+          <span class="batch-preview__status">{{ pair.ok ? '已配对' : '未配对' }}</span>
+        </li>
+      </ul>
+
+      <Message v-if="batchError" severity="error" :closable="false">{{ batchError }}</Message>
+
+      <div class="batch-actions">
+        <label class="score-field">
+          分数
+          <InputNumber v-model="batchScore" :min="0" :max="1000" size="small" />
+        </label>
+        <Button label="清空" severity="secondary" text :disabled="batchUploading" @click="clearBatch" />
+        <Button
+          label="批量上传"
+          :loading="batchUploading"
+          :disabled="!batchValid || batchUploading"
+          @click="uploadBatch"
+        />
+      </div>
+      <p class="hint">一次最多 100 对，单文件不超过 16 MiB，总量不超过 200 MiB。</p>
+    </section>
+
     <template v-if="type === 'special'">
       <section class="checker">
         <h3>特判 checker</h3>
@@ -401,6 +554,77 @@ function goAiGenerate() {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--kapoj-space-1);
+}
+
+.batch-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: var(--kapoj-space-3);
+  color: var(--kapoj-text-secondary);
+  text-align: center;
+  cursor: pointer;
+  border: 1px dashed var(--kapoj-border);
+  border-radius: var(--kapoj-radius-sm);
+}
+
+.batch-drop:hover,
+.batch-drop--active {
+  color: var(--kapoj-primary);
+  border-color: var(--kapoj-primary);
+  background: var(--kapoj-primary-soft);
+}
+
+.batch-drop i {
+  font-size: 1.5rem;
+}
+
+.batch-drop small {
+  color: var(--kapoj-text-muted);
+  font-size: 11px;
+}
+
+.batch-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  padding: 0;
+  margin: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.batch-preview li {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr) 16px minmax(0, 1fr) 58px;
+  gap: var(--kapoj-space-1);
+  align-items: center;
+  padding: 4px 6px;
+  font-size: 11px;
+  border-radius: var(--kapoj-radius-sm);
+  background: var(--kapoj-bg-elevated);
+}
+
+.batch-preview li.is-bad {
+  color: var(--kapoj-danger);
+}
+
+.batch-preview__status {
+  color: var(--kapoj-text-muted);
+  text-align: right;
+}
+
+.mono {
+  font-family: var(--kapoj-font-mono);
+}
+
+.batch-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--kapoj-space-2);
 }
 
 .load-error {

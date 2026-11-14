@@ -1,6 +1,8 @@
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
+import Checkbox from 'primevue/checkbox'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { ApiError } from '@/api/http'
@@ -72,7 +74,15 @@ describe('ProblemImportView', () => {
   it('uploads a zip and renders imported/failed results', async () => {
     problemsApi.importHydroProblems.mockResolvedValue(
       result({
-        imported: [{ id: 101, title: '求和', slug: 'hydro-6760', testcaseCount: 10 }],
+        imported: [
+          {
+            id: 101,
+            title: '求和',
+            slug: 'hydro-6760',
+            testcaseCount: 10,
+            overwritten: false,
+          },
+        ],
         failed: [{ folder: '6761', title: '坏题', error: '缺少 problem_zh.md' }],
       }),
     )
@@ -82,7 +92,9 @@ describe('ProblemImportView', () => {
     await button(wrapper, '开始导入').trigger('click')
     await flushPromises()
 
-    expect(problemsApi.importHydroProblems).toHaveBeenCalledTimes(1)
+    expect(problemsApi.importHydroProblems).toHaveBeenCalledWith(expect.any(File), {
+      conflictPolicy: 'ask',
+    })
     expect(wrapper.text()).toContain('导入成功 1 道')
     expect(wrapper.text()).toContain('求和')
     expect(wrapper.text()).toContain('hydro-6760')
@@ -93,7 +105,13 @@ describe('ProblemImportView', () => {
   })
 
   it('shows edit links only with problem.update', async () => {
-    const imported = { id: 101, title: '求和', slug: 'hydro-6760', testcaseCount: 10 }
+    const imported = {
+      id: 101,
+      title: '求和',
+      slug: 'hydro-6760',
+      testcaseCount: 10,
+      overwritten: false,
+    }
     problemsApi.importHydroProblems.mockResolvedValue(result({ imported: [imported] }))
 
     let view = await mountView()
@@ -113,6 +131,56 @@ describe('ProblemImportView', () => {
 
     expect(view.wrapper.find('a[href="/problems/101/edit"]').exists()).toBe(true)
     view.wrapper.unmount()
+  })
+
+  it('asks before overwriting existing problems', async () => {
+    problemsApi.importHydroProblems
+      .mockResolvedValueOnce(
+        result({
+          conflicts: [
+            {
+              slug: 'hydro-6760',
+              folder: '6760',
+              existingProblemId: 7,
+              existingTitle: '旧题',
+              canOverwrite: true,
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        result({
+          imported: [
+            {
+              id: 7,
+              title: '新题',
+              slug: 'hydro-6760',
+              testcaseCount: 2,
+              overwritten: true,
+            },
+          ],
+        }),
+      )
+    const { wrapper } = await mountView()
+    await setFile(wrapper, fileLike('problems.zip', 1024))
+    await button(wrapper, '开始导入').trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('发现同名题目')
+    wrapper.findAllComponents(Checkbox)[0]!.vm.$emit('update:modelValue', ['hydro-6760'])
+    await nextTick()
+    const apply = Array.from(document.querySelectorAll('.p-dialog button')).find((item) =>
+      item.textContent?.includes('应用选择并导入'),
+    ) as HTMLButtonElement
+    apply.click()
+    await flushPromises()
+
+    expect(problemsApi.importHydroProblems).toHaveBeenLastCalledWith(expect.any(File), {
+      conflictPolicy: 'overwrite',
+      overwriteSlugs: ['hydro-6760'],
+      skipSlugs: [],
+    })
+    expect(wrapper.text()).toContain('已覆盖')
   })
 
   it('shows upload/API errors in Chinese', async () => {

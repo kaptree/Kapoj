@@ -106,6 +106,13 @@ export interface TestcaseUploadInput {
   isSample?: boolean
 }
 
+export function uploadTestcasesBatch(id: number | string, files: File[], score = 10) {
+  const form = new FormData()
+  for (const file of files) form.append('files', file)
+  form.append('score', String(score))
+  return http.postForm<Testcase[]>(`/problems/${id}/testcases/batch`, form)
+}
+
 export function uploadTestcase(id: number | string, up: TestcaseUploadInput) {
   const form = new FormData()
   form.append('input', up.input)
@@ -133,9 +140,20 @@ export function uploadChecker(id: number | string, file: File) {
   return http.postForm<null>(`/problems/${id}/checker`, form)
 }
 
-export function importHydroProblems(file: File) {
+export interface HydroImportOptions {
+  conflictPolicy?: 'ask' | 'skip' | 'overwrite'
+  overwriteSlugs?: string[]
+  skipSlugs?: string[]
+}
+
+export function importHydroProblems(file: File, options: HydroImportOptions = {}) {
   const form = new FormData()
   form.append('file', file)
+  if (options.conflictPolicy) form.append('conflictPolicy', options.conflictPolicy)
+  if (options.overwriteSlugs?.length) {
+    form.append('overwriteSlugs', JSON.stringify(options.overwriteSlugs))
+  }
+  if (options.skipSlugs?.length) form.append('skipSlugs', JSON.stringify(options.skipSlugs))
   return http.postForm<HydroImportResult>('/problems/import/hydro', form)
 }
 

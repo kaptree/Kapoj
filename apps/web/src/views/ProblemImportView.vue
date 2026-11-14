@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import Button from 'primevue/button'
+import Checkbox from 'primevue/checkbox'
 import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
+import Dialog from 'primevue/dialog'
 import Message from 'primevue/message'
+import Tag from 'primevue/tag'
 
 import { ApiError } from '@/api/http'
-import { importHydroProblems } from '@/api/problems'
+import { importHydroProblems, type HydroImportOptions } from '@/api/problems'
 import type { HydroImportResult } from '@/api/types'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
@@ -23,8 +26,11 @@ const canEdit = computed(() => auth.can(PERM.problem.update))
 const fileInput = ref<HTMLInputElement | null>(null)
 const file = ref<File | null>(null)
 const uploading = ref(false)
+const dragActive = ref(false)
 const result = ref<HydroImportResult | null>(null)
 const error = ref('')
+const conflictVisible = ref(false)
+const overwriteSlugs = ref<string[]>([])
 
 function formatSize(bytes: number) {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
@@ -32,31 +38,45 @@ function formatSize(bytes: number) {
   return `${bytes} B`
 }
 
-function onFileChange(event: Event) {
-  const input = event.target as HTMLInputElement
-  const picked = input.files?.[0] ?? null
+function pickFile(picked: File | null) {
   error.value = ''
+  result.value = null
   file.value = null
   if (!picked) return
   if (!picked.name.toLowerCase().endsWith('.zip')) {
     error.value = '请选择 .zip 格式的题包文件'
-    input.value = ''
+    if (fileInput.value) fileInput.value.value = ''
     return
   }
   if (picked.size > MAX_FILE_BYTES) {
     error.value = `题包文件不能超过 ${MAX_FILE_MB} MB`
-    input.value = ''
+    if (fileInput.value) fileInput.value.value = ''
     return
   }
   file.value = picked
 }
 
-async function upload() {
+function onFileChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  pickFile(input.files?.[0] ?? null)
+}
+
+function onDrop(event: DragEvent) {
+  dragActive.value = false
+  pickFile(event.dataTransfer?.files?.[0] ?? null)
+}
+
+async function runImport(options: HydroImportOptions) {
   if (!file.value || uploading.value) return
   uploading.value = true
   error.value = ''
   try {
-    result.value = await importHydroProblems(file.value)
+    const next = await importHydroProblems(file.value, options)
+    result.value = next
+    if (next.conflicts?.length) {
+      overwriteSlugs.value = []
+      conflictVisible.value = true
+    }
   } catch (e) {
     error.value = e instanceof ApiError ? e.message : '上传失败，请稍后再试'
   } finally {
@@ -64,10 +84,35 @@ async function upload() {
   }
 }
 
+async function upload() {
+  await runImport({ conflictPolicy: 'ask' })
+}
+
+async function applyConflicts() {
+  conflictVisible.value = false
+  const conflicts = result.value?.conflicts ?? []
+  const selected = new Set(overwriteSlugs.value)
+  const skipSlugs = conflicts
+    .map((item) => item.slug)
+    .filter((slug) => !selected.has(slug))
+  await runImport({
+    conflictPolicy: 'overwrite',
+    overwriteSlugs: [...selected],
+    skipSlugs,
+  })
+}
+
+async function skipAllConflicts() {
+  conflictVisible.value = false
+  await runImport({ conflictPolicy: 'skip' })
+}
+
 function reset() {
   file.value = null
   result.value = null
   error.value = ''
+  conflictVisible.value = false
+  overwriteSlugs.value = []
   if (fileInput.value) fileInput.value.value = ''
 }
 </script>
@@ -96,41 +141,65 @@ function reset() {
         {{ error }}
       </Message>
 
-      <div class="import-controls">
+      <div
+        class="import-drop"
+        :class="{ 'import-drop--active': dragActive, 'import-drop--busy': uploading }"
+        role="button"
+        tabindex="0"
+        data-test="import-drop"
+        @click="fileInput?.click()"
+        @keydown.enter.prevent="fileInput?.click()"
+        @keydown.space.prevent="fileInput?.click()"
+        @dragover.prevent="dragActive = true"
+        @dragleave.prevent="dragActive = false"
+        @drop.prevent="onDrop"
+      >
+        <i class="pi pi-cloud-upload" aria-hidden="true" />
+        <strong v-if="file">{{ file.name }}</strong>
+        <span v-else>点击或拖拽题包到这里</span>
+        <small v-if="file">{{ formatSize(file.size) }}</small>
+        <small v-else>支持 .zip，单个题包不超过 {{ MAX_FILE_MB }} MB</small>
         <input
           ref="fileInput"
           type="file"
           accept=".zip,application/zip"
-          class="file-input"
+          class="visually-hidden"
+          data-test="import-file"
           aria-label="选择题包文件"
           @change="onFileChange"
         />
-        <span v-if="file" class="file-name">{{ file.name }}（{{ formatSize(file.size) }}）</span>
-        <span v-else class="file-hint">请选择 .zip 格式的题包文件</span>
-        <div class="import-actions">
-          <Button
-            label="开始导入"
-            icon="pi pi-upload"
-            :loading="uploading"
-            :disabled="!file || uploading"
-            @click="upload"
-          />
-          <Button
-            v-if="file && !uploading"
-            label="重新选择"
-            severity="secondary"
-            text
-            @click="reset"
-          />
-        </div>
+      </div>
+
+      <div class="import-actions">
+        <Button
+          label="开始导入"
+          icon="pi pi-upload"
+          :loading="uploading"
+          :disabled="!file || uploading"
+          @click="upload"
+        />
+        <Button
+          v-if="file && !uploading"
+          label="重新选择"
+          severity="secondary"
+          text
+          @click="reset"
+        />
       </div>
 
       <p class="limit-note">
-        单个题包不超过 {{ MAX_FILE_MB }} MB；导入的题目默认下线，创建者为当前用户。
+        导入的题目默认下线，创建者为当前用户；同名题目标识会先询问是否覆盖。
       </p>
     </AppSurface>
 
     <template v-if="result">
+      <AppSurface v-if="result.warnings?.length" padding="lg" class="result-surface">
+        <h2 class="result-title">导入提示</h2>
+        <Message v-for="warning in result.warnings" :key="warning" severity="warn" :closable="false">
+          {{ warning }}
+        </Message>
+      </AppSurface>
+
       <AppSurface padding="lg" class="result-surface">
         <h2 class="result-title">导入成功 {{ result.imported.length }} 道</h2>
         <DataTable
@@ -142,7 +211,10 @@ function reset() {
           class="result-table"
         >
           <Column header="标题" style="min-width: 140px">
-            <template #body="{ data }">{{ data.title }}</template>
+            <template #body="{ data }">
+              <span>{{ data.title }}</span>
+              <Tag v-if="data.overwritten" value="已覆盖" severity="warn" class="overwritten-tag" />
+            </template>
           </Column>
           <Column header="标识" style="min-width: 120px">
             <template #body="{ data }">
@@ -166,6 +238,16 @@ function reset() {
           </Column>
         </DataTable>
         <p v-else class="empty-result">没有成功导入的题目。</p>
+      </AppSurface>
+
+      <AppSurface v-if="result.skipped?.length" padding="lg" class="result-surface">
+        <h2 class="result-title">已跳过 {{ result.skipped.length }} 道</h2>
+        <ul class="skipped-list">
+          <li v-for="item in result.skipped" :key="item.slug">
+            <span class="mono">{{ item.slug }}</span>
+            <span>{{ item.folder }}</span>
+          </li>
+        </ul>
       </AppSurface>
 
       <AppSurface v-if="result.failed.length" padding="lg" class="result-surface">
@@ -199,6 +281,60 @@ function reset() {
         <Button label="继续导入" icon="pi pi-upload" @click="reset" />
       </div>
     </template>
+
+    <Dialog
+      v-model:visible="conflictVisible"
+      header="发现同名题目"
+      modal
+      :draggable="false"
+      :style="{ width: 'min(96vw, 760px)' }"
+    >
+      <p class="conflict-hint">
+        以下题目标识已存在。勾选需要覆盖的题目，未勾选的将跳过；覆盖后题目会强制下线。
+      </p>
+      <DataTable :value="result?.conflicts ?? []" data-key="slug" size="small">
+        <Column header="覆盖" style="width: 70px">
+          <template #body="{ data }">
+            <Checkbox
+              v-model="overwriteSlugs"
+              :value="data.slug"
+              binary
+              :disabled="!data.canOverwrite"
+              :aria-label="`覆盖 ${data.slug}`"
+            />
+          </template>
+        </Column>
+        <Column header="标识" style="min-width: 130px">
+          <template #body="{ data }"><span class="mono">{{ data.slug }}</span></template>
+        </Column>
+        <Column header="已有题目" style="min-width: 160px">
+          <template #body="{ data }">{{ data.existingTitle }}</template>
+        </Column>
+        <Column header="权限" style="width: 100px">
+          <template #body="{ data }">
+            <Tag
+              :value="data.canOverwrite ? '可覆盖' : '无权覆盖'"
+              :severity="data.canOverwrite ? 'success' : 'secondary'"
+            />
+          </template>
+        </Column>
+      </DataTable>
+      <template #footer>
+        <Button
+          label="全部跳过"
+          severity="secondary"
+          text
+          :disabled="uploading"
+          @click="skipAllConflicts"
+        />
+        <Button
+          label="应用选择并导入"
+          icon="pi pi-upload"
+          :loading="uploading"
+          @click="applyConflicts"
+        />
+      </template>
+    </Dialog>
   </div>
 </template>
 
@@ -220,31 +356,45 @@ function reset() {
   margin: 0;
 }
 
-.import-controls {
+.import-drop {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   align-items: center;
-  gap: var(--kapoj-space-3);
+  justify-content: center;
+  gap: 4px;
+  min-height: 150px;
+  color: var(--kapoj-text-secondary);
+  text-align: center;
+  cursor: pointer;
+  border: 1px dashed var(--kapoj-border);
+  border-radius: var(--kapoj-radius-sm);
 }
 
-.file-input {
-  flex: 0 0 auto;
+.import-drop:hover,
+.import-drop--active {
+  color: var(--kapoj-primary);
+  border-color: var(--kapoj-primary);
+  background: var(--kapoj-primary-soft);
 }
 
-.file-name {
-  color: var(--kapoj-text);
-  font-weight: 500;
+.import-drop--busy {
+  cursor: wait;
+  opacity: 0.7;
 }
 
-.file-hint {
+.import-drop i {
+  font-size: 2rem;
+}
+
+.import-drop small {
   color: var(--kapoj-text-muted);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .import-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--kapoj-space-2);
-  margin-left: auto;
 }
 
 .limit-note {
@@ -263,51 +413,10 @@ function reset() {
   margin: 0;
   color: var(--kapoj-text);
   font-size: 1rem;
-  font-weight: 600;
 }
 
 .result-table {
-  overflow: hidden;
-  border: 1px solid var(--kapoj-border);
-  border-radius: var(--kapoj-radius-md);
-}
-
-.result-table :deep(.p-datatable-thead > tr > th) {
-  padding: 8px var(--kapoj-space-3);
-  color: var(--kapoj-text-muted);
-  font-family: var(--kapoj-font-mono);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  background: var(--kapoj-bg-elevated);
-  border-color: var(--kapoj-border);
-}
-
-.result-table :deep(.p-datatable-tbody > tr > td) {
-  padding: 8px var(--kapoj-space-3);
-  color: var(--kapoj-text-secondary);
-  border-color: var(--kapoj-border);
-}
-
-.mono {
-  font-family: var(--kapoj-font-mono);
-}
-
-.edit-link {
-  color: var(--kapoj-primary);
-  font-weight: 600;
-}
-
-.offline-note {
-  color: var(--kapoj-text-muted);
-  font-size: 12px;
-}
-
-.empty-result {
-  margin: 0;
-  color: var(--kapoj-text-muted);
-  font-size: 13px;
+  width: 100%;
 }
 
 .result-actions {
@@ -316,14 +425,47 @@ function reset() {
   gap: var(--kapoj-space-2);
 }
 
-@media (max-width: 600px) {
-  .import-actions {
-    width: 100%;
-    margin-left: 0;
-  }
+.mono {
+  font-family: var(--kapoj-font-mono);
+}
 
-  .import-actions :deep(.p-button) {
-    flex: 1 1 auto;
-  }
+.overwritten-tag {
+  margin-left: var(--kapoj-space-1);
+}
+
+.skipped-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.skipped-list li {
+  display: flex;
+  gap: var(--kapoj-space-2);
+  color: var(--kapoj-text-secondary);
+  font-size: 12px;
+}
+
+.empty-result {
+  margin: 0;
+  color: var(--kapoj-text-muted);
+}
+
+.conflict-hint {
+  margin: 0 0 var(--kapoj-space-3);
+  color: var(--kapoj-text-secondary);
+  font-size: 0.8125rem;
+}
+
+.edit-link {
+  color: var(--kapoj-primary);
+}
+
+.offline-note {
+  color: var(--kapoj-text-muted);
+  font-size: 12px;
 }
 </style>

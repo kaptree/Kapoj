@@ -15,6 +15,7 @@ import {
   updateTestcase,
   uploadChecker,
   uploadTestcase,
+  uploadTestcasesBatch,
 } from '@/api/problems'
 import type { Testcase } from '@/api/types'
 import TestcaseManager from './TestcaseManager.vue'
@@ -35,6 +36,7 @@ vi.mock('@/api/problems', () => ({
   updateTestcase: vi.fn(),
   uploadChecker: vi.fn(),
   uploadTestcase: vi.fn(),
+  uploadTestcasesBatch: vi.fn(),
 }))
 
 function tc(overrides: Partial<Testcase> = {}): Testcase {
@@ -73,6 +75,7 @@ beforeEach(() => {
   vi.mocked(updateTestcase).mockReset()
   vi.mocked(uploadChecker).mockReset()
   vi.mocked(uploadTestcase).mockReset()
+  vi.mocked(uploadTestcasesBatch).mockReset()
   vi.mocked(listTestcases).mockResolvedValue([])
 })
 
@@ -304,6 +307,39 @@ describe('TestcaseManager', () => {
     await wrapper.setProps({ checkerUploaded: true })
     expect(wrapper.findComponent(Tag).props('value')).toBe('已上传')
     wrapper.unmount()
+  })
+
+  it('validates pairs and batch uploads testcases', async () => {
+    vi.mocked(uploadTestcasesBatch).mockResolvedValue([])
+    const wrapper = mountManager()
+    await flushPromises()
+
+    const input = wrapper.find('input[data-test="batch-input"]')
+    const files = [
+      new File(['in1'], '1.in'),
+      new File(['out1'], '1.out'),
+      new File(['in2'], '2.in'),
+      new File(['ans2'], '2.ans'),
+    ]
+    Object.defineProperty(input.element, 'files', { configurable: true, value: files })
+    await input.trigger('change')
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="batch-preview"]').text()).toContain('已配对')
+    await buttons(wrapper, '批量上传')[0]!.trigger('click')
+    await flushPromises()
+
+    expect(uploadTestcasesBatch).toHaveBeenCalledWith(1, files, 10)
+    expect(listTestcases).toHaveBeenCalledTimes(2)
+
+    const incomplete = wrapper.find('input[data-test="batch-input"]')
+    Object.defineProperty(incomplete.element, 'files', {
+      configurable: true,
+      value: [new File(['in3'], '3.in')],
+    })
+    await incomplete.trigger('change')
+    await flushPromises()
+    expect(buttons(wrapper, '批量上传')[0]!.attributes('disabled')).toBeDefined()
   })
 
   it('shows load error with retry', async () => {
