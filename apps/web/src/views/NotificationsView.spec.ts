@@ -6,7 +6,7 @@ import { createPinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '@/api/http'
-import { listNotifications, markAllRead, markRead } from '@/api/social'
+import { listNotifications, markAllRead, markRead, unreadCount } from '@/api/social'
 import type { NotificationItem, SocialUserSummary } from '@/api/types'
 import NotificationsView from './NotificationsView.vue'
 
@@ -22,6 +22,7 @@ vi.mock('@/api/social', () => ({
   listNotifications: vi.fn(),
   markRead: vi.fn(),
   markAllRead: vi.fn(),
+  unreadCount: vi.fn(),
 }))
 
 function actor(nickname: string): SocialUserSummary {
@@ -60,6 +61,8 @@ beforeEach(() => {
   vi.mocked(listNotifications).mockReset()
   vi.mocked(markRead).mockReset()
   vi.mocked(markAllRead).mockReset()
+  vi.mocked(unreadCount).mockReset()
+  vi.mocked(unreadCount).mockResolvedValue({ count: 0 })
 })
 
 describe('NotificationsView', () => {

@@ -1,7 +1,10 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 
 import { unreadCount } from '@/api/social'
+import { useNotificationsStore } from '@/stores/notifications'
 import NotificationBell from './NotificationBell.vue'
 
 const auth = vi.hoisted(() => ({ isLoggedIn: true }))
@@ -11,9 +14,10 @@ vi.mock('@/api/social', () => ({
   unreadCount: vi.fn(),
 }))
 
-function mountBell() {
+function mountBell(pinia = createPinia()) {
   return mount(NotificationBell, {
     global: {
+      plugins: [pinia],
       stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } },
     },
   })
@@ -50,6 +54,19 @@ describe('NotificationBell', () => {
     expect(link.exists()).toBe(true)
     expect(link.attributes('href')).toBe('/notifications')
     expect(wrapper.find('.notification-bell__badge').text()).toBe('3')
+    wrapper.unmount()
+  })
+
+  it('reflects shared store changes immediately', async () => {
+    const pinia = createPinia()
+    const wrapper = mountBell(pinia)
+    await flushPromises()
+
+    const store = useNotificationsStore(pinia)
+    store.unreadCount = 5
+    await nextTick()
+
+    expect(wrapper.find('.notification-bell__badge').text()).toBe('5')
     wrapper.unmount()
   })
 

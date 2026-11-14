@@ -6,19 +6,21 @@ import Paginator from 'primevue/paginator'
 import { useToast } from 'primevue/usetoast'
 
 import { ApiError } from '@/api/http'
-import { listNotifications, markAllRead, markRead } from '@/api/social'
+import { listNotifications } from '@/api/social'
 import type { NotificationItem } from '@/api/types'
 import AppEmptyState from '@/components/ui/AppEmptyState.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
+import { useNotificationsStore } from '@/stores/notifications'
 import { formatDateTime } from '@/utils/format'
 
 const PAGE_SIZE = 20
 
 const router = useRouter()
 const toast = useToast()
+const notifications = useNotificationsStore()
 
 const items = ref<NotificationItem[]>([])
 const total = ref(0)
@@ -28,7 +30,8 @@ const error = ref('')
 const markingAll = ref(false)
 
 const first = computed(() => (page.value - 1) * PAGE_SIZE)
-const hasUnread = computed(() => items.value.some((item) => item.readAt === null))
+const hasUnreadOnPage = computed(() => items.value.some((item) => item.readAt === null))
+const showMarkAll = computed(() => hasUnreadOnPage.value || notifications.unreadCount > 0)
 
 function typeLabel(type: NotificationItem['type']): string {
   switch (type) {
@@ -64,7 +67,10 @@ async function load() {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  void load()
+  void notifications.refreshUnread()
+})
 
 function onPage(event: { page: number }) {
   page.value = event.page + 1
@@ -74,7 +80,7 @@ function onPage(event: { page: number }) {
 async function openNotification(item: NotificationItem) {
   if (item.readAt === null) {
     try {
-      await markRead(item.id)
+      await notifications.markRead(item.id, true)
       item.readAt = new Date().toISOString()
     } catch {
       // A failed single-mark shouldn't block navigation.
@@ -86,7 +92,7 @@ async function openNotification(item: NotificationItem) {
 async function markAll() {
   markingAll.value = true
   try {
-    await markAllRead()
+    await notifications.markAllRead()
     items.value = items.value.map((item) => ({
       ...item,
       readAt: item.readAt ?? new Date().toISOString(),
@@ -128,7 +134,7 @@ async function markAll() {
         <div class="notifications-toolbar">
           <span class="notifications-count">共 {{ total }} 条</span>
           <Button
-            v-if="hasUnread"
+            v-if="showMarkAll"
             label="全部已读"
             icon="pi pi-check"
             size="small"
