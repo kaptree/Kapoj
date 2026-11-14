@@ -460,6 +460,7 @@ function goAiGenerate() {
           class="file-input"
           accept=".in,.out,.ans"
           data-test="batch-input"
+          @click.stop
           @change="onBatchChange"
         />
       </div>

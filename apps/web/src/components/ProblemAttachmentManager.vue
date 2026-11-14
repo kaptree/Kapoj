@@ -150,6 +150,7 @@ function remove(item: ProblemAttachment) {
         multiple
         class="visually-hidden"
         data-test="attachment-input"
+        @click.stop
         @change="onFileChange"
       />
     </div>

@@ -164,6 +164,7 @@ function reset() {
           class="visually-hidden"
           data-test="import-file"
           aria-label="选择题包文件"
+          @click.stop
           @change="onFileChange"
         />
       </div>
