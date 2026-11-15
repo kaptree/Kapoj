@@ -198,16 +198,29 @@ func TestReplaceMatchesIsIdempotent(t *testing.T) {
 		}
 	}
 
-	require.NoError(t, e.repo.ReplaceMatches(ctx, run.ID, []similarity.Match{mk(1), mk(2)}))
-	require.NoError(t, e.repo.ReplaceMatches(ctx, run.ID, []similarity.Match{mk(3)}))
+	matchCount := func() int64 {
+		var n int64
+		require.NoError(t, e.db.Model(&similarity.Match{}).Where("run_id = ?", run.ID).Count(&n).Error)
+		return n
+	}
 
-	var n int64
-	require.NoError(t, e.db.Model(&similarity.Match{}).Where("run_id = ?", run.ID).Count(&n).Error)
-	assert.Equal(t, int64(1), n)
+	// First replace inserts two rows.
+	require.NoError(t, e.repo.ReplaceMatches(ctx, run.ID, []similarity.Match{mk(1), mk(2)}))
+	assert.Equal(t, int64(2), matchCount())
+
+	// Re-inserting a pair that overlaps with the current rows proves delete
+	// precedes insert inside the transaction; otherwise the unique pair index
+	// would reject it.
+	require.NoError(t, e.repo.ReplaceMatches(ctx, run.ID, []similarity.Match{mk(1), mk(3)}))
+	assert.Equal(t, int64(2), matchCount())
+
+	// Replace the two rows with a single row.
+	require.NoError(t, e.repo.ReplaceMatches(ctx, run.ID, []similarity.Match{mk(4)}))
+	assert.Equal(t, int64(1), matchCount())
 
 	var m similarity.Match
 	require.NoError(t, e.db.Where("run_id = ?", run.ID).First(&m).Error)
-	assert.Equal(t, int64(3), m.OriginalSubmissionID)
+	assert.Equal(t, int64(4), m.OriginalSubmissionID)
 }
 
 func TestFindMatchIncludesBothCodes(t *testing.T) {
@@ -333,4 +346,80 @@ func TestMarkStaleRunsFailed(t *testing.T) {
 	gotQueued, err := e.repo.FindRun(ctx, queued.ID)
 	require.NoError(t, err)
 	assert.Equal(t, similarity.RunStatusQueued, gotQueued.Status)
+}
+
+func TestCreateRunPersistsIgnoreCommonCodeFalse(t *testing.T) {
+	e := newSimEnv(t)
+	ctx := context.Background()
+
+	run := e.createRun(t, &similarity.Run{
+		ContestID: e.contestID, ProblemID: e.problemA, Status: similarity.RunStatusQueued,
+		ThresholdPercent: 80, IgnoreCommonCode: false, Engine: "winnowing", EngineVersion: "1",
+	})
+	assert.False(t, run.IgnoreCommonCode, "CreateRun must not overwrite an explicit false")
+
+	got, err := e.repo.FindRun(ctx, run.ID)
+	require.NoError(t, err)
+	assert.False(t, got.IgnoreCommonCode)
+}
+
+func TestUpdateRunPersistsChanges(t *testing.T) {
+	e := newSimEnv(t)
+	ctx := context.Background()
+
+	run := e.createRun(t, &similarity.Run{
+		ContestID: e.contestID, ProblemID: e.problemA, Status: similarity.RunStatusQueued,
+		ThresholdPercent: 80, IgnoreCommonCode: true, Engine: "winnowing", EngineVersion: "1",
+	})
+
+	loaded, err := e.repo.FindRun(ctx, run.ID)
+	require.NoError(t, err)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	loaded.Status = similarity.RunStatusRunning
+	loaded.IgnoreCommonCode = false
+	loaded.ThresholdPercent = 90
+	loaded.SubmissionCount = 5
+	loaded.StartedAt = &now
+	loaded.ErrorMessage = "boom"
+	require.NoError(t, e.repo.UpdateRun(ctx, loaded))
+
+	got, err := e.repo.FindRun(ctx, run.ID)
+	require.NoError(t, err)
+	assert.Equal(t, similarity.RunStatusRunning, got.Status)
+	assert.False(t, got.IgnoreCommonCode)
+	assert.Equal(t, 90, got.ThresholdPercent)
+	assert.Equal(t, 5, got.SubmissionCount)
+	assert.Equal(t, "boom", got.ErrorMessage)
+	require.NotNil(t, got.StartedAt)
+	assert.True(t, now.Equal(*got.StartedAt))
+}
+
+func TestFindActiveRunReturnsQueuedThenNone(t *testing.T) {
+	e := newSimEnv(t)
+	ctx := context.Background()
+
+	e.createRun(t, &similarity.Run{
+		ContestID: e.contestID, ProblemID: e.problemA, Status: similarity.RunStatusCompleted,
+		ThresholdPercent: 80, IgnoreCommonCode: true, Engine: "winnowing", EngineVersion: "1",
+	})
+	queued := e.createRun(t, &similarity.Run{
+		ContestID: e.contestID, ProblemID: e.problemA, Status: similarity.RunStatusQueued,
+		ThresholdPercent: 80, IgnoreCommonCode: true, Engine: "winnowing", EngineVersion: "1",
+	})
+
+	active, err := e.repo.FindActiveRun(ctx, e.contestID, e.problemA)
+	require.NoError(t, err)
+	require.NotNil(t, active)
+	assert.Equal(t, queued.ID, active.ID)
+	assert.Equal(t, similarity.RunStatusQueued, active.Status)
+
+	// Mark the queued run failed; no active run should remain.
+	loaded, err := e.repo.FindRun(ctx, queued.ID)
+	require.NoError(t, err)
+	loaded.Status = similarity.RunStatusFailed
+	require.NoError(t, e.repo.UpdateRun(ctx, loaded))
+
+	active, err = e.repo.FindActiveRun(ctx, e.contestID, e.problemA)
+	require.NoError(t, err)
+	assert.Nil(t, active)
 }
