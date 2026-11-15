@@ -1,0 +1,19 @@
+{$KAPOJ_SITE_ADDRESS::80} {
+	encode zstd gzip
+
+	@backend path /api/* /health
+	handle @backend {
+		reverse_proxy server:8080
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+
+	@index path /index.html
+	header @index Cache-Control "no-cache"
+
+	header /assets/* Cache-Control "public, max-age=31536000, immutable"
+}

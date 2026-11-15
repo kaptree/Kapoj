@@ -1,0 +1,15 @@
+.git
+.env
+**/node_modules
+**/dist
+**/coverage
+**/.gocache
+apps/web/playwright-report
+apps/web/test-results
+apps/server/bin
+apps/server/data
+minio-data
+docs
+*.md
+Export.zip
+.DS_Store
