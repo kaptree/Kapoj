@@ -8,14 +8,14 @@ import (
 
 // Overview is the per-contest similarity dashboard. It lists every contest
 // problem with its saved settings (or the default threshold) and, when one
-// exists, the latest completed run.
+// exists, the latest run of any status.
 type Overview struct {
 	ContestID int64         `json:"contestId"`
 	Problems  []ProblemView `json:"problems"`
 }
 
 // ProblemView is one contest problem with its similarity settings and the
-// latest completed run.
+// latest run of any status.
 type ProblemView struct {
 	ProblemID        int64    `json:"problemId"`
 	DisplayID        string   `json:"displayId"`

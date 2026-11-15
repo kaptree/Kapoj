@@ -178,6 +178,32 @@ func TestSettingsUpsertAndLatestCompletedRun(t *testing.T) {
 	assert.Equal(t, runB.ID, latest[e.problemB].ID)
 }
 
+func TestLatestRunsReturnsLatestAnyStatus(t *testing.T) {
+	e := newSimEnv(t)
+	ctx := context.Background()
+
+	completed := e.createRun(t, &similarity.Run{
+		ContestID: e.contestID, ProblemID: e.problemA, Status: similarity.RunStatusCompleted,
+		ThresholdPercent: 80, IgnoreCommonCode: true, Engine: "winnowing", EngineVersion: "1",
+	})
+	queued := e.createRun(t, &similarity.Run{
+		ContestID: e.contestID, ProblemID: e.problemA, Status: similarity.RunStatusQueued,
+		ThresholdPercent: 85, IgnoreCommonCode: true, Engine: "winnowing", EngineVersion: "1",
+	})
+
+	latest, err := e.repo.LatestRuns(ctx, e.contestID)
+	require.NoError(t, err)
+	require.Len(t, latest, 1)
+	assert.Equal(t, queued.ID, latest[e.problemA].ID, "latest run of any status must win")
+	assert.Equal(t, similarity.RunStatusQueued, latest[e.problemA].Status)
+
+	// LatestCompletedRuns must still ignore the queued run.
+	completedOnly, err := e.repo.LatestCompletedRuns(ctx, e.contestID)
+	require.NoError(t, err)
+	require.Len(t, completedOnly, 1)
+	assert.Equal(t, completed.ID, completedOnly[e.problemA].ID)
+}
+
 func TestReplaceMatchesIsIdempotent(t *testing.T) {
 	e := newSimEnv(t)
 	ctx := context.Background()
@@ -263,6 +289,40 @@ func TestFindMatchIncludesBothCodes(t *testing.T) {
 
 	_, err = e.repo.FindMatch(ctx, 999999)
 	assert.ErrorIs(t, err, similarity.ErrNotFound)
+}
+
+func TestFindMatchIncludesRunThresholdAndFinishedAt(t *testing.T) {
+	e := newSimEnv(t)
+	ctx := context.Background()
+
+	original := insertSubmission(t, e.db, e.participantA, e.contestID, e.problemA, submission.LanguageGo, "package main\nfunc main() {}", e.start.Add(time.Minute))
+	suspect := insertSubmission(t, e.db, e.participantB, e.contestID, e.problemA, submission.LanguageGo, "package main\nfunc run() {}", e.start.Add(2*time.Minute))
+
+	finished := time.Now().UTC().Truncate(time.Microsecond)
+	run := e.createRun(t, &similarity.Run{
+		ContestID: e.contestID, ProblemID: e.problemA, Status: similarity.RunStatusCompleted,
+		ThresholdPercent: 82, IgnoreCommonCode: true, Engine: "winnowing", EngineVersion: "1",
+		FinishedAt: &finished,
+	})
+
+	require.NoError(t, e.repo.ReplaceMatches(ctx, run.ID, []similarity.Match{{
+		ContestID: e.contestID, ProblemID: e.problemA,
+		OriginalSubmissionID: original, SuspectSubmissionID: suspect,
+		OriginalUserID: e.participantA, SuspectUserID: e.participantB,
+		Language: submission.LanguageGo, SimilarityPercent: 95, DicePercent: 90,
+		SharedFingerprints: 15, OriginalFingerprints: 20, SuspectFingerprints: 20,
+		OriginalCreatedAt: e.start.Add(time.Minute), SuspectCreatedAt: e.start.Add(2 * time.Minute),
+	}}))
+
+	var m similarity.Match
+	require.NoError(t, e.db.Where("run_id = ?", run.ID).First(&m).Error)
+
+	detail, err := e.repo.FindMatch(ctx, m.ID)
+	require.NoError(t, err)
+	assert.Equal(t, 82, detail.ThresholdPercent)
+	require.NotNil(t, detail.FinishedAt)
+	assert.True(t, finished.Equal(*detail.FinishedAt))
+	assert.Equal(t, "package main\nfunc main() {}", detail.OriginalCode)
 }
 
 func TestListMatchesUsesLatestCompletedRunOnly(t *testing.T) {

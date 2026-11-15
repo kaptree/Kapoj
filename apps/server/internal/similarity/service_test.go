@@ -391,3 +391,84 @@ func TestMatchDetailRejectsMatchFromAnotherContest(t *testing.T) {
 	_, err := e.svc.MatchDetail(ctx, managerViewer, e.contestID, m.ID)
 	assert.EqualError(t, err, httpx.ErrNotFound.Error())
 }
+
+func TestMatchDetailIncludesThresholdAndCodes(t *testing.T) {
+	e := newServiceEnv(t)
+	ctx := context.Background()
+
+	subA := insertSubmission(t, e.db, e.userA, e.contestID, e.problemA, submission.LanguageGo, "package main\nfunc main() {}", e.start.Add(time.Minute))
+	subB := insertSubmission(t, e.db, e.userB, e.contestID, e.problemA, submission.LanguageGo, "package main\nfunc run() {}", e.start.Add(2*time.Minute))
+
+	finished := time.Now().UTC().Truncate(time.Microsecond)
+	run := e.createRun(t, &similarity.Run{
+		ContestID: e.contestID, ProblemID: e.problemA, Status: similarity.RunStatusCompleted,
+		ThresholdPercent: 88, IgnoreCommonCode: true, Engine: "winnowing-v1", EngineVersion: "1",
+		FinishedAt: &finished,
+	})
+	require.NoError(t, e.repo.ReplaceMatches(ctx, run.ID, []similarity.Match{{
+		ContestID: e.contestID, ProblemID: e.problemA,
+		OriginalSubmissionID: subA, SuspectSubmissionID: subB,
+		OriginalUserID: e.userA, SuspectUserID: e.userB,
+		Language: submission.LanguageGo, SimilarityPercent: 95, DicePercent: 90,
+		SharedFingerprints: 15, OriginalFingerprints: 20, SuspectFingerprints: 20,
+		OriginalCreatedAt: e.start.Add(time.Minute), SuspectCreatedAt: e.start.Add(2 * time.Minute),
+	}}))
+
+	var m similarity.Match
+	require.NoError(t, e.db.Where("run_id = ?", run.ID).First(&m).Error)
+
+	detail, err := e.svc.MatchDetail(ctx, managerViewer, e.contestID, m.ID)
+	require.NoError(t, err)
+	assert.Equal(t, 88, detail.ThresholdPercent)
+	require.NotNil(t, detail.FinishedAt)
+	assert.True(t, finished.Equal(*detail.FinishedAt))
+	assert.Equal(t, "package main\nfunc main() {}", detail.OriginalCode)
+	assert.Equal(t, "package main\nfunc run() {}", detail.SuspectCode)
+}
+
+func TestOverviewShowsLatestRunAnyStatus(t *testing.T) {
+	e := newServiceEnv(t)
+	ctx := context.Background()
+
+	// An older completed run carrying one match.
+	completed := e.createRun(t, &similarity.Run{
+		ContestID: e.contestID, ProblemID: e.problemA, Status: similarity.RunStatusCompleted,
+		ThresholdPercent: 80, IgnoreCommonCode: true, Engine: "winnowing-v1", EngineVersion: "1",
+		SubmissionCount: 2, MatchCount: 1,
+	})
+	require.NoError(t, e.repo.ReplaceMatches(ctx, completed.ID, []similarity.Match{{
+		ContestID: e.contestID, ProblemID: e.problemA,
+		OriginalSubmissionID: 1, SuspectSubmissionID: 2,
+		OriginalUserID: e.userA, SuspectUserID: e.userB,
+		Language: submission.LanguageCPP, SimilarityPercent: 90, DicePercent: 80,
+		SharedFingerprints: 10, OriginalFingerprints: 20, SuspectFingerprints: 20,
+		OriginalCreatedAt: e.start, SuspectCreatedAt: e.start.Add(time.Minute),
+	}}))
+
+	// A newer queued run is the latest run for the problem.
+	queued := e.createRun(t, &similarity.Run{
+		ContestID: e.contestID, ProblemID: e.problemA, Status: similarity.RunStatusQueued,
+		ThresholdPercent: 85, IgnoreCommonCode: true, Engine: "winnowing-v1", EngineVersion: "1",
+	})
+
+	overview, err := e.svc.Overview(ctx, managerViewer, e.contestID)
+	require.NoError(t, err)
+	require.Len(t, overview.Problems, 2)
+
+	var view similarity.ProblemView
+	for _, p := range overview.Problems {
+		if p.ProblemID == e.problemA {
+			view = p
+		}
+	}
+	require.NotNil(t, view.LatestRun, "overview must show the latest run of any status")
+	assert.Equal(t, queued.ID, view.LatestRun.ID)
+	assert.Equal(t, similarity.RunStatusQueued, view.LatestRun.Status)
+
+	// Match endpoints still only expose completed runs.
+	page, err := e.svc.Matches(ctx, managerViewer, e.contestID, 0, 0, 1, 20)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), page.Total)
+	require.Len(t, page.Items, 1)
+	assert.Equal(t, int64(1), page.Items[0].OriginalSubmissionID)
+}

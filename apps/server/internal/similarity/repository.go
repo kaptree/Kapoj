@@ -45,9 +45,12 @@ type MatchRow struct {
 	SuspectNickname  string
 }
 
-// MatchDetailRow is a match joined with both submissions and both users.
+// MatchDetailRow is a match joined with its run, both submissions and both
+// users.
 type MatchDetailRow struct {
 	Match
+	ThresholdPercent int        `gorm:"column:threshold_percent"`
+	FinishedAt       *time.Time `gorm:"column:finished_at"`
 	OriginalCode     string
 	SuspectCode      string
 	OriginalStatus   submission.Status
@@ -69,6 +72,7 @@ type Repository interface {
 	UpdateRun(ctx context.Context, r *Run) error
 	ReplaceMatches(ctx context.Context, runID int64, matches []Match) error
 	LatestCompletedRuns(ctx context.Context, contestID int64) (map[int64]*Run, error)
+	LatestRuns(ctx context.Context, contestID int64) (map[int64]*Run, error)
 	ListMatches(ctx context.Context, f MatchFilter) ([]MatchRow, int64, error)
 	FindMatch(ctx context.Context, id int64) (*MatchDetailRow, error)
 	ListProblemSubmissions(ctx context.Context, contestID, problemID int64) ([]SubmissionRow, error)
@@ -234,6 +238,24 @@ func (r *gormRepository) LatestCompletedRuns(ctx context.Context, contestID int6
 	return out, nil
 }
 
+// LatestRuns returns the most recent run per problem of any status.
+func (r *gormRepository) LatestRuns(ctx context.Context, contestID int64) (map[int64]*Run, error) {
+	var runs []Run
+	err := r.db.WithContext(ctx).Raw(`
+		SELECT DISTINCT ON (problem_id) *
+		FROM contest_similarity_runs
+		WHERE contest_id = ?
+		ORDER BY problem_id, id DESC`, contestID).Scan(&runs).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int64]*Run, len(runs))
+	for i := range runs {
+		out[runs[i].ProblemID] = &runs[i]
+	}
+	return out, nil
+}
+
 // ListMatches returns a page of matches. Unless an explicit RunID is given,
 // only matches from the latest completed run of each problem are included.
 func (r *gormRepository) ListMatches(ctx context.Context, f MatchFilter) ([]MatchRow, int64, error) {
@@ -274,17 +296,19 @@ func (r *gormRepository) ListMatches(ctx context.Context, f MatchFilter) ([]Matc
 	return rows, total, err
 }
 
-// FindMatch returns a match joined with both submissions' code/status and both
-// users' identities.
+// FindMatch returns a match joined with its run, both submissions' code/status
+// and both users' identities.
 func (r *gormRepository) FindMatch(ctx context.Context, id int64) (*MatchDetailRow, error) {
 	var row MatchDetailRow
 	err := r.db.WithContext(ctx).
 		Table("contest_similarity_matches AS m").
 		Select(`m.*,
+			r.threshold_percent, r.finished_at,
 			os.code AS original_code, os.status AS original_status,
 			ss.code AS suspect_code, ss.status AS suspect_status,
 			ou.username AS original_username, ou.nickname AS original_nickname,
 			su.username AS suspect_username, su.nickname AS suspect_nickname`).
+		Joins("JOIN contest_similarity_runs AS r ON r.id = m.run_id").
 		Joins("JOIN submissions AS os ON os.id = m.original_submission_id").
 		Joins("JOIN submissions AS ss ON ss.id = m.suspect_submission_id").
 		Joins("JOIN users AS ou ON ou.id = m.original_user_id").

@@ -118,8 +118,8 @@ func (s *Service) settingsOrDefault(ctx context.Context, contestID, problemID in
 	return nil, err
 }
 
-// Overview returns the per-problem settings and latest completed runs for an
-// ended contest.
+// Overview returns the per-problem settings and latest run for an ended
+// contest.
 func (s *Service) Overview(ctx context.Context, v Viewer, contestID int64) (*Overview, error) {
 	if err := requireManage(v); err != nil {
 		return nil, err
@@ -135,7 +135,7 @@ func (s *Service) Overview(ctx context.Context, v Viewer, contestID int64) (*Ove
 	if err != nil {
 		return nil, err
 	}
-	runs, err := s.repo.LatestCompletedRuns(ctx, contestID)
+	runs, err := s.repo.LatestRuns(ctx, contestID)
 	if err != nil {
 		return nil, err
 	}
@@ -342,8 +342,11 @@ func (s *Service) MatchDetail(ctx context.Context, v Viewer, contestID, matchID 
 	if row.ContestID != contestID {
 		return nil, httpx.ErrNotFound
 	}
+	mv := matchViewFromRow(row.Match, row.OriginalUsername, row.OriginalNickname, row.SuspectUsername, row.SuspectNickname)
+	mv.ThresholdPercent = row.ThresholdPercent
+	mv.FinishedAt = row.FinishedAt
 	return &MatchDetail{
-		MatchView:      matchViewFromRow(row.Match, row.OriginalUsername, row.OriginalNickname, row.SuspectUsername, row.SuspectNickname),
+		MatchView:      mv,
 		OriginalCode:   row.OriginalCode,
 		SuspectCode:    row.SuspectCode,
 		OriginalStatus: row.OriginalStatus,
