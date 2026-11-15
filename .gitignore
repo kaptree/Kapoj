@@ -10,6 +10,7 @@ apps/server/data/*
 !apps/server/data/.gitkeep
 minio-data/*
 !minio-data/.gitkeep
+docker/caddy/certs/
 
 apps/web/playwright-report/
 apps/web/test-results/
