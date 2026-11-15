@@ -33,15 +33,23 @@ func Open(root, key string) (io.ReadCloser, error) {
 	return f, nil
 }
 
+// ValidateKey enforces the same key format as the server storage layer.
+func ValidateKey(key string) error {
+	if key == "" || strings.ContainsAny(key, "\x00\\") || strings.HasPrefix(key, "/") {
+		return ErrInvalidKey
+	}
+	if path.Clean(key) != key || key == "." || strings.HasPrefix(key, "../") {
+		return ErrInvalidKey
+	}
+	return nil
+}
+
 // resolve maps a storage key to an absolute path under root, rejecting any key
 // that could escape the root. Shared by Open, Put and RemoveAll so that every
 // storage operation validates keys identically.
 func resolve(root, key string) (string, error) {
-	if key == "" || strings.ContainsAny(key, "\x00\\") || strings.HasPrefix(key, "/") {
-		return "", ErrInvalidKey
-	}
-	if path.Clean(key) != key || key == "." || strings.HasPrefix(key, "../") {
-		return "", ErrInvalidKey
+	if err := ValidateKey(key); err != nil {
+		return "", err
 	}
 	abs, err := filepath.Abs(root)
 	if err != nil {

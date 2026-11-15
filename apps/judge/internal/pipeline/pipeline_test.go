@@ -18,6 +18,7 @@ import (
 	"github.com/kaptree/kapoj/apps/judge/internal/model"
 	"github.com/kaptree/kapoj/apps/judge/internal/pipeline"
 	"github.com/kaptree/kapoj/apps/judge/internal/sandbox"
+	"github.com/kaptree/kapoj/apps/judge/internal/storage"
 	"github.com/kaptree/kapoj/apps/judge/internal/testutil"
 )
 
@@ -104,9 +105,11 @@ func newEnv(t *testing.T, typ string, specs ...caseSpec) *env {
 	sb := &fakeSandbox{}
 	pub := &fakePublisher{}
 	game := &fakeGamePublisher{}
+	store, err := storage.NewLocal(root)
+	require.NoError(t, err)
 	return &env{
 		pool: pool, repo: repo, root: root, sb: sb, pub: pub, game: game,
-		pipe:   pipeline.New(repo, root, sb, pub, game),
+		pipe:   pipeline.New(repo, store, sb, pub, game),
 		userID: user, problem: problem, cases: ids,
 	}
 }

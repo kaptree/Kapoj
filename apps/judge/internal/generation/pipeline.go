@@ -30,14 +30,14 @@ const (
 
 // Pipeline runs testcase generations.
 type Pipeline struct {
-	repo        *db.Repository
-	storageRoot string
-	sandbox     sandbox.Sandbox
+	repo    *db.Repository
+	store   storage.Store
+	sandbox sandbox.Sandbox
 }
 
 // New builds a generation pipeline.
-func New(repo *db.Repository, root string, sb sandbox.Sandbox) *Pipeline {
-	return &Pipeline{repo: repo, storageRoot: root, sandbox: sb}
+func New(repo *db.Repository, store storage.Store, sb sandbox.Sandbox) *Pipeline {
+	return &Pipeline{repo: repo, store: store, sandbox: sb}
 }
 
 // failure marks a user-level generation failure (bad script or program). It is
@@ -75,7 +75,7 @@ func (p *Pipeline) Run(ctx context.Context, generationID int64) error {
 	if err := p.repo.ResetGenerationCases(ctx, gen.ID); err != nil {
 		return p.failInfra(ctx, gen, genKey, err)
 	}
-	if err := storage.RemoveAll(p.storageRoot, genKey); err != nil {
+	if err := p.store.RemovePrefix(ctx, genKey); err != nil {
 		return p.failInfra(ctx, gen, genKey, err)
 	}
 
@@ -152,7 +152,7 @@ func (p *Pipeline) runGroup(
 		return &failure{message: fmt.Sprintf("第 %d 组 %s", i, reason)}
 	}
 
-	inputSize, err := storage.Put(p.storageRoot, inputKey, bytes.NewReader(genRun.Output), maxCaseBytes)
+	inputSize, err := p.store.Put(ctx, inputKey, bytes.NewReader(genRun.Output), maxCaseBytes)
 	if err != nil {
 		return err
 	}
@@ -174,7 +174,7 @@ func (p *Pipeline) runGroup(
 		return &failure{message: fmt.Sprintf("第 %d 组 %s", i, reason)}
 	}
 
-	outputSize, err := storage.Put(p.storageRoot, outputKey, bytes.NewReader(stdRun.Output), maxCaseBytes)
+	outputSize, err := p.store.Put(ctx, outputKey, bytes.NewReader(stdRun.Output), maxCaseBytes)
 	if err != nil {
 		return err
 	}
@@ -211,13 +211,19 @@ func validateRun(run sandbox.RunResult, who string) (reason string, ok bool) {
 
 // fail cleans up any generated files/cases and records a terminal failure.
 func (p *Pipeline) fail(ctx context.Context, gen *model.Generation, genKey, message string) error {
+	var errs []error
 	if err := p.repo.ResetGenerationCases(ctx, gen.ID); err != nil {
-		return err
+		errs = append(errs, err)
 	}
-	if err := storage.RemoveAll(p.storageRoot, genKey); err != nil {
-		return err
+	if err := p.store.RemovePrefix(ctx, genKey); err != nil {
+		errs = append(errs, err)
 	}
-	return p.repo.FinishGeneration(ctx, gen.ID, model.GenerationFailed, truncate(message, maxErrorMessage))
+	// Always mark the generation terminal, even when cleanup failed; the task
+	// has MaxRetry(0), so otherwise a transient MinIO error would strand it.
+	if err := p.repo.FinishGeneration(ctx, gen.ID, model.GenerationFailed, truncate(message, maxErrorMessage)); err != nil {
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
 }
 
 // failInfra performs best-effort cleanup after an infrastructure error and
@@ -225,14 +231,24 @@ func (p *Pipeline) fail(ctx context.Context, gen *model.Generation, genKey, mess
 // partial cases or files. The original error is returned so Asynq/logs still
 // observe the infrastructure failure.
 func (p *Pipeline) failInfra(ctx context.Context, gen *model.Generation, genKey string, cause error) error {
-	_ = p.repo.ResetGenerationCases(ctx, gen.ID)
-	_ = storage.RemoveAll(p.storageRoot, genKey)
+	var errs []error
+	if err := p.repo.ResetGenerationCases(ctx, gen.ID); err != nil {
+		errs = append(errs, err)
+	}
+	if err := p.store.RemovePrefix(ctx, genKey); err != nil {
+		errs = append(errs, err)
+	}
 	message := "系统错误"
 	if cause != nil {
 		message = truncate("系统错误："+cause.Error(), maxErrorMessage)
 	}
-	_ = p.repo.FinishGeneration(ctx, gen.ID, model.GenerationFailed, message)
-	return cause
+	if err := p.repo.FinishGeneration(ctx, gen.ID, model.GenerationFailed, message); err != nil {
+		errs = append(errs, err)
+	}
+	if cause != nil {
+		errs = append(errs, cause)
+	}
+	return errors.Join(errs...)
 }
 
 // generatedKey is the shared storage directory for one generation's files.

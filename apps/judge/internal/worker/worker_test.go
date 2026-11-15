@@ -16,6 +16,7 @@ import (
 	"github.com/kaptree/kapoj/apps/judge/internal/pipeline"
 	"github.com/kaptree/kapoj/apps/judge/internal/queue"
 	"github.com/kaptree/kapoj/apps/judge/internal/sandbox"
+	"github.com/kaptree/kapoj/apps/judge/internal/storage"
 	"github.com/kaptree/kapoj/apps/judge/internal/testutil"
 )
 
@@ -36,14 +37,16 @@ func TestWorkerRetriesThenMarksSystemError(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "cases"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "cases", "0.in"), []byte("1\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "cases", "0.out"), []byte("1\n"), 0o644))
+	store, err := storage.NewLocal(root)
+	require.NoError(t, err)
 
 	user := testutil.InsertUser(t, pool)
 	problem := testutil.InsertProblem(t, pool, "traditional", 1000, 256, "")
 	testutil.InsertTestcase(t, pool, problem, "cases/0.in", "cases/0.out", 10, 1)
 	sub := testutil.InsertSubmission(t, pool, user, problem, "cpp", "code", "pending")
 
-	w := New(pipeline.New(repo, root, failingSandbox{}, nil))
-	err := w.handle(context.Background(), sub, 0, 3)
+	w := New(pipeline.New(repo, store, failingSandbox{}, nil))
+	err = w.handle(context.Background(), sub, 0, 3)
 	require.Error(t, err)
 
 	got, err := repo.FindByID(context.Background(), sub)

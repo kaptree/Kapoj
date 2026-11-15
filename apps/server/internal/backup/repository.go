@@ -37,7 +37,8 @@ func (r *Repository) Overview(ctx context.Context) (*Overview, error) {
 		Restores:        []BackupRestoreJob{},
 	}
 	var platform, accounts BackupPackage
-	if err := r.db.WithContext(ctx).Where("kind = ? AND status = ?", KindPlatform, PackageReady).
+	if err := r.db.WithContext(ctx).
+		Where("kind = ? AND status = ? AND filename NOT LIKE ?", KindPlatform, PackageReady, "safety/%").
 		Order("id DESC").First(&platform).Error; err == nil {
 		out.PlatformPackage = &platform
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -171,6 +172,11 @@ func (r *Repository) LatestPackage(ctx context.Context, kind Kind, userID *int64
 // RemoveOlderPackages deletes prior package rows and returns their filenames.
 func (r *Repository) RemoveOlderPackages(ctx context.Context, kind Kind, userID *int64, keepID int64) ([]string, error) {
 	q := r.db.WithContext(ctx).Where("kind = ? AND id <> ?", kind, keepID)
+	if kind == KindPlatform {
+		// Safety snapshots are managed separately and must survive normal
+		// platform backup retention.
+		q = q.Where("filename NOT LIKE ?", "safety/%")
+	}
 	if userID != nil {
 		q = q.Where("user_id = ?", *userID)
 	} else {
@@ -195,6 +201,14 @@ func (r *Repository) RemoveOlderPackages(ctx context.Context, kind Kind, userID 
 		return nil, err
 	}
 	return files, nil
+}
+
+// DeleteSafetyPackagesExcept removes stale safety-package rows after their
+// objects have been pruned by the restore workflow.
+func (r *Repository) DeleteSafetyPackagesExcept(ctx context.Context, keepID int64) error {
+	return r.db.WithContext(ctx).
+		Where("filename LIKE ? AND id <> ?", "safety/%", keepID).
+		Delete(&BackupPackage{}).Error
 }
 
 func (r *Repository) CreateRestoreJob(ctx context.Context, row *BackupRestoreJob) error {

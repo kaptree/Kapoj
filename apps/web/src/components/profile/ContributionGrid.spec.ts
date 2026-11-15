@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
+import { nextTick } from 'vue'
 
 import type { ActivityDay, UserActivity } from '@/api/types'
 import ContributionGrid from './ContributionGrid.vue'
@@ -68,7 +69,7 @@ function hexLuminance(hex: string): number {
 
 function darkPalette(): number[] {
   const start = contributionSource.indexOf('.contribution-grid {')
-  const end = contributionSource.indexOf(':global(:root:not(.app-dark))')
+  const end = contributionSource.indexOf(':root:not(.app-dark)')
   const block = contributionSource.slice(start, end)
   return [1, 2, 3, 4].map((level) => {
     const match = block.match(new RegExp(`--contrib-${level}:\\s*(#[0-9A-Fa-f]{6})`))
@@ -137,6 +138,52 @@ describe('ContributionGrid', () => {
     expect(legend.text()).toContain('少')
     expect(legend.text()).toContain('多')
     expect(wrapper.findAll('.contribution-legend__swatch')).toHaveLength(5)
+  })
+
+  it('shows annual and streak stats beside the title', () => {
+    const wrapper = mountGrid()
+
+    const stats = wrapper.findAll('.contribution-stat')
+    expect(stats).toHaveLength(3)
+    expect(stats[0]!.text()).toContain('年度提交')
+    expect(stats[0]!.text()).toContain('26')
+    expect(stats[1]!.text()).toContain('当前连续')
+    expect(stats[1]!.text()).toContain('4 天')
+    expect(stats[2]!.text()).toContain('最长连续')
+    expect(stats[2]!.text()).toContain('18 天')
+  })
+
+  it('shows the hovered date and submission count in the footer', async () => {
+    const wrapper = mountGrid()
+    const cell = dayCell(wrapper, '2026-11-03')
+
+    await cell.trigger('mouseenter')
+    expect(wrapper.get('[data-test="contribution-hover"]').text()).toContain(
+      '2026-11-03 · 12 次代码提交',
+    )
+
+    await cell.trigger('mouseleave')
+    expect(wrapper.get('[data-test="contribution-hover"]').text()).toContain('每格代表一天')
+  })
+
+  it('uses one roving tab stop and lets keyboard users inspect days', async () => {
+    const wrapper = mountGrid()
+    const active = dayCell(wrapper, '2026-11-03')
+    const empty = dayCell(wrapper, '2026-10-30')
+
+    expect(active.attributes('tabindex')).toBe('0')
+    expect(empty.attributes('tabindex')).toBe('-1')
+    expect(wrapper.findAll('.contribution-cell[tabindex="0"]')).toHaveLength(1)
+
+    await active.trigger('focus')
+    expect(wrapper.get('[data-test="contribution-hover"]').text()).toContain(
+      '2026-11-03 · 12 次代码提交',
+    )
+
+    await active.trigger('keydown', { key: 'ArrowLeft' })
+    await nextTick()
+    expect(dayCell(wrapper, '2026-11-02').attributes('tabindex')).toBe('0')
+    expect(active.attributes('tabindex')).toBe('-1')
   })
 
   it('caps the grid at 365 days when the window is wider', () => {

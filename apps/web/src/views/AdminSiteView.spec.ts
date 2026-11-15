@@ -59,6 +59,7 @@ function home(overrides: Partial<SiteHomeContent> = {}): SiteHomeContent {
     eyebrow: 'KAPOJ // ONLINE JUDGE',
     title: '欢迎来到',
     titleHighlight: 'kapOJ',
+    tagline: '每一次提交，都是向更高 Rating 迈进一步。',
     description: '题库、比赛、排行榜、成就与任务已经上线。',
     primaryCta: link({
       icon: 'pi pi-arrow-right',
@@ -204,6 +205,23 @@ describe('AdminSiteView', () => {
       }),
     )
     expect(toast.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }))
+    wrapper.unmount()
+  })
+
+  it('previews the welcome copy while editing the homepage form', async () => {
+    const wrapper = await mountPage()
+    await openTab(wrapper, '首页')
+
+    const preview = wrapper.find('[data-test="home-preview"]')
+    expect(preview.text()).toContain('欢迎来到')
+    expect(preview.text()).toContain('每一次提交，都是向更高 Rating 迈进一步。')
+
+    await wrapper.find('[data-test="home-title"]').setValue('新的欢迎语')
+    await wrapper.find('[data-test="home-title-highlight"]').setValue('KOJ')
+    await wrapper.find('[data-test="home-tagline"]').setValue('新的品牌宣传语')
+
+    expect(preview.text()).toContain('新的欢迎语 KOJ')
+    expect(preview.text()).toContain('新的品牌宣传语')
     wrapper.unmount()
   })
 

@@ -56,7 +56,9 @@ func (s *Service) Identities(ctx context.Context, userIDs []int64) (map[int64]Id
 			continue
 		}
 		identity.Badges = append(identity.Badges, BadgeSummary{
-			ID: row.BadgeID, Name: row.Name, ImageURL: row.ImageURL,
+			ID:       row.BadgeID,
+			Name:     row.Name,
+			ImageURL: s.resolveBadgeImageURL(ctx, row.ImageURL),
 		})
 		identities[row.UserID] = identity
 	}

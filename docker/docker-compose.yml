@@ -4,16 +4,16 @@ services:
   postgres:
     image: postgres:17
     environment:
-      POSTGRES_USER: kapoj
-      POSTGRES_PASSWORD: kapoj
-      POSTGRES_DB: kapoj
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
     ports:
       - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./postgres/init-test-db.sh:/docker-entrypoint-initdb.d/init-test-db.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U kapoj -d kapoj"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -28,50 +28,59 @@ services:
       timeout: 3s
       retries: 10
 
+  minio:
+    # MinIO archived its official images in 2026. This community mirror is
+    # pinned for local/dev; production should point KAPOJ_MINIO_* at an
+    # existing MinIO or S3-compatible service.
+    image: firstfinger/minio:latest@sha256:fdb29bb0a42939d0cd1f80d8ff2cc17eceac76916bbe52cf98793c5af87cb714
+    entrypoint: ["/usr/bin/minio"]
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - ../minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   server:
     profiles: ["app"]
     build:
       context: ../apps/server
-    environment:
-      KAPOJ_HTTP_ADDR: ":8080"
-      KAPOJ_DATABASE_URL: postgres://kapoj:kapoj@postgres:5432/kapoj?sslmode=disable
-      KAPOJ_REDIS_ADDR: redis:6379
-      KAPOJ_JWT_SECRET: ${KAPOJ_JWT_SECRET:-}
-      KAPOJ_STORAGE_DIR: /data
-      # Keep secrets on the same data directory so recreating the
-      # container does not lose the AI/mail encryption keys.
-      KAPOJ_AI_KEY_FILE: /data/ai.key
-      KAPOJ_MAIL_KEY_FILE: /data/mail.key
+    # Single config source: the repository-root .env file.
+    env_file:
+      - ../.env
     ports:
       - "8080:8080"
-    volumes:
-      - storage:/data
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      minio:
         condition: service_healthy
 
   judge:
     profiles: ["app"]
     build:
       context: ../apps/judge
-    environment:
-      KAPOJ_DATABASE_URL: postgres://kapoj:kapoj@postgres:5432/kapoj?sslmode=disable
-      KAPOJ_REDIS_ADDR: redis:6379
-      KAPOJ_STORAGE_DIR: /data
-      KAPOJ_JUDGE_CONCURRENCY: "2"
-      KAPOJ_JUDGE_DOCKER: docker
-      KAPOJ_JUDGE_INSTANCE: judge-1
+    env_file:
+      - ../.env
     volumes:
-      - storage:/data
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio:
+        condition: service_healthy
 
 volumes:
   pgdata:
-  storage:

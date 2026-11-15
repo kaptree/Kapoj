@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -220,14 +221,14 @@ func (s *Service) addAccountFiles(ctx context.Context, archive *Writer, prefix s
 	}
 	rows.Close()
 	for key := range keys {
-		if err := addStorageFile(archive, prefix+key, s.storageDir, key); err != nil {
+		if err := addStoreFile(ctx, archive, s.files, prefix+key, key); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (s *Service) restoreAccount(ctx context.Context, zipPath string, targetUserID int64) error {
+func (s *Service) restoreAccount(ctx context.Context, zipPath string, targetUserID int64) (err error) {
 	reader, err := OpenReader(zipPath, s.maxEntries, s.maxUncompressed)
 	if err != nil {
 		return err
@@ -262,11 +263,55 @@ func (s *Service) restoreAccount(ctx context.Context, zipPath string, targetUser
 	if err != nil {
 		return err
 	}
-	defer func() { _ = os.RemoveAll(tempFiles) }()
+	keepSnapshot := false
+	defer func() {
+		if !keepSnapshot {
+			_ = os.RemoveAll(tempFiles)
+		}
+	}()
 	filesDir := filepath.Join(tempFiles, "files")
 	if err := extractStorage(reader, prefix+"/files/", filesDir); err != nil {
 		return err
 	}
+	keys, err := listDirKeys(filesDir)
+	if err != nil {
+		return err
+	}
+	previousDir := filepath.Join(tempFiles, "previous")
+	existed, err := snapshotStoreKeys(ctx, s.files, keys, previousDir)
+	if err != nil {
+		return err
+	}
+	if copyErr := copyDirToStore(ctx, s.files, filesDir); copyErr != nil {
+		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Minute)
+		rollbackErr := restoreStoreKeys(rollbackCtx, s.files, keys, previousDir, existed)
+		cancel()
+		if rollbackErr != nil {
+			keepSnapshot = true
+			return errors.Join(
+				fmt.Errorf("恢复文件失败: %w", copyErr),
+				fmt.Errorf("文件回滚失败，快照保留在 %s: %w", previousDir, rollbackErr),
+			)
+		}
+		return fmt.Errorf("恢复文件失败: %w", copyErr)
+	}
+	committed := false
+	defer func() {
+		if committed {
+			return
+		}
+		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Minute)
+		defer cancel()
+		if rollbackErr := restoreStoreKeys(rollbackCtx, s.files, keys, previousDir, existed); rollbackErr != nil {
+			keepSnapshot = true
+			slog.Warn("backup: account file rollback failed",
+				"err", rollbackErr, "snapshot", previousDir,
+			)
+			err = errors.Join(err,
+				fmt.Errorf("账号文件回滚失败，快照保留在 %s: %w", previousDir, rollbackErr),
+			)
+		}
+	}()
 
 	conn, err := s.database.connect(ctx)
 	if err != nil {
@@ -339,9 +384,7 @@ func (s *Service) restoreAccount(ctx context.Context, zipPath string, targetUser
 	if err := tx.Commit(ctx); err != nil {
 		return err
 	}
-	if err := copyStorageTree(filesDir, s.storageDir, s.backupDir); err != nil {
-		return fmt.Errorf("账号数据已恢复，但文件恢复失败: %w", err)
-	}
+	committed = true
 	return nil
 }
 

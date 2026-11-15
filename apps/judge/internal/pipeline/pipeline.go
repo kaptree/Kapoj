@@ -38,15 +38,15 @@ type GamePublisher interface {
 }
 
 type Pipeline struct {
-	repo        *db.Repository
-	storageRoot string
-	sandbox     sandbox.Sandbox
-	publisher   events.Publisher
-	game        GamePublisher
+	repo      *db.Repository
+	store     storage.Store
+	sandbox   sandbox.Sandbox
+	publisher events.Publisher
+	game      GamePublisher
 }
 
 func New(
-	repo *db.Repository, storageRoot string, sb sandbox.Sandbox,
+	repo *db.Repository, store storage.Store, sb sandbox.Sandbox,
 	publisher events.Publisher, game ...GamePublisher,
 ) *Pipeline {
 	var gamePublisher GamePublisher
@@ -54,7 +54,7 @@ func New(
 		gamePublisher = game[0]
 	}
 	return &Pipeline{
-		repo: repo, storageRoot: storageRoot, sandbox: sb,
+		repo: repo, store: store, sandbox: sb,
 		publisher: publisher, game: gamePublisher,
 	}
 }
@@ -123,7 +123,7 @@ func (p *Pipeline) Run(ctx context.Context, submissionID int64) error {
 
 	checkerArtifact := ""
 	if prob.Type == "special" {
-		source, err := p.readStorage(prob.CheckerPath, maxCheckerBytes)
+		source, err := p.readStorage(ctx, prob.CheckerPath, maxCheckerBytes)
 		if err != nil {
 			return fmt.Errorf("read checker: %w", err)
 		}
@@ -197,10 +197,10 @@ func (p *Pipeline) runCase(
 	tc model.Testcase, artifactDir, checkerArtifact string,
 ) (model.JudgeCaseResult, error) {
 	inputPath := filepath.Join(work, fmt.Sprintf("tc%d.in", tc.ID))
-	if err := p.copyStorage(tc.InputFile, inputPath); err != nil {
+	if err := p.copyStorage(ctx, tc.InputFile, inputPath); err != nil {
 		return model.JudgeCaseResult{}, fmt.Errorf("read input %s: %w", tc.InputFile, err)
 	}
-	answer, err := p.readStorage(tc.OutputFile, maxAnswerBytes)
+	answer, err := p.readStorage(ctx, tc.OutputFile, maxAnswerBytes)
 	if err != nil {
 		return model.JudgeCaseResult{}, fmt.Errorf("read answer %s: %w", tc.OutputFile, err)
 	}
@@ -295,11 +295,11 @@ func looksLikeOOM(stderr []byte) bool {
 	return false
 }
 
-func (p *Pipeline) readStorage(key string, limit int64) ([]byte, error) {
+func (p *Pipeline) readStorage(ctx context.Context, key string, limit int64) ([]byte, error) {
 	if key == "" {
 		return nil, storage.ErrInvalidKey
 	}
-	rc, err := storage.Open(p.storageRoot, key)
+	rc, err := p.store.Open(ctx, key)
 	if err != nil {
 		return nil, err
 	}
@@ -314,8 +314,8 @@ func (p *Pipeline) readStorage(key string, limit int64) ([]byte, error) {
 	return data, nil
 }
 
-func (p *Pipeline) copyStorage(key, dest string) error {
-	rc, err := storage.Open(p.storageRoot, key)
+func (p *Pipeline) copyStorage(ctx context.Context, key, dest string) error {
+	rc, err := p.store.Open(ctx, key)
 	if err != nil {
 		return err
 	}

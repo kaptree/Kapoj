@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -331,6 +332,28 @@ func TestBadgeImageUploadAndServe(t *testing.T) {
 
 	_, err = e.svc.BadgeImage(ctx, b.ID+1000)
 	assertCode(t, err, 40400)
+}
+
+func TestMissingBadgeImageIsNotAdvertised(t *testing.T) {
+	e := newBadgeEnv(t, 3)
+	ctx := context.Background()
+	b := e.createBadge(t, badgeInput("丢失图片", 0))
+	require.NoError(t, e.db.Model(&gamification.Badge{}).Where("id = ?", b.ID).
+		Update("image_url", fmt.Sprintf("/api/badges/%d/image", b.ID)).Error)
+
+	items, err := e.svc.ListBadges(ctx, gamification.Viewer{}, false)
+	require.NoError(t, err)
+	assert.Empty(t, findBadgeItem(t, items, b.ID).ImageURL,
+		"a missing internal image must not be advertised")
+
+	require.NoError(t, e.db.Create(&gamification.UserBadge{
+		UserID: e.user.ID, BadgeID: b.ID, IsEquipped: true, PurchasedAt: time.Now().UTC(),
+	}).Error)
+	identities, err := e.svc.Identities(ctx, []int64{e.user.ID})
+	require.NoError(t, err)
+	require.Len(t, identities[e.user.ID].Badges, 1)
+	assert.Empty(t, identities[e.user.ID].Badges[0].ImageURL,
+		"public identities must fall back instead of returning a broken URL")
 }
 
 func TestAchievementRewardsBadgeWithoutStock(t *testing.T) {

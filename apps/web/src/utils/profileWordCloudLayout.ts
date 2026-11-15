@@ -47,12 +47,14 @@ export function estimateProfileWordWidth(text: string, fontSize: number): number
     if (CJK_RE.test(char)) {
       units += 1
     } else if (char === ' ') {
-      units += 0.32
+      units += 0.34
     } else {
-      units += 0.58
+      units += 0.66
     }
   }
-  return Math.max(fontSize, units * fontSize)
+  // A small safety margin keeps short mixed CJK/ASCII words from being
+  // ellipsized by sub-pixel font-width differences in the browser.
+  return Math.max(fontSize, units * fontSize + 2)
 }
 
 /** Stable colour bucket for a word. */

@@ -59,12 +59,11 @@ const groups = computed<NavGroup[]>(() => {
     list.push({
       key: 'growth',
       label: '成长',
-      items: auth.isLoggedIn
-        ? showAdminEntry.value
-          ? [...growthItems, adminItem]
-          : growthItems
-        : guestGrowthItems,
+      items: auth.isLoggedIn ? growthItems : guestGrowthItems,
     })
+  }
+  if (auth.isLoggedIn && showAdminEntry.value) {
+    list.push({ key: 'admin', label: '管理', items: [adminItem] })
   }
   return list
 })
@@ -77,7 +76,12 @@ function isActive(path: string): boolean {
 
 <template>
   <nav class="app-nav" aria-label="主导航">
-    <div v-for="group in groups" :key="group.key" class="app-nav__group">
+    <div
+      v-for="group in groups"
+      :key="group.key"
+      class="app-nav__group"
+      :class="{ 'app-nav__group--admin': group.key === 'admin' }"
+    >
       <p class="app-nav__label">{{ group.label }}</p>
       <template v-for="item in group.items" :key="item.key">
         <RouterLink
@@ -112,24 +116,29 @@ function isActive(path: string): boolean {
 .app-nav {
   display: flex;
   flex-direction: column;
-  gap: var(--kapoj-space-5);
+  gap: 28px;
   min-width: 0;
 }
 
 .app-nav__group {
   display: flex;
   flex-direction: column;
-  gap: var(--kapoj-space-1);
+  gap: 2px;
+}
+
+.app-nav__group--admin {
+  padding-top: var(--kapoj-space-3);
+  border-top: 1px solid var(--kapoj-border);
 }
 
 .app-nav__label {
-  margin: 0 0 var(--kapoj-space-1);
-  padding: 0 var(--kapoj-space-2);
+  margin: 0 0 6px;
+  padding: 0 10px;
   color: var(--kapoj-text-muted);
   font-family: var(--kapoj-font-mono);
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
 }
 
@@ -137,9 +146,9 @@ function isActive(path: string): boolean {
   position: relative;
   display: flex;
   align-items: center;
-  gap: var(--kapoj-space-2);
-  min-height: 36px;
-  padding: 0 var(--kapoj-space-2);
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 var(--kapoj-space-3);
   color: var(--kapoj-text-secondary);
   font-size: 13px;
   font-weight: 500;
@@ -158,29 +167,47 @@ function isActive(path: string): boolean {
   background: var(--kapoj-surface-hover);
 }
 
+.app-nav__item:focus-visible {
+  outline: 2px solid var(--kapoj-border-focus);
+  outline-offset: 1px;
+}
+
 .app-nav__item.is-active {
-  color: var(--kapoj-primary);
+  color: var(--kapoj-primary-strong);
   background: var(--kapoj-primary-soft);
-  border-color: color-mix(in srgb, var(--kapoj-primary) 24%, transparent);
+  border-color: color-mix(in srgb, var(--kapoj-brand) 18%, transparent);
 }
 
 .app-nav__item.is-active::before {
   position: absolute;
-  top: 8px;
-  bottom: 8px;
-  left: -1px;
-  width: 2px;
+  top: 9px;
+  bottom: 9px;
+  left: 0;
+  width: 3px;
   content: '';
-  background: var(--kapoj-primary);
-  border-radius: var(--kapoj-radius-xs);
-  box-shadow: 0 0 8px var(--kapoj-primary);
+  background: var(--kapoj-brand);
+  border-radius: 0 999px 999px 0;
 }
 
-.app-nav__icon {
+.app-nav__item .app-nav__icon {
   flex: none;
-  width: 16px;
-  font-size: 14px;
+  width: 18px;
+  color: var(--kapoj-text-muted);
+  font-size: 15px;
   text-align: center;
+  transition: color var(--kapoj-transition);
+}
+
+.app-nav__item:hover .app-nav__icon {
+  color: var(--kapoj-primary);
+}
+
+.app-nav__item.is-active .app-nav__icon {
+  color: var(--kapoj-primary-strong);
+}
+
+.app-nav__item[data-nav='admin']:not(.is-active) .app-nav__icon {
+  color: var(--kapoj-special);
 }
 
 .app-nav__text {

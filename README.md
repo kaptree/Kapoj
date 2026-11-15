@@ -2,7 +2,7 @@
 
 打造最有趣味的 Online Judge 平台。规格见 [`DEVELOPMENT.md`](DEVELOPMENT.md)，进度见 [`docs/任务清单.md`](docs/任务清单.md) 与 [`docs/开发日志.md`](docs/开发日志.md)。
 
-当前进度：**M4-2A、M4-2B、M4-2C、M4-3、M4-4、RBAC-D、M5-A、M5-4、M5-5、M5-6、M5-7、M5-8、M6、M7、M8 与 M9 已完成**（M0–M3 已完成；M4 已完成；M5 已完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页（Rating/活跃度/共享三 Tab、等级颜色、签到）、用户主页 Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线后端模型、官方/自定义权限、路线/节点 CRUD 与树结构，路线 API 已可用；M4-2B 交付服务端进度计算（AC 事件补算 + 读取补算、完成锁存）与题目下线/删除守卫；M4-2C 交付学习路线前端列表/树详情/编辑/官方管理页；M4-3 交付轻量社交互动（题解点赞、关注、站内通知，回复/点赞/关注接入活跃度与共享分，前端点赞按钮/关注 Dialog/通知铃铛/通知页，见下）；M4-4 交付 Rating 衰减与赛季重置（`rating.settings.manage` 权限与 Rating 分组、管理设置 API、`/admin/rating` 设置页、月度高分段衰减、赛季软重置、`decay`/`season_reset` 历史与公开赛季接口）；RBAC-A 交付权限模型、权限目录、首次 Seed/旧角色映射、实时 Access、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化；M5-A 交付 AI 后端基础：多 provider 配置、用户 API key 加密存储、补全/格式化/优化与题目提示缓存/限流；M5-5 交付 AI 前端：提交页 AI 补全/格式化/优化工具栏、题目详情 AI 提示、`/settings/ai` AI 配置页与用户菜单入口（见下）；另交付 AI 管理开关：`ai.settings.manage` 权限（第 36 个，分组「AI」）、`GET/PUT /api/admin/ai/settings` 与 `/admin/ai` 开关页，关闭后 `/api/ai/*` 统一 404（见下）；M5-6 交付 HydroOJ 题包导入（`POST /api/problems/import/hydro`、大小限制/防路径穿越、slug 冲突不覆盖、默认下线、部分成功与回滚）与题目详情公开创建者摘要（`author{id,username,nickname}`），前端新增 `/problems/import` 导入页与详情创建者链接（见下）；M5-4 交付 AI 出题造数据（标程 → AI 纯 Python 3 造数据脚本 → judge 沙盒生成输入/输出 → 预览确认入库，见下）；M5-7 交付证书认证（证书类型、用户提交/我的证书、鉴权图片、管理员审核、公开验证码核验，见下）；M5-8 交付头像上传（本地存储上传/移除、公开读取、上传优先与外链替换语义，见下）；另交付账号安全（修改密码 + 活跃会话：会话列表/退出其他/退出所有、sessionId/Redis 会话结构、改密限流 42904、`/settings/security` 账号安全页，见下）；M6 交付站点管理（后台配置品牌 Logo/favicon、首页欢迎区/快速开始/成长中心、页脚备案与运行/访问量，公开 `GET /api/site` 与访问上报，第 38 个权限码 `site.settings.manage` 与审计，前端 `site` store、公开页脚、数据化首页与 `/admin/site` 三 Tab 管理页）；M7 交付客观题（答案题：后台配置 1–20 个标准答案、无测试点发布/提交/评测、judge 跳过沙盒并按去首尾空白 + 忽略大小写判定、AC 固定 100 分；标准答案仅拥有 `problem.update` 权限的用户或超级管理员可见；提交答案仅提交者本人或拥有 `CanViewLiveContest` 权限的用户可见（与比赛是否进行中无关）；前端题目编辑/详情/比赛列表/提交页/测评记录按题型切换））；M8 交付排行榜四榜总览与自动签到（公开富豪榜 `GET /api/leaderboard/wealth` 与 `(status, coins)` 组合索引，Rating/活跃/富豪/贡献四榜 Top10 同屏、同页完整分页表格、卡片点击滚动、四榜计分规则弹窗，移除手动签到并改为登录/首屏自动签到 + 右上角 Toast，`fetchMe` 请求序号防竞争；浏览器 E2E 延后至最终验收）；M9 交付个人主页成长档案（提交总数/通过题数统计卡、365 天贡献图、Hero 不规则词云 + 点击评价 Dialog、已认证证书卡与活动/评价/证书三路并行加载，见下）；另交付 AI 加密密钥一键重置（后台 `/admin/ai` 危险操作按钮、二次确认、删除所有用户 AI 配置并生成一次性新密钥、env 来源只读，见下）；另完成 Web 访问与代码提交性能优化（CodeMirror 6 替换 Monaco、提交页编辑器与 Markdown 异步加载、Vite 开发预热、AdminLayout 懒加载；生产编辑器 chunk 由 Monaco `editor.api` 2,735KB/gzip 706KB 降至 CodeMirror 421.64KB/gzip 135.74KB，开发首次提交由 250 请求/约 38MB 降至 147 请求/9.63MB decoded，见 `docs/开发日志.md`）；另交付游客可见性与成长板块权限（系统「游客」角色 + `guest.growth.view` 总开关：默认游客仅核心导航、首页无成长中心、成长路由跳无权限；开启后可见成长板块且装扮管理仍仅登录，登录用户不受影响，见 `docs/任务清单.md`））。前端并行进行 PrimeVue 4 迁移，**UI-00～UI-20（含 UI-19 题库编辑与 UI-20 异常页）、UI-30（M4-C 排行榜/历史）、UI-31（M4-7 学习路线）、UI-32（M4-3 社交互动）、UI-33（M5-7 证书认证）、UI-34（M5-5 AI 面板）、UI-35（M5-6 题目导入）、UI-39（M5-4 AI 造数据）与 RBAC-D 管理后台页面已完成并提交**，Element Plus 依赖与过渡样式已彻底移除，详见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。题目详情资源区、官方题解与解题思路论坛已完成（见下）。
+当前进度：**M4-2A、M4-2B、M4-2C、M4-3、M4-4、RBAC-D、M5-A、M5-4、M5-5、M5-6、M5-7、M5-8、M6、M7、M8 与 M9 已完成**（M0–M3 已完成；M4 已完成；M5 已完成。M4-A 交付 Rated 比赛 Rating 结算、8 级等级、Rating 历史与 Rating 榜后端；M4-B 交付活跃度、每日签到金币、共享分与活跃度/共享榜后端；M4-C 交付排行榜页（Rating/活跃度/共享三 Tab、等级颜色、签到）、用户主页 Rating 历史卡片、导航与首页入口；M4-2A 交付学习路线后端模型、官方/自定义权限、路线/节点 CRUD 与树结构，路线 API 已可用；M4-2B 交付服务端进度计算（AC 事件补算 + 读取补算、完成锁存）与题目下线/删除守卫；M4-2C 交付学习路线前端列表/树详情/编辑/官方管理页；M4-3 交付轻量社交互动（题解点赞、关注、站内通知，回复/点赞/关注接入活跃度与共享分，前端点赞按钮/关注 Dialog/通知铃铛/通知页，见下）；M4-4 交付 Rating 衰减与赛季重置（`rating.settings.manage` 权限与 Rating 分组、管理设置 API、`/admin/rating` 设置页、月度高分段衰减、赛季软重置、`decay`/`season_reset` 历史与公开赛季接口）；RBAC-A 交付权限模型、权限目录、首次 Seed/旧角色映射、实时 Access、权限中间件与 `/users/me` 权限字段；RBAC-B 交付角色 CRUD/权限矩阵、用户角色分配、封禁/解封、审计日志与仪表盘统计 API；RBAC-C 交付题目/比赛/测评/游戏化/学习路线管理接口的权限码迁移、Viewer 能力拆分与内容管理审计；RBAC-D 交付 `auth.can`/路由 meta、AdminLayout 管理壳、仪表盘/用户管理/角色权限/审计日志页面与菜单/路由/按钮权限化；M5-A 交付 AI 后端基础：多 provider 配置、用户 API key 加密存储、补全/格式化/优化与题目提示缓存/限流；M5-5 交付 AI 前端：提交页 AI 补全/格式化/优化工具栏、题目详情 AI 提示、`/settings/ai` AI 配置页与用户菜单入口（见下）；另交付 AI 管理开关：`ai.settings.manage` 权限（第 36 个，分组「AI」）、`GET/PUT /api/admin/ai/settings` 与 `/admin/ai` 开关页，关闭后 `/api/ai/*` 统一 404（见下）；M5-6 交付 HydroOJ 题包导入（`POST /api/problems/import/hydro`、大小限制/防路径穿越、slug 冲突不覆盖、默认下线、部分成功与回滚）与题目详情公开创建者摘要（`author{id,username,nickname}`），前端新增 `/problems/import` 导入页与详情创建者链接（见下）；M5-4 交付 AI 出题造数据（标程 → AI 纯 Python 3 造数据脚本 → judge 沙盒生成输入/输出 → 预览确认入库，见下）；M5-7 交付证书认证（证书类型、用户提交/我的证书、鉴权图片、管理员审核、公开验证码核验，见下）；M5-8 交付头像上传（MinIO 对象存储上传/移除、公开读取、上传优先与外链替换语义，见下）；另交付账号安全（修改密码 + 活跃会话：会话列表/退出其他/退出所有、sessionId/Redis 会话结构、改密限流 42904、`/settings/security` 账号安全页，见下）；M6 交付站点管理（后台配置品牌 Logo/favicon、首页欢迎区/快速开始/成长中心、页脚备案与运行/访问量，公开 `GET /api/site` 与访问上报，第 38 个权限码 `site.settings.manage` 与审计，前端 `site` store、公开页脚、数据化首页与 `/admin/site` 三 Tab 管理页）；M7 交付客观题（答案题：后台配置 1–20 个标准答案、无测试点发布/提交/评测、judge 跳过沙盒并按去首尾空白 + 忽略大小写判定、AC 固定 100 分；标准答案仅拥有 `problem.update` 权限的用户或超级管理员可见；提交答案仅提交者本人或拥有 `CanViewLiveContest` 权限的用户可见（与比赛是否进行中无关）；前端题目编辑/详情/比赛列表/提交页/测评记录按题型切换））；M8 交付排行榜四榜总览与自动签到（公开富豪榜 `GET /api/leaderboard/wealth` 与 `(status, coins)` 组合索引，Rating/活跃/富豪/贡献四榜 Top10 同屏、同页完整分页表格、卡片点击滚动、四榜计分规则弹窗，移除手动签到并改为登录/首屏自动签到 + 右上角 Toast，`fetchMe` 请求序号防竞争；浏览器 E2E 延后至最终验收）；M9 交付个人主页成长档案（提交总数/通过题数统计卡、365 天贡献图、Hero 不规则词云 + 点击评价 Dialog、已认证证书卡与活动/评价/证书三路并行加载，见下）；另交付 AI 加密密钥一键重置（后台 `/admin/ai` 危险操作按钮、二次确认、删除所有用户 AI 配置并生成一次性新密钥、env 来源只读，见下）；另完成 Web 访问与代码提交性能优化（CodeMirror 6 替换 Monaco、提交页编辑器与 Markdown 异步加载、Vite 开发预热、AdminLayout 懒加载；生产编辑器 chunk 由 Monaco `editor.api` 2,735KB/gzip 706KB 降至 CodeMirror 421.64KB/gzip 135.74KB，开发首次提交由 250 请求/约 38MB 降至 147 请求/9.63MB decoded，见 `docs/开发日志.md`）；另交付游客可见性与成长板块权限（系统「游客」角色 + `guest.growth.view` 总开关：默认游客仅核心导航、首页无成长中心、成长路由跳无权限；开启后可见成长板块且装扮管理仍仅登录，登录用户不受影响，见 `docs/任务清单.md`））。前端并行进行 PrimeVue 4 迁移，**UI-00～UI-20（含 UI-19 题库编辑与 UI-20 异常页）、UI-30（M4-C 排行榜/历史）、UI-31（M4-7 学习路线）、UI-32（M4-3 社交互动）、UI-33（M5-7 证书认证）、UI-34（M5-5 AI 面板）、UI-35（M5-6 题目导入）、UI-39（M5-4 AI 造数据）与 RBAC-D 管理后台页面已完成并提交**，Element Plus 依赖与过渡样式已彻底移除，详见 [`docs/primevue-migration.md`](docs/primevue-migration.md)。题目详情资源区、官方题解与解题思路论坛已完成（见下）。
 
 ## 目录结构
 
@@ -11,7 +11,7 @@ apps/server     Go 后端（Gin + GORM）
 apps/judge      独立评测进程（Asynq + Docker 沙盒）
 apps/web        Vue 3 前端（PrimeVue 4 + md-editor-v3 + CodeMirror 6）
 packages/api    OpenAPI 规范，前端类型由此生成
-docker          docker compose（PostgreSQL 17、Redis 7、后端/评测镜像）
+docker          docker compose（PostgreSQL 17、Redis 7、MinIO、后端/评测镜像）
 docs            任务清单、开发日志、PrimeVue 迁移进度、实施计划
 ```
 
@@ -29,20 +29,31 @@ docs            任务清单、开发日志、PrimeVue 迁移进度、实施计�
    docker compose -f docker/docker-compose.yml up -d
    ```
 
-   PostgreSQL 映射到宿主机 **5433** 端口，Redis 映射到 **6380** 端口，避免与本机已有服务冲突。`kapoj_test` 测试库会自动创建。
+   PostgreSQL 映射到宿主机 **5433** 端口，Redis 映射到 **6380** 端口，MinIO API/Console 映射到 **9000/9001** 端口，避免与本机已有服务冲突。`kapoj_test` 测试库会自动创建。MinIO Console 为 <http://localhost:9001>，账号见根目录 `.env` 的 `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`（模板默认 `kapoj / kapoj-minio-dev`，生产必须替换）。
 
-2. 配置后端环境变量（参考 `.env.example`）：
+2. 创建统一配置文件（仓库根目录 `.env`，唯一配置源）：
 
    ```bash
-   export KAPOJ_DATABASE_URL='postgres://kapoj:kapoj@localhost:5433/kapoj?sslmode=disable'
-   export KAPOJ_REDIS_ADDR=localhost:6380
-   export KAPOJ_JWT_SECRET='替换为至少 32 字节的随机字符串'
-   export KAPOJ_STORAGE_DIR="$(pwd)/apps/server/data"   # 必须使用绝对路径；judge 也从这里读
+   cp .env.example .env
+   chmod 600 .env
    ```
+
+   至少修改 `POSTGRES_PASSWORD`、`MINIO_ROOT_PASSWORD`、`KAPOJ_JWT_SECRET`、
+   `KAPOJ_AI_ENCRYPTION_KEY`、`KAPOJ_MAIL_ENCRYPTION_KEY`。数据库、Redis、
+   MinIO、Judge、AI/邮件密钥和组件账号都在这个文件里；后台可编辑的站点/SMTP/AI
+   Provider 设置仍保存在数据库。
 
 3. 启动后端（启动时自动执行数据库迁移）：
 
    ```bash
+   # 推荐：Compose 会自动读取仓库根目录 .env
+   docker compose -f docker/docker-compose.yml --profile app up -d --build
+
+   # 或直接 go run：配置文件提供基值，下面覆盖 Compose 服务名
+   set -a; source .env; set +a
+   export KAPOJ_DB_HOST=localhost KAPOJ_DB_PORT=5433
+   export KAPOJ_REDIS_ADDR=localhost:6380 KAPOJ_MINIO_ENDPOINT=localhost:9000
+   export KAPOJ_STORAGE_DIR="$(pwd)/apps/server/data"
    cd apps/server && go run ./cmd/server
    ```
 
@@ -56,7 +67,10 @@ docs            任务清单、开发日志、PrimeVue 迁移进度、实施计�
    docker pull eclipse-temurin:21-jdk
    docker pull golang:1.26
 
-   # 与后端使用相同的数据库、Redis 和 KAPOJ_STORAGE_DIR
+   # Compose 已包含 judge；直接 go run 时读取同一个 .env
+   set -a; source .env; set +a
+   export KAPOJ_DB_HOST=localhost KAPOJ_DB_PORT=5433
+   export KAPOJ_REDIS_ADDR=localhost:6380 KAPOJ_MINIO_ENDPOINT=localhost:9000
    cd apps/judge && go run ./cmd/judge
    ```
 
@@ -71,10 +85,10 @@ docs            任务清单、开发日志、PrimeVue 迁移进度、实施计�
 
    打开 `http://localhost:5173`。开发服务器会把 `/api` 与 `/health` 代理到 `http://localhost:8080`（可用 `KAPOJ_BACKEND_URL` 修改）。登录后可在「测评记录」查看实时结果，在题目页点「提交代码」使用 CodeMirror 编辑器提交（编辑器 chunk 异步加载，加载时先显示骨架）。
 
-也可以用容器运行后端与评测服务：
+也可以用容器运行后端与评测服务（JWT、数据库、MinIO 等全部从根目录 `.env` 读取）：
 
 ```bash
-KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/docker-compose.yml --profile app up -d --build
+docker compose -f docker/docker-compose.yml --profile app up -d --build
 ```
 
 ## 游戏化（M3）
@@ -92,7 +106,7 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 - `GET /api/achievements`、`GET /api/users/me/achievements`：成就列表与我的成就；登录读取会自动补算解锁并发奖，接口仍是幂等的。
 - `GET /api/tasks`、`POST /api/tasks/:id/claim`：任务大厅与领取；领取后 AC 全部题目会自动完成并发金币。
 - `GET /api/badges`、`POST /api/badges/:id/purchase|equip|unequip`、`GET /api/users/:id/badges`：徽章商城、购买与装备；装备上限由 `KAPOJ_MAX_EQUIPPED_BADGES` 配置（1–10，默认 3）。
-- 徽章图片：管理员通过 `POST /api/badges/:id/image` 上传 PNG/JPEG/WebP/GIF（≤ 2 MiB），文件保存为 `KAPOJ_STORAGE_DIR` 下的 `badges/<id>`，公开接口 `GET /api/badges/:id/image` 读取；数据库中 `imageUrl` 记录为 `/api/badges/<id>/image`。
+- 徽章图片：管理员通过 `POST /api/badges/:id/image` 上传 PNG/JPEG/WebP/GIF（≤ 2 MiB），保存为 MinIO object key `badges/<id>`，公开接口 `GET /api/badges/:id/image` 读取；数据库中 `imageUrl` 记录为 `/api/badges/<id>/image`。
 - `GET /api/titles`、`POST /api/titles/:id/purchase|equip|unequip`：称号商店、解锁、购买与装备；同一用户同时只装备 1 个称号。
 - 个人主页、测评记录与比赛榜单返回 `equippedBadges`、`equippedTitle` 公开身份字段。
 - 拥有 `gamification.*.manage` 权限的管理员可在 `/admin/gamification` 管理成就/任务/徽章/称号并上传徽章图片；也可用 `POST /api/admin/users/:id/coins`（`user.coins.adjust`）调整金币（需填写备注，事务内写审计）。
@@ -222,8 +236,8 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 
 **启用方式**
 
-- AI 接口始终挂载；加密密钥来自环境变量 `KAPOJ_AI_ENCRYPTION_KEY`（优先）或本地密钥文件 `KAPOJ_AI_KEY_FILE`（默认 `data/ai.key`）。未配置密钥时后端正常启动，`GET /api/ai/configs` 返回 `keyConfigured=false`，保存配置/AI 调用返回 40001「AI 加密密钥未配置」。生成密钥：`openssl rand -base64 32`。
-- 可在管理后台 `/admin/ai` 的「加密密钥」板块自动生成或手动填写密钥（写入密钥文件，0600），运行时立即生效，无需重启（见下方「AI 加密密钥管理」）。
+- AI 接口始终挂载；加密密钥统一放在根目录 `.env` 的 `KAPOJ_AI_ENCRYPTION_KEY`。未配置密钥时后端正常启动，`GET /api/ai/configs` 返回 `keyConfigured=false`，保存配置/AI 调用返回 40001「AI 加密密钥未配置」。生成密钥：`openssl rand -base64 32`。旧版本 `KAPOJ_AI_KEY_FILE` 仍作为兼容回退。
+- 统一配置模式下 `/admin/ai` 的「加密密钥」板块只读；仅兼容密钥文件模式（未设置 `KAPOJ_AI_ENCRYPTION_KEY`）仍可在后台生成/手动填写密钥（见下方「AI 加密密钥管理」）。
 - 可选参数：`KAPOJ_AI_REQUEST_TIMEOUT`（AI 上游请求超时，默认 `45s`）、`KAPOJ_AI_COOLDOWN`（同一用户两次 AI 调用最小间隔，默认 `2s`）。
 
 **用户如何使用**
@@ -253,16 +267,16 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 
 ## AI 管理开关（`/admin/ai`）
 
-- 管理后台新增「AI 设置」`/admin/ai`（需 `ai.settings.manage` 权限，默认仅 `super_admin`）：显示当前状态（已启用/已关闭/不可用）与是否已配置加密密钥，用开关启用/关闭 AI 并保存；下方「加密密钥」板块展示密钥状态并可生成/手动填写/轮换（见下节）。
+- 管理后台新增「AI 设置」`/admin/ai`（需 `ai.settings.manage` 权限，默认仅 `super_admin`）：显示当前状态（已启用/已关闭/不可用）与是否已配置加密密钥，用开关启用/关闭 AI 并保存；下方「加密密钥」板块展示密钥状态，兼容密钥文件模式下可生成/手动填写/轮换（见下节）。
 - 接口 `GET/PUT /api/admin/ai/settings`：返回/更新 `{enabled, keyConfigured, updatedAt}`；关闭后所有 `/api/ai/*` 立即返回 404，用户侧显示「AI 功能未启用」，重新开启立即恢复，无需重启。
-- 密钥要求：`keyConfigured` 动态取自当前密钥（env 或密钥文件）；未配置时管理页显示警告且不能启用（启用请求返回 40001），关闭仍可保存。关闭不删除用户 AI 配置与提示缓存。
+- 密钥要求：`keyConfigured` 动态取自当前密钥（部署配置或兼容密钥文件）；未配置时管理页显示警告且不能启用（启用请求返回 40001），关闭仍可保存。关闭不删除用户 AI 配置与提示缓存。
 - 写操作写审计（action=`ai.settings.manage`、target=`ai_settings`）；无权限账号访问管理接口返回 403。完整语义见 [`DEVELOPMENT.md`](DEVELOPMENT.md) §6.6。
 
 ## AI 加密密钥管理
 
-- 密钥文件 `KAPOJ_AI_KEY_FILE`（默认 `data/ai.key`，0600）；环境变量 `KAPOJ_AI_ENCRYPTION_KEY` 优先且后台只读（此时 `/admin/ai` 密钥板块只读显示「由环境变量管理」）。
-- 管理 API（均需 `ai.settings.manage`）：`GET /api/admin/ai/key` 返回 `{configured,source,masked,fingerprint}`（不含完整密钥）；`POST /api/admin/ai/key/generate` 自动生成 32 字节密钥并一次性返回完整密钥（请立即备份）；`PUT /api/admin/ai/key` 手动填写 base64/32 字节密钥。
-- 轮换：已有密钥时生成/替换会自动用旧密钥解密、新密钥重新加密所有 `user_ai_configs`；事务失败回滚，旧文件备份为 `ai.key.bak` 并在成功后删除。无旧密钥但存在用户配置时返回 40001，防止破坏性覆盖。
+- 主密钥在根目录 `.env` 的 `KAPOJ_AI_ENCRYPTION_KEY`（base64 32 字节）；配置后 `/admin/ai` 密钥板块只读显示「由部署配置管理」。旧版本 `KAPOJ_AI_KEY_FILE` 仍可作为兼容回退。轮换需修改 `.env` 并重启服务；直接更换密钥会使既有用户 AI Key 密文无法解密，必须先备份并按维护流程处理。
+- 兼容密钥文件模式下，管理 API（均需 `ai.settings.manage`）仍可用：`GET /api/admin/ai/key` 返回 `{configured,source,masked,fingerprint}`（不含完整密钥）；`POST /api/admin/ai/key/generate` 自动生成 32 字节密钥并一次性返回完整密钥（请立即备份）；`PUT /api/admin/ai/key` 手动填写 base64/32 字节密钥。统一配置模式返回 `source=env`，生成/写入返回 40001。
+- 兼容密钥文件模式的轮换：已有密钥时生成/替换会自动用旧密钥解密、新密钥重新加密所有 `user_ai_configs`；事务失败回滚，旧文件备份为 `ai.key.bak` 并在成功后删除。无旧密钥但存在用户配置时返回 40001，防止破坏性覆盖。
 - 重置（旧密钥丢失恢复）：`POST /api/admin/ai/key/reset` 删除所有用户 AI 配置并用新的 32 字节随机密钥替换平台密钥，一次性返回完整密钥；不清空 `ai_hints`、不修改 AI 开关；env 来源返回 40001。管理页按钮「清除旧密钥并生成新密钥」需二次确认，执行后用户需重新填写自己的 API Key，旧密文不可恢复。
 - 无密钥错误：未配置密钥时用户保存配置、补全/格式化/优化、无缓存提示返回 40001「AI 加密密钥未配置」；`GET /api/ai/configs` 返回 `keyConfigured=false`；提示缓存命中仍可返回。
 - 完整语义见 [`DEVELOPMENT.md`](DEVELOPMENT.md) §6.7。
@@ -294,11 +308,11 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 
 **失败排查**
 
-- 平台密钥缺失：创建任务返回 40002「AI 加密密钥未配置」。请用 `openssl rand -base64 32` 配置 `KAPOJ_AI_ENCRYPTION_KEY`（或 `/admin/ai` 的「加密密钥」板块生成）。
+- 平台密钥缺失：创建任务返回 40002「AI 加密密钥未配置」。请用 `openssl rand -base64 32` 生成并写入根目录 `.env` 的 `KAPOJ_AI_ENCRYPTION_KEY`，然后重启服务。
 - 用户未配置 AI 模型：返回 40001「尚未配置 AI 模型」。请在 `/settings/ai` 保存自己的 provider/模型/API key。
 - 生成脚本语法错误/标程编译失败：生成状态 `failed`，页面显示中文/编译错误摘要；修改标程后重新生成。
 - Docker/镜像不可用：judge 报错找不到镜像或 Docker API 错误；先确认 `docker info` 正常、已 `docker pull python:3.12-slim` 及对应标程镜像。
-- storage 目录不可读：judge 启动即失败（`KAPOJ_STORAGE_DIR ... is not readable`）；确认 server 与 judge 使用同一个绝对路径。
+- MinIO 不可达或桶不存在：server/judge 启动失败；确认 `KAPOJ_MINIO_ENDPOINT`、凭证、桶名以及 `docker compose ps minio` 健康。
 - 队列任务未消费（状态一直 `pending`）：确认 `apps/judge` 已启动、与后端连接同一个 Redis（`KAPOJ_REDIS_ADDR`），且状态不是 `pending` 卡住（可重新发起一次任务）。
 
 ## 题目详情资源、官方题解与解题思路论坛
@@ -349,11 +363,11 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 
 **接口与规则**
 
-- `POST /api/users/me/avatar`（登录；multipart `file`）：仅 PNG/JPEG/WebP/GIF（magic bytes 校验）且 ≤2 MiB；保存为本地 storage key `avatars/<userID>/<random>`，`avatar_url` 写为 `/api/users/<id>/avatar?v=<unix>`，`Me.avatarUploaded=true`；替换/移除成功删除旧文件。
+- `POST /api/users/me/avatar`（登录；multipart `file`）：仅 PNG/JPEG/WebP/GIF（magic bytes 校验）且 ≤2 MiB；保存到 MinIO object key `avatars/<userID>/<random>`，`avatar_url` 写为 `/api/users/<id>/avatar?v=<unix>`，`Me.avatarUploaded=true`；替换/移除成功删除旧对象。
 - `DELETE /api/users/me/avatar`（登录）：清空上传与外链头像；无头像时幂等。
 - `GET /api/users/:id/avatar`（公开）：返回上传头像原始图片（Content-Type 来自数据库），响应 `Cache-Control: public, max-age=31536000, immutable`；外链头像或文件缺失返回 404。
 - 来源语义：上传优先；`PUT /api/users/me` 保存非空外链会替换上传头像并删除旧文件；保存空外链保留已有上传（避免把内部 URL 当外链误删）；管理员编辑用户沿用同一语义。
-- `Me` 与 `Profile` 增加 `avatarUploaded`（是否有上传头像），前端据此不把内部 URL 填入外链输入。不新增权限码、不接 MinIO、不提供裁剪/压缩/审核。
+- `Me` 与 `Profile` 增加 `avatarUploaded`（是否有上传头像），前端据此不把内部 URL 填入外链输入。不新增权限码、不提供裁剪/压缩/审核；业务对象统一存 MinIO。
 
 ## 账号安全（修改密码 + 活跃会话）
 
@@ -394,7 +408,7 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 
 - `POST /api/auth/email/verify`、`/auth/email/resend`、`/auth/password/forgot`、`/auth/password/reset`；`POST /api/auth/register` 返回 `RegisterResult`（`verificationRequired`/`email`/`verificationEmailSent`/可选 `session`）。
 - 新错误码：40003 链接无效/过期、40303 邮箱未验证、42905 邮件请求过频、50201 邮件发送失败、50301 邮件服务未就绪。
-- 邮件加密密钥：`KAPOJ_MAIL_ENCRYPTION_KEY`（base64 32 字节）或自动生成的 `data/mail.key`；SMTP 超时 `KAPOJ_MAIL_TIMEOUT`（默认 20s）；反向代理需配置 `KAPOJ_TRUSTED_PROXIES`。
+- 邮件加密密钥：统一放在根目录 `.env` 的 `KAPOJ_MAIL_ENCRYPTION_KEY`（base64 32 字节）；旧版本 `KAPOJ_MAIL_KEY_FILE` 仍作为兼容回退。SMTP 超时 `KAPOJ_MAIL_TIMEOUT`（默认 20s）同样在 `.env`；反向代理配置 `KAPOJ_TRUSTED_PROXIES`。
 - 存量用户升级时一次性标记为已验证；首个引导账号（空库）跳过验证，需按运行手册用 SQL 授予 `super_admin`。
 
 ## 测试与检查
@@ -403,7 +417,8 @@ KAPOJ_JWT_SECRET='至少 32 字节的随机字符串' docker compose -f docker/d
 
 ```bash
 cd apps/server
-export KAPOJ_TEST_DATABASE_URL='postgres://kapoj:kapoj@localhost:5433/kapoj_test?sslmode=disable'
+set -a; source ../../.env; set +a
+export KAPOJ_TEST_DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5433/kapoj_test?sslmode=disable"
 go test -p 1 ./...
 go vet ./...
 gofmt -l .
@@ -416,7 +431,8 @@ golangci-lint run   # 配置见 apps/server/.golangci.yml
 
 ```bash
 cd apps/judge
-export KAPOJ_TEST_DATABASE_URL='postgres://kapoj:kapoj@localhost:5433/kapoj_test?sslmode=disable'
+set -a; source ../../.env; set +a
+export KAPOJ_TEST_DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5433/kapoj_test?sslmode=disable"
 go test -p 1 ./...
 KAPOJ_DOCKER_TESTS=1 go test -p 1 ./internal/sandbox/
 ```

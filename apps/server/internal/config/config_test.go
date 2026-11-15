@@ -2,6 +2,8 @@ package config
 
 import (
 	"encoding/base64"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -58,6 +60,72 @@ func TestLoadStorageDirFromEnv(t *testing.T) {
 	cfg, err := Load()
 	require.NoError(t, err)
 	assert.Equal(t, "/var/lib/kapoj", cfg.StorageDir)
+}
+
+func TestLoadRejectsMinIOWithoutCredentials(t *testing.T) {
+	t.Setenv("KAPOJ_JWT_SECRET", strings.Repeat("a", 32))
+	t.Setenv("KAPOJ_STORAGE_BACKEND", "minio")
+	t.Setenv("KAPOJ_MINIO_ENDPOINT", "minio:9000")
+	t.Setenv("KAPOJ_MINIO_ACCESS_KEY", "")
+	t.Setenv("KAPOJ_MINIO_SECRET_KEY", "")
+	_, err := Load()
+	assert.Error(t, err)
+}
+
+func TestLoadReadsMinIOEnv(t *testing.T) {
+	t.Setenv("KAPOJ_JWT_SECRET", strings.Repeat("a", 32))
+	t.Setenv("KAPOJ_STORAGE_BACKEND", "minio")
+	t.Setenv("KAPOJ_MINIO_ENDPOINT", "minio:9000")
+	t.Setenv("KAPOJ_MINIO_ACCESS_KEY", "access")
+	t.Setenv("KAPOJ_MINIO_SECRET_KEY", "secret")
+	t.Setenv("KAPOJ_MINIO_BUCKET", "objects")
+	t.Setenv("KAPOJ_MINIO_BACKUP_BUCKET", "backups")
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, "minio", cfg.StorageBackend)
+	assert.Equal(t, "objects", cfg.MinIOBucket)
+	assert.Equal(t, "backups", cfg.MinIOBackupBucket)
+}
+
+func TestLoadUnifiedConfigFile(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), ".env")
+	content := strings.Join([]string{
+		"KAPOJ_JWT_SECRET=" + strings.Repeat("j", 32),
+		"POSTGRES_USER=dbuser",
+		"POSTGRES_PASSWORD=dbpass",
+		"POSTGRES_DB=kapoj",
+		"KAPOJ_DB_HOST=postgres",
+		"KAPOJ_DB_PORT=5433",
+		"MINIO_ROOT_USER=minioadmin",
+		"MINIO_ROOT_PASSWORD=miniopass",
+		"KAPOJ_STORAGE_BACKEND=minio",
+		"KAPOJ_MINIO_ENDPOINT=minio:9000",
+		"KAPOJ_MINIO_BUCKET=objects",
+		"KAPOJ_MINIO_BACKUP_BUCKET=backups",
+		"KAPOJ_AI_ENCRYPTION_KEY=" + base64.StdEncoding.EncodeToString([]byte(strings.Repeat("a", 32))),
+	}, "\n")
+	require.NoError(t, os.WriteFile(configPath, []byte(content), 0o600))
+
+	t.Setenv("KAPOJ_CONFIG_FILE", configPath)
+	for _, key := range []string{
+		"KAPOJ_JWT_SECRET", "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB",
+		"KAPOJ_DB_HOST", "KAPOJ_DB_PORT", "KAPOJ_DATABASE_URL",
+		"MINIO_ROOT_USER", "MINIO_ROOT_PASSWORD",
+		"KAPOJ_MINIO_ACCESS_KEY", "KAPOJ_MINIO_SECRET_KEY",
+		"KAPOJ_STORAGE_BACKEND", "KAPOJ_MINIO_ENDPOINT",
+		"KAPOJ_MINIO_BUCKET", "KAPOJ_MINIO_BACKUP_BUCKET",
+		"KAPOJ_AI_ENCRYPTION_KEY",
+	} {
+		t.Setenv(key, "")
+	}
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, "postgres://dbuser:dbpass@postgres:5433/kapoj?sslmode=disable", cfg.DatabaseURL)
+	assert.Equal(t, "minio", cfg.StorageBackend)
+	assert.Equal(t, "minioadmin", cfg.MinIOAccessKey)
+	assert.Equal(t, "miniopass", cfg.MinIOSecretKey)
+	assert.NotEmpty(t, cfg.AIEncryptionKey)
 }
 
 func TestLoadGameConcurrency(t *testing.T) {

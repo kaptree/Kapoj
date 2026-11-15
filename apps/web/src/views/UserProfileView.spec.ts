@@ -86,13 +86,15 @@ const routes = [
   { path: '/users/:id', name: 'user-profile', component: { template: '<div />' } },
   { path: '/contests/:id(\\d+)', name: 'contest-detail', component: { template: '<div />' } },
   { path: '/login', name: 'login', component: { template: '<div />' } },
+  { path: '/settings/profile', name: 'profile-edit', component: { template: '<div />' } },
 ]
 
 const WordCloudStub = {
   name: 'ProfileWordCloud',
   props: ['cloud', 'total', 'loading', 'error'],
   emits: ['open', 'retry'],
-  template: '<div data-test="word-cloud" @click="$emit(\'open\')">{{ total }} 条评价</div>',
+  template:
+    '<div data-test="word-cloud" @click="$emit(\'open\')">社区评价 {{ total }} 条评价</div>',
 }
 
 const EvaluationDialogStub = {
@@ -195,33 +197,37 @@ describe('UserProfileView', () => {
 
     expect(getUserActivity).toHaveBeenCalledWith('7')
     const labels = wrapper.findAll('.profile-stats dt').map((label) => label.text())
-    expect(labels[0]).toContain('提交')
-    expect(labels[1]).toBe('Rating')
-    expect(labels[2]).toBe('金币')
-    expect(labels[3]).toBe('注册时间')
+    expect(labels).toEqual(['提交总数', '通过题数', 'Rating', '金币'])
+
+    const cards = wrapper.findAll('.stat-card')
+    expect(cards).toHaveLength(4)
+    expect(cards[0]!.text()).toContain('321')
+    expect(cards[1]!.text()).toContain('210')
+    expect(cards[2]!.text()).toContain('1680')
+    expect(cards[3]!.text()).toContain('1234')
 
     const career = wrapper.get('[data-test="career-card"]')
     expect(career.text()).toContain('提交总数')
-    expect(career.text()).toContain('321')
     expect(career.text()).toContain('通过题数')
-    expect(career.text()).toContain('210')
     expect(wrapper.text()).toContain('代码提交贡献图')
     expect(wrapper.text()).toContain('过去一年 96 次代码提交')
     wrapper.unmount()
   })
 
-  it('renders the hero word cloud above the bio and keeps only certificates in the aside', async () => {
+  it('renders the hero word cloud before the bio and keeps only certificates in the aside', async () => {
     const { wrapper } = await mountPage('/users/7')
 
     expect(listUserEvaluations).toHaveBeenCalledWith('7', 1, 1)
 
     const hero = wrapper.get('.profile-hero')
-    const surface = wrapper.get('.profile-surface')
+    const stats = wrapper.get('.profile-stats')
     expect(
-      hero.element.compareDocumentPosition(surface.element) & Node.DOCUMENT_POSITION_FOLLOWING,
+      hero.element.compareDocumentPosition(stats.element) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
     expect(hero.find('[data-test="word-cloud"]').exists()).toBe(true)
-    expect(surface.text()).toContain('热爱算法与开源。')
+    expect(hero.text()).toContain('社区评价')
+    expect(hero.text()).toContain('热爱算法与开源。')
+    expect(hero.text()).toContain('注册时间')
 
     const cloud = wordCloud(wrapper)
     expect(cloud.props('total')).toBe(3)
@@ -458,13 +464,25 @@ describe('UserProfileView', () => {
     wrapper.unmount()
   })
 
-  it('hides the follow button on your own profile', async () => {
+  it('hides the follow button and shows edit profile on your own profile', async () => {
     auth.user = { id: 7 }
     const { wrapper } = await mountPage('/users/7')
 
     expect(button(wrapper, '关注')).toBeUndefined()
     expect(button(wrapper, '已关注')).toBeUndefined()
     expect(button(wrapper, '登录后关注')).toBeUndefined()
+
+    const edit = wrapper.get('a[href="/settings/profile"]')
+    expect(edit.text()).toContain('编辑资料')
+    wrapper.unmount()
+  })
+
+  it('does not show edit profile to another visitor', async () => {
+    auth.user = { id: 99 }
+    const { wrapper } = await mountPage('/users/7')
+
+    expect(wrapper.find('a[href="/settings/profile"]').exists()).toBe(false)
+    expect(button(wrapper, '关注')).toBeTruthy()
     wrapper.unmount()
   })
 

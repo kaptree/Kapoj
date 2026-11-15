@@ -38,7 +38,7 @@ function mockLayout(overflow = 0) {
 function mountCloud(
   props: Partial<{
     cloud: EvaluationCloudItem[]
-    total: number
+    total: number | null
     loading: boolean
     error: string
   }> = {},
@@ -66,6 +66,7 @@ describe('ProfileWordCloud', () => {
     expect(wrapper.findAll('.profile-word-cloud__word')).toHaveLength(2)
     expect(wrapper.text()).toContain('讲题清楚')
     expect(wrapper.text()).toContain('代码干净')
+    expect(wrapper.text()).toContain('社区评价')
     expect(wrapper.text()).toContain('4 条评价')
     expect(wrapper.text()).toContain('点击词云，写一句评价')
 
@@ -109,6 +110,16 @@ describe('ProfileWordCloud', () => {
     wrapper.unmount()
   })
 
+  it('does not announce a fake zero total while evaluations are unknown', () => {
+    const wrapper = mountCloud({ total: null, loading: true })
+
+    expect(wrapper.text()).toContain('— 条评价')
+    expect(wrapper.get('[data-test="profile-word-cloud"]').attributes('aria-label')).toBe(
+      '评价词云',
+    )
+    wrapper.unmount()
+  })
+
   it('shows an error with a retry button that does not open the dialog', async () => {
     const wrapper = mountCloud({ error: '评价加载失败' })
 
@@ -128,7 +139,16 @@ describe('ProfileWordCloud', () => {
 
     const word = wrapper.get('.profile-word-cloud__word')
     expect(word.attributes('title')).toBe(longText)
-    expect(word.classes()).toContain('profile-word-cloud__word--truncate')
+    expect(word.get('.profile-word-cloud__word-text').text()).toBe(longText)
+    wrapper.unmount()
+  })
+
+  it('shows the real evaluation count on each word', () => {
+    const wrapper = mountCloud()
+
+    const counts = wrapper.findAll('.profile-word-cloud__word-count').map((item) => item.text())
+    expect(counts).toEqual(['3 次', '1 次'])
+
     wrapper.unmount()
   })
 

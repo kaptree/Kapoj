@@ -69,7 +69,7 @@ const isEnvSource = computed(() => keySource.value === 'env')
 const hasFileKey = computed(() => key.value?.configured === true && keySource.value === 'file')
 
 const keyStatusLabel = computed(() => {
-  if (isEnvSource.value) return '由环境变量管理'
+  if (isEnvSource.value) return '由部署配置管理'
   if (hasFileKey.value) return '已配置（文件）'
   return '未配置'
 })

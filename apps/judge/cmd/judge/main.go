@@ -20,6 +20,7 @@ import (
 	"github.com/kaptree/kapoj/apps/judge/internal/queue"
 	"github.com/kaptree/kapoj/apps/judge/internal/reconcile"
 	"github.com/kaptree/kapoj/apps/judge/internal/sandbox"
+	"github.com/kaptree/kapoj/apps/judge/internal/storage"
 	"github.com/kaptree/kapoj/apps/judge/internal/worker"
 )
 
@@ -30,13 +31,54 @@ func main() {
 	}
 }
 
+func ensureBucket(ctx context.Context, store *storage.MinIO) error {
+	var lastErr error
+	for attempt := 0; attempt < 60; attempt++ {
+		if lastErr = store.EnsureBucket(ctx); lastErr == nil {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("%w (last error: %v)", ctx.Err(), lastErr)
+		case <-time.After(time.Second):
+		}
+	}
+	return lastErr
+}
+
 func run() error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
 	}
-	if _, err := os.Stat(cfg.StorageDir); err != nil {
-		return fmt.Errorf("KAPOJ_STORAGE_DIR %q is not readable: %w", cfg.StorageDir, err)
+	var store storage.Store
+	if cfg.StorageBackend == "minio" {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		minioStore, err := storage.NewMinIO(storage.MinIOOptions{
+			Endpoint: cfg.MinIOEndpoint, AccessKey: cfg.MinIOAccessKey,
+			SecretKey: cfg.MinIOSecretKey, Bucket: cfg.MinIOBucket,
+			Region: cfg.MinIORegion, UseSSL: cfg.MinIOUseSSL,
+			AutoCreateBucket: cfg.MinIOAutoCreateBucket,
+		})
+		if err != nil {
+			return err
+		}
+		if err := ensureBucket(ctx, minioStore); err != nil {
+			return err
+		}
+		store = minioStore
+		slog.Info("judge storage backend ready", "backend", "minio", "bucket", cfg.MinIOBucket)
+	} else {
+		if _, err := os.Stat(cfg.StorageDir); err != nil {
+			return fmt.Errorf("KAPOJ_STORAGE_DIR %q is not readable: %w", cfg.StorageDir, err)
+		}
+		local, err := storage.NewLocal(cfg.StorageDir)
+		if err != nil {
+			return err
+		}
+		store = local
+		slog.Info("judge storage backend ready", "backend", "local", "dir", cfg.StorageDir)
 	}
 	ctx := context.Background()
 	repo, err := db.Open(ctx, cfg.DatabaseURL)
@@ -55,9 +97,9 @@ func run() error {
 	defer func() { _ = publisher.Close() }()
 	gamePublisher := gamequeue.NewPublisher(cfg.RedisAddr)
 	defer func() { _ = gamePublisher.Close() }()
-	pipe := pipeline.New(repo, cfg.StorageDir, sb, publisher, gamePublisher)
+	pipe := pipeline.New(repo, store, sb, publisher, gamePublisher)
 	judgeWorker := worker.New(pipe)
-	gen := generation.New(repo, cfg.StorageDir, sb)
+	gen := generation.New(repo, store, sb)
 	queueClient := queue.NewClient(cfg.RedisAddr)
 	defer func() { _ = queueClient.Close() }()
 

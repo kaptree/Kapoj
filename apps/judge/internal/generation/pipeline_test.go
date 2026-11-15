@@ -18,6 +18,7 @@ import (
 	"github.com/kaptree/kapoj/apps/judge/internal/generation"
 	"github.com/kaptree/kapoj/apps/judge/internal/model"
 	"github.com/kaptree/kapoj/apps/judge/internal/sandbox"
+	"github.com/kaptree/kapoj/apps/judge/internal/storage"
 	"github.com/kaptree/kapoj/apps/judge/internal/testutil"
 )
 
@@ -87,9 +88,11 @@ func newGenEnv(t *testing.T) *genEnv {
 	user := testutil.InsertUser(t, pool)
 	problem := testutil.InsertProblem(t, pool, "traditional", 1000, 256, "")
 	sb := &fakeSandbox{}
+	store, err := storage.NewLocal(root)
+	require.NoError(t, err)
 	return &genEnv{
 		pool: pool, repo: repo, root: root, sb: sb,
-		pipe: generation.New(repo, root, sb),
+		pipe: generation.New(repo, store, sb),
 		user: user, problem: problem,
 	}
 }
@@ -338,14 +341,17 @@ func TestGenerationInvalidCountFails(t *testing.T) {
 	}
 }
 
+type cleanupFailStore struct{ storage.Store }
+
+func (cleanupFailStore) RemovePrefix(context.Context, string) error {
+	return errors.New("cleanup failed")
+}
+
 func TestGenerationEarlyCleanupFailureIsTerminal(t *testing.T) {
 	e := newGenEnv(t)
 	id := e.insert(t, "cpp", "int main(){}", "print(1)", 2, "pending")
-	// Point storage at a regular file so the early RemoveAll fails, exercising
-	// the terminal cleanup path for a MaxRetry(0) task.
-	badRoot := filepath.Join(t.TempDir(), "not-a-dir")
-	require.NoError(t, os.WriteFile(badRoot, []byte("x"), 0o644))
-	pipe := generation.New(e.repo, badRoot, e.sb)
+	// A failing cleanup exercises the terminal path for a MaxRetry(0) task.
+	pipe := generation.New(e.repo, cleanupFailStore{}, e.sb)
 
 	err := pipe.Run(context.Background(), id)
 	require.Error(t, err)

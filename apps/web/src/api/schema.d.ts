@@ -10970,6 +10970,7 @@ export interface components {
             eyebrow: string;
             title: string;
             titleHighlight: string;
+            tagline: string;
             description: string;
             primaryCta: components["schemas"]["SiteLink"];
             secondaryCta: components["schemas"]["SiteLink"];

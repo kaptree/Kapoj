@@ -116,6 +116,18 @@ describe('AppNav', () => {
     expect(auth.canAny).toHaveBeenCalledWith(ADMIN_ACCESS_PERMISSIONS)
   })
 
+  it('keeps the admin entry in its own group for visual separation', async () => {
+    auth.isLoggedIn = true
+    auth.canAny.mockReturnValue(true)
+    const wrapper = await mountNav()
+
+    const groups = wrapper.findAll('.app-nav__group')
+    const adminGroup = groups[groups.length - 1]
+    expect(adminGroup.classes()).toContain('app-nav__group--admin')
+    expect(adminGroup.text()).toContain('管理')
+    expect(adminGroup.find('a[href="/admin"]').exists()).toBe(true)
+  })
+
   it('links the leaderboard now that it is available', async () => {
     const wrapper = await mountNav()
     const leaderboard = wrapper.find('a[href="/leaderboard"]')

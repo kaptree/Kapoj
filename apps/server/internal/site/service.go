@@ -194,6 +194,7 @@ func isZeroHome(home HomeContent) bool {
 	return home.Eyebrow == "" &&
 		home.Title == "" &&
 		home.TitleHighlight == "" &&
+		home.Tagline == "" &&
 		home.Description == "" &&
 		home.PrimaryCTA == (Link{}) &&
 		home.SecondaryCTA == (Link{}) &&

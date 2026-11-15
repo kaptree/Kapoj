@@ -42,7 +42,7 @@ import AppFormField from '@/components/ui/AppFormField.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
-import { useSiteStore } from '@/stores/site'
+import { DEFAULT_HOME, useSiteStore } from '@/stores/site'
 import { copyText } from '@/utils/clipboard'
 
 const ACCEPT_IMAGES = 'image/png,image/jpeg,image/webp,image/gif'
@@ -50,6 +50,8 @@ const ACCEPT_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
 const LOGO_MAX_BYTES = 2 * 1024 * 1024
 const FAVICON_MAX_BYTES = 1 * 1024 * 1024
 const MAX_HOME_LINKS = 8
+const DEFAULT_HOME_TAGLINE = DEFAULT_HOME.tagline
+const MAX_TAGLINE_LEN = 80
 
 const ICON_OPTIONS: Array<{ label: string; value: string }> = [
   { label: '箭头', value: 'pi pi-arrow-right' },
@@ -61,6 +63,11 @@ const ICON_OPTIONS: Array<{ label: string; value: string }> = [
   { label: '任务', value: 'pi pi-check-square' },
   { label: '商城', value: 'pi pi-shop' },
   { label: '皇冠', value: 'pi pi-crown' },
+  { label: '装扮', value: 'pi pi-palette' },
+  { label: '比赛', value: 'pi pi-flag' },
+  { label: '奖励', value: 'pi pi-gift' },
+  { label: '身份', value: 'pi pi-id-card' },
+  { label: '能量', value: 'pi pi-bolt' },
   { label: '用户', value: 'pi pi-users' },
   { label: '设置', value: 'pi pi-cog' },
   { label: '火花', value: 'pi pi-sparkles' },
@@ -135,6 +142,7 @@ function cardKey(item: SiteLink): number {
 function cloneHome(home: SiteHomeContent): SiteHomeContent {
   return {
     ...home,
+    tagline: home.tagline || DEFAULT_HOME_TAGLINE,
     primaryCta: cloneLink(home.primaryCta),
     secondaryCta: cloneLink(home.secondaryCta),
     quickLinks: (home.quickLinks ?? []).map(cloneLink),
@@ -147,6 +155,7 @@ function emptyHome(): SiteHomeContent {
     eyebrow: '',
     title: '',
     titleHighlight: '',
+    tagline: DEFAULT_HOME_TAGLINE,
     description: '',
     primaryCta: emptyLink(),
     secondaryCta: emptyLink(),
@@ -214,6 +223,16 @@ const faviconUrl = computed(() => view.value?.faviconUrl ?? '')
 const runningDays = computed(() => view.value?.runningDays ?? 0)
 const visitCount = computed(() => view.value?.visitCount ?? 0)
 const formattedVisits = computed(() => new Intl.NumberFormat('zh-CN').format(visitCount.value))
+
+const previewGreeting = computed(() => {
+  const hour = new Date().getHours()
+  if (hour < 5 || hour >= 23) return '夜深了，同学'
+  if (hour < 9) return '早上好，同学'
+  if (hour < 12) return '上午好，同学'
+  if (hour < 14) return '中午好，同学'
+  if (hour < 18) return '下午好，同学'
+  return '晚上好，同学'
+})
 
 function applyView(next: SiteAdminView) {
   view.value = next
@@ -294,6 +313,7 @@ function validateHome(): boolean {
   checkText(errors, 'eyebrow', '首页眉标', home.eyebrow, 40)
   checkText(errors, 'title', '首页标题', home.title, 60)
   checkText(errors, 'titleHighlight', '首页标题高亮', home.titleHighlight, 30)
+  checkText(errors, 'tagline', '首页宣传语', home.tagline ?? '', MAX_TAGLINE_LEN)
   checkText(errors, 'description', '首页描述', home.description, 300)
   checkLink(errors, 'primaryCta', '主按钮', home.primaryCta, 20)
   checkLink(errors, 'secondaryCta', '次按钮', home.secondaryCta, 20)
@@ -997,11 +1017,88 @@ onMounted(() => {
 
           <TabPanel value="home">
             <form class="site-form" data-test="home-form" @submit.prevent="saveHome">
+              <Message severity="info" :closable="false">
+                首页会自动展示动态问候、真实用户统计、学习概览与平台状态；这里只配置欢迎文案、操作按钮和功能卡片。
+              </Message>
+
+              <section class="section home-preview-section">
+                <div class="section__head">
+                  <h2 class="section__title">
+                    <i class="pi pi-eye" aria-hidden="true" />
+                    首页预览
+                  </h2>
+                  <span class="home-preview__label">LIVE PREVIEW</span>
+                </div>
+
+                <div class="home-preview" data-test="home-preview">
+                  <div class="home-preview__bar">
+                    <span class="home-preview__greeting">
+                      <span class="home-preview__dot" aria-hidden="true" />
+                      {{ previewGreeting }}
+                    </span>
+                    <span class="home-preview__version">M4-C</span>
+                  </div>
+                  <h3 class="home-preview__title">
+                    {{ homeForm.title || '主标题' }}
+                    <span v-if="homeForm.titleHighlight">{{ homeForm.titleHighlight }}</span>
+                  </h3>
+                  <p class="home-preview__tagline">
+                    {{ homeForm.tagline || DEFAULT_HOME_TAGLINE }}
+                  </p>
+                  <p class="home-preview__description">
+                    {{ homeForm.description || '宣传描述会显示在这里。' }}
+                  </p>
+                  <div class="home-preview__actions">
+                    <span v-if="homeForm.primaryCta.title" class="home-preview__button is-primary">
+                      {{ homeForm.primaryCta.title }}
+                    </span>
+                    <span
+                      v-if="homeForm.secondaryCta.title"
+                      class="home-preview__button is-secondary"
+                    >
+                      {{ homeForm.secondaryCta.title }}
+                    </span>
+                  </div>
+                  <div class="home-preview__cards">
+                    <span
+                      v-for="link in homeForm.quickLinks.slice(0, 4)"
+                      :key="link.to"
+                      class="home-preview__card"
+                    >
+                      <i :class="link.icon" aria-hidden="true" />
+                      {{ link.title || '未命名卡片' }}
+                    </span>
+                    <span v-if="homeForm.quickLinks.length === 0" class="home-preview__empty">
+                      暂无快速开始卡片
+                    </span>
+                  </div>
+                </div>
+
+                <p class="home-preview__note">
+                  动态问候、在线状态、个人统计、学习概览与平台状态由真实数据生成，预览中不包含实时数值。
+                </p>
+              </section>
+
               <section class="section">
-                <h2 class="section__title">欢迎区</h2>
+                <h2 class="section__title">
+                  <i class="pi pi-sparkles" aria-hidden="true" />
+                  欢迎区
+                </h2>
                 <div class="field-grid">
-                  <AppFormField v-slot="{ id }" label="眉标" optional :error="homeErrors.eyebrow">
-                    <InputText :id="id" v-model="homeForm.eyebrow" data-test="home-eyebrow" fluid />
+                  <AppFormField
+                    v-slot="{ id }"
+                    label="眉标"
+                    optional
+                    hint="显示在动态问候旁，最多 40 字"
+                    :error="homeErrors.eyebrow"
+                  >
+                    <InputText
+                      :id="id"
+                      v-model="homeForm.eyebrow"
+                      data-test="home-eyebrow"
+                      maxlength="40"
+                      fluid
+                    />
                   </AppFormField>
                   <AppFormField
                     v-slot="{ id }"
@@ -1013,19 +1110,48 @@ onMounted(() => {
                       :id="id"
                       v-model="homeForm.titleHighlight"
                       data-test="home-title-highlight"
+                      maxlength="30"
                       fluid
                     />
                   </AppFormField>
                   <AppFormField v-slot="{ id }" label="主标题" :error="homeErrors.title">
-                    <InputText :id="id" v-model="homeForm.title" data-test="home-title" fluid />
+                    <InputText
+                      :id="id"
+                      v-model="homeForm.title"
+                      data-test="home-title"
+                      maxlength="60"
+                      fluid
+                    />
                   </AppFormField>
                 </div>
-                <AppFormField v-slot="{ id }" label="描述" optional :error="homeErrors.description">
+                <AppFormField
+                  v-slot="{ id }"
+                  label="品牌宣传语"
+                  optional
+                  :hint="`显示在主标题下方，留空时使用默认宣传语 · ${(homeForm.tagline ?? '').length}/${MAX_TAGLINE_LEN}`"
+                  :error="homeErrors.tagline"
+                >
+                  <InputText
+                    :id="id"
+                    v-model="homeForm.tagline"
+                    data-test="home-tagline"
+                    :maxlength="MAX_TAGLINE_LEN"
+                    fluid
+                  />
+                </AppFormField>
+                <AppFormField
+                  v-slot="{ id }"
+                  label="宣传描述"
+                  optional
+                  :hint="`显示在宣传语下方，建议 1–2 句话 · ${homeForm.description.length}/300`"
+                  :error="homeErrors.description"
+                >
                   <Textarea
                     :id="id"
                     v-model="homeForm.description"
                     data-test="home-description"
                     rows="3"
+                    maxlength="300"
                     auto-resize
                     fluid
                   />
@@ -1033,7 +1159,13 @@ onMounted(() => {
               </section>
 
               <section class="section">
-                <h2 class="section__title">按钮</h2>
+                <h2 class="section__title">
+                  <i class="pi pi-link" aria-hidden="true" />
+                  按钮
+                </h2>
+                <p class="section__hint">
+                  主按钮用于引导核心操作，次按钮提供次要入口；留空标题即可隐藏对应按钮。
+                </p>
                 <div class="cta-grid">
                   <div class="cta-card">
                     <h3 class="cta-card__title">主按钮</h3>
@@ -1183,7 +1315,10 @@ onMounted(() => {
 
               <section class="section">
                 <div class="section__head">
-                  <h2 class="section__title">快速开始</h2>
+                  <h2 class="section__title">
+                    <i class="pi pi-bolt" aria-hidden="true" />
+                    快速开始
+                  </h2>
                   <Button
                     type="button"
                     label="添加卡片"
@@ -1319,7 +1454,10 @@ onMounted(() => {
 
               <section class="section">
                 <div class="section__head">
-                  <h2 class="section__title">成长中心</h2>
+                  <h2 class="section__title">
+                    <i class="pi pi-star" aria-hidden="true" />
+                    成长中心
+                  </h2>
                   <Button
                     type="button"
                     label="添加卡片"
@@ -1459,13 +1597,18 @@ onMounted(() => {
               </section>
 
               <section class="section">
-                <h2 class="section__title">游客提示</h2>
+                <h2 class="section__title">
+                  <i class="pi pi-user" aria-hidden="true" />
+                  游客提示
+                </h2>
+                <p class="section__hint">未登录访客会在欢迎区下方看到这段登录引导。</p>
                 <div class="field-grid">
                   <AppFormField v-slot="{ id }" label="标题" :error="homeErrors.guestTitle">
                     <InputText
                       :id="id"
                       v-model="homeForm.guestTitle"
                       data-test="guest-title"
+                      maxlength="60"
                       fluid
                     />
                   </AppFormField>
@@ -1474,6 +1617,7 @@ onMounted(() => {
                   v-slot="{ id }"
                   label="描述"
                   optional
+                  :hint="`${homeForm.guestDescription.length}/300`"
                   :error="homeErrors.guestDescription"
                 >
                   <Textarea
@@ -1481,6 +1625,7 @@ onMounted(() => {
                     v-model="homeForm.guestDescription"
                     data-test="guest-description"
                     rows="3"
+                    maxlength="300"
                     auto-resize
                     fluid
                   />
@@ -1760,10 +1905,180 @@ onMounted(() => {
 }
 
 .section__title {
+  display: flex;
+  gap: var(--kapoj-space-2);
+  align-items: center;
   margin: 0;
   color: var(--kapoj-text);
   font-size: 1rem;
   font-weight: 600;
+}
+
+.section__title i {
+  color: var(--kapoj-brand);
+  font-size: 0.9em;
+}
+
+.section__hint {
+  margin: calc(var(--kapoj-space-2) * -1) 0 0;
+  color: var(--kapoj-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.home-preview-section {
+  gap: var(--kapoj-space-3);
+}
+
+.home-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: var(--kapoj-space-5);
+  background:
+    radial-gradient(
+      circle at 90% 0%,
+      color-mix(in srgb, var(--kapoj-brand) 10%, transparent),
+      transparent 42%
+    ),
+    var(--kapoj-bg);
+  border: 1px solid var(--kapoj-border);
+  border-radius: var(--kapoj-radius-lg);
+}
+
+.home-preview__label {
+  color: var(--kapoj-text-muted);
+  font-family: var(--kapoj-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+}
+
+.home-preview__bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kapoj-space-2);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.home-preview__greeting {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 2px var(--kapoj-space-2);
+  color: var(--kapoj-primary-strong);
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--kapoj-primary-soft);
+  border: 1px solid color-mix(in srgb, var(--kapoj-brand) 22%, transparent);
+  border-radius: 999px;
+}
+
+.home-preview__dot {
+  width: 5px;
+  height: 5px;
+  background: currentcolor;
+  border-radius: 50%;
+}
+
+.home-preview__version {
+  color: var(--kapoj-text-muted);
+  font-family: var(--kapoj-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
+.home-preview__title {
+  margin: var(--kapoj-space-1) 0 0;
+  color: var(--kapoj-text);
+  font-size: clamp(1.45rem, 1.1rem + 1vw, 2rem);
+  font-weight: 750;
+  line-height: 1.1;
+  letter-spacing: -0.035em;
+}
+
+.home-preview__title span {
+  color: var(--kapoj-brand);
+}
+
+.home-preview__tagline {
+  margin: 0;
+  color: var(--kapoj-text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.home-preview__description {
+  max-width: 72ch;
+  margin: 0;
+  color: var(--kapoj-text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.home-preview__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kapoj-space-2);
+  margin-top: var(--kapoj-space-1);
+}
+
+.home-preview__button {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  border-radius: 8px;
+}
+
+.home-preview__button.is-primary {
+  color: var(--kapoj-text-inverted);
+  background: var(--kapoj-primary-strong);
+}
+
+.home-preview__button.is-secondary {
+  color: var(--kapoj-text-secondary);
+  background: transparent;
+  border: 1px solid var(--kapoj-border-strong);
+}
+
+.home-preview__cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: var(--kapoj-space-3);
+  margin-top: var(--kapoj-space-1);
+  border-top: 1px solid var(--kapoj-border);
+}
+
+.home-preview__card {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  padding: 4px 8px;
+  color: var(--kapoj-text-secondary);
+  font-size: 11px;
+  background: var(--kapoj-surface);
+  border: 1px solid var(--kapoj-border);
+  border-radius: var(--kapoj-radius-sm);
+}
+
+.home-preview__card i {
+  color: var(--kapoj-brand);
+  font-size: 10px;
+}
+
+.home-preview__empty {
+  color: var(--kapoj-text-muted);
+  font-size: 11px;
+}
+
+.home-preview__note {
+  margin: 0;
+  color: var(--kapoj-text-muted);
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .field-grid {

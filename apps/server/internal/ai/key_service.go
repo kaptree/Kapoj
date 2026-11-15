@@ -101,7 +101,7 @@ func (s *SettingsService) rotate(ctx context.Context, actorID int64, raw string,
 	defer s.keyMu.Unlock()
 
 	if s.keys.Source() == "env" {
-		return nil, httpx.ErrValidation("AI 加密密钥由环境变量管理，只读")
+		return nil, httpx.ErrValidation("AI 加密密钥由部署配置管理，只读")
 	}
 	if s.keyFile == "" {
 		return nil, errors.New("ai: key file path is not configured")

@@ -2,7 +2,9 @@ package backup
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -11,6 +13,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
+	"github.com/kaptree/kapoj/apps/server/internal/storage"
 )
 
 type Queue interface {
@@ -23,8 +26,9 @@ type Service struct {
 	repo     *Repository
 	database *Database
 
-	storageDir      string
-	backupDir       string
+	files           storage.ObjectStore
+	packages        storage.ObjectStore
+	workDir         string
 	maxUploadBytes  int64
 	maxUncompressed int64
 	maxEntries      int
@@ -39,19 +43,23 @@ type Service struct {
 }
 
 type Options struct {
-	StorageDir           string
-	BackupDir            string
+	Files                storage.ObjectStore
+	Packages             storage.ObjectStore
+	WorkDir              string
 	MaxUploadBytes       int64
 	MaxUncompressedBytes int64
 	MaxEntries           int
 }
 
 func NewService(db *gorm.DB, dsn string, opts Options) (*Service, error) {
-	if opts.StorageDir == "" {
-		opts.StorageDir = "data"
+	if opts.Files == nil || opts.Packages == nil {
+		return nil, errors.New("backup: Files and Packages object stores are required")
 	}
-	if opts.BackupDir == "" {
-		opts.BackupDir = filepath.Join(opts.StorageDir, "backups")
+	if opts.WorkDir == "" {
+		opts.WorkDir = os.TempDir()
+	}
+	if err := os.MkdirAll(opts.WorkDir, 0o700); err != nil {
+		return nil, err
 	}
 	if opts.MaxUploadBytes <= 0 {
 		opts.MaxUploadBytes = 2 << 30
@@ -62,12 +70,9 @@ func NewService(db *gorm.DB, dsn string, opts Options) (*Service, error) {
 	if opts.MaxEntries <= 0 {
 		opts.MaxEntries = 200_000
 	}
-	if err := os.MkdirAll(opts.BackupDir, 0o700); err != nil {
-		return nil, err
-	}
 	return &Service{
 		db: db, repo: NewRepository(db), database: NewDatabase(dsn),
-		storageDir: opts.StorageDir, backupDir: opts.BackupDir,
+		files: opts.Files, packages: opts.Packages, workDir: opts.WorkDir,
 		maxUploadBytes: opts.MaxUploadBytes, maxUncompressed: opts.MaxUncompressedBytes,
 		maxEntries: opts.MaxEntries, restartCh: make(chan struct{}, 1),
 	}, nil
@@ -132,11 +137,6 @@ func (s *Service) RunPackage(ctx context.Context, packageID int64) error {
 	if err := s.waitRestoreDone(ctx); err != nil {
 		return err
 	}
-	var (
-		filename string
-		size     int64
-		hash     string
-	)
 	fail := func(err error) error {
 		_ = s.repo.FinishPackage(ctx, row.ID, PackageFailed, "", 0, err.Error(), "")
 		if row.CreatedBy == 0 {
@@ -144,30 +144,37 @@ func (s *Service) RunPackage(ctx context.Context, packageID int64) error {
 		}
 		return err
 	}
+	stamp := time.Now().UnixNano()
+	var key, localPath string
 	switch row.Kind {
 	case KindPlatform:
-		filename = filepath.Join(s.backupDir, "platform", fmt.Sprintf("platform-%d.zip", time.Now().UnixNano()))
-		manifest, err := s.createPlatformFile(ctx, filename, KindPlatform)
-		if err != nil {
-			return fail(err)
-		}
-		size, hash = fileSize(filename), manifest.SchemaHash
-	case KindAccounts, KindAccount:
-		filename = filepath.Join(s.backupDir, "accounts",
-			fmt.Sprintf("%s-%d.zip", row.Kind, time.Now().UnixNano()))
-		if row.Kind == KindAccount {
-			filename = filepath.Join(s.backupDir, "accounts",
-				fmt.Sprintf("account-%d-%d.zip", *row.UserID, time.Now().UnixNano()))
-		}
-		manifest, err := s.createAccountFile(ctx, filename, row.Kind, row.UserID)
-		if err != nil {
-			return fail(err)
-		}
-		size, hash = fileSize(filename), manifest.SchemaHash
+		key = fmt.Sprintf("platform/platform-%d.zip", stamp)
+		localPath = filepath.Join(s.workDir, fmt.Sprintf("kapoj-platform-%d.zip", stamp))
+	case KindAccounts:
+		key = fmt.Sprintf("accounts/accounts-%d.zip", stamp)
+		localPath = filepath.Join(s.workDir, fmt.Sprintf("kapoj-accounts-%d.zip", stamp))
+	case KindAccount:
+		key = fmt.Sprintf("accounts/account-%d-%d.zip", *row.UserID, stamp)
+		localPath = filepath.Join(s.workDir, fmt.Sprintf("kapoj-account-%d-%d.zip", *row.UserID, stamp))
 	default:
 		return fail(httpx.ErrValidation("未知备份类型"))
 	}
-	if err := s.repo.FinishPackage(ctx, row.ID, PackageReady, filename, size, "", hash); err != nil {
+	defer func() { _ = os.Remove(localPath) }()
+
+	var manifest *Manifest
+	if row.Kind == KindPlatform {
+		manifest, err = s.createPlatformFile(ctx, localPath, KindPlatform)
+	} else {
+		manifest, err = s.createAccountFile(ctx, localPath, row.Kind, row.UserID)
+	}
+	if err != nil {
+		return fail(err)
+	}
+	size, err := s.uploadPackage(ctx, key, localPath)
+	if err != nil {
+		return fail(err)
+	}
+	if err := s.repo.FinishPackage(ctx, row.ID, PackageReady, key, size, "", manifest.SchemaHash); err != nil {
 		return err
 	}
 	if row.Kind == KindAccount {
@@ -181,22 +188,56 @@ func (s *Service) RunPackage(ctx context.Context, packageID int64) error {
 	return nil
 }
 
-func fileSize(filename string) int64 {
-	info, err := os.Stat(filename)
+// materializePackage downloads a package into the local work directory for the
+// ZIP reader. The returned cleanup function removes the temporary file.
+func (s *Service) materializePackage(ctx context.Context, key string) (string, func(), error) {
+	reader, err := s.packages.Open(ctx, key)
 	if err != nil {
-		return 0
+		if errors.Is(err, storage.ErrNotFound) {
+			return "", func() {}, ErrNotFound
+		}
+		return "", func() {}, err
 	}
-	return info.Size()
+	defer func() { _ = reader.Close() }()
+	path := filepath.Join(s.workDir, fmt.Sprintf("kapoj-restore-%d.zip", time.Now().UnixNano()))
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return "", func() {}, err
+	}
+	_, copyErr := io.Copy(file, reader)
+	closeErr := file.Close()
+	if copyErr != nil {
+		_ = os.Remove(path)
+		return "", func() {}, copyErr
+	}
+	if closeErr != nil {
+		_ = os.Remove(path)
+		return "", func() {}, closeErr
+	}
+	return path, func() { _ = os.Remove(path) }, nil
+}
+
+func (s *Service) uploadPackage(ctx context.Context, key, localPath string) (int64, error) {
+	file, err := os.Open(localPath)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = file.Close() }()
+	info, err := file.Stat()
+	if err != nil {
+		return 0, err
+	}
+	return s.packages.Put(ctx, key, file, info.Size()+1)
 }
 
 func (s *Service) cleanupOld(ctx context.Context, kind Kind, userID *int64, keepID int64) {
-	files, err := s.repo.RemoveOlderPackages(ctx, kind, userID, keepID)
+	keys, err := s.repo.RemoveOlderPackages(ctx, kind, userID, keepID)
 	if err != nil {
 		return
 	}
-	for _, name := range files {
-		if name != "" {
-			_ = os.Remove(name)
+	for _, key := range keys {
+		if key != "" {
+			_ = s.packages.Delete(ctx, key)
 		}
 	}
 }
@@ -218,7 +259,7 @@ func (s *Service) createPlatformFile(ctx context.Context, filename string, kind 
 		return nil, err
 	}
 	manifest.Kind = kind
-	if err := addStorageTree(writer, s.storageDir, s.backupDir); err != nil {
+	if err := addStoreObjects(ctx, writer, s.files); err != nil {
 		return nil, err
 	}
 	if err := writer.Close(*manifest); err != nil {
@@ -292,24 +333,37 @@ func (s *Service) RunRestore(ctx context.Context, jobID int64) error {
 		s.stateMu.Unlock()
 	}()
 	fail := func(err error) error {
+		if row.UploadedFile != "" {
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+			_ = s.packages.Delete(cleanupCtx, row.UploadedFile)
+			cancel()
+		}
 		_ = s.repo.FinishRestoreJob(ctx, row.ID, RestoreFailed, err.Error(), false)
 		return err
 	}
-	zipPath := row.UploadedFile
-	if row.PackageID != nil {
+	packageKey := row.UploadedFile
+	if packageKey == "" && row.PackageID != nil {
 		pkg, err := s.repo.FindPackage(ctx, *row.PackageID)
 		if err != nil {
 			return fail(err)
 		}
-		zipPath = pkg.Filename
+		packageKey = pkg.Filename
 	}
-	if zipPath == "" {
+	if packageKey == "" {
 		return fail(httpx.ErrValidation("备份包不存在"))
 	}
+	zipPath, cleanup, err := s.materializePackage(ctx, packageKey)
+	if err != nil {
+		return fail(err)
+	}
+	defer cleanup()
 	switch row.Kind {
 	case KindPlatform:
 		if err := s.restorePlatform(ctx, zipPath, row.CreatedBy); err != nil {
 			return fail(err)
+		}
+		if row.UploadedFile != "" {
+			_ = s.packages.Delete(ctx, row.UploadedFile)
 		}
 		if err := s.repo.FinishRestoreJob(ctx, row.ID, RestoreSuccess, "", true); err != nil {
 			return err
@@ -319,6 +373,9 @@ func (s *Service) RunRestore(ctx context.Context, jobID int64) error {
 	case KindAccount:
 		if err := s.restoreAccount(ctx, zipPath, *row.TargetUserID); err != nil {
 			return fail(err)
+		}
+		if row.UploadedFile != "" {
+			_ = s.packages.Delete(ctx, row.UploadedFile)
 		}
 		return s.repo.FinishRestoreJob(ctx, row.ID, RestoreSuccess, "", false)
 	}

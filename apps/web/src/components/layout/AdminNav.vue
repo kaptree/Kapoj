@@ -205,24 +205,24 @@ function isActive(path: string): boolean {
 .admin-nav {
   display: flex;
   flex-direction: column;
-  gap: var(--kapoj-space-5);
+  gap: 28px;
   min-width: 0;
 }
 
 .admin-nav__group {
   display: flex;
   flex-direction: column;
-  gap: var(--kapoj-space-1);
+  gap: 2px;
 }
 
 .admin-nav__label {
-  margin: 0 0 var(--kapoj-space-1);
-  padding: 0 var(--kapoj-space-2);
+  margin: 0 0 6px;
+  padding: 0 10px;
   color: var(--kapoj-text-muted);
   font-family: var(--kapoj-font-mono);
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
 }
 
@@ -230,9 +230,9 @@ function isActive(path: string): boolean {
   position: relative;
   display: flex;
   align-items: center;
-  gap: var(--kapoj-space-2);
-  min-height: 36px;
-  padding: 0 var(--kapoj-space-2);
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 var(--kapoj-space-3);
   color: var(--kapoj-text-secondary);
   font-size: 13px;
   font-weight: 500;
@@ -251,36 +251,48 @@ function isActive(path: string): boolean {
   background: var(--kapoj-surface-hover);
 }
 
+.admin-nav__item:focus-visible {
+  outline: 2px solid var(--kapoj-border-focus);
+  outline-offset: 1px;
+}
+
 .admin-nav__item.is-active {
-  color: var(--kapoj-primary);
+  color: var(--kapoj-primary-strong);
   background: var(--kapoj-primary-soft);
-  border-color: color-mix(in srgb, var(--kapoj-primary) 24%, transparent);
+  border-color: color-mix(in srgb, var(--kapoj-brand) 18%, transparent);
 }
 
 .admin-nav__item.is-active::before {
   position: absolute;
-  top: 8px;
-  bottom: 8px;
-  left: -1px;
-  width: 2px;
+  top: 9px;
+  bottom: 9px;
+  left: 0;
+  width: 3px;
   content: '';
-  background: var(--kapoj-primary);
-  border-radius: var(--kapoj-radius-xs);
-  box-shadow: 0 0 8px var(--kapoj-primary);
+  background: var(--kapoj-brand);
+  border-radius: 0 999px 999px 0;
 }
 
 .admin-nav__item--back {
-  margin-top: var(--kapoj-space-1);
+  min-height: 48px;
   padding-top: var(--kapoj-space-3);
+  margin-top: var(--kapoj-space-1);
   border-top: 1px solid var(--kapoj-border);
   border-radius: 0;
 }
 
 .admin-nav__icon {
   flex: none;
-  width: 16px;
-  font-size: 14px;
+  width: 18px;
+  color: var(--kapoj-text-muted);
+  font-size: 15px;
   text-align: center;
+  transition: color var(--kapoj-transition);
+}
+
+.admin-nav__item:hover .admin-nav__icon,
+.admin-nav__item.is-active .admin-nav__icon {
+  color: var(--kapoj-primary-strong);
 }
 
 .admin-nav__text {

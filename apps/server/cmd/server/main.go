@@ -32,13 +32,20 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 	"github.com/kaptree/kapoj/apps/server/internal/router"
 	"github.com/kaptree/kapoj/apps/server/internal/secret"
-	"github.com/kaptree/kapoj/apps/server/internal/storage"
+	"github.com/kaptree/kapoj/apps/server/internal/storageaudit"
 	"github.com/kaptree/kapoj/apps/server/internal/testcasegen"
 )
 
 var errRestart = errors.New("restart requested")
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "migrate-storage" {
+		if err := runMigrateStorage(); err != nil {
+			slog.Error("storage migration failed", "err", err)
+			os.Exit(1)
+		}
+		return
+	}
 	err := run()
 	if errors.Is(err, errRestart) {
 		executable, execErr := os.Executable()
@@ -79,9 +86,22 @@ func run() error {
 	if err := certificate.SeedTypes(context.Background(), g); err != nil {
 		return err
 	}
-	store, err := storage.NewLocal(cfg.StorageDir)
+	store, files, packages, err := openStorage(cfg)
 	if err != nil {
 		return err
+	}
+	if missing, err := storageaudit.Scan(context.Background(), g, files); err != nil {
+		slog.Warn("storage: integrity scan failed", "err", err)
+	} else if len(missing) > 0 {
+		slog.Warn("storage: referenced files are missing", "count", len(missing))
+		for index, item := range missing {
+			if index >= 50 {
+				break
+			}
+			slog.Warn("storage: missing file",
+				"kind", item.Kind, "id", item.ID, "key", item.Key,
+			)
+		}
 	}
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
 	defer func() { _ = rdb.Close() }()
@@ -105,8 +125,9 @@ func run() error {
 	learningSvc := learning.NewService(learning.NewRepository(g))
 	rbacSvc := rbac.NewService(g)
 	backupSvc, err := backup.NewService(g, cfg.DatabaseURL, backup.Options{
-		StorageDir:           cfg.StorageDir,
-		BackupDir:            cfg.BackupDir,
+		Files:                files,
+		Packages:             packages,
+		WorkDir:              os.TempDir(),
 		MaxUploadBytes:       cfg.BackupMaxUploadBytes,
 		MaxUncompressedBytes: cfg.BackupMaxUncompressedBytes,
 		MaxEntries:           cfg.BackupMaxEntries,

@@ -2,7 +2,8 @@ package backupapi
 
 import (
 	"errors"
-	"path/filepath"
+	"mime"
+	"net/http"
 	"strconv"
 	"strings"
 
@@ -96,14 +97,21 @@ func (h *handler) download(c *gin.Context) {
 	if !ok {
 		return
 	}
-	path, err := h.svc.DownloadPath(c.Request.Context(), id)
+	reader, name, err := h.svc.DownloadPackage(c.Request.Context(), id)
 	if err != nil {
 		fail(c, err)
 		return
 	}
+	defer func() { _ = reader.Close() }()
 	h.recordAudit(c, "下载备份包", id)
 	c.Header("Cache-Control", "private, no-store")
-	c.FileAttachment(path, filepath.Base(path))
+	disposition := mime.FormatMediaType("attachment", map[string]string{"filename": name})
+	if disposition == "" {
+		disposition = "attachment"
+	}
+	c.DataFromReader(http.StatusOK, -1, "application/zip", reader, map[string]string{
+		"Content-Disposition": disposition,
+	})
 }
 
 func (h *handler) saveSchedule(c *gin.Context) {
@@ -127,14 +135,16 @@ func (h *handler) saveSchedule(c *gin.Context) {
 func (h *handler) restorePlatform(c *gin.Context) {
 	var packageID *int64
 	uploadPath := ""
-	confirm := ""
 	if isMultipart(c) {
+		if c.PostForm("confirm") != "RESTORE" {
+			httpx.Fail(c, httpx.ErrValidation("请输入 RESTORE 确认全平台恢复"))
+			return
+		}
 		path, ok := h.saveUpload(c)
 		if !ok {
 			return
 		}
 		uploadPath = path
-		confirm = c.PostForm("confirm")
 	} else {
 		in, ok := httpx.BindJSON[struct {
 			PackageID *int64 `json:"packageId"`
@@ -143,12 +153,11 @@ func (h *handler) restorePlatform(c *gin.Context) {
 		if !ok {
 			return
 		}
+		if in.Confirm != "RESTORE" {
+			httpx.Fail(c, httpx.ErrValidation("请输入 RESTORE 确认全平台恢复"))
+			return
+		}
 		packageID = in.PackageID
-		confirm = in.Confirm
-	}
-	if confirm != "RESTORE" {
-		httpx.Fail(c, httpx.ErrValidation("请输入 RESTORE 确认全平台恢复"))
-		return
 	}
 	if packageID == nil && uploadPath == "" {
 		httpx.Fail(c, httpx.ErrValidation("请选择服务器备份包或上传 ZIP"))
@@ -156,6 +165,9 @@ func (h *handler) restorePlatform(c *gin.Context) {
 	}
 	row, err := h.svc.StartRestore(c.Request.Context(), backup.KindPlatform, actorID(c), packageID, uploadPath, nil)
 	if err != nil {
+		if uploadPath != "" {
+			_ = h.svc.DeleteUpload(c.Request.Context(), uploadPath)
+		}
 		fail(c, err)
 		return
 	}
@@ -168,17 +180,17 @@ func (h *handler) restoreAccount(c *gin.Context) {
 	var target int64
 	uploadPath := ""
 	if isMultipart(c) {
-		path, ok := h.saveUpload(c)
-		if !ok {
-			return
-		}
-		uploadPath = path
 		id, err := strconv.ParseInt(c.PostForm("userId"), 10, 64)
 		if err != nil || id <= 0 {
 			httpx.Fail(c, httpx.ErrValidation("账号恢复需要有效的 userId"))
 			return
 		}
 		target = id
+		path, ok := h.saveUpload(c)
+		if !ok {
+			return
+		}
+		uploadPath = path
 	} else {
 		in, ok := httpx.BindJSON[struct {
 			PackageID *int64 `json:"packageId"`
@@ -200,6 +212,9 @@ func (h *handler) restoreAccount(c *gin.Context) {
 	}
 	row, err := h.svc.StartRestore(c.Request.Context(), backup.KindAccount, actorID(c), packageID, uploadPath, &target)
 	if err != nil {
+		if uploadPath != "" {
+			_ = h.svc.DeleteUpload(c.Request.Context(), uploadPath)
+		}
 		fail(c, err)
 		return
 	}

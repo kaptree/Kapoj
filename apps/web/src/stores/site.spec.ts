@@ -131,6 +131,21 @@ describe('site store', () => {
     expect(store.home.growthLinks).toEqual([])
   })
 
+  it('fills the default tagline for site rows saved before the field existed', async () => {
+    siteApi.getSite.mockResolvedValue(
+      siteView({
+        home: {
+          ...DEFAULT_HOME,
+          tagline: '',
+        },
+      }),
+    )
+    const store = useSiteStore()
+    await store.ensureLoaded()
+
+    expect(store.home.tagline).toBe(DEFAULT_HOME.tagline)
+  })
+
   it('records a visit once per session', async () => {
     sessionStorage.clear()
     siteApi.getSite.mockResolvedValue(siteView())

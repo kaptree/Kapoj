@@ -232,7 +232,7 @@ describe('AdminAiView', () => {
     )
     const wrapper = await mountPage()
 
-    expect(wrapper.text()).toContain('由环境变量管理')
+    expect(wrapper.text()).toContain('由部署配置管理')
     expect(wrapper.text()).toContain('KAPOJ_AI_ENCRYPTION_KEY')
     expect(buttons(wrapper, '自动生成密钥')).toHaveLength(0)
     expect(buttons(wrapper, '重新生成')).toHaveLength(0)

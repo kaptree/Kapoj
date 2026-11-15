@@ -6516,11 +6516,12 @@ components:
     SiteHomeContent:
       type: object
       description: 首页结构化内容，存储在 site_settings.home_json。
-      required: [eyebrow, title, titleHighlight, description, primaryCta, secondaryCta, quickTitle, quickLinks, growthTitle, growthLinks, guestTitle, guestDescription]
+      required: [eyebrow, title, titleHighlight, tagline, description, primaryCta, secondaryCta, quickTitle, quickLinks, growthTitle, growthLinks, guestTitle, guestDescription]
       properties:
         eyebrow: { type: string, maxLength: 40 }
         title: { type: string, maxLength: 60 }
         titleHighlight: { type: string, maxLength: 30 }
+        tagline: { type: string, maxLength: 80 }
         description: { type: string, maxLength: 300 }
         primaryCta: { $ref: '#/components/schemas/SiteLink' }
         secondaryCta: { $ref: '#/components/schemas/SiteLink' }

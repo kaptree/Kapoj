@@ -4,25 +4,25 @@ import Aura from '@primeuix/themes/aura'
 /**
  * kapOJ's PrimeVue preset.
  *
- * The palette follows the dark-first tech design system: cyan for brand and
- * interaction, slate surfaces, compact radii and a visible focus ring. The
+ * The palette follows the dark-first tech design system: teal-cyan for brand
+ * and interaction, slate surfaces, 8–12 px radii and a visible focus ring. The
  * matching CSS custom properties live in `src/styles/tokens.css`; keep both
  * files in sync when a design token changes.
  */
 export const KapojPreset = definePreset(Aura, {
   semantic: {
     primary: {
-      50: '#e6fcff',
-      100: '#c3f7ff',
-      200: '#8cefff',
-      300: '#4de4f7',
-      400: '#00d9f5',
-      500: '#00c4dd',
-      600: '#009fb8',
-      700: '#007f94',
-      800: '#006474',
-      900: '#004a57',
-      950: '#002b34',
+      50: '#edfcfd',
+      100: '#d2f5f8',
+      200: '#a5ebf1',
+      300: '#6fdfe9',
+      400: '#35cfe0',
+      500: '#0797a6',
+      600: '#078a97',
+      700: '#096f7b',
+      800: '#0b5a64',
+      900: '#0d4b54',
+      950: '#032f36',
     },
     focusRing: {
       width: '2px',
@@ -54,10 +54,10 @@ export const KapojPreset = definePreset(Aura, {
           activeColor: '{primary.900}',
         },
         text: {
-          color: '#0f172a',
-          hoverColor: '#020617',
-          mutedColor: '#64748b',
-          hoverMutedColor: '#475569',
+          color: '#172b4d',
+          hoverColor: '#0b1f3a',
+          mutedColor: '#7c8da3',
+          hoverMutedColor: '#5e6f86',
         },
       },
       dark: {
@@ -93,8 +93,8 @@ export const KapojPreset = definePreset(Aura, {
   components: {
     button: {
       root: {
-        borderRadius: '{border.radius.sm}',
-        transitionDuration: '160ms',
+        borderRadius: '8px',
+        transitionDuration: '180ms',
         label: {
           fontWeight: '600',
         },
@@ -102,7 +102,7 @@ export const KapojPreset = definePreset(Aura, {
     },
     card: {
       root: {
-        borderRadius: '{border.radius.md}',
+        borderRadius: '12px',
         shadow: '0 1px 2px rgb(0 0 0 / 35%)',
       },
       body: {

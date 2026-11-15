@@ -15,6 +15,7 @@ const (
 	maxEyebrowLen          = 40
 	maxTitleLen            = 60
 	maxTitleHighlightLen   = 30
+	maxTaglineLen          = 80
 	maxDescriptionLen      = 300
 	maxCTATitleLen         = 20
 	maxLinkTitleLen        = 40
@@ -90,6 +91,9 @@ func validateHome(in *HomeContent) error {
 	if err := requireMax("首页标题高亮", in.TitleHighlight, maxTitleHighlightLen, false); err != nil {
 		return err
 	}
+	if err := requireMax("首页宣传语", in.Tagline, maxTaglineLen, false); err != nil {
+		return err
+	}
 	if err := requireMax("首页描述", in.Description, maxDescriptionLen, false); err != nil {
 		return err
 	}
@@ -161,6 +165,7 @@ func trimHome(in *HomeContent) {
 	in.Eyebrow = strings.TrimSpace(in.Eyebrow)
 	in.Title = strings.TrimSpace(in.Title)
 	in.TitleHighlight = strings.TrimSpace(in.TitleHighlight)
+	in.Tagline = strings.TrimSpace(in.Tagline)
 	in.Description = strings.TrimSpace(in.Description)
 	trimLink(&in.PrimaryCTA)
 	trimLink(&in.SecondaryCTA)

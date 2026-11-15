@@ -1,5 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
+import Dialog from 'primevue/dialog'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -112,6 +113,22 @@ describe('ProfileCertificatesCard', () => {
 
     expect(items[1].text()).toContain('蓝桥杯')
     expect(items[1].text()).toContain('KAPOJ-IJKL-MNOP')
+
+    wrapper.unmount()
+  })
+
+  it('opens certificate details when a certificate is selected', async () => {
+    const wrapper = await mountCard()
+
+    await wrapper.get('.certificate-item__main').trigger('click')
+    await flushPromises()
+
+    const dialog = wrapper.findComponent(Dialog)
+    expect(dialog.props('visible')).toBe(true)
+    expect(document.body.textContent).toContain('证书 / 赛事')
+    expect(document.body.textContent).toContain('ACM-ICPC 区域赛')
+    expect(document.body.textContent).toContain('银奖')
+    expect(document.body.textContent).toContain('KAPOJ-ABCD-EFGH')
 
     wrapper.unmount()
   })

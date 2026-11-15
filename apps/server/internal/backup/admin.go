@@ -2,13 +2,15 @@ package backup
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
+	"github.com/kaptree/kapoj/apps/server/internal/storage"
 )
 
 func (s *Service) SaveSchedule(ctx context.Context, kind Kind, in ScheduleInput, actorID int64) (*BackupSchedule, error) {
@@ -39,50 +41,53 @@ func (s *Service) SaveSchedule(ctx context.Context, kind Kind, in ScheduleInput,
 	return s.repo.SaveSchedule(ctx, kind, in, schedule.NextRunAt, actorID)
 }
 
-// SaveUpload stores an uploaded restore ZIP inside the backup directory.
-func (s *Service) SaveUpload(_ context.Context, name string, r io.Reader) (string, error) {
-	dir := filepath.Join(s.backupDir, "uploads")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", err
-	}
-	base := filepath.Base(name)
+// SaveUpload stores an uploaded restore ZIP in the backup bucket and returns
+// its object key. The restore worker downloads it only when the job runs.
+func (s *Service) SaveUpload(ctx context.Context, name string, r io.Reader) (string, error) {
+	base := path.Base(strings.ReplaceAll(name, "\\", "/"))
+	base = strings.NewReplacer("\r", "_", "\n", "_", `"`, "_").Replace(base)
 	if base == "." || base == "/" || base == "" {
 		base = "upload.zip"
 	}
-	filename := filepath.Join(dir, fmt.Sprintf("%d-%s", time.Now().UnixNano(), base))
-	f, err := os.OpenFile(filename, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-	if err != nil {
+	if runes := []rune(base); len(runes) > 80 {
+		base = string(runes[len(runes)-80:])
+	}
+	key := fmt.Sprintf("uploads/%d-%s", time.Now().UnixNano(), base)
+	if _, err := s.packages.Put(ctx, key, r, s.maxUploadBytes); err != nil {
+		if errors.Is(err, storage.ErrTooLarge) {
+			return "", httpx.ErrValidation("备份包超过上传大小限制")
+		}
 		return "", err
 	}
-	n, copyErr := io.Copy(f, io.LimitReader(r, s.maxUploadBytes+1))
-	closeErr := f.Close()
-	if copyErr != nil {
-		_ = os.Remove(filename)
-		return "", copyErr
-	}
-	if closeErr != nil {
-		_ = os.Remove(filename)
-		return "", closeErr
-	}
-	if n > s.maxUploadBytes {
-		_ = os.Remove(filename)
-		return "", httpx.ErrValidation("备份包超过上传大小限制")
-	}
-	return filename, nil
+	return key, nil
 }
 
-func (s *Service) DownloadPath(ctx context.Context, id int64) (string, error) {
+// DeleteUpload removes a temporary uploaded restore ZIP after validation or
+// restore failure.
+func (s *Service) DeleteUpload(ctx context.Context, key string) error {
+	if key == "" {
+		return nil
+	}
+	return s.packages.Delete(ctx, key)
+}
+
+// DownloadPackage opens a ready backup package for streaming.
+func (s *Service) DownloadPackage(ctx context.Context, id int64) (io.ReadCloser, string, error) {
 	row, err := s.repo.FindPackage(ctx, id)
 	if err != nil {
-		return "", err
+		return nil, "", err
 	}
 	if row.Status != PackageReady || row.Filename == "" {
-		return "", ErrNotFound
+		return nil, "", ErrNotFound
 	}
-	if _, err := os.Stat(row.Filename); err != nil {
-		return "", ErrNotFound
+	reader, err := s.packages.Open(ctx, row.Filename)
+	if errors.Is(err, storage.ErrNotFound) || errors.Is(err, storage.ErrInvalidKey) {
+		return nil, "", ErrNotFound
 	}
-	return row.Filename, nil
+	if err != nil {
+		return nil, "", err
+	}
+	return reader, path.Base(row.Filename), nil
 }
 
 func (s *Service) RestoreJob(ctx context.Context, id int64) (*BackupRestoreJob, error) {

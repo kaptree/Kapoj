@@ -1,12 +1,16 @@
 package backup
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+
+	"github.com/kaptree/kapoj/apps/server/internal/storage"
 )
 
 // storagePath validates a storage key and joins it to root.
@@ -26,79 +30,63 @@ func storagePath(root, key string) (string, error) {
 	return full, nil
 }
 
-func addStorageFile(archive *Writer, entry, storageRoot, key string) error {
-	full, err := storagePath(storageRoot, key)
-	if err != nil {
-		return err
-	}
-	f, err := os.Open(full)
-	if errors.Is(err, os.ErrNotExist) {
+// addStoreFile adds one object to the archive under entry. Missing objects are
+// skipped, matching the old local implementation and leaving the reference to
+// the startup storage audit.
+func addStoreFile(ctx context.Context, archive *Writer, store storage.Storage, entry, key string) error {
+	reader, err := store.Open(ctx, key)
+	if errors.Is(err, storage.ErrNotFound) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	defer func() { _ = f.Close() }()
-	info, err := f.Stat()
+	defer func() { _ = reader.Close() }()
+	writer, err := archive.Create(entry)
 	if err != nil {
 		return err
 	}
-	if info.IsDir() {
-		return nil
-	}
-	w, err := archive.Create(entry)
-	if err != nil {
-		return err
-	}
-	_, err = io.Copy(w, f)
+	_, err = io.Copy(writer, reader)
 	return err
 }
 
-// addStorageTree includes every business file under root, excluding backups and
-// temporary restore directories.
-func addStorageTree(archive *Writer, root, backupDir string) error {
-	backupAbs, _ := filepath.Abs(backupDir)
-	return filepath.WalkDir(root, func(full string, d os.DirEntry, err error) error {
-		if err != nil {
+// addStoreObjects includes every business object, excluding protected local
+// keys and old backup archives. The list is sorted for deterministic ZIPs.
+func addStoreObjects(ctx context.Context, archive *Writer, store storage.ObjectStore) error {
+	objects, err := store.List(ctx, "")
+	if err != nil {
+		return err
+	}
+	sort.Slice(objects, func(i, j int) bool { return objects[i].Key < objects[j].Key })
+	for _, object := range objects {
+		if !isBusinessKey(object.Key) {
+			continue
+		}
+		if err := addStoreFile(ctx, archive, store, "files/"+object.Key, object.Key); err != nil {
 			return err
 		}
-		abs, _ := filepath.Abs(full)
-		if abs == backupAbs || strings.HasPrefix(abs, backupAbs+string(filepath.Separator)) {
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
+	}
+	return nil
+}
+
+// isBusinessKey is an allowlist for platform snapshots and restores. Custom
+// key paths, rotation backups, and old local backup directories can never be
+// written into the business bucket through a restore.
+var businessKeyPrefixes = []string{
+	"badges/",
+	"avatars/",
+	"certificates/",
+	"site/",
+	"problems/",
+}
+
+func isBusinessKey(key string) bool {
+	for _, prefix := range businessKeyPrefixes {
+		if strings.HasPrefix(key, prefix) {
+			return true
 		}
-		if d.IsDir() {
-			if strings.HasPrefix(d.Name(), ".restore-") {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !d.Type().IsRegular() {
-			return nil
-		}
-		rel, err := filepath.Rel(root, full)
-		if err != nil {
-			return err
-		}
-		entry := "files/" + filepath.ToSlash(rel)
-		f, err := os.Open(full)
-		if err != nil {
-			return err
-		}
-		w, err := archive.Create(entry)
-		if err != nil {
-			_ = f.Close()
-			return err
-		}
-		_, copyErr := io.Copy(w, f)
-		closeErr := f.Close()
-		if copyErr != nil {
-			return copyErr
-		}
-		return closeErr
-	})
+	}
+	return false
 }
 
 // extractStorage writes archive entries under prefix into dest. It never
@@ -147,64 +135,200 @@ func extractStorage(reader *Reader, prefix, dest string) error {
 	return nil
 }
 
-// copyStorageTree copies business files, excluding the backup directory.
-func copyStorageTree(src, dst, backupDir string) error {
-	backupAbs, _ := filepath.Abs(backupDir)
-	return filepath.WalkDir(src, func(full string, d os.DirEntry, err error) error {
+const maxRestoreObjectBytes = int64(1) << 40
+
+// copyStoreToDir materializes business objects under dst for the short
+// rollback window of a platform restore.
+func copyStoreToDir(ctx context.Context, store storage.ObjectStore, dst string) error {
+	objects, err := store.List(ctx, "")
+	if err != nil {
+		return err
+	}
+	for _, object := range objects {
+		if !isBusinessKey(object.Key) {
+			continue
+		}
+		reader, err := store.Open(ctx, object.Key)
 		if err != nil {
 			return err
 		}
-		abs, _ := filepath.Abs(full)
-		if abs == backupAbs || strings.HasPrefix(abs, backupAbs+string(filepath.Separator)) {
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
+		target, err := storagePath(dst, object.Key)
+		if err != nil {
+			_ = reader.Close()
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			_ = reader.Close()
+			return err
+		}
+		out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+		if err != nil {
+			_ = reader.Close()
+			return err
+		}
+		_, copyErr := io.Copy(out, reader)
+		_ = reader.Close()
+		closeErr := out.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+	}
+	return nil
+}
+
+// copyDirToStore uploads all regular files under src, preserving relative keys.
+func copyDirToStore(ctx context.Context, store storage.ObjectStore, src string) error {
+	return filepath.WalkDir(src, func(full string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if entry.IsDir() || !entry.Type().IsRegular() {
 			return nil
 		}
 		rel, err := filepath.Rel(src, full)
 		if err != nil {
 			return err
 		}
-		target := filepath.Join(dst, rel)
-		if d.IsDir() {
-			return os.MkdirAll(target, 0o755)
-		}
-		if !d.Type().IsRegular() {
+		key := filepath.ToSlash(rel)
+		if !isBusinessKey(key) {
 			return nil
 		}
-		in, err := os.Open(full)
+		file, err := os.Open(full)
 		if err != nil {
 			return err
 		}
-		out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-		if err != nil {
-			_ = in.Close()
-			return err
-		}
-		_, copyErr := io.Copy(out, in)
-		_ = in.Close()
-		closeErr := out.Close()
-		if copyErr != nil {
-			return copyErr
+		_, putErr := store.Put(ctx, key, file, maxRestoreObjectBytes)
+		closeErr := file.Close()
+		if putErr != nil {
+			return putErr
 		}
 		return closeErr
 	})
 }
 
-// clearStorage removes business files while preserving the backup directory.
-func clearStorage(root, backupDir string) error {
-	entries, err := os.ReadDir(root)
+// listDirKeys returns every regular file under src as a slash-separated key.
+func listDirKeys(src string) ([]string, error) {
+	keys := make([]string, 0)
+	err := filepath.WalkDir(src, func(full string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || !entry.Type().IsRegular() {
+			return nil
+		}
+		rel, err := filepath.Rel(src, full)
+		if err != nil {
+			return err
+		}
+		key := filepath.ToSlash(rel)
+		if isBusinessKey(key) {
+			keys = append(keys, key)
+		}
+		return nil
+	})
+	sort.Strings(keys)
+	return keys, err
+}
+
+// snapshotStoreKeys copies the current version of each key to dst and reports
+// which keys existed. It is used for the account restore rollback window.
+func snapshotStoreKeys(
+	ctx context.Context,
+	store storage.Storage,
+	keys []string,
+	dst string,
+) (map[string]bool, error) {
+	existed := make(map[string]bool, len(keys))
+	for _, key := range keys {
+		reader, err := store.Open(ctx, key)
+		if errors.Is(err, storage.ErrNotFound) {
+			existed[key] = false
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		target, err := storagePath(dst, key)
+		if err != nil {
+			_ = reader.Close()
+			return nil, err
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			_ = reader.Close()
+			return nil, err
+		}
+		out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+		if err != nil {
+			_ = reader.Close()
+			return nil, err
+		}
+		_, copyErr := io.Copy(out, reader)
+		_ = reader.Close()
+		closeErr := out.Close()
+		if copyErr != nil {
+			return nil, copyErr
+		}
+		if closeErr != nil {
+			return nil, closeErr
+		}
+		existed[key] = true
+	}
+	return existed, nil
+}
+
+// restoreStoreKeys restores a snapshot, deleting keys that did not exist
+// before the failed restore.
+func restoreStoreKeys(
+	ctx context.Context,
+	store storage.ObjectStore,
+	keys []string,
+	previousDir string,
+	existed map[string]bool,
+) error {
+	for _, key := range keys {
+		if !existed[key] {
+			if err := store.Delete(ctx, key); err != nil {
+				return err
+			}
+			continue
+		}
+		full, err := storagePath(previousDir, key)
+		if err != nil {
+			return err
+		}
+		file, err := os.Open(full)
+		if err != nil {
+			return err
+		}
+		_, putErr := store.Put(ctx, key, file, maxRestoreObjectBytes)
+		closeErr := file.Close()
+		if putErr != nil {
+			return putErr
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+	}
+	return nil
+}
+
+// clearBusinessStore removes business objects but never local secret files.
+func clearBusinessStore(ctx context.Context, store storage.ObjectStore) error {
+	objects, err := store.List(ctx, "")
 	if err != nil {
 		return err
 	}
-	backupAbs, _ := filepath.Abs(backupDir)
-	for _, entry := range entries {
-		full := filepath.Join(root, entry.Name())
-		abs, _ := filepath.Abs(full)
-		if abs == backupAbs || strings.HasPrefix(backupAbs, abs+string(filepath.Separator)) {
+	for _, object := range objects {
+		if !isBusinessKey(object.Key) {
 			continue
 		}
-		if err := os.RemoveAll(full); err != nil {
+		if err := store.Delete(ctx, object.Key); err != nil {
 			return err
 		}
 	}

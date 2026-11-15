@@ -57,10 +57,16 @@ watch(
   padding: 0 var(--kapoj-space-1);
   color: var(--kapoj-text);
   text-decoration: none;
+  border-radius: var(--kapoj-radius-sm);
 }
 
 .app-brand:hover {
   text-decoration: none;
+}
+
+.app-brand:focus-visible {
+  outline: 2px solid var(--kapoj-border-focus);
+  outline-offset: 3px;
 }
 
 .app-brand__logo {
@@ -80,36 +86,38 @@ watch(
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  color: var(--kapoj-bg);
+  width: 34px;
+  height: 34px;
+  color: var(--kapoj-text-inverted);
   font-family: var(--kapoj-font-mono);
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 700;
-  background: var(--kapoj-primary);
-  border-radius: var(--kapoj-radius-sm);
-  box-shadow: var(--kapoj-glow-primary);
+  background: var(--kapoj-brand);
+  border-radius: var(--kapoj-radius-md);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--kapoj-brand) 24%, transparent);
 }
 
 .app-brand__name {
   font-family: var(--kapoj-font-mono);
-  font-size: 18px;
+  font-size: 19px;
   font-weight: 700;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.045em;
 }
 
 .app-brand__name strong {
-  color: var(--kapoj-primary);
+  color: var(--kapoj-brand);
   font-weight: inherit;
 }
 
 .app-brand__badge {
-  padding: 1px var(--kapoj-space-1);
-  color: var(--kapoj-text-muted);
+  padding: 1px 6px;
+  color: var(--kapoj-primary);
   font-family: var(--kapoj-font-mono);
   font-size: 9px;
-  letter-spacing: 0.08em;
-  border: 1px solid var(--kapoj-border);
-  border-radius: var(--kapoj-radius-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  background: var(--kapoj-primary-soft);
+  border: 1px solid color-mix(in srgb, var(--kapoj-brand) 22%, transparent);
+  border-radius: 999px;
 }
 </style>

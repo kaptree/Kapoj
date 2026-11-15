@@ -2,8 +2,8 @@ package backup_test
 
 import (
 	"context"
-	"os"
-	"path/filepath"
+	"io"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -29,8 +29,8 @@ func TestAccountBackupRestoreIsScopedToUser(t *testing.T) {
 	}
 	require.NoError(t, e.db.Create(a).Error)
 	require.NoError(t, e.db.Create(b).Error)
-	require.NoError(t, os.MkdirAll(filepath.Join(e.storageDir, "avatars"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(e.storageDir, "avatars/a.png"), []byte("avatar-a"), 0o644))
+	_, err := e.files.Put(ctx, "avatars/a.png", strings.NewReader("avatar-a"), 100)
+	require.NoError(t, err)
 
 	p := &problem.Problem{
 		Title: "账号题", Slug: "account-problem", StatementMD: "题干",
@@ -51,7 +51,7 @@ func TestAccountBackupRestoreIsScopedToUser(t *testing.T) {
 	require.NoError(t, e.db.Model(&user.User{}).Where("id = ?", a.ID).
 		Updates(map[string]any{"nickname": "changed", "coins": 99}).Error)
 	require.NoError(t, e.db.Where("id = ?", sub.ID).Delete(&submission.Submission{}).Error)
-	require.NoError(t, os.Remove(filepath.Join(e.storageDir, "avatars/a.png")))
+	require.NoError(t, e.files.Delete(ctx, "avatars/a.png"))
 
 	job, err := e.svc.StartRestore(ctx, backup.KindAccount, 1, &pkg.ID, "", &a.ID)
 	require.NoError(t, err)
@@ -69,8 +69,11 @@ func TestAccountBackupRestoreIsScopedToUser(t *testing.T) {
 	var subCount int64
 	require.NoError(t, e.db.Model(&submission.Submission{}).Where("id = ?", sub.ID).Count(&subCount).Error)
 	assert.EqualValues(t, 1, subCount)
-	data, err := os.ReadFile(filepath.Join(e.storageDir, "avatars/a.png"))
+	reader, err := e.files.Open(ctx, "avatars/a.png")
 	require.NoError(t, err)
+	data, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	_ = reader.Close()
 	assert.Equal(t, "avatar-a", string(data))
 }
 

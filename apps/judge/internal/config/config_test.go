@@ -1,6 +1,9 @@
 package config_test
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -51,6 +54,40 @@ func TestLoadReadsEnv(t *testing.T) {
 	assert.Equal(t, 4, cfg.Concurrency)
 	assert.Equal(t, "/usr/bin/docker", cfg.DockerBin)
 	assert.Equal(t, "gcc:15", cfg.Images["cpp"])
+}
+
+func TestLoadUnifiedConfigFile(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), ".env")
+	content := strings.Join([]string{
+		"POSTGRES_USER=dbuser",
+		"POSTGRES_PASSWORD=dbpass",
+		"POSTGRES_DB=kapoj",
+		"KAPOJ_DB_HOST=postgres",
+		"KAPOJ_DB_PORT=5433",
+		"MINIO_ROOT_USER=minioadmin",
+		"MINIO_ROOT_PASSWORD=miniopass",
+		"KAPOJ_STORAGE_BACKEND=minio",
+		"KAPOJ_MINIO_ENDPOINT=minio:9000",
+		"KAPOJ_MINIO_BUCKET=objects",
+	}, "\n")
+	require.NoError(t, os.WriteFile(configPath, []byte(content), 0o600))
+	t.Setenv("KAPOJ_CONFIG_FILE", configPath)
+	for _, key := range []string{
+		"POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB",
+		"KAPOJ_DB_HOST", "KAPOJ_DB_PORT", "KAPOJ_DATABASE_URL",
+		"MINIO_ROOT_USER", "MINIO_ROOT_PASSWORD",
+		"KAPOJ_MINIO_ACCESS_KEY", "KAPOJ_MINIO_SECRET_KEY",
+		"KAPOJ_STORAGE_BACKEND", "KAPOJ_MINIO_ENDPOINT", "KAPOJ_MINIO_BUCKET",
+	} {
+		t.Setenv(key, "")
+	}
+
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	assert.Equal(t, "postgres://dbuser:dbpass@postgres:5433/kapoj?sslmode=disable", cfg.DatabaseURL)
+	assert.Equal(t, "minioadmin", cfg.MinIOAccessKey)
+	assert.Equal(t, "miniopass", cfg.MinIOSecretKey)
+	assert.Equal(t, "objects", cfg.MinIOBucket)
 }
 
 func TestLoadRejectsBadConcurrency(t *testing.T) {

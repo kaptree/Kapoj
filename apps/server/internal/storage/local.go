@@ -6,8 +6,8 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -27,11 +27,8 @@ func NewLocal(root string) (*Local, error) {
 
 // resolve validates key and returns its absolute path inside the root.
 func (l *Local) resolve(key string) (string, error) {
-	if key == "" || strings.ContainsAny(key, "\x00\\") || strings.HasPrefix(key, "/") {
-		return "", ErrInvalidKey
-	}
-	if path.Clean(key) != key || key == "." || strings.HasPrefix(key, "../") {
-		return "", ErrInvalidKey
+	if err := ValidateKey(key); err != nil {
+		return "", err
 	}
 	full := filepath.Join(l.root, filepath.FromSlash(key))
 	if !strings.HasPrefix(full, l.root+string(filepath.Separator)) {
@@ -99,6 +96,66 @@ func (l *Local) Delete(ctx context.Context, key string) error {
 		return err
 	}
 	if err := os.Remove(full); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
+// List walks the local tree and returns regular files whose keys begin with
+// prefix. Prefix is a filter only; it is never joined to the root.
+func (l *Local) List(ctx context.Context, prefix string) ([]ObjectInfo, error) {
+	objects := make([]ObjectInfo, 0)
+	err := filepath.WalkDir(l.root, func(full string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if entry.IsDir() || !entry.Type().IsRegular() {
+			return nil
+		}
+		rel, err := filepath.Rel(l.root, full)
+		if err != nil {
+			return err
+		}
+		key := filepath.ToSlash(rel)
+		if !strings.HasPrefix(key, prefix) {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		objects = append(objects, ObjectInfo{Key: key, Size: info.Size()})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(objects, func(i, j int) bool { return objects[i].Key < objects[j].Key })
+	return objects, nil
+}
+
+// DeletePrefix removes a subtree. Keys are validated by resolve.
+func (l *Local) DeletePrefix(ctx context.Context, prefix string) error {
+	if prefix == "" {
+		entries, err := os.ReadDir(l.root)
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			if err := os.RemoveAll(filepath.Join(l.root, entry.Name())); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	full, err := l.resolve(strings.TrimSuffix(prefix, "/"))
+	if err != nil {
+		return err
+	}
+	if err := os.RemoveAll(full); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	return nil

@@ -49,9 +49,10 @@ func newFx(t *testing.T) *fx {
 	root := t.TempDir()
 	store, err := storage.NewLocal(filepath.Join(root, "data"))
 	require.NoError(t, err)
+	packages, err := storage.NewLocal(filepath.Join(root, "packages"))
+	require.NoError(t, err)
 	svc, err := backup.NewService(g, os.Getenv("KAPOJ_TEST_DATABASE_URL"), backup.Options{
-		StorageDir: filepath.Join(root, "data"),
-		BackupDir:  filepath.Join(root, "data", "backups"),
+		Files: store, Packages: packages, WorkDir: filepath.Join(root, "work"),
 	})
 	require.NoError(t, err)
 	require.NoError(t, svc.Ensure(context.Background()))

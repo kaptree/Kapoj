@@ -29,7 +29,12 @@ export const router = createRouter({
       path: '/',
       component: DefaultLayout,
       children: [
-        { path: '', name: 'home', component: () => import('@/views/HomeView.vue') },
+        {
+          path: '',
+          name: 'home',
+          component: () => import('@/views/HomeView.vue'),
+          meta: { title: '首页' },
+        },
         {
           path: 'login',
           name: 'login',

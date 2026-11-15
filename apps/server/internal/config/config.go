@@ -5,33 +5,46 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/spf13/viper"
+	"github.com/subosito/gotenv"
 )
 
 type Config struct {
-	HTTPAddr           string
-	DatabaseURL        string
-	RedisAddr          string
-	StorageDir         string
-	JWTSecret          string
-	AccessTokenTTL     time.Duration
-	RefreshTokenTTL    time.Duration
-	SubmitCooldown     time.Duration
-	GameConcurrency    int
-	MaxEquippedBadges  int
-	RatingScanInterval time.Duration
-	RatingJudgeGrace   time.Duration
-	AIEncryptionKey    string
-	AIKeyFile          string
-	AIRequestTimeout   time.Duration
-	AICooldown         time.Duration
-	MailEncryptionKey  string
-	MailKeyFile        string
-	MailTimeout        time.Duration
-	TrustedProxies     []string
+	HTTPAddr                 string
+	DatabaseURL              string
+	RedisAddr                string
+	StorageDir               string
+	RequirePersistentStorage bool
+	StorageBackend           string
+	MinIOEndpoint            string
+	MinIOAccessKey           string
+	MinIOSecretKey           string
+	MinIOBucket              string
+	MinIOBackupBucket        string
+	MinIORegion              string
+	MinIOUseSSL              bool
+	MinIOAutoCreateBucket    bool
+	JWTSecret                string
+	AccessTokenTTL           time.Duration
+	RefreshTokenTTL          time.Duration
+	SubmitCooldown           time.Duration
+	GameConcurrency          int
+	MaxEquippedBadges        int
+	RatingScanInterval       time.Duration
+	RatingJudgeGrace         time.Duration
+	AIEncryptionKey          string
+	AIKeyFile                string
+	AIRequestTimeout         time.Duration
+	AICooldown               time.Duration
+	MailEncryptionKey        string
+	MailKeyFile              string
+	MailTimeout              time.Duration
+	TrustedProxies           []string
 
 	BackupDir                  string
 	BackupMaxUploadBytes       int64
@@ -41,16 +54,85 @@ type Config struct {
 
 const minSecretLen = 32
 
-// Load reads configuration from KAPOJ_* environment variables.
+// loadConfigFile reads the single dotenv config when KAPOJ_CONFIG_FILE is set.
+// Explicit non-empty environment variables take precedence, so a developer can
+// override service hostnames for a local go run without editing the file.
+func loadConfigFile() error {
+	path := os.Getenv("KAPOJ_CONFIG_FILE")
+	if path == "" {
+		return nil
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open config file %q: %w", path, err)
+	}
+	defer func() { _ = file.Close() }()
+	values, err := gotenv.StrictParse(file)
+	if err != nil {
+		return fmt.Errorf("parse config file %q: %w", path, err)
+	}
+	for key, value := range values {
+		if key == "KAPOJ_CONFIG_FILE" {
+			continue
+		}
+		if os.Getenv(key) == "" {
+			if err := os.Setenv(key, value); err != nil {
+				return fmt.Errorf("set %s from config file: %w", key, err)
+			}
+		}
+	}
+	return nil
+}
+
+func databaseURLFromPostgres(host, port string) string {
+	user := os.Getenv("POSTGRES_USER")
+	database := os.Getenv("POSTGRES_DB")
+	if user == "" || database == "" {
+		return ""
+	}
+	if host == "" {
+		host = "localhost"
+	}
+	if port == "" {
+		port = "5432"
+	}
+	u := &url.URL{
+		Scheme:   "postgres",
+		User:     url.UserPassword(user, os.Getenv("POSTGRES_PASSWORD")),
+		Host:     net.JoinHostPort(host, port),
+		Path:     "/" + database,
+		RawQuery: "sslmode=disable",
+	}
+	return u.String()
+}
+
+// Load reads the unified dotenv file (when KAPOJ_CONFIG_FILE is set) and then
+// resolves KAPOJ_* environment variables. Non-empty environment variables win
+// over file values, which keeps local development overrides possible.
 func Load() (*Config, error) {
+	if err := loadConfigFile(); err != nil {
+		return nil, err
+	}
 	v := viper.New()
 	v.SetEnvPrefix("KAPOJ")
 	v.AutomaticEnv()
 
 	v.SetDefault("http_addr", ":8080")
 	v.SetDefault("database_url", "")
+	v.SetDefault("db_host", "localhost")
+	v.SetDefault("db_port", "5432")
 	v.SetDefault("redis_addr", "localhost:6379")
 	v.SetDefault("storage_dir", "data")
+	v.SetDefault("require_persistent_storage", false)
+	v.SetDefault("storage_backend", "local")
+	v.SetDefault("minio_endpoint", "localhost:9000")
+	v.SetDefault("minio_access_key", "")
+	v.SetDefault("minio_secret_key", "")
+	v.SetDefault("minio_bucket", "kapoj")
+	v.SetDefault("minio_backup_bucket", "kapoj-backups")
+	v.SetDefault("minio_region", "")
+	v.SetDefault("minio_use_ssl", false)
+	v.SetDefault("minio_auto_create_bucket", true)
 	v.SetDefault("jwt_secret", "")
 	v.SetDefault("access_token_ttl", "15m")
 	v.SetDefault("refresh_token_ttl", "168h")
@@ -76,12 +158,26 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	databaseURL := v.GetString("database_url")
+	if databaseURL == "" {
+		databaseURL = databaseURLFromPostgres(v.GetString("db_host"), v.GetString("db_port"))
+	}
 
 	cfg := &Config{
 		HTTPAddr:                   v.GetString("http_addr"),
-		DatabaseURL:                v.GetString("database_url"),
+		DatabaseURL:                databaseURL,
 		RedisAddr:                  v.GetString("redis_addr"),
 		StorageDir:                 v.GetString("storage_dir"),
+		RequirePersistentStorage:   v.GetBool("require_persistent_storage"),
+		StorageBackend:             v.GetString("storage_backend"),
+		MinIOEndpoint:              v.GetString("minio_endpoint"),
+		MinIOAccessKey:             v.GetString("minio_access_key"),
+		MinIOSecretKey:             v.GetString("minio_secret_key"),
+		MinIOBucket:                v.GetString("minio_bucket"),
+		MinIOBackupBucket:          v.GetString("minio_backup_bucket"),
+		MinIORegion:                v.GetString("minio_region"),
+		MinIOUseSSL:                v.GetBool("minio_use_ssl"),
+		MinIOAutoCreateBucket:      v.GetBool("minio_auto_create_bucket"),
 		JWTSecret:                  v.GetString("jwt_secret"),
 		AccessTokenTTL:             v.GetDuration("access_token_ttl"),
 		RefreshTokenTTL:            v.GetDuration("refresh_token_ttl"),
@@ -104,8 +200,32 @@ func Load() (*Config, error) {
 		BackupMaxEntries:           v.GetInt("backup_max_entries"),
 	}
 
+	if cfg.MinIOAccessKey == "" {
+		cfg.MinIOAccessKey = os.Getenv("MINIO_ROOT_USER")
+	}
+	if cfg.MinIOSecretKey == "" {
+		cfg.MinIOSecretKey = os.Getenv("MINIO_ROOT_PASSWORD")
+	}
 	if len(cfg.JWTSecret) < minSecretLen {
 		return nil, errors.New("KAPOJ_JWT_SECRET must be at least 32 bytes")
+	}
+	switch cfg.StorageBackend {
+	case "local":
+	case "minio":
+		if cfg.MinIOEndpoint == "" {
+			return nil, errors.New("KAPOJ_MINIO_ENDPOINT is required when KAPOJ_STORAGE_BACKEND=minio")
+		}
+		if cfg.MinIOAccessKey == "" || cfg.MinIOSecretKey == "" {
+			return nil, errors.New("KAPOJ_MINIO_ACCESS_KEY and KAPOJ_MINIO_SECRET_KEY are required when KAPOJ_STORAGE_BACKEND=minio")
+		}
+		if cfg.MinIOBucket == "" || cfg.MinIOBackupBucket == "" {
+			return nil, errors.New("KAPOJ_MINIO_BUCKET and KAPOJ_MINIO_BACKUP_BUCKET are required when KAPOJ_STORAGE_BACKEND=minio")
+		}
+		if cfg.MinIOBucket == cfg.MinIOBackupBucket {
+			return nil, errors.New("KAPOJ_MINIO_BUCKET and KAPOJ_MINIO_BACKUP_BUCKET must be different")
+		}
+	default:
+		return nil, fmt.Errorf("KAPOJ_STORAGE_BACKEND must be local or minio, got %q", cfg.StorageBackend)
 	}
 	if cfg.AccessTokenTTL <= 0 || cfg.RefreshTokenTTL <= 0 {
 		return nil, errors.New("token TTLs must be positive durations")

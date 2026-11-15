@@ -53,7 +53,7 @@ func (s *Service) ListBadges(ctx context.Context, v Viewer, includeInactive bool
 		if isOwned {
 			ownership = &userBadge
 		}
-		items = append(items, toBadgeItem(badge, ownership))
+		items = append(items, s.toResolvedBadgeItem(ctx, badge, ownership))
 	}
 	return items, nil
 }
@@ -84,7 +84,7 @@ func (s *Service) ListUserBadges(ctx context.Context, userID int64) ([]BadgeItem
 		if !ok {
 			continue
 		}
-		items = append(items, toBadgeItem(badge, &userBadge))
+		items = append(items, s.toResolvedBadgeItem(ctx, badge, &userBadge))
 	}
 	return items, nil
 }
@@ -345,6 +345,45 @@ func allowedBadgeImageType(contentType string) bool {
 		return true
 	}
 	return false
+}
+
+// badgeImageKey converts an internal public image URL into its storage key.
+// External URLs and malformed internal paths are not inspected.
+func badgeImageKey(imageURL string) (string, bool) {
+	if !badgeInternalImagePattern.MatchString(imageURL) {
+		return "", false
+	}
+	id := strings.TrimSuffix(strings.TrimPrefix(imageURL, "/api/badges/"), "/image")
+	return badgeImageKeyPrefix + id, true
+}
+
+// resolveBadgeImageURL hides an internal image URL when its blob is missing.
+// This keeps database references intact (re-uploading the same key restores the
+// image) while avoiding a guaranteed 404 in every profile/list response.
+func (s *Service) resolveBadgeImageURL(ctx context.Context, imageURL string) string {
+	key, ok := badgeImageKey(imageURL)
+	if !ok || s.store == nil {
+		return imageURL
+	}
+	file, err := s.store.Open(ctx, key)
+	if errors.Is(err, storage.ErrNotFound) {
+		return ""
+	}
+	if err != nil {
+		return imageURL
+	}
+	_ = file.Close()
+	return imageURL
+}
+
+func (s *Service) toResolvedBadgeItem(
+	ctx context.Context,
+	badge Badge,
+	userBadge *UserBadge,
+) BadgeItem {
+	item := toBadgeItem(badge, userBadge)
+	item.ImageURL = s.resolveBadgeImageURL(ctx, item.ImageURL)
+	return item
 }
 
 func toBadgeItem(badge Badge, userBadge *UserBadge) BadgeItem {

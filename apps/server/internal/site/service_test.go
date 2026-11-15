@@ -155,6 +155,22 @@ func TestDefaultHomeLinksHaveIconPos(t *testing.T) {
 	}
 }
 
+func TestSiteHomeTaglineValidationAndTrim(t *testing.T) {
+	svc, _, _ := newSite(t)
+	ctx := context.Background()
+
+	bad := site.DefaultHomeContent()
+	bad.Tagline = strings.Repeat("长", 81)
+	_, err := svc.UpdateHome(ctx, 1, bad)
+	assertCode(t, err, 40001)
+
+	home := site.DefaultHomeContent()
+	home.Tagline = "  新的品牌宣传语  "
+	view, err := svc.UpdateHome(ctx, 1, home)
+	require.NoError(t, err)
+	assert.Equal(t, "新的品牌宣传语", view.Home.Tagline)
+}
+
 func TestSiteHomeNormalizesEmptyIconPos(t *testing.T) {
 	svc, _, _ := newSite(t)
 	ctx := context.Background()

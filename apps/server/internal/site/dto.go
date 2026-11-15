@@ -18,6 +18,7 @@ type HomeContent struct {
 	Eyebrow          string `json:"eyebrow"`
 	Title            string `json:"title"`
 	TitleHighlight   string `json:"titleHighlight"`
+	Tagline          string `json:"tagline"`
 	Description      string `json:"description"`
 	PrimaryCTA       Link   `json:"primaryCta"`
 	SecondaryCTA     Link   `json:"secondaryCta"`

@@ -6,6 +6,10 @@ coverage/
 .DS_Store
 .superpowers/
 apps/server/bin/
+apps/server/data/*
+!apps/server/data/.gitkeep
+minio-data/*
+!minio-data/.gitkeep
 
 apps/web/playwright-report/
 apps/web/test-results/

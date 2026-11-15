@@ -170,6 +170,15 @@ kapoj/
 | 50300 | 503  | 依赖服务不可用               |
 | 50301 | 503  | 邮件服务未配置或未就绪       |
 
+### 2.5 统一配置与部署
+
+- 仓库根目录 `.env` 是唯一启动/部署配置源，模板为 `.env.example`；`.env` git-ignored、权限 0600，包含 PostgreSQL/Redis/MinIO、Server、Judge、备份、JWT、AI/邮件加密密钥与组件默认账号。
+- Docker Compose 自动读取 `.env`；Server/Judge 通过 `env_file: ../.env` 读取同一文件。非 Compose 运行时设置 `KAPOJ_CONFIG_FILE=/path/to/.env`，非空环境变量优先于文件值。
+- 数据库连接串为空时由 `POSTGRES_*` + `KAPOJ_DB_HOST/PORT` 构造，`KAPOJ_DATABASE_URL` 可显式覆盖；MinIO 访问密钥为空时回退 `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`。
+- `KAPOJ_AI_ENCRYPTION_KEY`/`KAPOJ_MAIL_ENCRYPTION_KEY` 在 `.env` 中配置；旧 `KAPOJ_AI_KEY_FILE`/`KAPOJ_MAIL_KEY_FILE` 仅作为直接运行时的兼容回退（Compose 不再挂载密钥目录）。
+- 后台可编辑的站点品牌、SMTP 服务器、AI Provider 等仍保存在数据库，不属于 `.env`。
+- 修改 `.env` 中的 AI 加密密钥会使既有 `user_ai_configs` 密文无法解密；必须先备份并按维护流程处理（后台自动重加密仅在兼容密钥文件模式可用）。修改邮件加密密钥后需在后台重新填写 SMTP 密码。
+
 ---
 
 ## 3. 数据库总体设计
@@ -581,7 +590,7 @@ user_ai_configs (
 - 已建表：`ai_providers`（code 唯一 `uniq_ai_providers_code`）、`user_ai_configs`（user_id 唯一 `uniq_user_ai_configs_user`）、`ai_hints`（problem_id 唯一 `uniq_ai_hints_problem`）。
 - 平台级 provider 的密钥不写入数据库；`ai_providers.api_key_ref` 保留为环境变量名或密钥服务 ID 引用，当前固定为空字符串，M5-A 不实现平台代付 key。
 - 内置 provider seed（幂等，`ON CONFLICT DO NOTHING`，不覆盖已有行）：`deepseek` / DeepSeek / `https://api.deepseek.com/v1` / `deepseek-chat`、`openai` / OpenAI / `https://api.openai.com/v1` / `gpt-4o-mini`、`qwen` / 通义千问 / `https://dashscope.aliyuncs.com/compatible-mode/v1` / `qwen-plus`、`glm` / 智谱 GLM / `https://open.bigmodel.cn/api/paas/v4` / `glm-4-flash`。
-- `user_ai_configs.api_key_encrypted` 使用 AES-256-GCM（随机 12 字节 nonce，输出 `v1:`+base64(nonce+ciphertext)），密钥为 base64 编码的 32 字节（来自环境变量 `KAPOJ_AI_ENCRYPTION_KEY` 或密钥文件 `KAPOJ_AI_KEY_FILE`，见 §6.7）；接口只返回脱敏值（长度 >8 显示前 3 字符 + … + 后 4 字符，否则 `****`），不写日志、不写审计摘要。
+- `user_ai_configs.api_key_encrypted` 使用 AES-256-GCM（随机 12 字节 nonce，输出 `v1:`+base64(nonce+ciphertext)），密钥为 base64 编码的 32 字节（来自根目录 `.env` 的 `KAPOJ_AI_ENCRYPTION_KEY`；旧 `KAPOJ_AI_KEY_FILE` 仅兼容回退，见 §6.7）；接口只返回脱敏值（长度 >8 显示前 3 字符 + … + 后 4 字符，否则 `****`），不写日志、不写审计摘要。
 - 提示缓存：`ai_hints` 每题唯一；首个用户触发后生成，后续用户直接读取缓存，不要求用户 AI 配置、不消耗限流；非公开题对无 `problem.view_hidden` 的用户与不存在一致返回 40400，不泄露存在性。
 
 
@@ -725,7 +734,7 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 - **Redis**：`email_verify:<sha256>`、`email_verify_user:<uid>`、`email_verify_cooldown:<uid>`、`email_verify_ip:<ip>`、`password_reset:<sha256>`、`password_reset_user:<uid>`、`password_reset_email:<sha256>`、`password_reset_ip:<ip>`、`email_attempt_ip:<ip>`。token 为 32 字节随机串，只存 SHA-256，单次消费；重发会撤销旧 token。
 - **强制验证**：`require_email_verification` 默认开启。开启时注册不返回会话，登录/刷新与所有认证路由对未验证用户返回 40303；关闭时注册仍 best-effort 发送验证邮件并直接登录。首个引导账号（`users` 为空）始终跳过验证并标记已验证。
 - **管理接口**：`GET/PUT /api/admin/mail`、`POST /api/admin/mail/test`，需要 `mail.settings.manage`（分组「邮件」）；保存/测试成功写审计 action=`mail.settings.manage`。
-- **配置**：`KAPOJ_MAIL_ENCRYPTION_KEY`（base64 32 字节）、`KAPOJ_MAIL_KEY_FILE`（默认 `data/mail.key`）、`KAPOJ_MAIL_TIMEOUT`（默认 20s）、`KAPOJ_TRUSTED_PROXIES`（逗号分隔 CIDR，默认空 = 不信任代理头）。
+- **配置**：`KAPOJ_MAIL_ENCRYPTION_KEY`（base64 32 字节，统一写在根目录 `.env`；旧 `KAPOJ_MAIL_KEY_FILE` 仅兼容回退）、`KAPOJ_MAIL_TIMEOUT`（默认 20s）、`KAPOJ_TRUSTED_PROXIES`（逗号分隔 CIDR，默认空 = 不信任代理头）。
 - **限流**：重发验证按用户 60 秒冷却、IP 5 次/小时；忘记密码按邮箱 60 秒冷却、IP 5 次/小时；验证/重置尝试 IP 20 次/5 分钟。重发/忘记密码对未知邮箱返回通用成功信息，防枚举。
 - **安全**：邮件头 CR/LF 清洗；SMTP 密码、token 不写日志；重置密码成功后吊销全部会话，并标记邮箱已验证、作废旧验证 token。
 
@@ -1621,7 +1630,7 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 **实现状态（M5-A ✅；M5-1～M5-3、M5-4、M5-5 已完成；M5-7 证书认证已完成；M5-8 头像上传已完成，见 4.1）**
 
 - **路由挂载**：AI 路由（`/api/ai/configs` GET/POST、`/api/ai/complete`、`/api/ai/format`、`/api/ai/optimize`、`/api/ai/hint`）**始终挂载**（`ai.Service` 恒非 nil）；管理员在 `/admin/ai` 关闭 AI 后，`RequireAIEnabled` 中间件让所有 `/api/ai/*` 统一返回 404（见 §6.6）。未配置密钥时后端也正常启动，AI 路由仍可访问（`GET /api/ai/configs` 返回 200 + `keyConfigured=false`），保存配置/AI 调用返回 40001（见 §6.7 无密钥语义）。
-- **密钥来源**：加密密钥来自环境变量 `KAPOJ_AI_ENCRYPTION_KEY`（优先）或本地密钥文件 `KAPOJ_AI_KEY_FILE`（默认 `data/ai.key`）；env 非法 base64/长度在启动时报错，文件缺失/非法则视为未配置（后台可生成/覆盖）。详见 §6.7。
+- **密钥来源**：加密密钥来自根目录 `.env` 的 `KAPOJ_AI_ENCRYPTION_KEY`；旧 `KAPOJ_AI_KEY_FILE`（默认 `data/ai.key`）仅兼容回退。密钥非法 base64/长度在启动时报错；未配置时后台可生成/覆盖（仅兼容密钥文件模式）。详见 §6.7。
 - **provider**：启动时幂等 seed 四个内置 provider（`deepseek`/`openai`/`qwen`/`glm`，见 3.9）；只有 `is_active=true` 的 provider 可用，未知/停用 provider 被拒绝。
 - **加密**：用户 API key 使用 AES-256-GCM 加密存储（随机 nonce，`v1:` 前缀），接口只返回脱敏值，不写日志/审计；平台 provider 的密钥不写入数据库。
 - **OpenAI 客户端**：`POST {base_url}/chat/completions`，Bearer key，解析 `choices[0].message.content`；非 2xx / 空 choices / 畸形 JSON / 超时统一映射为 `50200 AI 服务调用失败`（`KAPOJ_AI_REQUEST_TIMEOUT` 控制超时，默认 45s），不泄露 key 与上游响应体敏感内容。
@@ -1716,8 +1725,8 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 
 - **设置 API**：`GET/PUT /api/admin/ai/settings`（需 `ai.settings.manage`）返回/更新 `{enabled, keyConfigured, updatedAt}`。设置存单例 `ai_settings`（`id=1`，首次读取懒创建、默认 `enabled=true`，`ON CONFLICT DO NOTHING`），更新与审计在同一事务内（action=`ai.settings.manage`、target=`ai_settings`、summary「启用/关闭 AI 功能」），审计失败回滚。
 - **关闭语义**：关闭后所有 `/api/ai/*` 接口立即返回 404（与未配置密钥一致，不暴露「AI 已关闭」），用户侧 AI 设置/提交页工具栏/题目提示自动降级为「AI 功能未启用」；重新开启立即恢复，无需重启。关闭**不删除**用户的 `user_ai_configs`/`ai_hints`，重新开启后用户配置与提示缓存仍在。
-- **密钥缺失语义**：`keyConfigured` 为只读，动态取自 `KeyManager.Configured()`（env 或密钥文件，见 §6.7）；未配置时管理页显示「未配置 AI 加密密钥，无法启用」，开关禁用，启用请求返回 40001，关闭仍可保存（此时 AI 路由仍挂载，`GET /api/ai/configs` 返回 `keyConfigured=false`、保存/调用返回 40001）。
-- **管理页**：`AdminAiView` 展示当前状态 Tag（已启用/已关闭/不可用）、`ToggleSwitch`、密钥缺失 `Message` 警告、保存按钮与 Toast；下方「加密密钥」板块展示密钥状态 Tag（未配置/已配置（文件）/由环境变量管理）、脱敏值与指纹，提供自动生成（一次性显示完整密钥 + 复制 + 备份警告）、手动填写、重新生成/手动替换（二次确认），环境变量来源只读（见 §6.7）。仅 `ai.settings.manage` 可见保存按钮，`AdminNav`「AI 设置」入口按权限显隐。管理 API 不受 AI 开关影响，始终可访问（有权限时）。
+- **密钥缺失语义**：`keyConfigured` 为只读，动态取自 `KeyManager.Configured()`（部署配置或兼容密钥文件，见 §6.7）；未配置时管理页显示「未配置 AI 加密密钥，无法启用」，开关禁用，启用请求返回 40001，关闭仍可保存（此时 AI 路由仍挂载，`GET /api/ai/configs` 返回 `keyConfigured=false`、保存/调用返回 40001）。
+- **管理页**：`AdminAiView` 展示当前状态 Tag（已启用/已关闭/不可用）、`ToggleSwitch`、密钥缺失 `Message` 警告、保存按钮与 Toast；下方「加密密钥」板块展示密钥状态 Tag（未配置/已配置（文件）/由部署配置管理）、脱敏值与指纹；兼容密钥文件模式下提供自动生成（一次性显示完整密钥 + 复制 + 备份警告）、手动填写、重新生成/手动替换（二次确认），部署配置来源只读（见 §6.7）。仅 `ai.settings.manage` 可见保存按钮，`AdminNav`「AI 设置」入口按权限显隐。管理 API 不受 AI 开关影响，始终可访问（有权限时）。
 - **权限**：`ai.settings.manage` 默认只授予 `super_admin`，不自动授予 `content_admin`；需要时用 RBAC-B 给自定义角色分配该权限。普通用户/无权限账号访问管理接口返回 403，不影响其正常 AI 使用。
 
 **Codex 提示词（历史参考，已实现）**
@@ -1742,19 +1751,18 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 
 ---
 
-### 6.7 AI 加密密钥管理（密钥文件/生成/手动/轮换）
+### 6.7 AI 加密密钥管理（统一配置 / 兼容密钥文件）
 
-管理员可在 `/admin/ai` 的「加密密钥」板块查看密钥状态、自动生成或手动填写密钥并写入本地密钥文件，运行时立即生效；已有密钥轮换时自动重加密所有用户 AI Key。环境变量密钥优先且后台只读。
+统一配置模式下，AI 加密密钥写在仓库根目录 `.env` 的 `KAPOJ_AI_ENCRYPTION_KEY`，Server 启动时加载；`/admin/ai` 的密钥板块只读显示「由部署配置管理」。旧版本的本地密钥文件模式继续兼容。
 
-- **密钥文件与优先级**：`KAPOJ_AI_KEY_FILE`（可选，默认 `data/ai.key`，权限 0600，父目录不存在时 0700 创建），文件内容为单行 base64 编码的 32 字节密钥（`openssl rand -base64 32` 等价，允许末尾换行）。环境变量 `KAPOJ_AI_ENCRYPTION_KEY` 优先级高于文件：env 非空时校验 base64/32 字节，非法则启动失败，且忽略文件（来源 `env`）；env 为空时读文件，文件不存在 → 未配置（`none`），格式非法 → 记录警告并视为未配置（后台可覆盖）。
-- **KeyManager**（`ai.KeyManager`，`sync.RWMutex`）：启动时由 `ai.NewKeyManager(envKey, filePath)` 构造，提供 `Configured()/Source()（env|file|none）/Masked()（前 3…后 4）/Fingerprint()（SHA-256 hex）/Encrypt/Decrypt/Replace`。`ai.Service` 改为持有 `*KeyManager`，所有加解密走当前密钥；运行时 `Replace` 原子切换新密钥，无需重启。
+- **来源与优先级**：进程/`.env` 中的 `KAPOJ_AI_ENCRYPTION_KEY` 非空时优先，校验 base64/32 字节，非法则启动失败；为空时回退 `KAPOJ_AI_KEY_FILE`（可选，默认 `data/ai.key`，权限 0600，父目录不存在时 0700 创建），文件内容为单行 base64 编码的 32 字节密钥（`openssl rand -base64 32` 等价，允许末尾换行）。文件不存在 → 未配置（`none`），格式非法 → 记录警告并视为未配置（后台可覆盖）。
+- **KeyManager**（`ai.KeyManager`，`sync.RWMutex`）：启动时由 `ai.NewKeyManager(envKey, filePath)` 构造，提供 `Configured()/Source()（env|file|none）/Masked()（前 3…后 4）/Fingerprint()（SHA-256 hex）/Encrypt/Decrypt/Replace`。`ai.Service` 持有 `*KeyManager`，所有加解密走当前密钥；兼容文件模式下运行时 `Replace` 原子切换新密钥，无需重启。
 - **无密钥语义**：AI 路由始终挂载；未配置密钥时 `GET /api/ai/configs` 返回 200 + `keyConfigured=false`（含启用的 provider 列表），用户保存配置、补全/格式化/优化、无缓存的提示返回 40001「AI 加密密钥未配置」，提示缓存命中仍可返回。`ai_settings.keyConfigured` 改为 `KeyManager.Configured()` 动态判断（不再用 `d.AI==nil`）。
 - **管理 API**（均需 `ai.settings.manage`，复用第 36 权限，不新增）：
   - `GET /api/admin/ai/key` → `KeyView{configured,source,masked,fingerprint}`（不含完整密钥）。
-  - `POST /api/admin/ai/key/generate` → 用 `crypto/rand` 生成 32 字节 base64 并保存，返回 `{...KeyView,key}`（完整密钥仅此一次，供备份）。
-  - `PUT /api/admin/ai/key` body `{key}` → 校验 base64/32 字节并保存。
-  - 环境变量来源时 POST/PUT 返回 40001「由环境变量管理，只读」；审计 action=`ai.settings.manage`、target=`ai_key`、summary「生成/更新 AI 加密密钥」（不含密钥/指纹）。
-- **轮换与重加密**（`ai.SettingsService.GenerateKey/SetKey/rotate`）：已有密钥时重新生成/替换会在事务内 `SELECT ... FOR UPDATE` 全部 `user_ai_configs`，逐行旧密钥解密、新密钥重新加密；任一失败回滚。写密钥文件采用临时文件 + `os.Rename` 原子替换（0600），旧文件备份为 `ai.key.bak`，DB 事务成功后删除备份、失败恢复备份（文件写失败则回滚 DB）；`ai_settings.key_fingerprint` 更新为 SHA-256 指纹（仅诊断/一致性，不存密钥）。
+  - 兼容密钥文件模式下，`POST /api/admin/ai/key/generate` 用 `crypto/rand` 生成 32 字节 base64 并保存，返回 `{...KeyView,key}`（完整密钥仅此一次，供备份）；`PUT /api/admin/ai/key` body `{key}` 校验 base64/32 字节并保存；`POST /api/admin/ai/key/reset` 删除全部用户 AI 配置并生成新密钥。
+  - 部署配置来源（`source=env`）时 POST/PUT/reset 返回 40001「由部署配置管理，只读」；审计 action=`ai.settings.manage`、target=`ai_key`、summary「生成/更新 AI 加密密钥」（不含密钥/指纹）。
+- **轮换与重加密**（`ai.SettingsService.GenerateKey/SetKey/rotate`）：兼容密钥文件模式下，已有密钥时重新生成/替换会在事务内 `SELECT ... FOR UPDATE` 全部 `user_ai_configs`，逐行旧密钥解密、新密钥重新加密；任一失败回滚。写密钥文件采用临时文件 + `os.Rename` 原子替换（0600），旧文件备份为 `ai.key.bak`，DB 事务成功后删除备份、失败恢复备份（文件写失败则回滚 DB）；`ai_settings.key_fingerprint` 更新为 SHA-256 指纹（仅诊断/一致性，不存密钥）。统一配置模式没有自动重加密入口：直接修改 `.env` 中的密钥会使既有密文无法解密，必须先备份并按维护流程处理。
 - **保护规则**：无旧密钥但存在 `user_ai_configs` 时返回 40001「存在无法解密的用户 AI 配置，请先恢复旧密钥」，不破坏数据；无旧密钥且无配置时直接保存。管理开关关闭不删除密钥/用户配置，重新开启恢复；启用要求当前 `keyConfigured=true`。
 - **用户侧状态**：`AIConfigView.keyConfigured` 区分「AI 功能未启用」（404/开关关闭）与「管理员尚未配置 AI 密钥」（keyConfigured=false）与「尚未配置 AI 模型」（用户未配置 key）；提交页工具栏、题目提示、AI 设置页据此分别降级，缓存命中的提示仍展示。
 
