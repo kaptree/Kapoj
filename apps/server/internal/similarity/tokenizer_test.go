@@ -32,6 +32,14 @@ func tokenTexts(tokens []Token) []string {
 	return texts
 }
 
+func tokenKinds(tokens []Token) []TokenKind {
+	kinds := make([]TokenKind, len(tokens))
+	for i, tok := range tokens {
+		kinds[i] = tok.Kind
+	}
+	return kinds
+}
+
 func TestTokenizeCNormalizesRenamedVariables(t *testing.T) {
 	a := `#include <bits/stdc++.h>
 int a = 1;
@@ -76,6 +84,26 @@ func TestTokenizeJavaAndGoKeepKeywords(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, tokenTexts(goTokens), "package")
 	assert.Contains(t, tokenTexts(goTokens), "func")
+}
+
+func TestTokenizePythonNormalizesRenamesAndComments(t *testing.T) {
+	a := "def f(x):\n    y = x + 1  # comment\n    return y\n"
+	b := "def g(n):\n    value = n + 1\n    return value\n"
+	ta, err := Tokenize(submission.LanguagePython3, a)
+	require.NoError(t, err)
+	tb, err := Tokenize(submission.LanguagePython3, b)
+	require.NoError(t, err)
+	assert.Equal(t, tokenPairs(ta), tokenPairs(tb))
+}
+
+func TestTokenizePythonKeepsIndentationStructure(t *testing.T) {
+	a, err := Tokenize(submission.LanguagePython3, "if x:\n    y = 1\nz = 2\n")
+	require.NoError(t, err)
+	b, err := Tokenize(submission.LanguagePython3, "if x:\n    y = 1\n    z = 2\n")
+	require.NoError(t, err)
+	assert.NotEqual(t, tokenPairs(a), tokenPairs(b))
+	assert.Contains(t, tokenKinds(a), TokenIndent)
+	assert.Contains(t, tokenKinds(a), TokenDedent)
 }
 
 func TestTokenizeRejectsUnknownLanguage(t *testing.T) {

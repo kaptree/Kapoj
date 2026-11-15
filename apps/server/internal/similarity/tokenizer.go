@@ -38,6 +38,14 @@ const (
 	preprocText    = "PP"
 )
 
+// Structural token markers for indentation-sensitive languages. Their exact
+// text only has to stay stable within one language.
+const (
+	newlineMarker = "\n"
+	indentMarker  = "INDENT"
+	dedentMarker  = "DEDENT"
+)
+
 // Token is one normalized lexical unit of a source file.
 type Token struct {
 	Kind TokenKind
@@ -49,11 +57,16 @@ type Token struct {
 // Tokenize scans source for lang and returns its normalized token stream.
 // Comments and whitespace are dropped, literals collapse to NUM/STR/CHR,
 // non-keyword identifiers collapse to ID, and C/C++ preprocessor directives
-// collapse to a single PP token. Unknown languages return an error.
+// collapse to a single PP token. Python additionally keeps INDENT, DEDENT and
+// NEWLINE tokens so block structure is part of the stream. Unknown languages
+// return an error.
 func Tokenize(lang submission.Language, source string) ([]Token, error) {
 	spec, err := specFor(lang)
 	if err != nil {
 		return nil, err
+	}
+	if spec.python {
+		return scanPython(source), nil
 	}
 	return scan(source, spec), nil
 }
@@ -63,6 +76,8 @@ type languageSpec struct {
 	keywords map[string]struct{}
 	// preprocessor enables C-style # directives at the start of a line.
 	preprocessor bool
+	// python selects the indentation-sensitive scanner and # line comments.
+	python bool
 }
 
 func specFor(lang submission.Language) (languageSpec, error) {
@@ -73,6 +88,8 @@ func specFor(lang submission.Language) (languageSpec, error) {
 		return languageSpec{keywords: javaKeywords}, nil
 	case submission.LanguageGo:
 		return languageSpec{keywords: goKeywords}, nil
+	case submission.LanguagePython3:
+		return languageSpec{keywords: pythonKeywords, python: true}, nil
 	default:
 		return languageSpec{}, fmt.Errorf("similarity: unsupported language %q", lang)
 	}
@@ -92,6 +109,9 @@ var (
 	goKeywords = keywordSet(`break case chan const continue default defer else
 		fallthrough for func go goto if import interface map package range return select
 		struct switch type var true false nil`)
+	pythonKeywords = keywordSet(`False None True and as assert async await break class
+		continue def del elif else except finally for from global if import in is lambda
+		nonlocal not or pass raise return try while with yield match case`)
 )
 
 // operators is matched longest-first, so every three-character operator must
@@ -190,6 +210,156 @@ func scan(source string, spec languageSpec) []Token {
 		}
 	}
 	return tokens
+}
+
+// scanPython scans Python source. Indentation is measured per logical line
+// (spaces count one, tabs count four) and emitted as INDENT/DEDENT tokens;
+// NEWLINE tokens mark the end of a logical line that produced tokens. Blank
+// and comment-only lines never change the indentation level. Bracketed
+// expressions continue a logical line, matching Python's implicit joining.
+func scanPython(source string) []Token {
+	src := []rune(source)
+	tokens := make([]Token, 0, len(src)/3)
+	line := 1
+	indents := []int{0}
+	atLineStart := true
+	lineHasTokens := false
+	bracketDepth := 0
+
+	for i := 0; i < len(src); {
+		if atLineStart && bracketDepth == 0 {
+			width := 0
+			for i < len(src) && (src[i] == ' ' || src[i] == '\t') {
+				if src[i] == '\t' {
+					width += 4
+				} else {
+					width++
+				}
+				i++
+			}
+			// Blank and comment-only lines are dropped without touching the
+			// indentation stack.
+			if i >= len(src) || src[i] == '\n' || src[i] == '\r' || src[i] == '#' {
+				for i < len(src) && src[i] != '\n' {
+					i++
+				}
+				if i < len(src) {
+					i++
+					line++
+				}
+				continue
+			}
+			for indents[len(indents)-1] < width {
+				indents = append(indents, width)
+				tokens = append(tokens, Token{Kind: TokenIndent, Text: indentMarker, Line: line})
+			}
+			for indents[len(indents)-1] > width {
+				indents = indents[:len(indents)-1]
+				tokens = append(tokens, Token{Kind: TokenDedent, Text: dedentMarker, Line: line})
+			}
+			atLineStart = false
+		}
+
+		c := src[i]
+		switch {
+		case c == '\n':
+			if bracketDepth == 0 {
+				if lineHasTokens {
+					tokens = append(tokens, Token{Kind: TokenNewline, Text: newlineMarker, Line: line})
+					lineHasTokens = false
+				}
+				atLineStart = true
+			}
+			line++
+			i++
+		case c == ' ' || c == '\t' || c == '\r' || c == '\v' || c == '\f':
+			i++
+		case c == '#':
+			for i < len(src) && src[i] != '\n' {
+				i++
+			}
+		case c == '"' || c == '\'':
+			startLine := line
+			if hasTripleQuote(src, i, c) {
+				i, line = scanTripleQuoted(src, i, line, c)
+			} else {
+				i, line = scanQuoted(src, i, line, c)
+			}
+			tokens = append(tokens, Token{Kind: TokenString, Text: stringText, Line: startLine})
+			lineHasTokens = true
+		case unicode.IsDigit(c) || (c == '.' && i+1 < len(src) && unicode.IsDigit(src[i+1])):
+			i = scanNumber(src, i)
+			tokens = append(tokens, Token{Kind: TokenNumber, Text: numberText, Line: line})
+			lineHasTokens = true
+		case isIdentStart(c):
+			start := i
+			for i < len(src) && isIdentPart(src[i]) {
+				i++
+			}
+			word := string(src[start:i])
+			kind, text := TokenIdentifier, identifierText
+			if _, ok := pythonKeywords[word]; ok {
+				kind, text = TokenKeyword, word
+			}
+			tokens = append(tokens, Token{Kind: kind, Text: text, Line: line})
+			lineHasTokens = true
+		default:
+			tok := Token{Kind: TokenPunct, Text: string(c), Line: line}
+			if op := matchOperator(src, i); op != "" {
+				tok.Text = op
+				i += len(op)
+			} else {
+				i++
+			}
+			switch c {
+			case '(', '[', '{':
+				bracketDepth++
+			case ')', ']', '}':
+				if bracketDepth > 0 {
+					bracketDepth--
+				}
+			}
+			tokens = append(tokens, tok)
+			lineHasTokens = true
+		}
+	}
+
+	// Python ends the final logical line and closes every open block at EOF.
+	if lineHasTokens {
+		tokens = append(tokens, Token{Kind: TokenNewline, Text: newlineMarker, Line: line})
+	}
+	for len(indents) > 1 {
+		indents = indents[:len(indents)-1]
+		tokens = append(tokens, Token{Kind: TokenDedent, Text: dedentMarker, Line: line})
+	}
+	return tokens
+}
+
+// hasTripleQuote reports whether the quote at i opens a triple-quoted string.
+func hasTripleQuote(src []rune, i int, quote rune) bool {
+	return i+2 < len(src) && src[i+1] == quote && src[i+2] == quote
+}
+
+// scanTripleQuoted consumes a triple-quoted literal, which may span lines.
+func scanTripleQuoted(src []rune, i, line int, quote rune) (int, int) {
+	i += 3
+	for i < len(src) {
+		switch {
+		case src[i] == '\\' && i+1 < len(src):
+			if src[i+1] == '\n' {
+				line++
+			}
+			i += 2
+		case src[i] == quote && i+2 < len(src) && src[i+1] == quote && src[i+2] == quote:
+			return i + 3, line
+		default:
+			if src[i] == '\n' {
+				line++
+			}
+			i++
+		}
+	}
+	return i, line
 }
 
 // scanQuoted consumes a string or character literal starting at its opening
