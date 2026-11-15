@@ -423,3 +423,33 @@ func TestFindActiveRunReturnsQueuedThenNone(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, active)
 }
+
+func TestFindActiveRunReturnsRunningAndMostRecent(t *testing.T) {
+	e := newSimEnv(t)
+	ctx := context.Background()
+
+	now := time.Now().UTC().Truncate(time.Microsecond)
+
+	// A running run is active and returned.
+	running := e.createRun(t, &similarity.Run{
+		ContestID: e.contestID, ProblemID: e.problemA, Status: similarity.RunStatusRunning,
+		ThresholdPercent: 80, IgnoreCommonCode: true, Engine: "winnowing", EngineVersion: "1",
+		StartedAt: &now,
+	})
+	active, err := e.repo.FindActiveRun(ctx, e.contestID, e.problemA)
+	require.NoError(t, err)
+	require.NotNil(t, active)
+	assert.Equal(t, running.ID, active.ID)
+	assert.Equal(t, similarity.RunStatusRunning, active.Status)
+
+	// With two active runs the most recent one (highest ID) wins.
+	queued := e.createRun(t, &similarity.Run{
+		ContestID: e.contestID, ProblemID: e.problemA, Status: similarity.RunStatusQueued,
+		ThresholdPercent: 80, IgnoreCommonCode: true, Engine: "winnowing", EngineVersion: "1",
+	})
+	active, err = e.repo.FindActiveRun(ctx, e.contestID, e.problemA)
+	require.NoError(t, err)
+	require.NotNil(t, active)
+	assert.Equal(t, queued.ID, active.ID, "most recent active run must win")
+	assert.Equal(t, similarity.RunStatusQueued, active.Status)
+}
