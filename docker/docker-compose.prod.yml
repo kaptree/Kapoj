@@ -1,0 +1,49 @@
+# 生产部署 override：仅由 deploy.sh 以
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile app …
+# 方式叠加。本地开发不要加载本文件。
+services:
+  postgres:
+    ports: !override
+      - "127.0.0.1:5433:5432"
+    restart: unless-stopped
+
+  redis:
+    ports: !override
+      - "127.0.0.1:6380:6379"
+    restart: unless-stopped
+
+  minio:
+    ports: !override
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    restart: unless-stopped
+
+  server:
+    ports: !override
+      - "127.0.0.1:8080:8080"
+    restart: unless-stopped
+
+  judge:
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+    env_file:
+      - ../.env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_started
+    # 无 healthcheck：deploy.sh 从宿主机 curl 真实端点判定就绪
+
+volumes:
+  caddy_data:
+  caddy_config:
