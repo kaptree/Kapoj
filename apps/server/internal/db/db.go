@@ -21,6 +21,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/rating"
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
+	"github.com/kaptree/kapoj/apps/server/internal/similarity"
 	"github.com/kaptree/kapoj/apps/server/internal/site"
 	"github.com/kaptree/kapoj/apps/server/internal/social"
 	"github.com/kaptree/kapoj/apps/server/internal/submission"
@@ -76,6 +77,7 @@ func Migrate(g *gorm.DB) error {
 			&problem.SolutionPost{}, &problem.SolutionReply{}, &problem.SolutionPostLike{},
 			&contest.Contest{}, &contest.ContestProblem{}, &contest.ContestParticipant{},
 			&contest.Announcement{}, &submission.Submission{},
+			&similarity.Settings{}, &similarity.Run{}, &similarity.Match{},
 			&rating.RatingHistory{}, &rating.RatingSettings{}, &rating.RatingRun{},
 			&activity.ActivityLog{}, &activity.SharedItem{},
 			&social.Follow{}, &social.Notification{}, &social.UserEvaluation{},
