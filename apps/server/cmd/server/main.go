@@ -147,7 +147,11 @@ func run() error {
 	companionSvc := companion.NewService(companion.NewGormRepository(g))
 	gameSvc := gamification.NewServiceWithOptions(
 		gamification.NewRepository(g),
-		gamification.ServiceOptions{MaxEquippedBadges: cfg.MaxEquippedBadges, Storage: store},
+		gamification.ServiceOptions{
+			MaxEquippedBadges: cfg.MaxEquippedBadges,
+			Storage:           store,
+			BondRecorder:      companionSvc,
+		},
 		gamePublisher,
 	)
 	ratingSvc := rating.NewService(g, contest.NewService(contest.NewGormRepository(g)), rdb, rating.Options{
@@ -226,6 +230,9 @@ func run() error {
 	gameHandlers := []gamequeue.Handler{gameSvc}
 	if learningSvc != nil {
 		gameHandlers = append(gameHandlers, learningSvc)
+	}
+	if companionSvc != nil {
+		gameHandlers = append(gameHandlers, companionSvc)
 	}
 	gamequeue.Register(gameMux, gamequeue.NewChain(gameHandlers...))
 	if err := gameServer.Start(gameMux); err != nil {

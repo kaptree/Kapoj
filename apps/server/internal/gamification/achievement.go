@@ -46,13 +46,28 @@ func (s *Service) EvaluateUser(ctx context.Context, userID int64) error {
 			if !done {
 				continue
 			}
-			if _, err := s.repo.GrantAchievement(ctx, userID, a); err != nil {
+			unlockedNow, err := s.repo.GrantAchievement(ctx, userID, a)
+			if err != nil {
 				return err
+			}
+			if unlockedNow {
+				s.recordAchievementBond(ctx, userID, a.ID)
 			}
 		}
 	}
 	// 成就解锁后可能满足 achievement 类型称号的解锁条件，因此称号补算最后执行。
 	return s.EvaluateTitles(ctx, userID)
+}
+
+// recordAchievementBond 在成就首次解锁时联动陪伴记录 +1 亲密度。GrantAchievement
+// 不返回解锁时间，这里用当前时间近似；记录失败只记日志，不影响成就补算结果。
+func (s *Service) recordAchievementBond(ctx context.Context, userID, achievementID int64) {
+	if s.bondRecorder == nil {
+		return
+	}
+	if err := s.bondRecorder.RecordAchievement(ctx, userID, achievementID, time.Now()); err != nil {
+		slog.Warn("成就解锁联动陪伴记录失败", "achievementId", achievementID, "error", err)
+	}
 }
 
 // ListAchievements 返回成就列表。游客只能看到上架成就；登录用户会先补算，

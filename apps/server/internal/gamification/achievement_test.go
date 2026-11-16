@@ -2,6 +2,8 @@ package gamification_test
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -10,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/kaptree/kapoj/apps/server/internal/companion"
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/dbtypes"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
@@ -38,6 +41,44 @@ func newAchievementEnv(t *testing.T) *achievementEnv {
 	require.NoError(t, g.Create(u).Error)
 	repo := gamification.NewRepository(g)
 	return &achievementEnv{svc: gamification.NewService(repo), repo: repo, db: g, user: u}
+}
+
+// newAchievementCompanionEnv builds an achievement environment whose service is
+// wired with the given BondRecorder, so the unlock hook can be exercised.
+func newAchievementCompanionEnv(t *testing.T, recorder gamification.BondRecorder) *achievementEnv {
+	t.Helper()
+	g := testutil.PG(t)
+	u := &user.User{
+		Username:     "achiever",
+		Nickname:     "成就用户",
+		Email:        "achiever@example.com",
+		PasswordHash: "x",
+	}
+	require.NoError(t, g.Create(u).Error)
+	repo := gamification.NewRepository(g)
+	svc := gamification.NewServiceWithOptions(repo, gamification.ServiceOptions{BondRecorder: recorder})
+	return &achievementEnv{svc: svc, repo: repo, db: g, user: u}
+}
+
+// bondRecorderStub records the achievement ids it is asked to record, returning
+// a configurable error. It is safe for concurrent use.
+type bondRecorderStub struct {
+	mu    sync.Mutex
+	calls []int64
+	err   error
+}
+
+func (r *bondRecorderStub) RecordAchievement(_ context.Context, _ int64, achievementID int64, _ time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls = append(r.calls, achievementID)
+	return r.err
+}
+
+func (r *bondRecorderStub) callCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.calls)
 }
 
 func adminViewer(userID int64) gamification.Viewer {
@@ -471,4 +512,70 @@ func TestAchievementValidation(t *testing.T) {
 	deleted, err := e.repo.FindAchievement(context.Background(), a.ID)
 	require.NoError(t, err)
 	assert.False(t, deleted.IsActive)
+}
+
+func TestAchievementCompanionRecord(t *testing.T) {
+	e := newAchievementEnv(t)
+	// Rewire the service with a real companion recorder sharing the same DB.
+	companionSvc := companion.NewService(companion.NewGormRepository(e.db))
+	e.svc = gamification.NewServiceWithOptions(e.repo, gamification.ServiceOptions{BondRecorder: companionSvc})
+
+	a := e.create(t, achievementInput(
+		"companion-ac", "陪伴 AC",
+		gamification.ConditionACCount, gamification.ConditionConfig{Threshold: 1}, 0,
+	))
+	e.addAcceptedProblem(t, "companion-problem")
+
+	require.NoError(t, e.svc.EvaluateUser(context.Background(), e.user.ID))
+
+	key := fmt.Sprintf("achievement:%d", a.ID)
+	assertAchievementEventCount(t, e, key, 1)
+
+	// 重复补算不得重复记录陪伴事件。
+	require.NoError(t, e.svc.EvaluateUser(context.Background(), e.user.ID))
+	assertAchievementEventCount(t, e, key, 1)
+}
+
+func TestAchievementCompanionRecorderOnlyOnUnlock(t *testing.T) {
+	rec := &bondRecorderStub{}
+	e := newAchievementCompanionEnv(t, rec)
+	a := e.create(t, achievementInput(
+		"companion-once", "陪伴一次",
+		gamification.ConditionACCount, gamification.ConditionConfig{Threshold: 1}, 0,
+	))
+	e.addAcceptedProblem(t, "companion-once-problem")
+
+	require.NoError(t, e.svc.EvaluateUser(context.Background(), e.user.ID))
+	require.NoError(t, e.svc.EvaluateUser(context.Background(), e.user.ID))
+
+	require.Equal(t, 1, rec.callCount(), "recorder must fire only on the unlock, not on repeats")
+	if rec.callCount() == 1 {
+		assert.Equal(t, a.ID, rec.calls[0])
+	}
+}
+
+func TestAchievementCompanionRecorderFailure(t *testing.T) {
+	rec := &bondRecorderStub{err: errors.New("companion down")}
+	e := newAchievementCompanionEnv(t, rec)
+	e.create(t, achievementInput(
+		"companion-fail", "陪伴失败",
+		gamification.ConditionACCount, gamification.ConditionConfig{Threshold: 1}, 0,
+	))
+	e.addAcceptedProblem(t, "companion-fail-problem")
+
+	// 记录失败不能导致成就补算失败。
+	require.NoError(t, e.svc.EvaluateUser(context.Background(), e.user.ID))
+
+	var unlocked int64
+	require.NoError(t, e.db.Model(&gamification.UserAchievement{}).
+		Where("user_id = ?", e.user.ID).Count(&unlocked).Error)
+	assert.EqualValues(t, 1, unlocked, "achievement must still unlock when the recorder fails")
+}
+
+func assertAchievementEventCount(t *testing.T, e *achievementEnv, key string, want int64) {
+	t.Helper()
+	var count int64
+	require.NoError(t, e.db.Model(&companion.Event{}).
+		Where("user_id = ? AND key = ?", e.user.ID, key).Count(&count).Error)
+	assert.EqualValues(t, want, count)
 }

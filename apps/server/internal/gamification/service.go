@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"gorm.io/gorm"
@@ -17,10 +18,17 @@ const (
 	maxMaxEquippedBadges     = 10
 )
 
+// BondRecorder 记录成就解锁触发的陪伴亲密度事件。gamification 只依赖该接口，
+// 由 companion.Service 实现，从而避免反向导入造成循环依赖。
+type BondRecorder interface {
+	RecordAchievement(ctx context.Context, userID, achievementID int64, at time.Time) error
+}
+
 // ServiceOptions 配置游戏化服务；零值使用默认上限且不带存储。
 type ServiceOptions struct {
 	MaxEquippedBadges int
 	Storage           storage.Storage
+	BondRecorder      BondRecorder
 }
 
 // Service 是游戏化领域服务。
@@ -29,6 +37,7 @@ type Service struct {
 	publisher         EventPublisher
 	maxEquippedBadges int
 	store             storage.Storage
+	bondRecorder      BondRecorder
 }
 
 func NewService(repo *Repository, publisher ...EventPublisher) *Service {
@@ -53,6 +62,7 @@ func NewServiceWithOptions(repo *Repository, opts ServiceOptions, publisher ...E
 		publisher:         p,
 		maxEquippedBadges: maxEquippedBadges,
 		store:             opts.Storage,
+		bondRecorder:      opts.BondRecorder,
 	}
 }
 
