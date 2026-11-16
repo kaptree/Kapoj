@@ -3,7 +3,9 @@ import { createPinia, setActivePinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { getContest } from '@/api/contests'
 import { getActivitySummary, signInActivity } from '@/api/leaderboard'
+import { clearCompanionMuteCache } from '@/composables/useCompanionMute'
 import { useCompanionStore } from '@/stores/companion'
 import CompanionDock from './CompanionDock.vue'
 
@@ -13,10 +15,12 @@ vi.mock('@/api/leaderboard', () => ({
   getActivitySummary: vi.fn().mockResolvedValue({ signedInToday: true }),
   signInActivity: vi.fn(),
 }))
+vi.mock('@/api/contests', () => ({ getContest: vi.fn() }))
 
 const routes = [
   { path: '/', name: 'home', component: { template: '<div />' } },
   { path: '/login', name: 'login', component: { template: '<div />' } },
+  { path: '/contests/:id(\\d+)', name: 'contest-detail', component: { template: '<div />' } },
 ]
 
 async function mountDock(path = '/') {
@@ -44,6 +48,8 @@ beforeEach(() => {
   localStorage.clear()
   auth.isLoggedIn = true
   vi.mocked(getActivitySummary).mockResolvedValue({ signedInToday: true } as never)
+  vi.mocked(getContest).mockReset()
+  clearCompanionMuteCache()
 })
 
 afterEach(() => {
@@ -114,5 +120,31 @@ describe('CompanionDock', () => {
     store.setEnabled(false)
     await wrapper.vm.$nextTick()
     expect(wrapper.find('.companion-dock').exists()).toBe(false)
+  })
+
+  it('stays hidden on a running contest while its status is unknown and after it resolves', async () => {
+    let resolveContest!: (value: unknown) => void
+    vi.mocked(getContest).mockImplementation(
+      () => new Promise((resolve) => (resolveContest = resolve)) as never,
+    )
+
+    const wrapper = await mountDock('/contests/7')
+
+    // Status is still pending: the dock must not flash in.
+    expect(wrapper.find('.companion-dock').exists()).toBe(false)
+
+    resolveContest({ status: 'running' })
+    await flushPromises()
+
+    expect(wrapper.find('.companion-dock').exists()).toBe(false)
+  })
+
+  it('shows the dock on a non-running contest once its status resolves', async () => {
+    vi.mocked(getContest).mockResolvedValue({ status: 'ended' } as never)
+
+    const wrapper = await mountDock('/contests/7')
+    await flushPromises()
+
+    expect(wrapper.find('.companion-dock').exists()).toBe(true)
   })
 })

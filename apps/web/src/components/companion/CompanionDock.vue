@@ -22,7 +22,7 @@ const AUTH_ROUTES = new Set([
 
 const auth = useAuthStore()
 const store = useCompanionStore()
-const { muted } = useCompanionMute()
+const { muted, checking } = useCompanionMute()
 const route = useRoute()
 
 store.load()
@@ -36,7 +36,12 @@ const toggleRef = ref<HTMLButtonElement | null>(null)
 const panelRef = ref<HTMLElement | null>(null)
 
 const visible = computed(
-  () => auth.isLoggedIn && store.enabled && !muted.value && !AUTH_ROUTES.has(String(route.name)),
+  () =>
+    auth.isLoggedIn &&
+    store.enabled &&
+    !muted.value &&
+    !checking.value &&
+    !AUTH_ROUTES.has(String(route.name)),
 )
 
 const line = computed(() =>

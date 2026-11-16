@@ -58,6 +58,31 @@ describe('useCompanionMute', () => {
     expect(getContest).not.toHaveBeenCalled()
   })
 
+  it('keeps checking false when there is no contest id', async () => {
+    const { muted, checking } = await mountAt('/problems/3')
+    expect(muted.value).toBe(false)
+    expect(checking.value).toBe(false)
+    expect(getContest).not.toHaveBeenCalled()
+  })
+
+  it('exposes checking while a contest status request is pending', async () => {
+    let resolveContest!: (value: unknown) => void
+    vi.mocked(getContest).mockImplementation(
+      () => new Promise((resolve) => (resolveContest = resolve)) as never,
+    )
+
+    const { muted, checking } = await mountAt('/contests/7')
+
+    expect(checking.value).toBe(true)
+    expect(muted.value).toBe(false)
+
+    resolveContest({ status: 'running' })
+    await flushPromises()
+
+    expect(checking.value).toBe(false)
+    expect(muted.value).toBe(true)
+  })
+
   it.each(['7.5', '1e2'])('ignores the non-integer contest query %s', async (contestId) => {
     vi.mocked(getContest).mockResolvedValue({ status: 'running' } as never)
 

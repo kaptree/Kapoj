@@ -11,7 +11,7 @@ import CompanionNote from './CompanionNote.vue'
 
 const route = useRoute()
 const store = useCompanionStore()
-const { muted } = useCompanionMute()
+const { muted, checking } = useCompanionMute()
 
 store.load()
 
@@ -27,6 +27,7 @@ const visible = computed(
     store.enabled &&
     store.activityLevel !== 'quiet' &&
     !muted.value &&
+    !checking.value &&
     !store.isNoteDismissed(noteKey.value),
 )
 
