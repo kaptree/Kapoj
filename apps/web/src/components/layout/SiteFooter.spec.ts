@@ -3,7 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { SiteFooterView, SitePublicView } from '@/api/types'
-import { DEFAULT_FOOTER, DEFAULT_HOME, useSiteStore } from '@/stores/site'
+import { DEFAULT_COMPANION, DEFAULT_FOOTER, DEFAULT_HOME, useSiteStore } from '@/stores/site'
 import SiteFooter from './SiteFooter.vue'
 
 const siteApi = vi.hoisted(() => ({
@@ -24,6 +24,7 @@ function siteView(overrides: {
     home: DEFAULT_HOME,
     footer: { ...DEFAULT_FOOTER, ...overrides.footer },
     appearance: { badgeSize: 22 },
+    companion: { ...DEFAULT_COMPANION },
     startedAt: '2026-01-01T00:00:00Z',
     runningDays: overrides.runningDays ?? 0,
     visitCount: overrides.visitCount ?? 0,

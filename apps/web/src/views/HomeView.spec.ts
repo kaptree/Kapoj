@@ -15,7 +15,7 @@ import type {
 } from '@/api/types'
 import { GUEST_PERM } from '@/permissions'
 import { useCompanionStore } from '@/stores/companion'
-import { DEFAULT_FOOTER, DEFAULT_HOME, useSiteStore } from '@/stores/site'
+import { DEFAULT_COMPANION, DEFAULT_FOOTER, DEFAULT_HOME, useSiteStore } from '@/stores/site'
 import HomeView from './HomeView.vue'
 
 const baseUser: Me = {
@@ -189,6 +189,7 @@ function siteView(overrides: Partial<SitePublicView> = {}): SitePublicView {
     },
     footer: { ...DEFAULT_FOOTER },
     appearance: { badgeSize: 22 },
+    companion: { ...DEFAULT_COMPANION },
     startedAt: '2026-01-01T00:00:00Z',
     runningDays: 312,
     visitCount: 42,

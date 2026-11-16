@@ -3,7 +3,14 @@ import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import type { SitePublicView } from '@/api/types'
-import { DEFAULT_FOOTER, DEFAULT_HOME, SITE_VISITED_KEY, useSiteStore } from './site'
+import { useCompanionStore } from './companion'
+import {
+  DEFAULT_COMPANION,
+  DEFAULT_FOOTER,
+  DEFAULT_HOME,
+  SITE_VISITED_KEY,
+  useSiteStore,
+} from './site'
 
 const siteApi = vi.hoisted(() => ({
   getSite: vi.fn(),
@@ -25,6 +32,7 @@ function siteView(overrides: Partial<SitePublicView> = {}): SitePublicView {
     },
     footer: { ...DEFAULT_FOOTER },
     appearance: { badgeSize: 22 },
+    companion: { ...DEFAULT_COMPANION },
     startedAt: '2026-01-01T00:00:00Z',
     runningDays: 312,
     visitCount: 42,
@@ -53,6 +61,30 @@ describe('site store', () => {
     )
     expect(store.config?.runningDays).toBe(312)
     expect(store.visitCount).toBe(42)
+  })
+
+  it('applies the site-wide companion switch to the companion store', async () => {
+    siteApi.getSite.mockResolvedValue(
+      siteView({ companion: { ...DEFAULT_COMPANION, enabled: false, name: '小 K' } }),
+    )
+    const store = useSiteStore()
+    await store.ensureLoaded()
+
+    expect(store.companion.enabled).toBe(false)
+    expect(store.companion.name).toBe('小 K')
+    const companion = useCompanionStore()
+    expect(companion.globalEnabled).toBe(false)
+    expect(companion.enabled).toBe(true)
+    expect(companion.effectiveEnabled).toBe(false)
+  })
+
+  it('falls back to companion defaults when the public config fails', async () => {
+    siteApi.getSite.mockRejectedValue(new Error('network'))
+    const store = useSiteStore()
+    await store.ensureLoaded()
+
+    expect(store.companion).toEqual(DEFAULT_COMPANION)
+    expect(useCompanionStore().globalEnabled).toBe(true)
   })
 
   it('resolves same-origin asset paths through the configured CDN origin', async () => {

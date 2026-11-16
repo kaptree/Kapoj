@@ -2,8 +2,10 @@ import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 
 import { getSite, recordSiteVisit } from '@/api/site'
+import { useCompanionStore } from '@/stores/companion'
 import { resolveAssetUrl, setAssetBase } from '@/utils/asset'
 import type {
+  SiteCompanionSettings,
   SiteFooterView,
   SiteHomeContent,
   SitePublicDeployment,
@@ -114,6 +116,15 @@ export const DEFAULT_FOOTER: SiteFooterView = {
   showVisits: true,
 }
 
+/** Mirrors DefaultCompanionSettings on the server. */
+export const DEFAULT_COMPANION: SiteCompanionSettings = {
+  enabled: true,
+  name: 'Kapo',
+  defaultActivityLevel: 'normal',
+  contestMute: true,
+  allowUserDisable: true,
+}
+
 /**
  * Old or abnormally written rows may contain null link arrays. Normalize on the
  * way out so templates can always iterate over an array.
@@ -175,6 +186,9 @@ export const useSiteStore = defineStore('site', () => {
     config.value ? normalizeHome(config.value.home) : DEFAULT_HOME,
   )
   const footer = computed<SiteFooterView>(() => config.value?.footer ?? DEFAULT_FOOTER)
+  const companion = computed<SiteCompanionSettings>(
+    () => config.value?.companion ?? DEFAULT_COMPANION,
+  )
   const deployment = computed<SitePublicDeployment>(
     () => config.value?.deployment ?? { cdnDomain: '', assetsDomain: '' },
   )
@@ -187,6 +201,11 @@ export const useSiteStore = defineStore('site', () => {
     },
     { immediate: true },
   )
+
+  // The site-wide switch lives in the public config; keep the companion store
+  // in sync even when the config loads after the layout mounted.
+  const companionStore = useCompanionStore()
+  watch(companion, (value) => companionStore.applyGlobalConfig(value), { immediate: true })
 
   function assetUrl(path: string): string {
     return resolveAssetUrl(path)
@@ -254,6 +273,7 @@ export const useSiteStore = defineStore('site', () => {
     config,
     home,
     footer,
+    companion,
     deployment,
     assetsBaseUrl,
     assetUrl,

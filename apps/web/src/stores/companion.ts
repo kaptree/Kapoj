@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
+import type { CompanionState, SiteCompanionSettings } from '@/api/types'
 import { localDateKey } from '@/utils/date'
 
 export const COMPANION_PREFS_KEY = 'kapoj.companion.prefs'
@@ -9,6 +10,20 @@ export const COMPANION_GREETING_KEY = 'kapoj.companion.greeting'
 
 export type CompanionActivityLevel = 'quiet' | 'normal' | 'lively'
 export type CompanionMotionPreference = 'system' | 'reduce'
+
+/**
+ * Progress defaults mirror the server's level table at bond 0. They are only
+ * placeholders until the first successful sync (or for guests, who never sync).
+ */
+export const DEFAULT_COMPANION_PROGRESS = {
+  bond: 0,
+  level: 0,
+  levelName: '陌生',
+  nextThreshold: 20,
+  dailyGain: 0,
+  dailyCap: 15,
+  unreadCount: 0,
+}
 
 interface CompanionPrefs {
   enabled: boolean
@@ -96,6 +111,11 @@ function readDismissedNotes(): Record<string, string> {
   return notes
 }
 
+/** Remote progress is written only when the server value is a valid count. */
+function nonNegativeInt(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null
+}
+
 /**
  * Frontend-only companion preferences. Phase 0–1 keeps them in localStorage so
  * the avatar, dock and page notes share one source of truth per browser.
@@ -108,6 +128,19 @@ export const useCompanionStore = defineStore('companion', () => {
 
   const dismissedNotes = ref<Record<string, string>>({})
   const greetedOn = ref('')
+
+  const bond = ref(DEFAULT_COMPANION_PROGRESS.bond)
+  const level = ref(DEFAULT_COMPANION_PROGRESS.level)
+  const levelName = ref(DEFAULT_COMPANION_PROGRESS.levelName)
+  const nextThreshold = ref(DEFAULT_COMPANION_PROGRESS.nextThreshold)
+  const dailyGain = ref(DEFAULT_COMPANION_PROGRESS.dailyGain)
+  const dailyCap = ref(DEFAULT_COMPANION_PROGRESS.dailyCap)
+  const unreadCount = ref(DEFAULT_COMPANION_PROGRESS.unreadCount)
+  const latestEventLine = ref('')
+  const globalEnabled = ref(true)
+
+  /** Both the site-wide switch and the visitor's own preference must allow it. */
+  const effectiveEnabled = computed(() => globalEnabled.value && enabled.value)
 
   function persistPrefs(): void {
     writeJson(COMPANION_PREFS_KEY, {
@@ -178,6 +211,46 @@ export const useCompanionStore = defineStore('companion', () => {
     writeString(COMPANION_GREETING_KEY, date)
   }
 
+  /**
+   * Merges a server read model into the in-memory progress. Local preferences
+   * (`enabled`, `activityLevel`, `motion`) stay untouched: the API failing or
+   * returning nothing must never disable the local companion fallback.
+   */
+  function applyRemoteState(state: CompanionState | null | undefined): void {
+    if (!state) return
+
+    const nextBondValue = nonNegativeInt(state.bond)
+    if (nextBondValue !== null) bond.value = nextBondValue
+
+    const nextLevelValue = nonNegativeInt(state.level)
+    if (nextLevelValue !== null) level.value = nextLevelValue
+
+    const nextThresholdValue = nonNegativeInt(state.nextThreshold)
+    if (nextThresholdValue !== null) nextThreshold.value = nextThresholdValue
+
+    const nextDailyGainValue = nonNegativeInt(state.dailyGain)
+    if (nextDailyGainValue !== null) dailyGain.value = nextDailyGainValue
+
+    const nextDailyCapValue = nonNegativeInt(state.dailyCap)
+    if (nextDailyCapValue !== null) dailyCap.value = nextDailyCapValue
+
+    const nextUnreadValue = nonNegativeInt(state.unreadCount)
+    if (nextUnreadValue !== null) unreadCount.value = nextUnreadValue
+
+    if (typeof state.levelName === 'string' && state.levelName.trim() !== '') {
+      levelName.value = state.levelName.trim()
+    }
+  }
+
+  /** Applies the site-wide switch; a missing config is treated as enabled. */
+  function applyGlobalConfig(settings: SiteCompanionSettings | null | undefined): void {
+    globalEnabled.value = settings?.enabled ?? true
+  }
+
+  function setLatestEventLine(line: string): void {
+    latestEventLine.value = typeof line === 'string' ? line : ''
+  }
+
   return {
     enabled,
     activityLevel,
@@ -192,5 +265,18 @@ export const useCompanionStore = defineStore('companion', () => {
     isNoteDismissed,
     shouldGreet,
     markGreeted,
+    bond,
+    level,
+    levelName,
+    nextThreshold,
+    dailyGain,
+    dailyCap,
+    unreadCount,
+    latestEventLine,
+    globalEnabled,
+    effectiveEnabled,
+    applyRemoteState,
+    applyGlobalConfig,
+    setLatestEventLine,
   }
 })

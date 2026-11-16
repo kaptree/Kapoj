@@ -2,6 +2,11 @@ export type CompanionLineKey =
   | 'greeting'
   | 'signin'
   | 'ac'
+  | 'task'
+  | 'achievement'
+  | 'contest'
+  | 'pet'
+  | 'streak'
   | 'wa'
   | 'ce'
   | 'tle'
@@ -34,6 +39,11 @@ export const COMPANION_LINES: Record<CompanionLineKey, readonly string[]> = {
   greeting: ['又来了？……题可不会自己变简单。', '别误会，我只是刚好在看你提交。'],
   signin: ['签到了。今天也别让我记太多 WA。', '嗯，签到。……别以为我在等你。'],
   ac: ['过了。下一题，别得意。', '……不错。我说了不错，别让我重复。'],
+  task: ['任务领了？那就做完。……别半途而废。', '任务不是摆设。去做。'],
+  achievement: ['成就？……还行。别停下来。', '解锁了。……我看到了。'],
+  contest: ['比赛开始了。……专心打。', '打完再来找我。……别分心。'],
+  pet: ['……摸头也不行。就一下。', '别得寸进尺。……嗯。'],
+  streak: ['连续这么多天？……我记着呢。', '又来了。……习惯倒是不错。'],
   wa: ['第 3 个点。别看我，看代码。', '又 WA 了？……再读一遍题面。'],
   ce: ['编译器都看不下去了。', '先让它编译通过。……我等你。'],
   tle: ['跑得比我还慢。', '超时了。……优化一下。'],

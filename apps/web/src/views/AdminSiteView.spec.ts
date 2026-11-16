@@ -21,7 +21,7 @@ import {
 } from '@/api/site'
 import { ApiError } from '@/api/http'
 import type { SiteAdminView, SiteHomeContent, SiteLink } from '@/api/types'
-import { useSiteStore } from '@/stores/site'
+import { DEFAULT_COMPANION, useSiteStore } from '@/stores/site'
 import AdminSiteView from './AdminSiteView.vue'
 
 const toast = vi.hoisted(() => ({ add: vi.fn() }))
@@ -106,6 +106,7 @@ function siteView(overrides: Partial<SiteAdminView> = {}): SiteAdminView {
       showVisits: true,
     },
     appearance: { badgeSize: 22 },
+    companion: { ...DEFAULT_COMPANION },
     startedAt: '2026-01-01T00:00:00Z',
     runningDays: 12,
     visitCount: 3456,

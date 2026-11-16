@@ -8,12 +8,15 @@ import AppNav from '@/components/layout/AppNav.vue'
 import AppShell from '@/components/layout/AppShell.vue'
 import SiteFooter from '@/components/layout/SiteFooter.vue'
 import { useCompanionMute } from '@/composables/useCompanionMute'
+import { useCompanionSync } from '@/composables/useCompanionSync'
 import { useSiteStore } from '@/stores/site'
 
 const route = useRoute()
 const site = useSiteStore()
 const { muted } = useCompanionMute()
 const isAuthRoute = computed(() => route.name === 'login' || route.name === 'register')
+
+useCompanionSync()
 
 onMounted(() => {
   void site.recordVisit()

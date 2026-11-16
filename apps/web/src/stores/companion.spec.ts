@@ -1,12 +1,43 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { CompanionState, SiteCompanionSettings } from '@/api/types'
 import {
   COMPANION_GREETING_KEY,
   COMPANION_NOTES_KEY,
   COMPANION_PREFS_KEY,
   useCompanionStore,
 } from './companion'
+
+function remoteState(overrides: Partial<CompanionState> = {}): CompanionState {
+  return {
+    bond: 120,
+    level: 3,
+    levelName: '搭档',
+    nextThreshold: 170,
+    dailyGain: 4,
+    dailyCap: 15,
+    activityLevel: 'normal',
+    dockEnabled: true,
+    publicProfile: false,
+    equippedSkin: '',
+    unlockedSkins: [],
+    unreadCount: 2,
+    todayEvents: [],
+    ...overrides,
+  }
+}
+
+function siteSettings(overrides: Partial<SiteCompanionSettings> = {}): SiteCompanionSettings {
+  return {
+    enabled: true,
+    name: 'Kapo',
+    defaultActivityLevel: 'normal',
+    contestMute: true,
+    allowUserDisable: true,
+    ...overrides,
+  }
+}
 
 beforeEach(() => {
   localStorage.clear()
@@ -107,6 +138,97 @@ describe('companion store', () => {
     expect(store.enabled).toBe(false)
     expect(store.activityLevel).toBe('normal')
     expect(store.motion).toBe('system')
+  })
+
+  it('applies remote progress without overwriting local preferences', () => {
+    const store = useCompanionStore()
+    store.load()
+    store.setEnabled(false)
+    store.setActivityLevel('lively')
+    store.setMotion('reduce')
+
+    store.applyRemoteState(remoteState())
+
+    expect(store.bond).toBe(120)
+    expect(store.level).toBe(3)
+    expect(store.levelName).toBe('搭档')
+    expect(store.nextThreshold).toBe(170)
+    expect(store.dailyGain).toBe(4)
+    expect(store.dailyCap).toBe(15)
+    expect(store.unreadCount).toBe(2)
+    // Local prefs stay authoritative until another task syncs them remotely.
+    expect(store.enabled).toBe(false)
+    expect(store.activityLevel).toBe('lively')
+    expect(store.motion).toBe('reduce')
+  })
+
+  it('keeps the last remote state when a sync returns nothing', () => {
+    const store = useCompanionStore()
+    store.applyRemoteState(remoteState({ bond: 88, unreadCount: 5 }))
+
+    store.applyRemoteState(null)
+    store.applyRemoteState(undefined)
+
+    expect(store.bond).toBe(88)
+    expect(store.unreadCount).toBe(5)
+  })
+
+  it('ignores malformed remote fields instead of zeroing good state', () => {
+    const store = useCompanionStore()
+    store.applyRemoteState(remoteState())
+
+    store.applyRemoteState(
+      remoteState({
+        bond: Number.NaN,
+        level: -1,
+        levelName: '',
+        nextThreshold: -5,
+        dailyGain: 2.5,
+        dailyCap: -1,
+        unreadCount: -3,
+      }),
+    )
+
+    expect(store.bond).toBe(120)
+    expect(store.level).toBe(3)
+    expect(store.levelName).toBe('搭档')
+    expect(store.nextThreshold).toBe(170)
+    expect(store.dailyGain).toBe(4)
+    expect(store.dailyCap).toBe(15)
+    expect(store.unreadCount).toBe(2)
+  })
+
+  it('stores the latest event line', () => {
+    const store = useCompanionStore()
+    store.setLatestEventLine('过了。下一题，别得意。')
+    expect(store.latestEventLine).toBe('过了。下一题，别得意。')
+  })
+
+  it('gates the effective companion on the site-wide switch', () => {
+    const store = useCompanionStore()
+    store.load()
+
+    store.applyGlobalConfig(siteSettings({ enabled: false }))
+    expect(store.globalEnabled).toBe(false)
+    expect(store.enabled).toBe(true)
+    expect(store.effectiveEnabled).toBe(false)
+
+    store.applyGlobalConfig(siteSettings())
+    expect(store.globalEnabled).toBe(true)
+    expect(store.effectiveEnabled).toBe(true)
+
+    store.setEnabled(false)
+    expect(store.effectiveEnabled).toBe(false)
+  })
+
+  it('treats an absent site config as enabled', () => {
+    const store = useCompanionStore()
+    store.applyGlobalConfig(siteSettings({ enabled: false }))
+
+    store.applyGlobalConfig(null)
+    store.applyGlobalConfig(undefined)
+
+    expect(store.globalEnabled).toBe(true)
   })
 
   it('reset restores defaults and clears all three storage keys', () => {
