@@ -1,19 +1,32 @@
 <script setup lang="ts">
+import { getActivePinia } from 'pinia'
 import Button from 'primevue/button'
+import { computed } from 'vue'
+import CompanionAvatar from '@/components/companion/CompanionAvatar.vue'
+import type { CompanionExpression } from '@/content/companion/types'
+import { useCompanionStore } from '@/stores/companion'
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     title?: string
     description: string
     retryLabel?: string
+    mascot?: CompanionExpression | ''
   }>(),
   {
     title: '加载失败',
     retryLabel: '重试',
+    mascot: '',
   },
 )
 
 const emit = defineEmits<{ retry: [] }>()
+
+// See AppEmptyState: Pinia may be absent when the component is mounted alone.
+const companion = getActivePinia() ? useCompanionStore() : null
+companion?.load()
+
+const showMascot = computed(() => Boolean(props.mascot) && (companion?.enabled ?? true))
 </script>
 
 <template>
@@ -22,6 +35,13 @@ const emit = defineEmits<{ retry: [] }>()
       <i class="pi pi-exclamation-triangle" />
     </span>
     <div class="app-error__body">
+      <CompanionAvatar
+        v-if="showMascot"
+        class="app-error__mascot"
+        pose="bust"
+        :expression="mascot || 'neutral'"
+        size="sm"
+      />
       <h2 class="app-error__title">{{ title }}</h2>
       <p class="app-error__description">{{ description }}</p>
     </div>
@@ -62,6 +82,10 @@ const emit = defineEmits<{ retry: [] }>()
 .app-error__body {
   flex: 1 1 220px;
   min-width: 0;
+}
+
+.app-error__mascot {
+  margin-bottom: var(--kapoj-space-2);
 }
 
 .app-error__title {

@@ -1,24 +1,43 @@
 <script setup lang="ts">
-withDefaults(
+import { getActivePinia } from 'pinia'
+import { computed } from 'vue'
+import CompanionAvatar from '@/components/companion/CompanionAvatar.vue'
+import type { CompanionExpression } from '@/content/companion/types'
+import { useCompanionStore } from '@/stores/companion'
+
+const props = withDefaults(
   defineProps<{
     icon?: string
     title: string
     description?: string
+    mascot?: CompanionExpression | ''
+    companionLine?: string
   }>(),
   {
     icon: 'pi pi-inbox',
     description: '',
+    mascot: '',
+    companionLine: '',
   },
 )
+
+// Isolated mounts (tests, stories) may not install Pinia; the mascot falls back
+// to visible there instead of crashing the whole state component.
+const companion = getActivePinia() ? useCompanionStore() : null
+companion?.load()
+
+const showMascot = computed(() => Boolean(props.mascot) && (companion?.enabled ?? true))
 </script>
 
 <template>
   <div class="app-empty" role="status">
-    <span class="app-empty__icon" aria-hidden="true">
+    <CompanionAvatar v-if="showMascot" pose="bust" :expression="mascot || 'neutral'" size="md" />
+    <span v-else class="app-empty__icon" aria-hidden="true">
       <i :class="icon" />
     </span>
     <h2 class="app-empty__title">{{ title }}</h2>
     <p v-if="description" class="app-empty__description">{{ description }}</p>
+    <p v-if="showMascot && companionLine" class="app-empty__companion">{{ companionLine }}</p>
     <div v-if="$slots.actions" class="app-empty__actions">
       <slot name="actions" />
     </div>
@@ -63,6 +82,15 @@ withDefaults(
   margin: 0;
   color: var(--kapoj-text-secondary);
   font-size: 0.875rem;
+}
+
+.app-empty__companion {
+  max-width: 32ch;
+  margin: 0;
+  color: var(--kapoj-text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  text-wrap: balance;
 }
 
 .app-empty__actions {

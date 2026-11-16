@@ -1,18 +1,33 @@
 <script setup lang="ts">
-withDefaults(
+import { getActivePinia } from 'pinia'
+import { computed } from 'vue'
+import CompanionAvatar from '@/components/companion/CompanionAvatar.vue'
+import type { CompanionExpression } from '@/content/companion/types'
+import { useCompanionStore } from '@/stores/companion'
+
+const props = withDefaults(
   defineProps<{
     label?: string
     rows?: number
+    mascot?: CompanionExpression | ''
   }>(),
   {
     label: '加载中',
     rows: 3,
+    mascot: '',
   },
 )
+
+// See AppEmptyState: Pinia may be absent when the component is mounted alone.
+const companion = getActivePinia() ? useCompanionStore() : null
+companion?.load()
+
+const showMascot = computed(() => Boolean(props.mascot) && (companion?.enabled ?? true))
 </script>
 
 <template>
   <div class="app-loading" role="status" aria-live="polite">
+    <CompanionAvatar v-if="showMascot" pose="chibi" :expression="mascot || 'neutral'" size="xs" />
     <span class="app-loading__spinner" aria-hidden="true" />
     <span class="app-loading__label">{{ label }}</span>
     <div class="app-loading__rows" aria-hidden="true">
