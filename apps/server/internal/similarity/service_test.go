@@ -426,6 +426,38 @@ func TestMatchDetailIncludesThresholdAndCodes(t *testing.T) {
 	assert.Equal(t, "package main\nfunc run() {}", detail.SuspectCode)
 }
 
+func TestMatchDetailIncludesSubmissionScores(t *testing.T) {
+	e := newServiceEnv(t)
+	ctx := context.Background()
+
+	subA := insertSubmission(t, e.db, e.userA, e.contestID, e.problemA, submission.LanguageGo, "package main\nfunc main() {}", e.start.Add(time.Minute))
+	subB := insertSubmission(t, e.db, e.userB, e.contestID, e.problemA, submission.LanguageGo, "package main\nfunc run() {}", e.start.Add(2*time.Minute))
+	setSubmissionScore(t, e.db, subA, 100)
+	setSubmissionScore(t, e.db, subB, 35)
+
+	run := e.createRun(t, &similarity.Run{
+		ContestID: e.contestID, ProblemID: e.problemA, Status: similarity.RunStatusCompleted,
+		ThresholdPercent: 80, IgnoreCommonCode: true, Engine: "winnowing-v1", EngineVersion: "1",
+	})
+	require.NoError(t, e.repo.ReplaceMatches(ctx, run.ID, []similarity.Match{{
+		ContestID: e.contestID, ProblemID: e.problemA,
+		OriginalSubmissionID: subA, SuspectSubmissionID: subB,
+		OriginalUserID: e.userA, SuspectUserID: e.userB,
+		Language: submission.LanguageGo, SimilarityPercent: 95, DicePercent: 90,
+		SharedFingerprints: 15, OriginalFingerprints: 20, SuspectFingerprints: 20,
+		OriginalCreatedAt: e.start.Add(time.Minute), SuspectCreatedAt: e.start.Add(2 * time.Minute),
+	}}))
+
+	var m similarity.Match
+	require.NoError(t, e.db.Where("run_id = ?", run.ID).First(&m).Error)
+
+	detail, err := e.svc.MatchDetail(ctx, managerViewer, e.contestID, m.ID)
+	require.NoError(t, err)
+	assert.Equal(t, 100, detail.OriginalScore)
+	assert.Equal(t, 35, detail.SuspectScore)
+	assert.Equal(t, 95, int(detail.SimilarityPercent))
+}
+
 func TestOverviewShowsLatestRunAnyStatus(t *testing.T) {
 	e := newServiceEnv(t)
 	ctx := context.Background()

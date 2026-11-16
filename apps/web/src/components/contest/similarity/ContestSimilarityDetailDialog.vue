@@ -94,7 +94,9 @@ function displayName(nickname: string, username: string): string {
               </div>
               <div>
                 <dt>得分</dt>
-                <dd class="num">{{ detail.similarityPercent }}%</dd>
+                <dd class="num" data-test="similarity-original-score">
+                  {{ detail.originalScore }}
+                </dd>
               </div>
             </dl>
           </section>
@@ -120,7 +122,9 @@ function displayName(nickname: string, username: string): string {
               </div>
               <div>
                 <dt>得分</dt>
-                <dd class="num">{{ detail.similarityPercent }}%</dd>
+                <dd class="num" data-test="similarity-suspect-score">
+                  {{ detail.suspectScore }}
+                </dd>
               </div>
             </dl>
           </section>

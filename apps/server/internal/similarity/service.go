@@ -389,6 +389,8 @@ func (s *Service) MatchDetail(ctx context.Context, v Viewer, contestID, matchID 
 		SuspectCode:    row.SuspectCode,
 		OriginalStatus: row.OriginalStatus,
 		SuspectStatus:  row.SuspectStatus,
+		OriginalScore:  row.OriginalScore,
+		SuspectScore:   row.SuspectScore,
 	}, nil
 }
 

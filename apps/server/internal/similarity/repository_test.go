@@ -94,6 +94,11 @@ func insertSubmission(t *testing.T, g *gorm.DB, userID, contestID, problemID int
 	return id
 }
 
+func setSubmissionScore(t *testing.T, g *gorm.DB, id int64, score int) {
+	t.Helper()
+	require.NoError(t, g.Exec(`UPDATE submissions SET score = ? WHERE id = ?`, score, id).Error)
+}
+
 func (e *simEnv) createRun(t *testing.T, r *similarity.Run) *similarity.Run {
 	t.Helper()
 	require.NoError(t, e.repo.CreateRun(context.Background(), r))
@@ -289,6 +294,38 @@ func TestFindMatchIncludesBothCodes(t *testing.T) {
 
 	_, err = e.repo.FindMatch(ctx, 999999)
 	assert.ErrorIs(t, err, similarity.ErrNotFound)
+}
+
+func TestFindMatchIncludesSubmissionScores(t *testing.T) {
+	e := newSimEnv(t)
+	ctx := context.Background()
+
+	original := insertSubmission(t, e.db, e.participantA, e.contestID, e.problemA, submission.LanguageGo, "package main\nfunc main() {}", e.start.Add(time.Minute))
+	suspect := insertSubmission(t, e.db, e.participantB, e.contestID, e.problemA, submission.LanguageGo, "package main\nfunc run() {}", e.start.Add(2*time.Minute))
+	setSubmissionScore(t, e.db, original, 100)
+	setSubmissionScore(t, e.db, suspect, 40)
+
+	run := e.createRun(t, &similarity.Run{
+		ContestID: e.contestID, ProblemID: e.problemA, Status: similarity.RunStatusCompleted,
+		ThresholdPercent: 80, IgnoreCommonCode: true, Engine: "winnowing", EngineVersion: "1",
+	})
+
+	require.NoError(t, e.repo.ReplaceMatches(ctx, run.ID, []similarity.Match{{
+		ContestID: e.contestID, ProblemID: e.problemA,
+		OriginalSubmissionID: original, SuspectSubmissionID: suspect,
+		OriginalUserID: e.participantA, SuspectUserID: e.participantB,
+		Language: submission.LanguageGo, SimilarityPercent: 95, DicePercent: 90,
+		SharedFingerprints: 15, OriginalFingerprints: 20, SuspectFingerprints: 20,
+		OriginalCreatedAt: e.start.Add(time.Minute), SuspectCreatedAt: e.start.Add(2 * time.Minute),
+	}}))
+
+	var m similarity.Match
+	require.NoError(t, e.db.Where("run_id = ?", run.ID).First(&m).Error)
+
+	detail, err := e.repo.FindMatch(ctx, m.ID)
+	require.NoError(t, err)
+	assert.Equal(t, 100, detail.OriginalScore)
+	assert.Equal(t, 40, detail.SuspectScore)
 }
 
 func TestFindMatchIncludesRunThresholdAndFinishedAt(t *testing.T) {

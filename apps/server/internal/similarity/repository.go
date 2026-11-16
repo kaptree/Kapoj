@@ -55,6 +55,8 @@ type MatchDetailRow struct {
 	SuspectCode      string
 	OriginalStatus   submission.Status
 	SuspectStatus    submission.Status
+	OriginalScore    int
+	SuspectScore     int
 	OriginalUsername string
 	OriginalNickname string
 	SuspectUsername  string
@@ -304,8 +306,8 @@ func (r *gormRepository) FindMatch(ctx context.Context, id int64) (*MatchDetailR
 		Table("contest_similarity_matches AS m").
 		Select(`m.*,
 			r.threshold_percent, r.finished_at,
-			os.code AS original_code, os.status AS original_status,
-			ss.code AS suspect_code, ss.status AS suspect_status,
+			os.code AS original_code, os.status AS original_status, os.score AS original_score,
+			ss.code AS suspect_code, ss.status AS suspect_status, ss.score AS suspect_score,
 			ou.username AS original_username, ou.nickname AS original_nickname,
 			su.username AS suspect_username, su.nickname AS suspect_nickname`).
 		Joins("JOIN contest_similarity_runs AS r ON r.id = m.run_id").

@@ -108,6 +108,8 @@ function matchDetail(
     suspectCode: 'int main() { return 1; }',
     originalStatus: 'accepted',
     suspectStatus: 'wrong_answer',
+    originalScore: 100,
+    suspectScore: 35,
     ...overrides,
   }
 }
@@ -306,6 +308,7 @@ describe('ContestSimilarityPanel', () => {
 
     expect(startSimilarityRuns).toHaveBeenCalledWith(7, 42)
     expect(getSimilarityOverview).toHaveBeenCalledTimes(2)
+    expect(listSimilarityMatches).toHaveBeenCalledTimes(2)
     expect(toast.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }))
   })
 
@@ -318,6 +321,7 @@ describe('ContestSimilarityPanel', () => {
 
     expect(startSimilarityRuns).toHaveBeenCalledWith(7)
     expect(getSimilarityOverview).toHaveBeenCalledTimes(2)
+    expect(listSimilarityMatches).toHaveBeenCalledTimes(2)
     expect(toast.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }))
   })
 
@@ -492,6 +496,7 @@ describe('ContestSimilarityPanel', () => {
   })
 
   it('downloads CSV with the current problem filter', async () => {
+    vi.useFakeTimers()
     const blob = new Blob(['id,similarity'], { type: 'text/csv' })
     vi.mocked(downloadSimilarityCSV).mockResolvedValue(blob)
     const createObjectURL = vi.fn(() => 'blob:mock')
@@ -517,6 +522,10 @@ describe('ContestSimilarityPanel', () => {
     expect(downloadSimilarityCSV).toHaveBeenCalledWith(7, 43)
     expect(createObjectURL).toHaveBeenCalledWith(blob)
     expect(click).toHaveBeenCalled()
+    expect(revokeObjectURL).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(0)
+
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:mock')
   })
 

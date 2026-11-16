@@ -4119,12 +4119,15 @@ components:
       allOf:
         - $ref: '#/components/schemas/ContestSimilarityMatch'
         - type: object
-          required: [originalCode, suspectCode, originalStatus, suspectStatus]
+          required:
+            [originalCode, suspectCode, originalStatus, suspectStatus, originalScore, suspectScore]
           properties:
             originalCode: { type: string }
             suspectCode: { type: string }
             originalStatus: { $ref: '#/components/schemas/SubmissionStatus' }
             suspectStatus: { $ref: '#/components/schemas/SubmissionStatus' }
+            originalScore: { type: integer }
+            suspectScore: { type: integer }
     ContestSimilarityOverviewResponse:
       allOf:
         - $ref: '#/components/schemas/Envelope'

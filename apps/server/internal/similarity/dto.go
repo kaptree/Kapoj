@@ -81,13 +81,15 @@ type MatchView struct {
 	FinishedAt           *time.Time          `json:"finishedAt"`
 }
 
-// MatchDetail adds both code payloads and judge statuses to a MatchView.
+// MatchDetail adds both code payloads, judge statuses and scores to a MatchView.
 type MatchDetail struct {
 	MatchView
 	OriginalCode   string            `json:"originalCode"`
 	SuspectCode    string            `json:"suspectCode"`
 	OriginalStatus submission.Status `json:"originalStatus"`
 	SuspectStatus  submission.Status `json:"suspectStatus"`
+	OriginalScore  int               `json:"originalScore"`
+	SuspectScore   int               `json:"suspectScore"`
 }
 
 // MatchPage is a page of match results.

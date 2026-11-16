@@ -37,6 +37,8 @@ function matchDetail(
     suspectCode: 'int main() { return 1; }',
     originalStatus: 'accepted',
     suspectStatus: 'wrong_answer',
+    originalScore: 100,
+    suspectScore: 35,
     ...overrides,
   }
 }
@@ -83,6 +85,11 @@ describe('ContestSimilarityDetailDialog', () => {
     expect(text).toContain('通过')
     expect(text).toContain('答案错误')
     expect(text).toContain('相似度仅代表代码相似，需人工复核。')
+
+    const originalScore = panel('[data-test="similarity-original-score"]')
+    const suspectScore = panel('[data-test="similarity-suspect-score"]')
+    expect(originalScore.textContent?.trim()).toBe('100')
+    expect(suspectScore.textContent?.trim()).toBe('35')
   })
 
   it('renders both code panes with CodeViewer', async () => {

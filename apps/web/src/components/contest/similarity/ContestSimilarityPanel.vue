@@ -249,6 +249,7 @@ async function runProblem(problem: ContestSimilarityProblem) {
     await startSimilarityRuns(props.contestId, problem.problemId)
     toast.add({ severity: 'success', summary: '已开始本题查重', life: 3000 })
     await loadOverview(true)
+    await loadMatches()
   } catch (e) {
     notifyError(e, '启动本题查重失败')
   } finally {
@@ -263,6 +264,7 @@ async function runAll() {
     await startSimilarityRuns(props.contestId)
     toast.add({ severity: 'success', summary: '已开始全部查重', life: 3000 })
     await loadOverview(true)
+    await loadMatches()
   } catch (e) {
     notifyError(e, '启动全部查重失败')
   } finally {
@@ -334,7 +336,7 @@ async function exportCsv() {
     document.body.appendChild(anchor)
     anchor.click()
     anchor.remove()
-    URL.revokeObjectURL(url)
+    setTimeout(() => URL.revokeObjectURL(url), 0)
   } catch (e) {
     notifyError(e, '导出 CSV 失败')
   } finally {

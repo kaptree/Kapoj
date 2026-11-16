@@ -9336,6 +9336,8 @@ export interface components {
             suspectCode: string;
             originalStatus: components["schemas"]["SubmissionStatus"];
             suspectStatus: components["schemas"]["SubmissionStatus"];
+            originalScore: number;
+            suspectScore: number;
         };
         ContestSimilarityOverviewResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["ContestSimilarityOverview"];
