@@ -1,17 +1,26 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Button from 'primevue/button'
+import Column from 'primevue/column'
+import DataTable from 'primevue/datatable'
 import Message from 'primevue/message'
+import Paginator from 'primevue/paginator'
+import Select from 'primevue/select'
 import Tag from 'primevue/tag'
 import { useToast } from 'primevue/usetoast'
 
 import { ApiError } from '@/api/http'
 import {
+  downloadSimilarityCSV,
+  getSimilarityMatch,
   getSimilarityOverview,
+  listSimilarityMatches,
   startSimilarityRuns,
   updateSimilaritySettings,
 } from '@/api/similarity'
 import type {
+  ContestSimilarityMatch,
+  ContestSimilarityMatchDetail,
   ContestSimilarityOverview,
   ContestSimilarityProblem,
   ContestSimilarityRun,
@@ -21,9 +30,12 @@ import AppEmptyState from '@/components/ui/AppEmptyState.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
+import { formatDateTime } from '@/utils/format'
+import ContestSimilarityDetailDialog from './ContestSimilarityDetailDialog.vue'
 import ContestSimilaritySettingsDialog from './ContestSimilaritySettingsDialog.vue'
 
 const POLL_INTERVAL = 2000
+const PAGE_SIZE = 20
 
 const props = defineProps<{ contestId: number }>()
 
@@ -38,15 +50,39 @@ const settingsVisible = ref(false)
 const settingsProblem = ref<ContestSimilarityProblem | null>(null)
 const savingSettings = ref(false)
 
+const matches = ref<ContestSimilarityMatch[]>([])
+const matchesTotal = ref(0)
+const matchesLoading = ref(false)
+const matchesError = ref('')
+const filterProblemId = ref<number | null>(null)
+const matchPage = ref(1)
+const exporting = ref(false)
+
+const detailVisible = ref(false)
+const detail = ref<ContestSimilarityMatchDetail | null>(null)
+const detailLoading = ref(false)
+const detailError = ref('')
+const detailMatchId = ref<number | null>(null)
+
 let pollTimer: number | undefined
 let loadingOverview = false
 let refreshQueued = false
 let disposed = false
+let matchesSeq = 0
+let detailSeq = 0
 
 const problems = computed(() => overview.value?.problems ?? [])
 const hasActiveRuns = computed(() =>
   problems.value.some((problem) => isRunActive(problem.latestRun)),
 )
+const filterOptions = computed(() => [
+  { value: null as number | null, label: '全部题目' },
+  ...problems.value.map((problem) => ({
+    value: problem.problemId,
+    label: `${problem.displayId} · ${problem.title}`,
+  })),
+])
+const firstMatch = computed(() => (matchPage.value - 1) * PAGE_SIZE)
 
 const runStatusLabels: Record<string, string> = {
   queued: '排队中',
@@ -76,6 +112,21 @@ function runStatusSeverity(
 ): 'success' | 'info' | 'warn' | 'danger' | 'secondary' {
   if (!run) return 'secondary'
   return runStatusSeverities[run.status] ?? 'secondary'
+}
+
+function similaritySeverity(percent: number): 'danger' | 'warn' | 'secondary' {
+  if (percent >= 90) return 'danger'
+  if (percent >= 80) return 'warn'
+  return 'secondary'
+}
+
+function displayName(nickname: string, username: string): string {
+  return nickname.trim() || username || '?'
+}
+
+function matchProblemLabel(match: ContestSimilarityMatch): string {
+  const problem = problems.value.find((item) => item.problemId === match.problemId)
+  return problem ? `${problem.displayId} · ${problem.title}` : `#${match.problemId}`
 }
 
 function failureMessage(e: unknown, fallback: string): string {
@@ -123,11 +174,13 @@ async function loadOverview(background = false) {
     loading.value = true
     error.value = ''
   }
+  const wasActive = hasActiveRuns.value
   try {
     const data = await getSimilarityOverview(props.contestId)
     if (disposed) return
     overview.value = data
     error.value = ''
+    if (wasActive && !hasActiveRuns.value) void loadMatches()
   } catch (e) {
     if (disposed) return
     const message = failureMessage(e, '加载查重概览失败，请稍后再试')
@@ -217,8 +270,86 @@ async function runAll() {
   }
 }
 
+async function loadMatches() {
+  const seq = ++matchesSeq
+  matchesLoading.value = true
+  matchesError.value = ''
+  try {
+    const data = await listSimilarityMatches(props.contestId, {
+      problemId: filterProblemId.value ?? undefined,
+      page: matchPage.value,
+      pageSize: PAGE_SIZE,
+    })
+    if (seq !== matchesSeq || disposed) return
+    matches.value = data.items
+    matchesTotal.value = data.total
+  } catch (e) {
+    if (seq !== matchesSeq || disposed) return
+    matchesError.value = failureMessage(e, '加载查重结果失败，请稍后再试')
+  } finally {
+    if (seq === matchesSeq) matchesLoading.value = false
+  }
+}
+
+function onMatchPage(event: { page: number }) {
+  matchPage.value = event.page + 1
+  void loadMatches()
+}
+
+function onMatchRowClick(event: { data: ContestSimilarityMatch }) {
+  void openDetail(event.data.id)
+}
+
+async function openDetail(matchId: number) {
+  const seq = ++detailSeq
+  detailMatchId.value = matchId
+  detail.value = null
+  detailError.value = ''
+  detailVisible.value = true
+  detailLoading.value = true
+  try {
+    const data = await getSimilarityMatch(props.contestId, matchId)
+    if (seq === detailSeq && !disposed) detail.value = data
+  } catch (e) {
+    if (seq !== detailSeq || disposed) return
+    detailError.value = failureMessage(e, '加载查重详情失败，请稍后再试')
+  } finally {
+    if (seq === detailSeq) detailLoading.value = false
+  }
+}
+
+function retryDetail() {
+  if (detailMatchId.value !== null) void openDetail(detailMatchId.value)
+}
+
+async function exportCsv() {
+  if (exporting.value) return
+  exporting.value = true
+  try {
+    const blob = await downloadSimilarityCSV(props.contestId, filterProblemId.value ?? undefined)
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `similarity-contest-${props.contestId}.csv`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    notifyError(e, '导出 CSV 失败')
+  } finally {
+    exporting.value = false
+  }
+}
+
+watch(filterProblemId, () => {
+  matchPage.value = 1
+  void loadMatches()
+})
+
 onMounted(() => {
   void loadOverview()
+  void loadMatches()
 })
 
 onBeforeUnmount(() => {
@@ -333,6 +464,122 @@ onBeforeUnmount(() => {
           description="比赛包含代码题目后才能进行查重。"
         />
       </AppSurface>
+
+      <AppSurface class="similarity-results">
+        <div class="similarity-toolbar">
+          <div class="similarity-heading">
+            <h2 class="similarity-title">查重结果</h2>
+            <span class="similarity-count">共 {{ matchesTotal }} 条</span>
+          </div>
+          <div class="similarity-result-actions">
+            <Select
+              v-model="filterProblemId"
+              data-test="similarity-filter"
+              :options="filterOptions"
+              option-label="label"
+              option-value="value"
+              placeholder="全部题目"
+              aria-label="按赛题筛选"
+              class="similarity-filter"
+            />
+            <Button
+              label="导出 CSV"
+              data-test="similarity-export"
+              icon="pi pi-download"
+              size="small"
+              severity="secondary"
+              outlined
+              :loading="exporting"
+              @click="exportCsv"
+            />
+          </div>
+        </div>
+
+        <Message
+          v-if="matchesError && matches.length"
+          severity="error"
+          :closable="false"
+          class="similarity-message"
+        >
+          {{ matchesError }}
+        </Message>
+
+        <AppErrorState
+          v-if="matchesError && !matches.length"
+          :description="matchesError"
+          @retry="loadMatches"
+        />
+        <AppLoadingState v-else-if="matchesLoading && !matches.length" label="加载查重结果" />
+        <DataTable
+          v-else
+          :value="matches"
+          :loading="matchesLoading"
+          data-key="id"
+          size="small"
+          row-hover
+          responsive-layout="scroll"
+          class="similarity-results-table"
+          :pt="{ bodyRow: { 'data-test': 'similarity-match-row' } }"
+          @row-click="onMatchRowClick"
+        >
+          <Column header="题目" style="min-width: 160px">
+            <template #body="{ data }">{{ matchProblemLabel(data) }}</template>
+          </Column>
+          <Column header="原提交用户" style="min-width: 120px">
+            <template #body="{ data }">{{
+              displayName(data.originalNickname, data.originalUsername)
+            }}</template>
+          </Column>
+          <Column header="原提交时间" style="min-width: 150px">
+            <template #body="{ data }">{{ formatDateTime(data.originalCreatedAt) }}</template>
+          </Column>
+          <Column header="疑似用户" style="min-width: 120px">
+            <template #body="{ data }">{{
+              displayName(data.suspectNickname, data.suspectUsername)
+            }}</template>
+          </Column>
+          <Column header="疑似时间" style="min-width: 150px">
+            <template #body="{ data }">{{ formatDateTime(data.suspectCreatedAt) }}</template>
+          </Column>
+          <Column header="重复率" style="width: 100px">
+            <template #body="{ data }">
+              <Tag
+                :value="`${data.similarityPercent}%`"
+                :severity="similaritySeverity(data.similarityPercent)"
+              />
+            </template>
+          </Column>
+          <Column header="操作" style="width: 80px">
+            <template #body="{ data }">
+              <Button
+                label="查看"
+                data-test="similarity-match-open"
+                text
+                size="small"
+                @click.stop="openDetail(data.id)"
+              />
+            </template>
+          </Column>
+          <template #empty>
+            <AppEmptyState
+              icon="pi pi-search"
+              title="暂无查重结果"
+              description="运行查重后，达到阈值的代码对会显示在这里。"
+            />
+          </template>
+        </DataTable>
+
+        <Paginator
+          v-if="matchesTotal > PAGE_SIZE"
+          :rows="PAGE_SIZE"
+          :total-records="matchesTotal"
+          :first="firstMatch"
+          :page-link-size="5"
+          template="PrevPageLink PageLinks NextPageLink"
+          class="similarity-pager"
+          @page="onMatchPage"
+        />
+      </AppSurface>
     </template>
 
     <ContestSimilaritySettingsDialog
@@ -340,6 +587,14 @@ onBeforeUnmount(() => {
       :problem="settingsProblem"
       :saving="savingSettings"
       @save="saveSettings"
+    />
+
+    <ContestSimilarityDetailDialog
+      v-model:visible="detailVisible"
+      :detail="detail"
+      :loading="detailLoading"
+      :error="detailError"
+      @retry="retryDetail"
     />
   </div>
 </template>
@@ -438,6 +693,25 @@ onBeforeUnmount(() => {
 
 .similarity-flag {
   margin-left: var(--kapoj-space-1);
+}
+
+.similarity-result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--kapoj-space-2);
+}
+
+.similarity-filter {
+  min-width: 180px;
+}
+
+.similarity-results-table {
+  font-size: 0.875rem;
+}
+
+.similarity-pager {
+  margin-top: var(--kapoj-space-2);
 }
 
 .num {

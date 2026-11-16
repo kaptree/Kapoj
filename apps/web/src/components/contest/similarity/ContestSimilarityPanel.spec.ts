@@ -1,13 +1,19 @@
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
+import Select from 'primevue/select'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  downloadSimilarityCSV,
+  getSimilarityMatch,
   getSimilarityOverview,
+  listSimilarityMatches,
   startSimilarityRuns,
   updateSimilaritySettings,
 } from '@/api/similarity'
 import type {
+  ContestSimilarityMatch,
+  ContestSimilarityMatchDetail,
   ContestSimilarityOverview,
   ContestSimilarityProblem,
   ContestSimilarityRun,
@@ -21,6 +27,9 @@ vi.mock('@/api/similarity', () => ({
   getSimilarityOverview: vi.fn(),
   updateSimilaritySettings: vi.fn(),
   startSimilarityRuns: vi.fn(),
+  listSimilarityMatches: vi.fn(),
+  getSimilarityMatch: vi.fn(),
+  downloadSimilarityCSV: vi.fn(),
 }))
 
 function run(overrides: Partial<ContestSimilarityRun> = {}): ContestSimilarityRun {
@@ -65,7 +74,51 @@ function overview(problems: ContestSimilarityProblem[]): ContestSimilarityOvervi
   return { contestId: 7, problems }
 }
 
+function match(overrides: Partial<ContestSimilarityMatch> = {}): ContestSimilarityMatch {
+  return {
+    id: 11,
+    runId: 1,
+    contestId: 7,
+    problemId: 42,
+    originalSubmissionId: 101,
+    suspectSubmissionId: 102,
+    originalUserId: 1,
+    originalUsername: 'alice',
+    originalNickname: 'Alice',
+    suspectUserId: 2,
+    suspectUsername: 'bob',
+    suspectNickname: 'Bob',
+    language: 'cpp',
+    similarityPercent: 95,
+    dicePercent: 88,
+    thresholdPercent: 70,
+    originalCreatedAt: '2026-11-15T10:00:00Z',
+    suspectCreatedAt: '2026-11-15T11:00:00Z',
+    finishedAt: '2026-11-15T12:00:00Z',
+    ...overrides,
+  }
+}
+
+function matchDetail(
+  overrides: Partial<ContestSimilarityMatchDetail> = {},
+): ContestSimilarityMatchDetail {
+  return {
+    ...match(),
+    originalCode: 'int main() { return 0; }',
+    suspectCode: 'int main() { return 1; }',
+    originalStatus: 'accepted',
+    suspectStatus: 'wrong_answer',
+    ...overrides,
+  }
+}
+
+function page<T>(items: T[], total = items.length) {
+  return { total, items }
+}
+
 const wrappers: VueWrapper[] = []
+const originalCreateObjectURL = URL.createObjectURL
+const originalRevokeObjectURL = URL.revokeObjectURL
 
 async function mountPanel() {
   const wrapper = mount(ContestSimilarityPanel, {
@@ -118,14 +171,29 @@ beforeEach(() => {
   vi.mocked(getSimilarityOverview).mockReset()
   vi.mocked(updateSimilaritySettings).mockReset()
   vi.mocked(startSimilarityRuns).mockReset()
+  vi.mocked(listSimilarityMatches).mockReset()
+  vi.mocked(getSimilarityMatch).mockReset()
+  vi.mocked(downloadSimilarityCSV).mockReset()
   vi.mocked(getSimilarityOverview).mockResolvedValue(
     overview([problem(), problem({ problemId: 43, displayId: 'B', title: 'B - A' })]),
   )
+  vi.mocked(listSimilarityMatches).mockResolvedValue(page([]))
 })
 
 afterEach(() => {
   wrappers.splice(0).forEach((wrapper) => wrapper.unmount())
   vi.useRealTimers()
+  vi.restoreAllMocks()
+  if (originalCreateObjectURL) {
+    URL.createObjectURL = originalCreateObjectURL
+  } else {
+    delete (URL as unknown as Record<string, unknown>).createObjectURL
+  }
+  if (originalRevokeObjectURL) {
+    URL.revokeObjectURL = originalRevokeObjectURL
+  } else {
+    delete (URL as unknown as Record<string, unknown>).revokeObjectURL
+  }
   document.body.innerHTML = ''
 })
 
@@ -146,7 +214,7 @@ describe('ContestSimilarityPanel', () => {
     expect(rows[0]!.text()).toContain('70%')
     expect(rows[1]!.text()).toContain('90%')
     expect(rows[0]!.text()).toContain('12')
-    const headers = wrapper.findAll('th').map((header) => header.text())
+    const headers = wrapper.findAll('.similarity-overview th').map((header) => header.text())
     expect(headers).toEqual(['题号', '题目', '代码提交数', '阈值', '最近状态', '结果数', '操作'])
   })
 
@@ -362,5 +430,103 @@ describe('ContestSimilarityPanel', () => {
     vi.mocked(getSimilarityOverview).mockRejectedValueOnce(new Error('boom'))
     wrapper = await mountPanel()
     expect(wrapper.text()).toContain('加载查重概览失败')
+  })
+
+  it('loads and renders the latest match list', async () => {
+    vi.mocked(listSimilarityMatches).mockResolvedValue(
+      page([
+        match(),
+        match({
+          id: 12,
+          suspectNickname: 'Carol',
+          suspectUsername: 'carol',
+          similarityPercent: 82,
+        }),
+      ]),
+    )
+
+    const wrapper = await mountPanel()
+
+    expect(listSimilarityMatches).toHaveBeenCalledWith(7, {
+      problemId: undefined,
+      page: 1,
+      pageSize: 20,
+    })
+    const rows = wrapper.findAll('[data-test="similarity-match-row"]')
+    expect(rows).toHaveLength(2)
+    expect(rows[0]!.text()).toContain('A · A + B')
+    expect(rows[0]!.text()).toContain('Alice')
+    expect(rows[0]!.text()).toContain('Bob')
+    expect(rows[0]!.text()).toContain('95%')
+    expect(rows[0]!.find('.p-tag-danger').exists()).toBe(true)
+    expect(rows[1]!.find('.p-tag-warn').exists()).toBe(true)
+  })
+
+  it('filters matches by problem', async () => {
+    const wrapper = await mountPanel()
+
+    const filter = wrapper.findAllComponents(Select)[0]!
+    filter.vm.$emit('update:modelValue', 43)
+    await flushPromises()
+
+    expect(listSimilarityMatches).toHaveBeenLastCalledWith(7, {
+      problemId: 43,
+      page: 1,
+      pageSize: 20,
+    })
+  })
+
+  it('opens detail on row click and fetches the match', async () => {
+    vi.mocked(listSimilarityMatches).mockResolvedValue(page([match()]))
+    vi.mocked(getSimilarityMatch).mockResolvedValue(matchDetail())
+
+    const wrapper = await mountPanel()
+    await wrapper.find('[data-test="similarity-match-row"]').trigger('click')
+    await flushPromises()
+
+    expect(getSimilarityMatch).toHaveBeenCalledWith(7, 11)
+    const dialog = document.querySelector('[data-test="similarity-detail"]')
+    expect(dialog).not.toBeNull()
+    expect(dialog!.textContent).toContain('Alice')
+    expect(dialog!.textContent).toContain('Bob')
+  })
+
+  it('downloads CSV with the current problem filter', async () => {
+    const blob = new Blob(['id,similarity'], { type: 'text/csv' })
+    vi.mocked(downloadSimilarityCSV).mockResolvedValue(blob)
+    const createObjectURL = vi.fn(() => 'blob:mock')
+    const revokeObjectURL = vi.fn()
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      writable: true,
+      value: createObjectURL,
+    })
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      writable: true,
+      value: revokeObjectURL,
+    })
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+
+    const wrapper = await mountPanel()
+    wrapper.findAllComponents(Select)[0]!.vm.$emit('update:modelValue', 43)
+    await flushPromises()
+    await wrapper.find('[data-test="similarity-export"]').trigger('click')
+    await flushPromises()
+
+    expect(downloadSimilarityCSV).toHaveBeenCalledWith(7, 43)
+    expect(createObjectURL).toHaveBeenCalledWith(blob)
+    expect(click).toHaveBeenCalled()
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:mock')
+  })
+
+  it('shows no-match and failure states', async () => {
+    let wrapper = await mountPanel()
+    expect(wrapper.text()).toContain('暂无查重结果')
+    wrapper.unmount()
+
+    vi.mocked(listSimilarityMatches).mockRejectedValueOnce(new Error('boom'))
+    wrapper = await mountPanel()
+    expect(wrapper.text()).toContain('加载查重结果失败')
   })
 })
