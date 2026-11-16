@@ -192,6 +192,24 @@ func TestCompanionSettingsPersist(t *testing.T) {
 	})
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	assert.EqualValues(t, 40001, resp["code"])
+
+	// Skins are limited to the 40-character column width (counted in runes).
+	w, resp = f.do(http.MethodPost, "/api/companion/settings", tok, map[string]any{
+		"equippedSkin": strings.Repeat("皮", 41),
+	})
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+	w, resp = f.do(http.MethodGet, "/api/companion", tok, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "", dataOf(t, resp)["equippedSkin"])
+
+	skin := strings.Repeat("皮", 40)
+	w, resp = f.do(http.MethodPost, "/api/companion/settings", tok, map[string]any{
+		"equippedSkin": skin,
+	})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, skin, dataOf(t, resp)["equippedSkin"])
+	assert.Equal(t, "quiet", dataOf(t, resp)["activityLevel"], "skin patch keeps other fields")
 }
 
 // 4. Unread events are listed newest-last with a clamped limit, and marking them

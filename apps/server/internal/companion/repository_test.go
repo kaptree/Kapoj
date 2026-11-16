@@ -473,3 +473,84 @@ func TestUpdateSettings(t *testing.T) {
 	assert.True(t, st.PublicProfile)
 	assert.Equal(t, "culture-festival", st.EquippedSkin)
 }
+
+// A patch writes only the fields it carries; the rest keep their stored values.
+func TestUpdateSettingsPatchOnlyWritesProvidedFields(t *testing.T) {
+	g := testutil.PG(t)
+	repo := companion.NewGormRepository(g)
+	ctx := context.Background()
+	uid := newUser(t, g, "settings_patch")
+
+	_, err := repo.UpdateSettings(ctx, uid, companion.SettingsInput{
+		ActivityLevel: "lively",
+		DockEnabled:   false,
+		PublicProfile: true,
+		EquippedSkin:  "culture-festival",
+	})
+	require.NoError(t, err)
+
+	quiet := "quiet"
+	st, err := repo.UpdateSettingsPatch(ctx, uid, companion.SettingsPatch{ActivityLevel: &quiet})
+	require.NoError(t, err)
+	assert.Equal(t, "quiet", st.ActivityLevel)
+	assert.False(t, st.DockEnabled, "unpatched field keeps its stored value")
+	assert.True(t, st.PublicProfile)
+	assert.Equal(t, "culture-festival", st.EquippedSkin)
+
+	// Zero values (false, "") must still be written when explicitly provided.
+	dock := true
+	skin := ""
+	st, err = repo.UpdateSettingsPatch(ctx, uid, companion.SettingsPatch{
+		DockEnabled: &dock, EquippedSkin: &skin,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "quiet", st.ActivityLevel)
+	assert.True(t, st.DockEnabled)
+	assert.True(t, st.PublicProfile)
+	assert.Empty(t, st.EquippedSkin)
+
+	// An empty patch is a no-op that still returns the current state.
+	st, err = repo.UpdateSettingsPatch(ctx, uid, companion.SettingsPatch{})
+	require.NoError(t, err)
+	assert.Equal(t, "quiet", st.ActivityLevel)
+}
+
+// Two concurrent patches touching different fields must both persist.
+func TestUpdateSettingsPatchConcurrentFields(t *testing.T) {
+	g := testutil.PG(t)
+	repo := companion.NewGormRepository(g)
+	ctx := context.Background()
+	uid := newUser(t, g, "settings_race")
+	_, err := repo.EnsureState(ctx, uid)
+	require.NoError(t, err)
+
+	activity := "quiet"
+	dock := false
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		<-start
+		_, err := repo.UpdateSettingsPatch(ctx, uid, companion.SettingsPatch{ActivityLevel: &activity})
+		errs <- err
+	}()
+	go func() {
+		defer wg.Done()
+		<-start
+		_, err := repo.UpdateSettingsPatch(ctx, uid, companion.SettingsPatch{DockEnabled: &dock})
+		errs <- err
+	}()
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+
+	st, err := repo.EnsureState(ctx, uid)
+	require.NoError(t, err)
+	assert.Equal(t, "quiet", st.ActivityLevel, "activity patch must survive")
+	assert.False(t, st.DockEnabled, "dock patch must survive")
+}

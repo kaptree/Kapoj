@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"unicode/utf8"
 
 	"github.com/kaptree/kapoj/apps/server/internal/gamequeue"
+	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 )
 
 // Bond rules for each event type (companion design doc §8.2).
@@ -82,9 +84,66 @@ func (s *Service) State(ctx context.Context, userID int64) (*StateView, error) {
 	}, nil
 }
 
-// UpdateSettings persists the user-editable settings and returns the fresh view.
+// equippedSkinMaxRunes matches the varchar(40) equipped_skin column so oversize
+// input is reported as a validation error instead of a database error.
+const equippedSkinMaxRunes = 40
+
+// validActivityLevels mirrors the quiet | normal | lively choice in the
+// companion design document.
+var validActivityLevels = map[string]struct{}{
+	"quiet":  {},
+	"normal": {},
+	"lively": {},
+}
+
+// validateActivityLevel enforces the settings activity enum. It is shared by
+// the full and patch update paths so every caller is protected.
+func validateActivityLevel(level string) error {
+	if _, ok := validActivityLevels[level]; !ok {
+		return httpx.ErrValidation("活动频率无效")
+	}
+	return nil
+}
+
+// validateEquippedSkin enforces the equipped-skin column width in runes;
+// PostgreSQL varchar(40) also counts characters, not bytes.
+func validateEquippedSkin(skin string) error {
+	if utf8.RuneCountInString(skin) > equippedSkinMaxRunes {
+		return httpx.ErrValidation("皮肤标识不能超过 40 个字符")
+	}
+	return nil
+}
+
+// UpdateSettings persists the whole user-editable settings set and returns the
+// fresh view. It validates through the same helpers as UpdateSettingsPatch.
 func (s *Service) UpdateSettings(ctx context.Context, userID int64, in SettingsInput) (*StateView, error) {
+	if err := validateActivityLevel(in.ActivityLevel); err != nil {
+		return nil, err
+	}
+	if err := validateEquippedSkin(in.EquippedSkin); err != nil {
+		return nil, err
+	}
 	if _, err := s.repo.UpdateSettings(ctx, userID, in); err != nil {
+		return nil, err
+	}
+	return s.State(ctx, userID)
+}
+
+// UpdateSettingsPatch validates and atomically applies a partial settings
+// update: only the provided fields are written, under a state-row lock, so two
+// concurrent patches touching different fields both persist.
+func (s *Service) UpdateSettingsPatch(ctx context.Context, userID int64, patch SettingsPatch) (*StateView, error) {
+	if patch.ActivityLevel != nil {
+		if err := validateActivityLevel(*patch.ActivityLevel); err != nil {
+			return nil, err
+		}
+	}
+	if patch.EquippedSkin != nil {
+		if err := validateEquippedSkin(*patch.EquippedSkin); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := s.repo.UpdateSettingsPatch(ctx, userID, patch); err != nil {
 		return nil, err
 	}
 	return s.State(ctx, userID)

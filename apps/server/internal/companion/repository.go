@@ -72,6 +72,51 @@ func (r *Repository) UpdateSettings(ctx context.Context, userID int64, in Settin
 	return &st, nil
 }
 
+// UpdateSettingsPatch atomically applies the non-nil fields of patch. It locks
+// the user's state row inside a transaction so two concurrent patches touching
+// different fields both persist instead of one overwriting the other.
+func (r *Repository) UpdateSettingsPatch(ctx context.Context, userID int64, patch SettingsPatch) (*State, error) {
+	var out State
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(insertStateSQL, userID).Error; err != nil {
+			return err
+		}
+		var st State
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("user_id = ?", userID).First(&st).Error; err != nil {
+			return err
+		}
+		updates := make(map[string]any, 4)
+		if patch.ActivityLevel != nil {
+			updates["activity_level"] = *patch.ActivityLevel
+		}
+		if patch.DockEnabled != nil {
+			updates["dock_enabled"] = *patch.DockEnabled
+		}
+		if patch.PublicProfile != nil {
+			updates["public_profile"] = *patch.PublicProfile
+		}
+		if patch.EquippedSkin != nil {
+			updates["equipped_skin"] = *patch.EquippedSkin
+		}
+		if len(updates) > 0 {
+			if err := tx.Model(&State{}).Where("user_id = ?", userID).Updates(updates).Error; err != nil {
+				return err
+			}
+		}
+		var fresh State
+		if err := tx.Where("user_id = ?", userID).Take(&fresh).Error; err != nil {
+			return err
+		}
+		out = fresh
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // ApplyEvent records one bond event inside a single transaction that locks the
 // user's state row. It enforces the daily natural cap, the per-type sub-cap and
 // the (user_id, key) uniqueness. It returns the event and whether it was newly

@@ -21,14 +21,6 @@ const (
 	markReadMaxIDs = 100
 )
 
-// activityLevels are the only values the settings endpoint accepts; they mirror
-// the quiet | normal | lively choice in the companion design document.
-var activityLevels = map[string]struct{}{
-	"quiet":  {},
-	"normal": {},
-	"lively": {},
-}
-
 // RegisterRoutes mounts the authenticated companion endpoints. The group must
 // already run middleware.Authenticate so a valid bearer token populates the
 // claims that middleware.RequireAuth checks.
@@ -133,53 +125,18 @@ func (h *handler) markRead(c *gin.Context) {
 	httpx.OK(c, nil)
 }
 
-// settingsRequest uses pointers so an omitted field keeps its stored value
-// instead of resetting to the zero value.
-type settingsRequest struct {
-	ActivityLevel *string `json:"activityLevel"`
-	DockEnabled   *bool   `json:"dockEnabled"`
-	PublicProfile *bool   `json:"publicProfile"`
-	EquippedSkin  *string `json:"equippedSkin"`
-}
-
+// updateSettings applies a partial update. The service validates the activity
+// enum and skin length; the repository writes only the provided fields.
 func (h *handler) updateSettings(c *gin.Context) {
 	userID, ok := currentUserID(c)
 	if !ok {
 		return
 	}
-	req, ok := httpx.BindJSON[settingsRequest](c)
+	patch, ok := httpx.BindJSON[companion.SettingsPatch](c)
 	if !ok {
 		return
 	}
-	ctx := c.Request.Context()
-	current, err := h.svc.State(ctx, userID)
-	if err != nil {
-		httpx.Fail(c, err)
-		return
-	}
-	in := companion.SettingsInput{
-		ActivityLevel: current.ActivityLevel,
-		DockEnabled:   current.DockEnabled,
-		PublicProfile: current.PublicProfile,
-		EquippedSkin:  current.EquippedSkin,
-	}
-	if req.ActivityLevel != nil {
-		if _, valid := activityLevels[*req.ActivityLevel]; !valid {
-			httpx.Fail(c, httpx.ErrValidation("活动频率无效"))
-			return
-		}
-		in.ActivityLevel = *req.ActivityLevel
-	}
-	if req.DockEnabled != nil {
-		in.DockEnabled = *req.DockEnabled
-	}
-	if req.PublicProfile != nil {
-		in.PublicProfile = *req.PublicProfile
-	}
-	if req.EquippedSkin != nil {
-		in.EquippedSkin = *req.EquippedSkin
-	}
-	view, err := h.svc.UpdateSettings(ctx, userID, in)
+	view, err := h.svc.UpdateSettingsPatch(c.Request.Context(), userID, patch)
 	if err != nil {
 		httpx.Fail(c, err)
 		return

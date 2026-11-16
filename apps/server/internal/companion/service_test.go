@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,6 +15,7 @@ import (
 
 	"github.com/kaptree/kapoj/apps/server/internal/companion"
 	"github.com/kaptree/kapoj/apps/server/internal/gamequeue"
+	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
 )
 
@@ -373,4 +376,69 @@ func TestServiceHandleGameEvent(t *testing.T) {
 		Type: gamequeue.EventSubmissionAccepted, UserID: uid, SubmissionID: subID,
 	})
 	require.Error(t, err)
+}
+
+func assertSettingsValidation(t *testing.T, err error) {
+	t.Helper()
+	var appErr *httpx.AppError
+	require.ErrorAs(t, err, &appErr)
+	assert.Equal(t, http.StatusBadRequest, appErr.Status)
+	assert.Equal(t, 40001, appErr.Code)
+}
+
+// Both the full and patch update paths share the activity-enum and skin-length
+// validation, and rejected input never reaches the database.
+func TestServiceUpdateSettingsValidation(t *testing.T) {
+	g := testutil.PG(t)
+	svc := newService(t, g)
+	ctx := context.Background()
+	uid := newUser(t, g, "svc_settings_validation")
+
+	_, err := svc.UpdateSettings(ctx, uid, companion.SettingsInput{
+		ActivityLevel: "chaotic",
+		DockEnabled:   true,
+		EquippedSkin:  "culture-festival",
+	})
+	assertSettingsValidation(t, err)
+
+	_, err = svc.UpdateSettings(ctx, uid, companion.SettingsInput{
+		ActivityLevel: "normal",
+		DockEnabled:   true,
+		EquippedSkin:  strings.Repeat("皮", 41),
+	})
+	assertSettingsValidation(t, err)
+
+	// varchar(40) counts characters, not bytes, so exactly 40 CJK runes fit.
+	skin := strings.Repeat("皮", 40)
+	view, err := svc.UpdateSettings(ctx, uid, companion.SettingsInput{
+		ActivityLevel: "normal",
+		DockEnabled:   true,
+		PublicProfile: false,
+		EquippedSkin:  skin,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "normal", view.ActivityLevel)
+	assert.Equal(t, skin, view.EquippedSkin)
+
+	badLevel := "chaotic"
+	_, err = svc.UpdateSettingsPatch(ctx, uid, companion.SettingsPatch{ActivityLevel: &badLevel})
+	assertSettingsValidation(t, err)
+
+	tooLong := strings.Repeat("x", 41)
+	_, err = svc.UpdateSettingsPatch(ctx, uid, companion.SettingsPatch{EquippedSkin: &tooLong})
+	assertSettingsValidation(t, err)
+
+	// Rejected patches leave the stored settings untouched.
+	view, err = svc.State(ctx, uid)
+	require.NoError(t, err)
+	assert.Equal(t, "normal", view.ActivityLevel)
+	assert.Equal(t, skin, view.EquippedSkin)
+
+	// A valid single-field patch preserves the other stored fields.
+	dock := false
+	view, err = svc.UpdateSettingsPatch(ctx, uid, companion.SettingsPatch{DockEnabled: &dock})
+	require.NoError(t, err)
+	assert.False(t, view.DockEnabled)
+	assert.Equal(t, "normal", view.ActivityLevel)
+	assert.Equal(t, skin, view.EquippedSkin)
 }

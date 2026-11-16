@@ -11,6 +11,17 @@ type SettingsInput struct {
 	EquippedSkin  string
 }
 
+// SettingsPatch is a partial settings update. Only non-nil fields are written,
+// so concurrent requests touching different fields cannot clobber each other.
+// The service validates the activity enum and the skin length before the
+// repository applies the patch under a state-row lock.
+type SettingsPatch struct {
+	ActivityLevel *string `json:"activityLevel"`
+	DockEnabled   *bool   `json:"dockEnabled"`
+	PublicProfile *bool   `json:"publicProfile"`
+	EquippedSkin  *string `json:"equippedSkin"`
+}
+
 // EventInput describes one bond event to apply. EventDate is a YYYY-MM-DD
 // local date supplied by the caller; the repository never derives it from the
 // clock. SubCap, when > 0, limits how many events of the same Type may award
