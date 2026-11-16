@@ -32,6 +32,8 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 	"github.com/kaptree/kapoj/apps/server/internal/router"
 	"github.com/kaptree/kapoj/apps/server/internal/secret"
+	"github.com/kaptree/kapoj/apps/server/internal/similarity"
+	"github.com/kaptree/kapoj/apps/server/internal/similarityqueue"
 	"github.com/kaptree/kapoj/apps/server/internal/storageaudit"
 	"github.com/kaptree/kapoj/apps/server/internal/testcasegen"
 )
@@ -166,6 +168,15 @@ func run() error {
 		aiSvc,
 		queue,
 	)
+	similarityQueue := similarityqueue.NewClient(cfg.RedisAddr)
+	defer func() { _ = similarityQueue.Close() }()
+	similarityRepo := similarity.NewGormRepository(g)
+	similaritySvc := similarity.NewService(
+		similarityRepo,
+		contest.NewGormRepository(g),
+		similarity.NewWinnowingEngine(),
+		similarityQueue,
+	)
 
 	// 启动时核对密钥文件与数据库指纹，恢复“写文件成功但重加密事务未提交”
 	// 这一崩溃窗口；不一致且无法恢复时拒绝启动。
@@ -209,6 +220,26 @@ func run() error {
 	}
 	defer backupServer.Shutdown()
 	slog.Info("kapoj backup worker started", "queue", backup.QueueName)
+
+	if err := similarityRepo.MarkStaleRunsFailed(
+		context.Background(), time.Now().Add(-15*time.Minute)); err != nil {
+		slog.Warn("similarity: mark stale runs failed", "err", err)
+	}
+	similarityServer := asynq.NewServer(
+		asynq.RedisClientOpt{Addr: cfg.RedisAddr},
+		asynq.Config{
+			Concurrency:     1,
+			Queues:          map[string]int{similarityqueue.QueueName: 1},
+			ShutdownTimeout: 10 * time.Second,
+		},
+	)
+	similarityMux := asynq.NewServeMux()
+	similarityqueue.Register(similarityMux, similaritySvc)
+	if err := similarityServer.Start(similarityMux); err != nil {
+		return err
+	}
+	defer similarityServer.Shutdown()
+	slog.Info("kapoj similarity worker started", "queue", similarityqueue.QueueName)
 
 	gin.SetMode(gin.ReleaseMode)
 	baseCtx, cancelBase := context.WithCancel(context.Background())
