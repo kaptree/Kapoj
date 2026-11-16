@@ -250,7 +250,7 @@ func run() error {
 			DB: g, Redis: rdb, Storage: store, Config: cfg, Enqueuer: queue, Game: gameSvc,
 			Rating: ratingSvc, Activity: activitySvc, Learning: learningSvc, RBAC: rbacSvc,
 			AI: aiSvc, AISettings: aiSettings, TestcaseGen: testcaseGenSvc, Certificate: certSvc,
-			Mail: mailSvc, Backup: backupSvc,
+			Mail: mailSvc, Backup: backupSvc, Similarity: similaritySvc,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
