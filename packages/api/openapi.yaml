@@ -3205,6 +3205,91 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/EmptyResponse' }
         '401': { $ref: '#/components/responses/Error' }
+  /companion:
+    get:
+      summary: 我的伙伴状态（登录）
+      description: |
+        返回羁绊值、等级与下一等级阈值、今日增益与每日上限、设置项、已解锁皮肤、
+        未读事件数以及今日事件明细。用户首次访问时惰性创建伙伴状态行。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 伙伴状态
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CompanionStateResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+  /companion/events:
+    get:
+      summary: 未读伙伴事件（登录）
+      description: |
+        按 id 升序返回未读事件。limit 会被夹到 1–20，缺省或非法值按 20 处理；
+        没有未读事件时 items 为空数组。
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 20, default: 20 } }
+      responses:
+        '200':
+          description: 未读事件列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CompanionEventsResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+  /companion/events/read:
+    post:
+      summary: 标记伙伴事件已读（登录）
+      description: |
+        一次最多 100 个 id，超过返回 40001。不属于当前用户或已读的事件被忽略，
+        重复标记幂等。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompanionMarkReadRequest' }
+      responses:
+        '200':
+          description: 已标记
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+  /companion/settings:
+    post:
+      summary: 更新伙伴设置（登录）
+      description: |
+        部分更新，只写入请求中出现的字段，未出现的字段保持原值。
+        activityLevel 仅接受 quiet/normal/lively；equippedSkin 最多 40 个字符。
+        返回更新后的完整伙伴状态。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompanionSettingsInput' }
+      responses:
+        '200':
+          description: 更新后的伙伴状态
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CompanionStateResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+  /companion/pet:
+    post:
+      summary: 抚摸伙伴（登录）
+      description: |
+        每个本地日期首次调用奖励 1 点羁绊并返回 awarded=true；当日重复调用幂等，
+        返回 awarded=false。响应始终携带最新羁绊值与等级。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 抚摸结果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CompanionPetResponse' }
+        '401': { $ref: '#/components/responses/Error' }
   /certificate-types:
     get:
       summary: 启用的证书类型列表（公开）
@@ -3778,6 +3863,39 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SiteAdminResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /admin/site/companion:
+    get:
+      summary: 读取站点伙伴默认设置（site.settings.manage）
+      description: 返回站点级伙伴开关、名称、默认活跃度、比赛静音与允许用户关闭开关。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 站点伙伴设置
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteCompanionResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+    put:
+      summary: 保存站点伙伴默认设置（site.settings.manage，写审计）
+      description: |
+        名称去除首尾空白后必填且不超过 20 个字符；defaultActivityLevel 仅接受
+        quiet/normal/lively。保存后返回最新的站点伙伴设置。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SiteCompanionSettings' }
+      responses:
+        '200':
+          description: 更新后的站点伙伴设置
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteCompanionResponse' }
+        '400': { $ref: '#/components/responses/Error' }
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
   /admin/mail:
@@ -6794,6 +6912,91 @@ components:
           required: [data]
           properties:
             data: { $ref: '#/components/schemas/PublicCertificateView' }
+    CompanionEvent:
+      type: object
+      description: 一条伙伴事件读取模型。
+      required: [id, type, bond, payload, createdAt]
+      properties:
+        id: { type: integer, format: int64 }
+        type: { type: string, description: '事件类型，例如 signin、ac:daily、ac:first、task、achievement、contest、streak、pet' }
+        bond: { type: integer, description: 该事件实际获得的羁绊；受每日上限与子上限裁剪后可能为 0 }
+        payload: { type: object, additionalProperties: true, description: 事件附加数据，默认空对象 }
+        readAt: { type: string, format: date-time, nullable: true, description: 未读时省略 }
+        createdAt: { type: string, format: date-time }
+    CompanionState:
+      type: object
+      description: 伙伴状态读取模型；等级、称号与下一等级阈值由羁绊值推导。
+      required: [bond, level, levelName, nextThreshold, dailyGain, dailyCap, activityLevel, dockEnabled, publicProfile, equippedSkin, unlockedSkins, unreadCount, todayEvents]
+      properties:
+        bond: { type: integer, description: 累计羁绊值 }
+        level: { type: integer, minimum: 0, maximum: 6 }
+        levelName: { type: string, description: 等级称号，例如 陌生、搭档、只对你 }
+        nextThreshold: { type: integer, description: 下一等级所需羁绊；已满级时等于当前等级阈值 }
+        dailyGain: { type: integer, description: 今日已获得的自然羁绊 }
+        dailyCap: { type: integer, description: 每日自然羁绊上限（连续登录里程碑可突破） }
+        activityLevel: { type: string, enum: [quiet, normal, lively], description: 用户活跃度偏好，影响表现频率而非奖励 }
+        dockEnabled: { type: boolean }
+        publicProfile: { type: boolean, description: 是否在公开资料展示伙伴 }
+        equippedSkin: { type: string }
+        unlockedSkins:
+          type: array
+          items: { type: string }
+        unreadCount: { type: integer, description: 未读事件数 }
+        todayEvents:
+          type: array
+          description: 今日事件明细，按 id 升序
+          items: { $ref: '#/components/schemas/CompanionEvent' }
+    CompanionSettingsInput:
+      type: object
+      description: 伙伴设置部分更新请求；只写入请求中出现的字段。
+      properties:
+        activityLevel: { type: string, enum: [quiet, normal, lively] }
+        dockEnabled: { type: boolean }
+        publicProfile: { type: boolean }
+        equippedSkin: { type: string, maxLength: 40, description: 皮肤标识，按字符数最多 40 个 }
+    CompanionMarkReadRequest:
+      type: object
+      description: 标记事件已读请求；最多 100 个 id，省略 ids 视为空列表。
+      properties:
+        ids:
+          type: array
+          maxItems: 100
+          items: { type: integer, format: int64 }
+    CompanionPetResult:
+      type: object
+      description: 抚摸伙伴的结果；当日重复调用 awarded=false。
+      required: [awarded, bond, level]
+      properties:
+        awarded: { type: boolean, description: 本次调用是否获得羁绊 }
+        bond: { type: integer }
+        level: { type: integer, minimum: 0, maximum: 6 }
+    CompanionStateResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/CompanionState' }
+    CompanionEventsResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items: { $ref: '#/components/schemas/CompanionEvent' }
+    CompanionPetResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/CompanionPetResult' }
     SiteLink:
       type: object
       description: 首页可编辑的卡片或 CTA；icon 为 PrimeIcons 类名，to 仅允许站内绝对路径。
@@ -6839,6 +7042,16 @@ components:
         copyright: { type: string, maxLength: 200 }
         text: { type: string, maxLength: 1000, description: 自定义说明，保留换行 }
         showVisits: { type: boolean, description: 仅控制页脚是否显示访问量，不停止计数 }
+    SiteCompanionSettings:
+      type: object
+      description: 站点级伙伴默认设置，存储在 site_settings.companion_json；用户级覆盖保存在 companion_states。
+      required: [enabled, name, defaultActivityLevel, contestMute, allowUserDisable]
+      properties:
+        enabled: { type: boolean, description: 站点级总开关；关闭后所有用户都不显示伙伴 }
+        name: { type: string, minLength: 1, maxLength: 20, description: 伙伴名称，保存时去除首尾空白 }
+        defaultActivityLevel: { type: string, enum: [quiet, normal, lively], description: 新用户的默认活跃度 }
+        contestMute: { type: boolean, description: 比赛期间是否静音伙伴提示 }
+        allowUserDisable: { type: boolean, description: 是否允许用户自行关闭伙伴 }
     SiteAppearance:
       type: object
       description: 公开身份元素的外观设置。
@@ -6866,13 +7079,14 @@ components:
     SitePublicView:
       type: object
       description: 公开站点配置。
-      required: [logoUrl, faviconUrl, home, footer, appearance, startedAt, runningDays, visitCount]
+      required: [logoUrl, faviconUrl, home, footer, appearance, companion, startedAt, runningDays, visitCount]
       properties:
         logoUrl: { type: string, description: 空表示未上传；非空时带 ?v=<unix> 版本参数 }
         faviconUrl: { type: string, description: 空表示未上传；非空时带 ?v=<unix> 版本参数 }
         home: { $ref: '#/components/schemas/SiteHomeContent' }
         footer: { $ref: '#/components/schemas/SiteFooterView' }
         appearance: { $ref: '#/components/schemas/SiteAppearance' }
+        companion: { $ref: '#/components/schemas/SiteCompanionSettings' }
         deployment: { $ref: '#/components/schemas/SitePublicDeployment' }
         startedAt: { type: string, format: date-time, description: 站点运行起始日（UTC） }
         runningDays: { type: integer, description: 'max(0, floor((now - startedAt)/24h))' }
@@ -7043,6 +7257,13 @@ components:
           required: [data]
           properties:
             data: { $ref: '#/components/schemas/SiteAdminView' }
+    SiteCompanionResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/SiteCompanionSettings' }
     SiteVisitResponse:
       allOf:
         - $ref: '#/components/schemas/Envelope'

@@ -50,6 +50,8 @@ var accountTables = []accountTable{
 	{name: "testcase_generation_cases", where: "generation_id IN (SELECT id FROM testcase_generations WHERE user_id = %d)"},
 	{name: "user_evaluations", where: "author_user_id = %d"},
 	{name: "user_follows", where: "follower_id = %d"},
+	{name: "companion_states", where: "user_id = %d"},
+	{name: "companion_events", where: "user_id = %d"},
 }
 
 func (s *Service) createAccountFile(ctx context.Context, filename string, kind Kind, userID *int64) (*Manifest, error) {
@@ -350,7 +352,7 @@ func (s *Service) restoreAccount(ctx context.Context, zipPath string, targetUser
 		"user_login_days", "user_badges", "user_titles", "user_roles",
 		"user_learning_progress", "learning_path_purchases", "learning_path_recommendations",
 		"user_ai_configs", "activity_logs", "shared_items", "rating_history",
-		"contest_participants",
+		"contest_participants", "companion_states", "companion_events",
 	} {
 		deleteStatements = append(deleteStatements,
 			fmt.Sprintf(`DELETE FROM %s WHERE user_id = %s`, pgx.Identifier{table}.Sanitize(), uid))

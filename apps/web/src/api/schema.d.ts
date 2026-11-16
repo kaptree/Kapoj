@@ -7519,6 +7519,224 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/companion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 我的伙伴状态（登录）
+         * @description 返回羁绊值、等级与下一等级阈值、今日增益与每日上限、设置项、已解锁皮肤、
+         *     未读事件数以及今日事件明细。用户首次访问时惰性创建伙伴状态行。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 伙伴状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CompanionStateResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/companion/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 未读伙伴事件（登录）
+         * @description 按 id 升序返回未读事件。limit 会被夹到 1–20，缺省或非法值按 20 处理；
+         *     没有未读事件时 items 为空数组。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 未读事件列表 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CompanionEventsResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/companion/events/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 标记伙伴事件已读（登录）
+         * @description 一次最多 100 个 id，超过返回 40001。不属于当前用户或已读的事件被忽略，
+         *     重复标记幂等。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CompanionMarkReadRequest"];
+                };
+            };
+            responses: {
+                /** @description 已标记 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/companion/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 更新伙伴设置（登录）
+         * @description 部分更新，只写入请求中出现的字段，未出现的字段保持原值。
+         *     activityLevel 仅接受 quiet/normal/lively；equippedSkin 最多 40 个字符。
+         *     返回更新后的完整伙伴状态。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CompanionSettingsInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的伙伴状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CompanionStateResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/companion/pet": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 抚摸伙伴（登录）
+         * @description 每个本地日期首次调用奖励 1 点羁绊并返回 awarded=true；当日重复调用幂等，
+         *     返回 awarded=false。响应始终携带最新羁绊值与等级。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 抚摸结果 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CompanionPetResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/certificate-types": {
         parameters: {
             query?: never;
@@ -8935,6 +9153,78 @@ export interface paths {
                 403: components["responses"]["Error"];
             };
         };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/site/companion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 读取站点伙伴默认设置（site.settings.manage）
+         * @description 返回站点级伙伴开关、名称、默认活跃度、比赛静音与允许用户关闭开关。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 站点伙伴设置 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SiteCompanionResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        /**
+         * 保存站点伙伴默认设置（site.settings.manage，写审计）
+         * @description 名称去除首尾空白后必填且不超过 20 个字符；defaultActivityLevel 仅接受
+         *     quiet/normal/lively。保存后返回最新的站点伙伴设置。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SiteCompanionSettings"];
+                };
+            };
+            responses: {
+                /** @description 更新后的站点伙伴设置 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SiteCompanionResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -11422,6 +11712,85 @@ export interface components {
         PublicCertificateResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["PublicCertificateView"];
         };
+        /** @description 一条伙伴事件读取模型。 */
+        CompanionEvent: {
+            /** Format: int64 */
+            id: number;
+            /** @description 事件类型，例如 signin、ac:daily、ac:first、task、achievement、contest、streak、pet */
+            type: string;
+            /** @description 该事件实际获得的羁绊；受每日上限与子上限裁剪后可能为 0 */
+            bond: number;
+            /** @description 事件附加数据，默认空对象 */
+            payload: {
+                [key: string]: unknown;
+            };
+            /**
+             * Format: date-time
+             * @description 未读时省略
+             */
+            readAt?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        /** @description 伙伴状态读取模型；等级、称号与下一等级阈值由羁绊值推导。 */
+        CompanionState: {
+            /** @description 累计羁绊值 */
+            bond: number;
+            level: number;
+            /** @description 等级称号，例如 陌生、搭档、只对你 */
+            levelName: string;
+            /** @description 下一等级所需羁绊；已满级时等于当前等级阈值 */
+            nextThreshold: number;
+            /** @description 今日已获得的自然羁绊 */
+            dailyGain: number;
+            /** @description 每日自然羁绊上限（连续登录里程碑可突破） */
+            dailyCap: number;
+            /**
+             * @description 用户活跃度偏好，影响表现频率而非奖励
+             * @enum {string}
+             */
+            activityLevel: "quiet" | "normal" | "lively";
+            dockEnabled: boolean;
+            /** @description 是否在公开资料展示伙伴 */
+            publicProfile: boolean;
+            equippedSkin: string;
+            unlockedSkins: string[];
+            /** @description 未读事件数 */
+            unreadCount: number;
+            /** @description 今日事件明细，按 id 升序 */
+            todayEvents: components["schemas"]["CompanionEvent"][];
+        };
+        /** @description 伙伴设置部分更新请求；只写入请求中出现的字段。 */
+        CompanionSettingsInput: {
+            /** @enum {string} */
+            activityLevel?: "quiet" | "normal" | "lively";
+            dockEnabled?: boolean;
+            publicProfile?: boolean;
+            /** @description 皮肤标识，按字符数最多 40 个 */
+            equippedSkin?: string;
+        };
+        /** @description 标记事件已读请求；最多 100 个 id，省略 ids 视为空列表。 */
+        CompanionMarkReadRequest: {
+            ids?: number[];
+        };
+        /** @description 抚摸伙伴的结果；当日重复调用 awarded=false。 */
+        CompanionPetResult: {
+            /** @description 本次调用是否获得羁绊 */
+            awarded: boolean;
+            bond: number;
+            level: number;
+        };
+        CompanionStateResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["CompanionState"];
+        };
+        CompanionEventsResponse: components["schemas"]["Envelope"] & {
+            data: {
+                items: components["schemas"]["CompanionEvent"][];
+            };
+        };
+        CompanionPetResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["CompanionPetResult"];
+        };
         /** @description 首页可编辑的卡片或 CTA；icon 为 PrimeIcons 类名，to 仅允许站内绝对路径。 */
         SiteLink: {
             icon: string;
@@ -11465,6 +11834,22 @@ export interface components {
             /** @description 仅控制页脚是否显示访问量，不停止计数 */
             showVisits: boolean;
         };
+        /** @description 站点级伙伴默认设置，存储在 site_settings.companion_json；用户级覆盖保存在 companion_states。 */
+        SiteCompanionSettings: {
+            /** @description 站点级总开关；关闭后所有用户都不显示伙伴 */
+            enabled: boolean;
+            /** @description 伙伴名称，保存时去除首尾空白 */
+            name: string;
+            /**
+             * @description 新用户的默认活跃度
+             * @enum {string}
+             */
+            defaultActivityLevel: "quiet" | "normal" | "lively";
+            /** @description 比赛期间是否静音伙伴提示 */
+            contestMute: boolean;
+            /** @description 是否允许用户自行关闭伙伴 */
+            allowUserDisable: boolean;
+        };
         /** @description 公开身份元素的外观设置。 */
         SiteAppearance: {
             /**
@@ -11503,6 +11888,7 @@ export interface components {
             home: components["schemas"]["SiteHomeContent"];
             footer: components["schemas"]["SiteFooterView"];
             appearance: components["schemas"]["SiteAppearance"];
+            companion: components["schemas"]["SiteCompanionSettings"];
             deployment?: components["schemas"]["SitePublicDeployment"];
             /**
              * Format: date-time
@@ -11657,6 +12043,9 @@ export interface components {
         };
         SiteAdminResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["SiteAdminView"];
+        };
+        SiteCompanionResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["SiteCompanionSettings"];
         };
         SiteVisitResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["SiteVisitResult"];
