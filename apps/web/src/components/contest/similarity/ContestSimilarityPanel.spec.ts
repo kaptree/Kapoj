@@ -456,6 +456,7 @@ describe('ContestSimilarityPanel', () => {
       page: 1,
       pageSize: 20,
     })
+    expect(wrapper.text()).toContain('相似度仅代表代码相似，疑似抄袭需人工复核。')
     const rows = wrapper.findAll('[data-test="similarity-match-row"]')
     expect(rows).toHaveLength(2)
     expect(rows[0]!.text()).toContain('A · A + B')

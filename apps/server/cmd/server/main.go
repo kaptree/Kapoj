@@ -63,6 +63,34 @@ func main() {
 	}
 }
 
+// runSimilaritySweeper periodically fails queued/running similarity runs that
+// have been stuck for longer than the cutoff, so a crashed worker cannot block
+// a problem's active-run slot forever. It runs until ctx is canceled.
+func runSimilaritySweeper(ctx context.Context, repo similarity.Repository) {
+	const (
+		interval = time.Minute
+		cutoff   = 15 * time.Minute
+	)
+	sweep := func() {
+		sweepCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		if err := repo.MarkStaleRunsFailed(sweepCtx, time.Now().Add(-cutoff)); err != nil && ctx.Err() == nil {
+			slog.Warn("similarity: mark stale runs failed", "err", err)
+		}
+	}
+	sweep()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			sweep()
+		}
+	}
+}
+
 func run() error {
 	cfg, err := config.Load()
 	if err != nil {
@@ -221,10 +249,6 @@ func run() error {
 	defer backupServer.Shutdown()
 	slog.Info("kapoj backup worker started", "queue", backup.QueueName)
 
-	if err := similarityRepo.MarkStaleRunsFailed(
-		context.Background(), time.Now().Add(-15*time.Minute)); err != nil {
-		slog.Warn("similarity: mark stale runs failed", "err", err)
-	}
 	similarityServer := asynq.NewServer(
 		asynq.RedisClientOpt{Addr: cfg.RedisAddr},
 		asynq.Config{
@@ -265,6 +289,7 @@ func run() error {
 	workCtx, cancelWork := context.WithCancel(ctx)
 	defer cancelWork()
 	go backupSvc.RunScheduler(workCtx, 30*time.Second)
+	go runSimilaritySweeper(workCtx, similarityRepo)
 
 	errCh := make(chan error, 1)
 	go func() {

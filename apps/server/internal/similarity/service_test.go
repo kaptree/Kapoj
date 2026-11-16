@@ -505,6 +505,108 @@ func TestOverviewShowsLatestRunAnyStatus(t *testing.T) {
 	assert.Equal(t, int64(1), page.Items[0].OriginalSubmissionID)
 }
 
+func TestStartRunsEnqueueFailureLeavesNoActiveRun(t *testing.T) {
+	e := newServiceEnv(t)
+	ctx := context.Background()
+
+	e.queue.err = errors.New("queue down")
+
+	_, err := e.svc.StartRuns(ctx, managerViewer, e.contestID, e.problemA)
+	require.Error(t, err)
+	assert.EqualError(t, err, "queue down")
+
+	active, err := e.repo.FindActiveRun(ctx, e.contestID, e.problemA)
+	require.NoError(t, err)
+	assert.Nil(t, active, "a run that failed to enqueue must not stay active")
+
+	var runs []similarity.Run
+	require.NoError(t, e.db.Where("contest_id = ? AND problem_id = ?", e.contestID, e.problemA).
+		Find(&runs).Error)
+	require.Len(t, runs, 1)
+	assert.Equal(t, similarity.RunStatusFailed, runs[0].Status)
+	assert.Contains(t, runs[0].ErrorMessage, "入队失败")
+	require.NotNil(t, runs[0].FinishedAt)
+}
+
+func TestStartRunsReusesNoStaleActiveRunAfterSweep(t *testing.T) {
+	e := newServiceEnv(t)
+	ctx := context.Background()
+
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	stale := e.createRun(t, &similarity.Run{
+		ContestID: e.contestID, ProblemID: e.problemA, Status: similarity.RunStatusQueued,
+		ThresholdPercent: 80, IgnoreCommonCode: true, Engine: "winnowing-v1", EngineVersion: "1",
+		CreatedAt: now.Add(-time.Hour),
+	})
+
+	require.NoError(t, e.repo.MarkStaleRunsFailed(ctx, now.Add(-15*time.Minute)))
+
+	views, err := e.svc.StartRuns(ctx, managerViewer, e.contestID, e.problemA)
+	require.NoError(t, err)
+	require.Len(t, views, 1)
+	assert.NotEqual(t, stale.ID, views[0].ID, "a swept stale run must not be reused")
+	assert.Equal(t, similarity.RunStatusQueued, views[0].Status)
+	assert.Equal(t, []int64{views[0].ID}, e.queue.enqueued)
+}
+
+func TestStartRunsRejectsMoreThanCapBeforeCreatingRun(t *testing.T) {
+	e := newServiceEnv(t)
+	ctx := context.Background()
+
+	require.NoError(t, e.db.Exec(`
+		INSERT INTO submissions (user_id, contest_id, problem_id, language, code, answer, status, created_at)
+		SELECT ?, ?, ?, 'cpp', 'int a;', '', 'accepted', ?::timestamptz + (g || ' seconds')::interval
+		FROM generate_series(1, ?) AS g`,
+		e.userA, e.contestID, e.problemA, e.start, similarity.MaxSubmissionsPerProblem+1).Error)
+
+	_, err := e.svc.StartRuns(ctx, managerViewer, e.contestID, e.problemA)
+	assert.EqualError(t, err, httpx.ErrValidation("单题提交数超过 1000，请缩小查重范围").Error())
+
+	var runCount int64
+	require.NoError(t, e.db.Model(&similarity.Run{}).
+		Where("contest_id = ? AND problem_id = ?", e.contestID, e.problemA).
+		Count(&runCount).Error)
+	assert.Zero(t, runCount, "the cap must be enforced before creating any run")
+	assert.Empty(t, e.queue.enqueued)
+}
+
+func TestProcessRunUsesRunSnapshotNotCurrentSettings(t *testing.T) {
+	e := newServiceEnv(t)
+	ctx := context.Background()
+
+	_, err := e.svc.SaveSettings(ctx, managerViewer, e.contestID, e.problemA,
+		similarity.SettingsInput{
+			ThresholdPercent: 70, IgnoreCommonCode: true,
+			BaseLanguage: "cpp", BaseCode: "int template_a;",
+		})
+	require.NoError(t, err)
+
+	views, err := e.svc.StartRuns(ctx, managerViewer, e.contestID, e.problemA)
+	require.NoError(t, err)
+	require.Len(t, views, 1)
+
+	// Settings change after the run was created but before it executes.
+	_, err = e.svc.SaveSettings(ctx, managerViewer, e.contestID, e.problemA,
+		similarity.SettingsInput{
+			ThresholdPercent: 95, IgnoreCommonCode: false,
+			BaseLanguage: "cpp", BaseCode: "int template_b;",
+		})
+	require.NoError(t, err)
+
+	require.NoError(t, e.svc.ProcessRun(ctx, views[0].ID))
+
+	require.Len(t, e.engine.reqs, 1)
+	req := e.engine.reqs[0]
+	assert.Equal(t, 70, int(req.ThresholdPercent))
+	assert.True(t, req.IgnoreCommonCode)
+	assert.Equal(t, submission.LanguageCPP, req.BaseLanguage)
+	assert.Equal(t, "int template_a;", req.BaseCode)
+
+	got, err := e.repo.FindRun(ctx, views[0].ID)
+	require.NoError(t, err)
+	assert.Equal(t, similarity.RunStatusCompleted, got.Status)
+}
+
 func TestOverviewIncludesSavedBaseCode(t *testing.T) {
 	e := newServiceEnv(t)
 	ctx := context.Background()

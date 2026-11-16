@@ -414,35 +414,81 @@ func TestMarkStaleRunsFailed(t *testing.T) {
 	freshStart := now.Add(-time.Minute)
 	cutoff := now.Add(-10 * time.Minute)
 
-	stale := e.createRun(t, &similarity.Run{
+	staleRunning := e.createRun(t, &similarity.Run{
 		ContestID: e.contestID, ProblemID: e.problemA, Status: similarity.RunStatusRunning,
 		ThresholdPercent: 80, IgnoreCommonCode: true, Engine: "winnowing", EngineVersion: "1",
 		StartedAt: &staleStart,
 	})
-	fresh := e.createRun(t, &similarity.Run{
+	freshRunning := e.createRun(t, &similarity.Run{
 		ContestID: e.contestID, ProblemID: e.problemA, Status: similarity.RunStatusRunning,
 		ThresholdPercent: 80, IgnoreCommonCode: true, Engine: "winnowing", EngineVersion: "1",
 		StartedAt: &freshStart,
 	})
-	queued := e.createRun(t, &similarity.Run{
+	staleQueued := e.createRun(t, &similarity.Run{
 		ContestID: e.contestID, ProblemID: e.problemA, Status: similarity.RunStatusQueued,
 		ThresholdPercent: 80, IgnoreCommonCode: true, Engine: "winnowing", EngineVersion: "1",
+		CreatedAt: now.Add(-time.Hour),
+	})
+	freshQueued := e.createRun(t, &similarity.Run{
+		ContestID: e.contestID, ProblemID: e.problemA, Status: similarity.RunStatusQueued,
+		ThresholdPercent: 80, IgnoreCommonCode: true, Engine: "winnowing", EngineVersion: "1",
+		CreatedAt: now.Add(-time.Minute),
 	})
 
 	require.NoError(t, e.repo.MarkStaleRunsFailed(ctx, cutoff))
 
-	gotStale, err := e.repo.FindRun(ctx, stale.ID)
+	gotStaleRunning, err := e.repo.FindRun(ctx, staleRunning.ID)
 	require.NoError(t, err)
-	assert.Equal(t, similarity.RunStatusFailed, gotStale.Status)
-	assert.Equal(t, "任务超时", gotStale.ErrorMessage)
+	assert.Equal(t, similarity.RunStatusFailed, gotStaleRunning.Status)
+	assert.Equal(t, "任务超时", gotStaleRunning.ErrorMessage)
+	require.NotNil(t, gotStaleRunning.FinishedAt)
 
-	gotFresh, err := e.repo.FindRun(ctx, fresh.ID)
+	gotStaleQueued, err := e.repo.FindRun(ctx, staleQueued.ID)
 	require.NoError(t, err)
-	assert.Equal(t, similarity.RunStatusRunning, gotFresh.Status)
+	assert.Equal(t, similarity.RunStatusFailed, gotStaleQueued.Status)
+	assert.Equal(t, "任务超时", gotStaleQueued.ErrorMessage)
+	require.NotNil(t, gotStaleQueued.FinishedAt)
 
-	gotQueued, err := e.repo.FindRun(ctx, queued.ID)
+	gotFreshRunning, err := e.repo.FindRun(ctx, freshRunning.ID)
 	require.NoError(t, err)
-	assert.Equal(t, similarity.RunStatusQueued, gotQueued.Status)
+	assert.Equal(t, similarity.RunStatusRunning, gotFreshRunning.Status)
+
+	gotFreshQueued, err := e.repo.FindRun(ctx, freshQueued.ID)
+	require.NoError(t, err)
+	assert.Equal(t, similarity.RunStatusQueued, gotFreshQueued.Status)
+}
+
+func TestReplaceMatchesHandlesThousandsOfRows(t *testing.T) {
+	e := newSimEnv(t)
+	ctx := context.Background()
+
+	run := e.createRun(t, &similarity.Run{
+		ContestID: e.contestID, ProblemID: e.problemA, Status: similarity.RunStatusCompleted,
+		ThresholdPercent: 80, IgnoreCommonCode: true, Engine: "winnowing", EngineVersion: "1",
+	})
+
+	const total = 4500
+	matches := make([]similarity.Match, 0, total)
+	for i := 0; i < total; i++ {
+		matches = append(matches, similarity.Match{
+			ContestID: e.contestID, ProblemID: e.problemA,
+			OriginalSubmissionID: int64(i + 1), SuspectSubmissionID: int64(i + 100000),
+			OriginalUserID: e.participantA, SuspectUserID: e.participantB,
+			Language: submission.LanguageCPP, SimilarityPercent: 90, DicePercent: 80,
+			SharedFingerprints: 10, OriginalFingerprints: 20, SuspectFingerprints: 20,
+			OriginalCreatedAt: e.start, SuspectCreatedAt: e.start.Add(time.Minute),
+		})
+	}
+
+	require.NoError(t, e.repo.ReplaceMatches(ctx, run.ID, matches))
+
+	var count int64
+	require.NoError(t, e.db.Model(&similarity.Match{}).Where("run_id = ?", run.ID).Count(&count).Error)
+	assert.Equal(t, int64(total), count)
+
+	_, listed, err := e.repo.ListMatches(ctx, similarity.MatchFilter{ContestID: e.contestID, RunID: run.ID})
+	require.NoError(t, err)
+	assert.Equal(t, int64(total), listed)
 }
 
 func TestCreateRunPersistsIgnoreCommonCodeFalse(t *testing.T) {

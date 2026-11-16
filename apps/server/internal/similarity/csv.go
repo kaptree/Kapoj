@@ -19,8 +19,10 @@ var csvHeader = []string{
 	"比赛ID", "比赛标题", "题目ID", "题号", "题目标题",
 	"原提交ID", "原提交用户ID", "原提交用户名", "原提交昵称", "原提交时间", "原提交语言",
 	"疑似提交ID", "疑似用户ID", "疑似用户名", "疑似昵称", "疑似提交时间", "疑似语言",
-	"最高重复率", "Dice相似度", "阈值", "计算完成时间",
+	"最高重复率", "Dice相似度", "阈值", "计算完成时间", "说明",
 }
+
+const csvReviewNotice = "疑似抄袭，需人工复核"
 
 // buildMatchesCSV renders match rows as a BOM-prefixed UTF-8 CSV document.
 func buildMatchesCSV(c *contest.Contest, problems map[int64]contest.ProblemRow, rows []MatchRow) ([]byte, error) {
@@ -55,6 +57,7 @@ func buildMatchesCSV(c *contest.Contest, problems map[int64]contest.ProblemRow, 
 			strconv.FormatFloat(row.DicePercent, 'f', 1, 64),
 			strconv.Itoa(row.ThresholdPercent),
 			formatCSVTime(row.FinishedAt),
+			csvReviewNotice,
 		}
 		for i := range record {
 			record[i] = sanitizeCSVCell(record[i])

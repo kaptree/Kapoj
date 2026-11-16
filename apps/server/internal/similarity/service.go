@@ -23,6 +23,15 @@ const (
 	maxBaseCodeBytes = 64 * 1024
 	// maxErrorMessageRunes caps the persisted engine error message.
 	maxErrorMessageRunes = 500
+	// enqueueTimeout bounds the detached enqueue call. The work must survive an
+	// HTTP client disconnect but should not hang the request forever.
+	enqueueTimeout = 5 * time.Second
+	// enqueueFailureMessage is the user-facing message persisted when a created
+	// run cannot be scheduled.
+	enqueueFailureMessage = "查重任务入队失败，请稍后重试"
+	// tooManySubmissionsMessage is returned before creating any run when a
+	// problem exceeds the engine's candidate cap.
+	tooManySubmissionsMessage = "单题提交数超过 1000，请缩小查重范围"
 )
 
 // ContestLookup reads contests and their problems for authorization checks.
@@ -246,26 +255,52 @@ func (s *Service) StartRuns(ctx context.Context, v Viewer, contestID, problemID 
 		target = problems
 	}
 
-	views := make([]RunView, 0, len(target))
+	type plan struct {
+		problem contest.ProblemRow
+		active  *Run
+	}
+	plans := make([]plan, 0, len(target))
 	for _, p := range target {
 		active, err := s.repo.FindActiveRun(ctx, contestID, p.ProblemID)
 		if err != nil {
 			return nil, err
 		}
-		if active != nil {
-			views = append(views, toRunView(*active))
+		plans = append(plans, plan{problem: p, active: active})
+	}
+
+	// Validate the cap for every problem that would start a new run before any
+	// run row is created, so a rejected "计算全部" leaves no partial work.
+	for _, p := range plans {
+		if p.active != nil {
 			continue
 		}
-		st, err := s.settingsOrDefault(ctx, contestID, p.ProblemID)
+		count, err := s.repo.CountProblemSubmissions(ctx, contestID, p.problem.ProblemID)
+		if err != nil {
+			return nil, err
+		}
+		if count > MaxSubmissionsPerProblem {
+			return nil, httpx.ErrValidation(tooManySubmissionsMessage)
+		}
+	}
+
+	views := make([]RunView, 0, len(plans))
+	for _, p := range plans {
+		if p.active != nil {
+			views = append(views, toRunView(*p.active))
+			continue
+		}
+		st, err := s.settingsOrDefault(ctx, contestID, p.problem.ProblemID)
 		if err != nil {
 			return nil, err
 		}
 		run := &Run{
 			ContestID:        contestID,
-			ProblemID:        p.ProblemID,
+			ProblemID:        p.problem.ProblemID,
 			Status:           RunStatusQueued,
 			ThresholdPercent: st.ThresholdPercent,
 			IgnoreCommonCode: st.IgnoreCommonCode,
+			BaseLanguage:     st.BaseLanguage,
+			BaseCode:         st.BaseCode,
 			Engine:           engineName,
 			EngineVersion:    engineVersion,
 			RequestedBy:      v.UserID,
@@ -273,8 +308,18 @@ func (s *Service) StartRuns(ctx context.Context, v Viewer, contestID, problemID 
 		if err := s.repo.CreateRun(ctx, run); err != nil {
 			return nil, err
 		}
-		if err := s.queue.Enqueue(ctx, run.ID); err != nil {
-			return nil, err
+		enqueueCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), enqueueTimeout)
+		enqueueErr := s.queue.Enqueue(enqueueCtx, run.ID)
+		cancel()
+		if enqueueErr != nil {
+			// Persist the failure even if the HTTP request was canceled.
+			markCtx, cancelMark := context.WithTimeout(context.WithoutCancel(ctx), enqueueTimeout)
+			markErr := s.failRunWithMessage(markCtx, run, enqueueFailureMessage)
+			cancelMark()
+			if markErr != nil {
+				return nil, markErr
+			}
+			return nil, enqueueErr
 		}
 		views = append(views, toRunView(*run))
 	}
@@ -416,10 +461,9 @@ func (s *Service) ProcessRun(ctx context.Context, runID int64) error {
 		return err
 	}
 
-	settings, err := s.settingsOrDefault(ctx, run.ContestID, run.ProblemID)
-	if err != nil {
-		return s.failRun(ctx, run, err)
-	}
+	// Use the settings snapshot stored on the run, not the current per-problem
+	// settings, so a settings change while the task is queued cannot alter the
+	// result it promises.
 	rows, err := s.repo.ListProblemSubmissions(ctx, run.ContestID, run.ProblemID)
 	if err != nil {
 		return s.failRun(ctx, run, err)
@@ -439,10 +483,10 @@ func (s *Service) ProcessRun(ctx context.Context, runID int64) error {
 
 	result, err := s.engine.Compare(ctx, EngineRequest{
 		Candidates:       candidates,
-		ThresholdPercent: float64(settings.ThresholdPercent),
-		BaseCode:         settings.BaseCode,
-		BaseLanguage:     submission.Language(settings.BaseLanguage),
-		IgnoreCommonCode: settings.IgnoreCommonCode,
+		ThresholdPercent: float64(run.ThresholdPercent),
+		BaseCode:         run.BaseCode,
+		BaseLanguage:     submission.Language(run.BaseLanguage),
+		IgnoreCommonCode: run.IgnoreCommonCode,
 	})
 	if err != nil {
 		return s.failRun(ctx, run, err)
@@ -491,6 +535,15 @@ func (s *Service) failRun(ctx context.Context, run *Run, err error) error {
 		return updateErr
 	}
 	return err
+}
+
+// failRunWithMessage marks a run failed with the given user-facing message.
+func (s *Service) failRunWithMessage(ctx context.Context, run *Run, message string) error {
+	finished := time.Now().UTC()
+	run.Status = RunStatusFailed
+	run.ErrorMessage = message
+	run.FinishedAt = &finished
+	return s.repo.UpdateRun(ctx, run)
 }
 
 func truncateMessage(msg string) string {

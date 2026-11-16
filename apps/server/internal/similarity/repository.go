@@ -78,6 +78,7 @@ type Repository interface {
 	ListMatches(ctx context.Context, f MatchFilter) ([]MatchRow, int64, error)
 	FindMatch(ctx context.Context, id int64) (*MatchDetailRow, error)
 	ListProblemSubmissions(ctx context.Context, contestID, problemID int64) ([]SubmissionRow, error)
+	CountProblemSubmissions(ctx context.Context, contestID, problemID int64) (int64, error)
 	MarkStaleRunsFailed(ctx context.Context, before time.Time) error
 }
 
@@ -218,7 +219,9 @@ func (r *gormRepository) ReplaceMatches(ctx context.Context, runID int64, matche
 		for i := range matches {
 			matches[i].RunID = runID
 		}
-		return tx.Create(&matches).Error
+		// A single INSERT with thousands of rows exceeds PostgreSQL's bind
+		// parameter limit, so insert in bounded batches.
+		return tx.CreateInBatches(&matches, 500).Error
 	})
 }
 
@@ -326,31 +329,53 @@ func (r *gormRepository) FindMatch(ctx context.Context, id int64) (*MatchDetailR
 	return &row, nil
 }
 
-// ListProblemSubmissions returns participant code submissions for one problem
-// inside the contest time window, excluding objective answer submissions.
-func (r *gormRepository) ListProblemSubmissions(ctx context.Context, contestID, problemID int64) ([]SubmissionRow, error) {
-	rows := make([]SubmissionRow, 0)
-	err := r.db.WithContext(ctx).
+// problemSubmissionsQuery is the participant/window/objective filter shared by
+// the submission list and its count.
+func (r *gormRepository) problemSubmissionsQuery(ctx context.Context, contestID, problemID int64) *gorm.DB {
+	return r.db.WithContext(ctx).
 		Table("submissions AS s").
-		Select("s.id, s.user_id, s.language, s.code, s.created_at, u.username, u.nickname").
 		Joins("JOIN users AS u ON u.id = s.user_id").
 		Joins("JOIN contest_participants AS cp ON cp.contest_id = s.contest_id AND cp.user_id = s.user_id").
 		Joins("JOIN contests AS c ON c.id = s.contest_id").
 		Where("s.contest_id = ? AND s.problem_id = ?", contestID, problemID).
 		Where("s.language <> ?", submission.LanguageAnswer).
-		Where("s.created_at >= c.start_time AND s.created_at < c.end_time").
+		Where("s.created_at >= c.start_time AND s.created_at < c.end_time")
+}
+
+// ListProblemSubmissions returns participant code submissions for one problem
+// inside the contest time window, excluding objective answer submissions.
+func (r *gormRepository) ListProblemSubmissions(ctx context.Context, contestID, problemID int64) ([]SubmissionRow, error) {
+	rows := make([]SubmissionRow, 0)
+	err := r.problemSubmissionsQuery(ctx, contestID, problemID).
+		Select("s.id, s.user_id, s.language, s.code, s.created_at, u.username, u.nickname").
 		Order("s.created_at, s.id").
 		Scan(&rows).Error
 	return rows, err
 }
 
-// MarkStaleRunsFailed fails running runs whose started_at precedes before.
+// CountProblemSubmissions counts the submissions ListProblemSubmissions would
+// return, without loading their code.
+func (r *gormRepository) CountProblemSubmissions(ctx context.Context, contestID, problemID int64) (int64, error) {
+	var total int64
+	err := r.problemSubmissionsQuery(ctx, contestID, problemID).
+		Select("s.id").
+		Count(&total).Error
+	return total, err
+}
+
+// MarkStaleRunsFailed fails queued and running runs older than before. Running
+// runs use their start time (falling back to creation time); queued runs have
+// not started yet, so they use creation time.
 func (r *gormRepository) MarkStaleRunsFailed(ctx context.Context, before time.Time) error {
 	return r.db.WithContext(ctx).Model(&Run{}).
-		Where("status = ? AND started_at < ?", RunStatusRunning, before).
+		Where(
+			"(status = ? AND COALESCE(started_at, created_at) < ?) OR (status = ? AND created_at < ?)",
+			RunStatusRunning, before, RunStatusQueued, before,
+		).
 		Updates(map[string]any{
 			"status":        RunStatusFailed,
 			"error_message": "任务超时",
+			"finished_at":   time.Now().UTC(),
 		}).Error
 }
 

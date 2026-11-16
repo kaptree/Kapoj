@@ -497,6 +497,10 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
+        <p data-test="similarity-results-notice" class="similarity-results-notice">
+          相似度仅代表代码相似，疑似抄袭需人工复核。
+        </p>
+
         <Message
           v-if="matchesError && matches.length"
           severity="error"
@@ -707,6 +711,12 @@ onBeforeUnmount(() => {
 
 .similarity-filter {
   min-width: 180px;
+}
+
+.similarity-results-notice {
+  margin: 0 0 var(--kapoj-space-3);
+  color: var(--kapoj-text-muted);
+  font-size: 0.8125rem;
 }
 
 .similarity-results-table {

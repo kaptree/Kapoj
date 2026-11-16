@@ -42,6 +42,8 @@ type Run struct {
 	Status           string     `gorm:"size:20;not null;index"`
 	ThresholdPercent int        `gorm:"not null"`
 	IgnoreCommonCode bool       `gorm:"not null;default:true"`
+	BaseLanguage     string     `gorm:"size:20;not null;default:''"`
+	BaseCode         string     `gorm:"type:text;not null;default:''"`
 	Engine           string     `gorm:"size:30;not null"`
 	EngineVersion    string     `gorm:"size:20;not null"`
 	RequestedBy      int64      `gorm:"not null;default:0"`

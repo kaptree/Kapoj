@@ -82,6 +82,7 @@ describe('ContestSimilarityDetailDialog', () => {
     expect(text).toContain('C++')
     expect(text).toContain('95%')
     expect(text).toContain('88%')
+    expect(text).toContain('阈值 70%')
     expect(text).toContain('通过')
     expect(text).toContain('答案错误')
     expect(text).toContain('相似度仅代表代码相似，需人工复核。')

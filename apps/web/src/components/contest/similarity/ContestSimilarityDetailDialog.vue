@@ -68,6 +68,11 @@ function displayName(nickname: string, username: string): string {
               :severity="similaritySeverity(detail.dicePercent)"
               data-test="similarity-detail-dice"
             />
+            <Tag
+              :value="`阈值 ${detail.thresholdPercent}%`"
+              severity="secondary"
+              data-test="similarity-detail-threshold"
+            />
           </div>
           <p class="similarity-detail__notice">相似度仅代表代码相似，需人工复核。</p>
         </div>

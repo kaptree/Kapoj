@@ -18,8 +18,10 @@ var csvTestHeader = []string{
 	"比赛ID", "比赛标题", "题目ID", "题号", "题目标题",
 	"原提交ID", "原提交用户ID", "原提交用户名", "原提交昵称", "原提交时间", "原提交语言",
 	"疑似提交ID", "疑似用户ID", "疑似用户名", "疑似昵称", "疑似提交时间", "疑似语言",
-	"最高重复率", "Dice相似度", "阈值", "计算完成时间",
+	"最高重复率", "Dice相似度", "阈值", "计算完成时间", "说明",
 }
+
+const csvTestReviewNotice = "疑似抄袭，需人工复核"
 
 // seedCSVCompletedRun creates a completed run with one match and returns it.
 func seedCSVCompletedRun(t *testing.T, e *svcEnv, problemID int64, threshold int, similarityPercent, dicePercent float64, originalSubmissionID, suspectSubmissionID int64) *similarity.Run {
@@ -59,6 +61,7 @@ func TestExportCSVUsesBOMAndHeaders(t *testing.T) {
 	require.NotEmpty(t, records)
 	assert.Equal(t, csvTestHeader, records[0])
 	assert.Contains(t, string(data), "最高重复率")
+	assert.Contains(t, string(data), "说明")
 }
 
 func TestExportCSVEscapesFormula(t *testing.T) {
@@ -73,6 +76,7 @@ func TestExportCSVEscapesFormula(t *testing.T) {
 	records := parseCSVBody(t, data)
 	require.Len(t, records, 2)
 	assert.Equal(t, "'=cmd", records[1][8], "formula-like nickname must be prefixed")
+	assert.Equal(t, csvTestReviewNotice, records[1][len(csvTestHeader)-1])
 }
 
 func TestExportCSVEscapesCSVQuotes(t *testing.T) {
