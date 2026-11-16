@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { useId } from 'vue'
 
+import CompanionAvatar from '@/components/companion/CompanionAvatar.vue'
+import CompanionBubble from '@/components/companion/CompanionBubble.vue'
 import AppBrand from '@/components/layout/AppBrand.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
+import { useCompanionStore } from '@/stores/companion'
 
 withDefaults(
   defineProps<{
@@ -22,6 +25,11 @@ defineSlots<{
 }>()
 
 const titleId = useId()
+
+// Auth pages stay static: the companion is decorative art with no dock, no
+// controls and no animation.
+const companion = useCompanionStore()
+companion.load()
 </script>
 
 <template>
@@ -46,6 +54,11 @@ const titleId = useId()
         <li><i class="pi pi-star" aria-hidden="true" /> 成就、任务与装扮</li>
       </ul>
 
+      <div v-if="companion.enabled" class="auth-intro__companion" aria-hidden="true">
+        <CompanionAvatar pose="full" expression="smug" size="lg" />
+        <CompanionBubble text="登录而已……别紧张。" />
+      </div>
+
       <div class="auth-intro__status">
         <span class="auth-intro__pulse" aria-hidden="true" />
         <span>系统在线</span>
@@ -64,6 +77,10 @@ const titleId = useId()
         <p class="auth-panel__eyebrow">{{ eyebrow }}</p>
         <h2 :id="titleId" class="auth-panel__title">{{ title }}</h2>
         <p v-if="description" class="auth-panel__description">{{ description }}</p>
+        <div v-if="companion.enabled" class="auth-panel__companion" aria-hidden="true">
+          <CompanionAvatar pose="chibi" expression="pout" size="sm" />
+          <span>登录而已……别紧张。</span>
+        </div>
       </header>
       <slot />
       <div v-if="$slots.footer" class="auth-panel__footer">
@@ -86,6 +103,7 @@ const titleId = useId()
 }
 
 .auth-intro {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--kapoj-space-5);
@@ -151,6 +169,30 @@ const titleId = useId()
   color: var(--kapoj-primary);
   font-size: 13px;
   text-align: center;
+}
+
+/* Decorative sticker; sits above the status row so no text is covered. */
+.auth-intro__companion {
+  position: absolute;
+  right: 0;
+  bottom: calc(var(--kapoj-space-4) + var(--kapoj-space-5));
+  display: flex;
+  flex-direction: column;
+  gap: var(--kapoj-space-2);
+  width: min(46%, 280px);
+  pointer-events: none;
+  opacity: 0.95;
+}
+
+.auth-intro__companion :deep(.companion-avatar) {
+  align-self: flex-end;
+  width: min(180px, 100%);
+}
+
+.auth-intro__companion :deep(.companion-bubble) {
+  max-width: 100%;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .auth-intro__status {
@@ -222,6 +264,17 @@ const titleId = useId()
   font-size: 13px;
 }
 
+/* Only the intro hides below 900px, so mobile gets her inside the panel. */
+.auth-panel__companion {
+  display: none;
+  gap: var(--kapoj-space-2);
+  align-items: center;
+  margin-top: var(--kapoj-space-3);
+  color: var(--kapoj-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .auth-panel__footer {
   margin-top: var(--kapoj-space-4);
   padding-top: var(--kapoj-space-4);
@@ -246,6 +299,10 @@ const titleId = useId()
 
   .auth-intro {
     display: none;
+  }
+
+  .auth-panel__companion {
+    display: flex;
   }
 }
 

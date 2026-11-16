@@ -7,7 +7,13 @@ import Button from 'primevue/button'
 <template>
   <AppSurface padding="lg" class="result-surface">
     <p class="result-code">403</p>
-    <AppEmptyState icon="pi pi-lock" title="没有权限" description="你的账号无法访问这个页面。">
+    <AppEmptyState
+      icon="pi pi-lock"
+      title="没有权限"
+      description="你的账号无法访问这个页面。"
+      mascot="smug"
+      companion-line="这里不让你进。……别硬闯。"
+    >
       <template #actions>
         <Button as="router-link" to="/" label="返回首页" icon="pi pi-home" />
       </template>

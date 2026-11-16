@@ -7,7 +7,13 @@ import Button from 'primevue/button'
 <template>
   <AppSurface padding="lg" class="result-surface">
     <p class="result-code">404</p>
-    <AppEmptyState icon="pi pi-compass" title="页面不存在" description="请检查地址是否正确。">
+    <AppEmptyState
+      icon="pi pi-compass"
+      title="页面不存在"
+      description="请检查地址是否正确。"
+      mascot="lost"
+      companion-line="这里什么都没有。……跟着我。"
+    >
       <template #actions>
         <Button as="router-link" to="/" label="返回首页" icon="pi pi-home" />
       </template>

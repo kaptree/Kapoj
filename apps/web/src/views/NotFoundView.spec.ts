@@ -25,6 +25,13 @@ describe('NotFoundView', () => {
     expect(wrapper.find('a[href="/"]').exists()).toBe(true)
   })
 
+  it('renders the lost companion mascot and line', () => {
+    const wrapper = mountNotFound()
+
+    expect(wrapper.find('[data-testid="companion-placeholder"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('跟着我')
+  })
+
   it('renders no Element Plus markup or imports', () => {
     const wrapper = mountNotFound()
 
