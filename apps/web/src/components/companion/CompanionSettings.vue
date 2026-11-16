@@ -14,7 +14,11 @@ const store = useCompanionStore()
 // Preferences live in this browser; loading once keeps every surface in sync.
 store.load()
 
-const syncError = ref(false)
+const syncError = ref('')
+
+/** Activity and dock stay local-first; only the profile is server-owned state. */
+const LOCAL_SYNC_ERROR = '未能同步到服务器，本地偏好已保存。'
+const PROFILE_SYNC_ERROR = '公开设置同步失败，已恢复原值。'
 
 const ACTIVITY_OPTIONS: ReadonlyArray<{
   value: CompanionActivityLevel
@@ -39,12 +43,13 @@ const activityHint = computed(
 async function persistSettings(patch: CompanionSettingsPatch): Promise<void> {
   if (!auth.isLoggedIn) return
 
-  syncError.value = false
+  syncError.value = ''
   try {
     const state = await updateCompanionSettings(patch)
     store.applyRemoteState(state)
   } catch {
-    syncError.value = true
+    // The local preference is authoritative for these fields, so keep it.
+    syncError.value = LOCAL_SYNC_ERROR
   }
 }
 
@@ -63,12 +68,22 @@ function toggleMotion(): void {
   store.setMotion(store.motion === 'reduce' ? 'system' : 'reduce')
 }
 
-function togglePublicProfile(): void {
+async function togglePublicProfile(): Promise<void> {
   if (!auth.isLoggedIn) return
 
-  const next = !store.publicProfile
+  const previous = store.publicProfile
+  const next = !previous
   store.publicProfile = next
-  void persistSettings({ publicProfile: next })
+  syncError.value = ''
+  try {
+    const state = await updateCompanionSettings({ publicProfile: next })
+    store.applyRemoteState(state)
+  } catch {
+    // The profile flag is server-only: revert instead of showing a value that
+    // was never persisted.
+    store.publicProfile = previous
+    syncError.value = PROFILE_SYNC_ERROR
+  }
 }
 </script>
 
@@ -173,7 +188,7 @@ function togglePublicProfile(): void {
       </div>
 
       <p v-if="syncError" class="companion-settings__hint" role="status">
-        未能同步到服务器，本地偏好已保存。
+        {{ syncError }}
       </p>
 
       <div class="companion-settings__footer">

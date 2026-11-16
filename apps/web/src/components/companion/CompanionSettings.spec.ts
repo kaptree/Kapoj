@@ -132,6 +132,26 @@ describe('CompanionSettings', () => {
     expect(wrapper.text()).toContain('未能同步')
   })
 
+  it('rolls back the public profile and reports an accurate error when the request fails', async () => {
+    auth.isLoggedIn = true
+    vi.mocked(updateCompanionSettings).mockRejectedValue(new Error('offline'))
+
+    const wrapper = mountSettings((store) =>
+      store.applyRemoteState(remoteState({ publicProfile: true }) as never),
+    )
+    const toggle = wrapper.get('[data-test="public-profile"]')
+    expect(toggle.attributes('aria-pressed')).toBe('true')
+
+    await toggle.trigger('click')
+    await flushPromises()
+
+    // The optimistic false must be reverted: the server never stored it.
+    expect(useCompanionStore().publicProfile).toBe(true)
+    expect(wrapper.get('[data-test="public-profile"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.text()).toContain('公开设置同步失败，已恢复原值')
+    expect(wrapper.text()).not.toContain('本地偏好已保存')
+  })
+
   it('never calls the API for guests and keeps the local fallback', async () => {
     const wrapper = mountSettings()
     await wrapper.get('[data-test="activity-quiet"]').trigger('click')
