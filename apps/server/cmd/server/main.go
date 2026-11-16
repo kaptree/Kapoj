@@ -32,6 +32,8 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 	"github.com/kaptree/kapoj/apps/server/internal/router"
 	"github.com/kaptree/kapoj/apps/server/internal/secret"
+	"github.com/kaptree/kapoj/apps/server/internal/similarity"
+	"github.com/kaptree/kapoj/apps/server/internal/similarityqueue"
 	"github.com/kaptree/kapoj/apps/server/internal/storageaudit"
 	"github.com/kaptree/kapoj/apps/server/internal/testcasegen"
 )
@@ -58,6 +60,34 @@ func main() {
 	if err != nil {
 		slog.Error("server stopped", "err", err)
 		os.Exit(1)
+	}
+}
+
+// runSimilaritySweeper periodically fails queued/running similarity runs that
+// have been stuck for longer than the cutoff, so a crashed worker cannot block
+// a problem's active-run slot forever. It runs until ctx is canceled.
+func runSimilaritySweeper(ctx context.Context, repo similarity.Repository) {
+	const (
+		interval = time.Minute
+		cutoff   = 15 * time.Minute
+	)
+	sweep := func() {
+		sweepCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		if err := repo.MarkStaleRunsFailed(sweepCtx, time.Now().Add(-cutoff)); err != nil && ctx.Err() == nil {
+			slog.Warn("similarity: mark stale runs failed", "err", err)
+		}
+	}
+	sweep()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			sweep()
+		}
 	}
 }
 
@@ -166,6 +196,15 @@ func run() error {
 		aiSvc,
 		queue,
 	)
+	similarityQueue := similarityqueue.NewClient(cfg.RedisAddr)
+	defer func() { _ = similarityQueue.Close() }()
+	similarityRepo := similarity.NewGormRepository(g)
+	similaritySvc := similarity.NewService(
+		similarityRepo,
+		contest.NewGormRepository(g),
+		similarity.NewWinnowingEngine(),
+		similarityQueue,
+	)
 
 	// 启动时核对密钥文件与数据库指纹，恢复“写文件成功但重加密事务未提交”
 	// 这一崩溃窗口；不一致且无法恢复时拒绝启动。
@@ -210,6 +249,22 @@ func run() error {
 	defer backupServer.Shutdown()
 	slog.Info("kapoj backup worker started", "queue", backup.QueueName)
 
+	similarityServer := asynq.NewServer(
+		asynq.RedisClientOpt{Addr: cfg.RedisAddr},
+		asynq.Config{
+			Concurrency:     1,
+			Queues:          map[string]int{similarityqueue.QueueName: 1},
+			ShutdownTimeout: 10 * time.Second,
+		},
+	)
+	similarityMux := asynq.NewServeMux()
+	similarityqueue.Register(similarityMux, similaritySvc)
+	if err := similarityServer.Start(similarityMux); err != nil {
+		return err
+	}
+	defer similarityServer.Shutdown()
+	slog.Info("kapoj similarity worker started", "queue", similarityqueue.QueueName)
+
 	gin.SetMode(gin.ReleaseMode)
 	baseCtx, cancelBase := context.WithCancel(context.Background())
 	defer cancelBase()
@@ -219,7 +274,7 @@ func run() error {
 			DB: g, Redis: rdb, Storage: store, Config: cfg, Enqueuer: queue, Game: gameSvc,
 			Rating: ratingSvc, Activity: activitySvc, Learning: learningSvc, RBAC: rbacSvc,
 			AI: aiSvc, AISettings: aiSettings, TestcaseGen: testcaseGenSvc, Certificate: certSvc,
-			Mail: mailSvc, Backup: backupSvc,
+			Mail: mailSvc, Backup: backupSvc, Similarity: similaritySvc,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -234,6 +289,7 @@ func run() error {
 	workCtx, cancelWork := context.WithCancel(ctx)
 	defer cancelWork()
 	go backupSvc.RunScheduler(workCtx, 30*time.Second)
+	go runSimilaritySweeper(workCtx, similarityRepo)
 
 	errCh := make(chan error, 1)
 	go func() {

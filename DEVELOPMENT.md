@@ -593,6 +593,44 @@ user_ai_configs (
 - `user_ai_configs.api_key_encrypted` 使用 AES-256-GCM（随机 12 字节 nonce，输出 `v1:`+base64(nonce+ciphertext)），密钥为 base64 编码的 32 字节（来自根目录 `.env` 的 `KAPOJ_AI_ENCRYPTION_KEY`；旧 `KAPOJ_AI_KEY_FILE` 仅兼容回退，见 §6.7）；接口只返回脱敏值（长度 >8 显示前 3 字符 + … + 后 4 字符，否则 `****`），不写日志、不写审计摘要。
 - 提示缓存：`ai_hints` 每题唯一；首个用户触发后生成，后续用户直接读取缓存，不要求用户 AI 配置、不消耗限流；非公开题对无 `problem.view_hidden` 的用户与不存在一致返回 40400，不泄露存在性。
 
+### 3.10 比赛代码查重
+
+```sql
+contest_similarity_settings (
+  id, contest_id, problem_id,
+  threshold_percent,          -- 1..100，默认 80
+  ignore_common_code,         -- 默认 true
+  base_language, base_code,   -- 可选公共模板及语言；空串表示无模板
+  updated_by, updated_at
+)
+-- 唯一约束：(contest_id, problem_id) = uniq_similarity_settings_problem
+
+contest_similarity_runs (
+  id, contest_id, problem_id,
+  status,                     -- queued / running / completed / failed
+  threshold_percent,          -- 创建 run 时的设置快照
+  ignore_common_code,         -- 创建 run 时的设置快照
+  base_language, base_code,   -- 创建 run 时的模板快照
+  engine, engine_version,     -- winnowing-v1 / 1
+  requested_by, submission_count, match_count,
+  error_message, started_at, finished_at, created_at
+)
+-- 索引 idx_similarity_runs_problem (contest_id, problem_id)、status
+
+contest_similarity_matches (
+  id, run_id, contest_id, problem_id,
+  original_submission_id, suspect_submission_id,
+  original_user_id, suspect_user_id, language,
+  similarity_percent, dice_percent,
+  shared_fingerprints, original_fingerprints, suspect_fingerprints,
+  original_created_at, suspect_created_at, created_at
+)
+-- 唯一约束：(run_id, original_submission_id, suspect_submission_id) = uniq_similarity_match_pair
+```
+
+- 不修改 `submissions` 表，不复制代码；详情代码始终从本场本题目的原提交读取。
+- 结果列表与 CSV 只展示每道题最新一次 `completed` run，避免历史结果重复展示。
+- run 快照：阈值、忽略公共代码开关、模板语言与模板代码在创建 run 时写入；worker 执行时只读 run 快照，排队期间修改题目设置不会改变该 run 的判定口径。
 
 ---
 
@@ -955,6 +993,29 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 
 - 比赛进行中，非本人/非管理员查看他人比赛提交时，列表与详情均隐藏代码、错误信息、测试点详情、耗时、内存、得分；比赛结束后恢复。
 - 用户报名前（例如比赛管理员测试）产生的比赛提交不计入正式榜单。
+
+**实现状态（比赛代码查重 ✅，2026-11-16）**
+
+- 仅比赛结束后可用，权限复用 `contest.update`；所有读代码/结果接口都强制「比赛已结束 + 管理员」双门禁，非管理员或未结束比赛返回 403/400。
+- 算法为 Go 原生 token + Winnowing（`winnowing-v1`）：k=20、w=10、最小有效 token=80、最小共享 fingerprint=5；只比较同一题目、同一语言的代码提交，排除客观题、空代码、过短代码、非报名用户与比赛窗口外提交；同一用户不互相比对；每对按 `(created_at, id)` 认定较早者为原提交。
+- 每题一个 Asynq `similarity` 任务入队，队列并发 1、任务超时 10 分钟、最多重试 1 次；同一题已有 `queued`/`running` run 时直接复用，不重复入队。入队使用与 HTTP 请求分离的 5 秒上下文；入队失败会把该 run 置为 `failed`（中文提示 + `finished_at`）并让 API 返回错误，不会留下活跃假任务。
+- 稳定性：服务启动后每分钟扫描一次，将超过 15 分钟仍未完成的 `queued` 与 `running` run 置为 `failed` 并写 `finished_at`（running 以 `started_at`、queued 以 `created_at` 为基准），避免 worker 崩溃后永久占用该题的活跃槽位。
+- 单题提交上限 1000：创建 run 之前先按与查重相同的参赛者/时间窗/非客观题条件计数，超限返回中文 400 校验错误且不创建任何 run；引擎内部仍保留 1000 上限作为防御。
+- 七个接口（全部要求登录、`contest.update` 且比赛已结束）：
+
+  | 方法 | 路径 | 用途 |
+  | --- | --- | --- |
+  | GET | `/api/contests/:id/similarity/overview` | 题目、阈值、最近一次 run 状态 |
+  | PUT | `/api/contests/:id/similarity/problems/:problemId` | 保存阈值/模板设置 |
+  | POST | `/api/contests/:id/similarity/runs` | 计算单题或全部题目 |
+  | GET | `/api/contests/:id/similarity/runs/:runId` | 查询任务状态 |
+  | GET | `/api/contests/:id/similarity/matches` | 分页查询最新结果 |
+  | GET | `/api/contests/:id/similarity/matches/:matchId` | 左右代码对照详情 |
+  | GET | `/api/contests/:id/similarity/export.csv` | 导出 CSV（UTF-8 BOM、防公式注入） |
+
+- 前端：比赛详情页在比赛结束且拥有 `contest.update` 时显示「查重」Tab；面板包含题目设置表、单题/全部计算、结果列表、题目筛选、分页、CSV 导出与代码详情 Dialog；结果区和 CSV 均标注「相似度仅代表代码相似，疑似抄袭需人工复核」。
+- 批量写入：`ReplaceMatches` 在同一事务内按 500 行一批插入，避免 4000+ 匹配对超过 PostgreSQL 绑定参数上限。
+- 已知运维注意：结果依赖原 `submissions` 行仍存在；删除比赛/提交会使其历史 match 的详情查询失败（当前不提供跨比赛迁移）；`similarity` 队列与主 API 共用 Redis，Redis 不可用时启动查重会返回入队错误；超时扫描与任务最长执行时间（10 分钟）之间以 15 分钟为界，极端慢查询仍可能被下一次扫描绕过，需要管理员重新计算。
 
 **Codex 提示词（比赛）**
 
@@ -1880,6 +1941,8 @@ problem/
 状态图例：✅ 已完成　🚧 进行中　⬜ 未开始。只有模块的验收标准全部满足后才标记 ✅。
 
 M5 进度：M5-A（AI 后端基础：多 provider 配置、用户 API key 加密存储、补全/格式化/优化与题目提示缓存/限流）、M5-4（AI 出题造数据：标程 → AI 纯 Python 3 造数据脚本 → judge 沙盒生成输入/输出 → 预览确认入库，见 §6.4）、M5-5（AI 前端：提交页 AI 工具栏、题目详情 AI 提示、AI 配置页，见 §6.5）、M5-6（HydroOJ 题包导入 + 题目详情公开创建者摘要，见 §7）与 M5-7（证书认证：证书类型、用户提交/我的证书、鉴权图片、管理员审核、公开验证码核验，见 §3.7/§5.6）已完成；M5-8（头像上传）仍未完成，因此 M5 整体保持 🚧。
+
+比赛代码查重（2026-11-16）已完成：三张查重表、七个管理接口、Asynq `similarity` 队列 + Winnowing 引擎、比赛结束 + `contest.update` 双门禁、单题 1000 提交上限与超时 run 定期扫描均已交付，详见 §3.10/§4.4。
 
 M3 进度：M3-A（金币、事件、成就、任务后端）、M3-B（徽章、称号、公开身份后端）与 M3-C（成就页、任务大厅、徽章商城、称号商店、装扮管理、游戏化管理、公开身份接入与真实浏览器验收）均已完成，M3 标记为 ✅。
 

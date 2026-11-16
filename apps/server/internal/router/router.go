@@ -36,6 +36,8 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/rating"
 	"github.com/kaptree/kapoj/apps/server/internal/ratingapi"
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
+	"github.com/kaptree/kapoj/apps/server/internal/similarity"
+	"github.com/kaptree/kapoj/apps/server/internal/similarityapi"
 	"github.com/kaptree/kapoj/apps/server/internal/site"
 	"github.com/kaptree/kapoj/apps/server/internal/siteapi"
 	"github.com/kaptree/kapoj/apps/server/internal/social"
@@ -73,6 +75,7 @@ type Deps struct {
 	Certificate *certificate.Service
 	Mail        *mail.Service
 	Backup      *backup.Service
+	Similarity  *similarity.Service
 }
 
 func New(d Deps) *gin.Engine {
@@ -185,6 +188,9 @@ func New(d Deps) *gin.Engine {
 		contestOpts.ActivityHook = d.Activity
 	}
 	contestapi.RegisterRoutes(api, contestSvc, contestOpts)
+	if d.Similarity != nil {
+		similarityapi.RegisterRoutes(api, d.Similarity, similarityapi.Options{RBAC: d.RBAC})
+	}
 	submissionRepo := submission.NewGormRepository(d.DB)
 	var problemSvc *problem.Service
 	if d.Learning != nil {

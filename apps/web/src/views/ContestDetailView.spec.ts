@@ -18,6 +18,7 @@ import {
   updateAnnouncement,
 } from '@/api/contests'
 import type { AnnouncementItem, ContestDetail, ContestParticipant } from '@/api/types'
+import { PERM } from '@/permissions'
 import ContestDetailView from './ContestDetailView.vue'
 
 const toast = vi.hoisted(() => ({ add: vi.fn() }))
@@ -42,6 +43,13 @@ vi.mock('@/components/ContestRanklist.vue', () => ({
     name: 'ContestRanklist',
     props: ['contestId', 'refreshTick'],
     template: '<div class="ranklist-stub">ranklist {{ contestId }} {{ refreshTick }}</div>',
+  },
+}))
+vi.mock('@/components/contest/similarity/ContestSimilarityPanel.vue', () => ({
+  default: {
+    name: 'ContestSimilarityPanel',
+    props: ['contestId'],
+    template: '<div class="similarity-panel-stub">similarity {{ contestId }}</div>',
   },
 }))
 vi.mock('@/api/contests', () => ({
@@ -225,6 +233,10 @@ async function openTab(wrapper: Awaited<ReturnType<typeof mountPage>>['wrapper']
   expect(tab).toBeTruthy()
   await tab!.trigger('click')
   await flushPromises()
+}
+
+function tabLabels(wrapper: Awaited<ReturnType<typeof mountPage>>['wrapper']) {
+  return wrapper.findAll('[role="tab"]').map((item) => item.text())
 }
 
 beforeEach(() => {
@@ -598,6 +610,42 @@ describe('ContestDetailView', () => {
     const hrefs = wrapper.findAll('a').map((link) => link.attributes('href') ?? '')
     expect(hrefs.some((href) => href.includes('/problems/1'))).toBe(false)
     expect(hrefs.some((href) => href.includes('/problems/2'))).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shows the similarity tab to managers after the contest ended', async () => {
+    auth.can.mockImplementation((code: string) => code === PERM.contest.update)
+    vi.mocked(getContest).mockResolvedValue(detail({ status: 'ended' }))
+    const { wrapper } = await mountPage()
+
+    expect(tabLabels(wrapper)).toContain('查重')
+    expect(wrapper.find('.similarity-panel-stub').exists()).toBe(false)
+
+    await openTab(wrapper, '查重')
+    expect(wrapper.find('.similarity-panel-stub').text()).toBe('similarity 5')
+    wrapper.unmount()
+  })
+
+  it('hides the similarity tab while the contest is not ended', async () => {
+    auth.can.mockImplementation((code: string) => code === PERM.contest.update)
+    vi.mocked(getContest).mockResolvedValue(detail({ status: 'running' }))
+    let { wrapper } = await mountPage()
+    expect(tabLabels(wrapper)).not.toContain('查重')
+    wrapper.unmount()
+
+    vi.mocked(getContest).mockResolvedValue(detail({ status: 'upcoming' }))
+    ;({ wrapper } = await mountPage())
+    expect(tabLabels(wrapper)).not.toContain('查重')
+    wrapper.unmount()
+  })
+
+  it('hides the similarity tab without contest.update permission', async () => {
+    auth.can.mockImplementation((code: string) => code === PERM.contest.viewHidden)
+    vi.mocked(getContest).mockResolvedValue(detail({ status: 'ended' }))
+    const { wrapper } = await mountPage()
+
+    expect(tabLabels(wrapper)).toContain('题目')
+    expect(tabLabels(wrapper)).not.toContain('查重')
     wrapper.unmount()
   })
 
