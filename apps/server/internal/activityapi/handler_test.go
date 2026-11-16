@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -17,7 +18,9 @@ import (
 
 	"github.com/kaptree/kapoj/apps/server/internal/activity"
 	"github.com/kaptree/kapoj/apps/server/internal/auth"
+	"github.com/kaptree/kapoj/apps/server/internal/companion"
 	"github.com/kaptree/kapoj/apps/server/internal/config"
+	"github.com/kaptree/kapoj/apps/server/internal/db"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/router"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
@@ -47,6 +50,13 @@ func newFx(t *testing.T) *fx {
 
 func newFxWithRedis(t *testing.T, rdb *redis.Client) *fx {
 	t.Helper()
+	return newFxWithCompanion(t, rdb, nil)
+}
+
+// newFxWithCompanion builds the real router with an explicit companion service.
+// A nil service means the default recorder backed by the test DB.
+func newFxWithCompanion(t *testing.T, rdb *redis.Client, comp *companion.Service) *fx {
+	t.Helper()
 	g := testutil.PG(t)
 	store, err := storage.NewLocal(t.TempDir())
 	require.NoError(t, err)
@@ -54,15 +64,34 @@ func newFxWithRedis(t *testing.T, rdb *redis.Client) *fx {
 		gamification.NewRepository(g), gamification.ServiceOptions{MaxEquippedBadges: 3},
 	)
 	activitySvc := activity.NewService(g, rdb)
+	if comp == nil {
+		comp = companion.NewService(companion.NewGormRepository(g))
+	}
 	h := router.New(router.Deps{
 		DB: g, Redis: rdb, Storage: store, Enqueuer: noopQueue{}, Game: gameSvc,
-		Activity: activitySvc,
+		Activity: activitySvc, Companion: comp,
 		Config: &config.Config{
 			JWTSecret: testJWTSecret, AccessTokenTTL: 15 * time.Minute,
 			RefreshTokenTTL: time.Hour, SubmitCooldown: time.Second,
 		},
 	})
 	return &fx{t: t, h: h, db: g}
+}
+
+// closedCompanion returns a companion service whose underlying DB connection is
+// already closed, so every recorder call fails without touching the test DB.
+func closedCompanion(t *testing.T) *companion.Service {
+	t.Helper()
+	dsn := os.Getenv("KAPOJ_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("KAPOJ_TEST_DATABASE_URL not set; skipping database test")
+	}
+	g, err := db.Open(dsn)
+	require.NoError(t, err)
+	sqlDB, err := g.DB()
+	require.NoError(t, err)
+	require.NoError(t, sqlDB.Close())
+	return companion.NewService(companion.NewGormRepository(g))
 }
 
 func (f *fx) user(username, status string) int64 {
@@ -331,6 +360,52 @@ func TestWealthLeaderboardPublicAndEquippedIdentity(t *testing.T) {
 	require.Len(t, items, 1)
 	assert.EqualValues(t, 2, items[0].(map[string]any)["rank"])
 	assert.EqualValues(t, plain, items[0].(map[string]any)["userId"])
+}
+
+func TestSignInCompanionHook(t *testing.T) {
+	f := newFx(t)
+	userID := f.user("companion-signer", "active")
+	token := f.token(userID)
+	today := time.Now().In(time.Local).Format("2006-01-02")
+
+	w, resp := f.do(http.MethodPost, "/api/activity/signin", token)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, true, responseData(t, resp)["awarded"])
+
+	events := companionEvents(t, f.db, userID)
+	require.Len(t, events, 1)
+	assert.Equal(t, "signin:"+today, events[0].Key)
+	assert.Equal(t, "signin", events[0].Type)
+	assert.EqualValues(t, 3, events[0].Bond)
+	assert.Equal(t, today, events[0].EventDate)
+
+	// A duplicate sign-in is not awarded, so it must not record a second event.
+	w, resp = f.do(http.MethodPost, "/api/activity/signin", token)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, false, responseData(t, resp)["awarded"])
+	assert.Len(t, companionEvents(t, f.db, userID), 1)
+}
+
+func TestSignInCompanionHookFailureDoesNotFailRequest(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr(), MaxRetries: -1})
+	t.Cleanup(func() { _ = rdb.Close() })
+	f := newFxWithCompanion(t, rdb, closedCompanion(t))
+	userID := f.user("companion-down", "active")
+
+	w, resp := f.do(http.MethodPost, "/api/activity/signin", f.token(userID))
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data := responseData(t, resp)
+	assert.Equal(t, true, data["awarded"])
+	assert.EqualValues(t, 5, data["coins"])
+	assert.Empty(t, companionEvents(t, f.db, userID), "companion failure must not create events")
+}
+
+func companionEvents(t *testing.T, g *gorm.DB, userID int64) []companion.Event {
+	t.Helper()
+	events := []companion.Event{}
+	require.NoError(t, g.Where("user_id = ?", userID).Order("id").Find(&events).Error)
+	return events
 }
 
 func TestActivityLeaderboardRedisDownStillOK(t *testing.T) {

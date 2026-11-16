@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -18,7 +19,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/kaptree/kapoj/apps/server/internal/companion"
 	"github.com/kaptree/kapoj/apps/server/internal/config"
+	"github.com/kaptree/kapoj/apps/server/internal/db"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/router"
@@ -43,13 +46,25 @@ type fx struct {
 
 func newFx(t *testing.T) *fx {
 	t.Helper()
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	return newFxWithCompanion(t, rdb, nil)
+}
+
+// newFxWithCompanion builds the real router with an explicit companion service.
+// A nil service means the default recorder backed by the test DB.
+func newFxWithCompanion(t *testing.T, rdb *redis.Client, comp *companion.Service) *fx {
+	t.Helper()
 	g := testutil.PG(t)
 	rbacSvc := testutil.SeedRBAC(t, g)
-	mr := miniredis.RunT(t)
 	store, err := storage.NewLocal(t.TempDir())
 	require.NoError(t, err)
+	if comp == nil {
+		comp = companion.NewService(companion.NewGormRepository(g))
+	}
 	h := router.New(router.Deps{
-		DB: g, Redis: redis.NewClient(&redis.Options{Addr: mr.Addr()}), Storage: store,
+		DB: g, Redis: rdb, Storage: store,
 		Config: &config.Config{
 			JWTSecret: strings.Repeat("s", 32), AccessTokenTTL: 15 * time.Minute,
 			RefreshTokenTTL: time.Hour, SubmitCooldown: time.Second,
@@ -57,12 +72,29 @@ func newFx(t *testing.T) *fx {
 		Enqueuer: noopQueue{},
 		Game: gamification.NewServiceWithOptions(gamification.NewRepository(g),
 			gamification.ServiceOptions{MaxEquippedBadges: 3, Storage: store}),
-		RBAC: rbacSvc,
+		RBAC:      rbacSvc,
+		Companion: comp,
 	})
 	return &fx{
 		t: t, h: h, db: g,
 		tokens: map[string]string{}, ids: map[string]int64{},
 	}
+}
+
+// closedCompanion returns a companion service whose underlying DB connection is
+// already closed, so every recorder call fails without touching the test DB.
+func closedCompanion(t *testing.T) *companion.Service {
+	t.Helper()
+	dsn := os.Getenv("KAPOJ_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("KAPOJ_TEST_DATABASE_URL not set; skipping database test")
+	}
+	g, err := db.Open(dsn)
+	require.NoError(t, err)
+	sqlDB, err := g.DB()
+	require.NoError(t, err)
+	require.NoError(t, sqlDB.Close())
+	return companion.NewService(companion.NewGormRepository(g))
 }
 
 func (f *fx) do(method, path, token string, body any) (*httptest.ResponseRecorder, map[string]any) {
@@ -496,6 +528,68 @@ func TestTaskAPI(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code)
 	w, _ = f.do(http.MethodDelete, "/api/tasks/99999", adminToken, nil)
 	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestTaskClaimCompanionHook(t *testing.T) {
+	f := newFx(t)
+	userToken := f.token("user")
+	adminToken := f.token("super_admin")
+	userID := f.ids["user"]
+
+	p := f.addPublicProblem(t, "companion-task-problem")
+	now := time.Now()
+	body := taskBody("陪伴任务", []int64{p.ID}, 10, now.Add(-time.Hour), now.Add(time.Hour))
+	w, resp := f.do(http.MethodPost, "/api/tasks", adminToken, body)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	taskID := int64(resp["data"].(map[string]any)["id"].(float64))
+	taskPath := fmt.Sprintf("/api/tasks/%d", taskID)
+
+	w, resp = f.do(http.MethodPost, taskPath+"/claim", userToken, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	claimedAt, err := time.Parse(time.RFC3339Nano, resp["data"].(map[string]any)["claimedAt"].(string))
+	require.NoError(t, err)
+
+	events := companionEvents(t, f.db, userID)
+	require.Len(t, events, 1)
+	assert.Equal(t, fmt.Sprintf("task:%d", taskID), events[0].Key)
+	assert.Equal(t, "task", events[0].Type)
+	assert.EqualValues(t, 1, events[0].Bond)
+	assert.Equal(t, claimedAt.In(time.Local).Format("2006-01-02"), events[0].EventDate,
+		"event date must come from the recorded claim time")
+
+	// Repeat claims are idempotent and must not record a second event.
+	w, _ = f.do(http.MethodPost, taskPath+"/claim", userToken, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Len(t, companionEvents(t, f.db, userID), 1)
+}
+
+func TestTaskClaimCompanionHookFailureDoesNotFailRequest(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	f := newFxWithCompanion(t, rdb, closedCompanion(t))
+	userToken := f.token("user")
+	adminToken := f.token("super_admin")
+	userID := f.ids["user"]
+
+	p := f.addPublicProblem(t, "companion-task-down")
+	now := time.Now()
+	body := taskBody("陪伴任务", []int64{p.ID}, 10, now.Add(-time.Hour), now.Add(time.Hour))
+	w, resp := f.do(http.MethodPost, "/api/tasks", adminToken, body)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	taskID := int64(resp["data"].(map[string]any)["id"].(float64))
+
+	w, resp = f.do(http.MethodPost, fmt.Sprintf("/api/tasks/%d/claim", taskID), userToken, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, "claimed", resp["data"].(map[string]any)["status"])
+	assert.Empty(t, companionEvents(t, f.db, userID), "companion failure must not create events")
+}
+
+func companionEvents(t *testing.T, g *gorm.DB, userID int64) []companion.Event {
+	t.Helper()
+	events := []companion.Event{}
+	require.NoError(t, g.Where("user_id = ?", userID).Order("id").Find(&events).Error)
+	return events
 }
 
 func TestAdminAdjustCoinsEndpoint(t *testing.T) {

@@ -146,7 +146,8 @@ func New(d Deps) *gin.Engine {
 		adminapi.RegisterRoutes(api, d.RBAC, adminapi.Options{Game: d.Game, Rating: d.Rating, AI: d.AISettings})
 	}
 	if d.Game != nil {
-		gamificationapi.RegisterRoutes(api, uploads, d.Game, gamificationapi.Options{RBAC: d.RBAC})
+		gamificationapi.RegisterRoutes(api, uploads, d.Game,
+			gamificationapi.Options{RBAC: d.RBAC, Companion: d.Companion})
 	}
 	if d.Companion != nil {
 		companionapi.RegisterRoutes(api, d.Companion)
@@ -160,9 +161,10 @@ func New(d Deps) *gin.Engine {
 	}
 	if d.Activity != nil {
 		if d.Game != nil {
-			activityapi.RegisterRoutes(api, d.Activity, activityapi.Options{IdentityLookup: d.Game})
+			activityapi.RegisterRoutes(api, d.Activity,
+				activityapi.Options{IdentityLookup: d.Game, Companion: d.Companion})
 		} else {
-			activityapi.RegisterRoutes(api, d.Activity)
+			activityapi.RegisterRoutes(api, d.Activity, activityapi.Options{Companion: d.Companion})
 		}
 	}
 	if d.Learning != nil {
@@ -231,7 +233,7 @@ func New(d Deps) *gin.Engine {
 	userOpts.Activity = submissionSvc
 	userapi.RegisterRoutes(api, userSvc, userOpts)
 	streamer := submissionevents.NewRedisStreamer(d.Redis)
-	submissionOpts := submissionapi.Options{RBAC: d.RBAC}
+	submissionOpts := submissionapi.Options{RBAC: d.RBAC, Companion: d.Companion}
 	if d.Game != nil {
 		submissionOpts.IdentityLookup = d.Game
 	}

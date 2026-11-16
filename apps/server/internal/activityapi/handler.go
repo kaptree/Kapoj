@@ -2,10 +2,12 @@ package activityapi
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/kaptree/kapoj/apps/server/internal/activity"
+	"github.com/kaptree/kapoj/apps/server/internal/companion"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
@@ -20,6 +22,7 @@ type IdentityLookup interface {
 // Options configures optional activity API dependencies.
 type Options struct {
 	IdentityLookup IdentityLookup
+	Companion      *companion.Service
 }
 
 // RegisterRoutes mounts public activity/sharing leaderboards plus the
@@ -29,6 +32,7 @@ func RegisterRoutes(r gin.IRouter, s *activity.Service, opts ...Options) {
 	h := &handler{svc: s}
 	if len(opts) > 0 {
 		h.identities = opts[0].IdentityLookup
+		h.comp = opts[0].Companion
 	}
 	r.GET("/leaderboard/activity", h.activityLeaderboard)
 	r.GET("/leaderboard/sharing", h.sharingLeaderboard)
@@ -40,6 +44,7 @@ func RegisterRoutes(r gin.IRouter, s *activity.Service, opts ...Options) {
 type handler struct {
 	svc        *activity.Service
 	identities IdentityLookup
+	comp       *companion.Service
 }
 
 // LeaderboardRow is the public API row: cached base fields plus equipped
@@ -114,6 +119,12 @@ func (h *handler) signIn(c *gin.Context) {
 	if err != nil {
 		httpx.Fail(c, err)
 		return
+	}
+	if result.Awarded && h.comp != nil {
+		if err := h.comp.RecordSignIn(c.Request.Context(), claims.UserID, result.Date); err != nil {
+			slog.Warn("companion sign-in hook failed",
+				"user_id", claims.UserID, "date", result.Date, "err", err)
+		}
 	}
 	httpx.OK(c, result)
 }

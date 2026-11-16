@@ -1,10 +1,13 @@
 package gamificationapi
 
 import (
+	"log/slog"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/kaptree/kapoj/apps/server/internal/companion"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
@@ -13,7 +16,8 @@ import (
 
 // Options 配置游戏化接口的可选依赖。
 type Options struct {
-	RBAC *rbac.Service
+	RBAC      *rbac.Service
+	Companion *companion.Service
 }
 
 const (
@@ -31,7 +35,7 @@ func RegisterRoutes(r gin.IRouter, uploads gin.IRouter, s *gamification.Service,
 	if len(opts) > 0 {
 		o = opts[0]
 	}
-	h := &handler{svc: s, rbac: o.RBAC}
+	h := &handler{svc: s, rbac: o.RBAC, comp: o.Companion}
 
 	// resolver 为 nil 时 RequirePermission 会拒绝所有写操作，LoadAccess 为
 	// 空操作；生产环境 router 始终传入 RBAC service。
@@ -88,6 +92,7 @@ func RegisterRoutes(r gin.IRouter, uploads gin.IRouter, s *gamification.Service,
 type handler struct {
 	svc  *gamification.Service
 	rbac *rbac.Service
+	comp *companion.Service
 }
 
 // viewer 从权限中间件写入的 Access 派生游戏化 Viewer；无 Access（未加载权限
@@ -255,6 +260,18 @@ func (h *handler) claimTask(c *gin.Context) {
 	if err != nil {
 		httpx.Fail(c, err)
 		return
+	}
+	if h.comp != nil && item != nil {
+		// Prefer the persisted claim time so the companion event date matches
+		// the task record; fall back to the request time only if it is absent.
+		at := time.Now()
+		if item.ClaimedAt != nil {
+			at = *item.ClaimedAt
+		}
+		if err := h.comp.RecordTaskClaim(c.Request.Context(), claims.UserID, id, at); err != nil {
+			slog.Warn("companion task claim hook failed",
+				"user_id", claims.UserID, "task_id", id, "err", err)
+		}
 	}
 	httpx.OK(c, item)
 }

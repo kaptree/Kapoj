@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -20,8 +21,10 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/kaptree/kapoj/apps/server/internal/auth"
+	"github.com/kaptree/kapoj/apps/server/internal/companion"
 	"github.com/kaptree/kapoj/apps/server/internal/config"
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
+	"github.com/kaptree/kapoj/apps/server/internal/db"
 	"github.com/kaptree/kapoj/apps/server/internal/dbtypes"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
@@ -60,15 +63,27 @@ type fx struct {
 
 func newFx(t *testing.T) *fx {
 	t.Helper()
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	return newFxWithCompanion(t, rdb, nil)
+}
+
+// newFxWithCompanion builds the real router with an explicit companion service.
+// A nil service means the default recorder backed by the test DB.
+func newFxWithCompanion(t *testing.T, rdb *redis.Client, comp *companion.Service) *fx {
+	t.Helper()
 	g := testutil.PG(t)
 	rbacSvc := testutil.SeedRBAC(t, g)
-	mr := miniredis.RunT(t)
 	store, err := storage.NewLocal(t.TempDir())
 	require.NoError(t, err)
 	queue := &fakeQueue{}
+	if comp == nil {
+		comp = companion.NewService(companion.NewGormRepository(g))
+	}
 	h := router.New(router.Deps{
 		DB:      g,
-		Redis:   redis.NewClient(&redis.Options{Addr: mr.Addr()}),
+		Redis:   rdb,
 		Storage: store,
 		Config: &config.Config{
 			JWTSecret:       strings.Repeat("s", 32),
@@ -76,11 +91,28 @@ func newFx(t *testing.T) *fx {
 			RefreshTokenTTL: time.Hour,
 			SubmitCooldown:  time.Second,
 		},
-		Enqueuer: queue,
-		Game:     gamification.NewService(gamification.NewRepository(g)),
-		RBAC:     rbacSvc,
+		Enqueuer:  queue,
+		Game:      gamification.NewService(gamification.NewRepository(g)),
+		RBAC:      rbacSvc,
+		Companion: comp,
 	})
 	return &fx{t: t, h: h, db: g, queue: queue, rbac: rbacSvc}
+}
+
+// closedCompanion returns a companion service whose underlying DB connection is
+// already closed, so every recorder call fails without touching the test DB.
+func closedCompanion(t *testing.T) *companion.Service {
+	t.Helper()
+	dsn := os.Getenv("KAPOJ_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("KAPOJ_TEST_DATABASE_URL not set; skipping database test")
+	}
+	g, err := db.Open(dsn)
+	require.NoError(t, err)
+	sqlDB, err := g.DB()
+	require.NoError(t, err)
+	require.NoError(t, sqlDB.Close())
+	return companion.NewService(companion.NewGormRepository(g))
 }
 
 func (f *fx) equipIdentity(t *testing.T, userID int64, badgeNames []string, titleName string) {
@@ -266,6 +298,91 @@ func TestCreateSubmissionEndpoint(t *testing.T) {
 	require.NoError(t, f.db.Model(&problem.Problem{}).Where("id = ?", p.ID).
 		Select("submit_count").Scan(&count).Error)
 	assert.Equal(t, 1, count)
+}
+
+func TestCreateSubmissionCompanionContestHook(t *testing.T) {
+	f := newFx(t)
+	token := f.register("companioncontest")
+	userID := f.usernameID(t, "companioncontest")
+	p := f.problem(t, "companion-contest-problem", true, problem.TypeTraditional, 1)
+	now := time.Now()
+	contestID := f.contest(t, now.Add(-time.Hour), now.Add(time.Hour))
+	f.contestProblem(t, contestID, p.ID, "A")
+	f.contestParticipant(t, contestID, userID)
+
+	w, resp := f.do(http.MethodPost, "/api/submissions", token, map[string]any{
+		"problemId": p.ID, "contestId": contestID, "language": "cpp", "code": "int main(){}",
+	})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	subID := int64(resp["data"].(map[string]any)["id"].(float64))
+	var createdAt time.Time
+	require.NoError(t, f.db.Raw(`SELECT created_at FROM submissions WHERE id = ?`, subID).Scan(&createdAt).Error)
+
+	events := companionEvents(t, f.db, userID)
+	require.Len(t, events, 1)
+	assert.Equal(t, fmt.Sprintf("contest:%d", contestID), events[0].Key)
+	assert.Equal(t, "contest", events[0].Type)
+	assert.EqualValues(t, 5, events[0].Bond)
+	assert.Equal(t, createdAt.In(time.Local).Format("2006-01-02"), events[0].EventDate,
+		"event date must come from the submission created_at")
+}
+
+func TestCreateSubmissionCompanionIgnoresNonContest(t *testing.T) {
+	f := newFx(t)
+	token := f.register("companionplain")
+	userID := f.usernameID(t, "companionplain")
+	p := f.problem(t, "companion-plain-problem", true, problem.TypeTraditional, 1)
+
+	w, resp := f.submit(token, p.ID)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	assert.EqualValues(t, 0, resp["code"])
+	assert.Empty(t, companionEvents(t, f.db, userID), "non-contest submissions must not award contest bond")
+}
+
+func TestCreateSubmissionCompanionFailureDoesNotFailRequest(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	f := newFxWithCompanion(t, rdb, closedCompanion(t))
+	token := f.register("companionfail")
+	userID := f.usernameID(t, "companionfail")
+	p := f.problem(t, "companion-fail-problem", true, problem.TypeTraditional, 1)
+	now := time.Now()
+	contestID := f.contest(t, now.Add(-time.Hour), now.Add(time.Hour))
+	f.contestProblem(t, contestID, p.ID, "A")
+	f.contestParticipant(t, contestID, userID)
+
+	w, resp := f.do(http.MethodPost, "/api/submissions", token, map[string]any{
+		"problemId": p.ID, "contestId": contestID, "language": "cpp", "code": "int main(){}",
+	})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	assert.EqualValues(t, 0, resp["code"])
+	assert.NotZero(t, int64(resp["data"].(map[string]any)["id"].(float64)))
+	assert.Empty(t, companionEvents(t, f.db, userID), "companion failure must not create events")
+}
+
+func (f *fx) contestProblem(t *testing.T, contestID, problemID int64, displayID string) {
+	t.Helper()
+	require.NoError(t, f.db.Exec(
+		`INSERT INTO contest_problems (contest_id, problem_id, display_id, sort_order, score)
+		 VALUES (?, ?, ?, 1, 100)`,
+		contestID, problemID, displayID,
+	).Error)
+}
+
+func (f *fx) contestParticipant(t *testing.T, contestID, userID int64) {
+	t.Helper()
+	require.NoError(t, f.db.Exec(
+		`INSERT INTO contest_participants (contest_id, user_id, register_time) VALUES (?, ?, now())`,
+		contestID, userID,
+	).Error)
+}
+
+func companionEvents(t *testing.T, g *gorm.DB, userID int64) []companion.Event {
+	t.Helper()
+	events := []companion.Event{}
+	require.NoError(t, g.Where("user_id = ?", userID).Order("id").Find(&events).Error)
+	return events
 }
 
 func TestCreateSubmissionRequiresLogin(t *testing.T) {

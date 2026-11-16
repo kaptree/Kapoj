@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/kaptree/kapoj/apps/server/internal/companion"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
@@ -33,6 +34,7 @@ type Options struct {
 	IdentityLookup IdentityLookup
 	ActivityHook   ActivityHook
 	RBAC           *rbac.Service
+	Companion      *companion.Service
 }
 
 // RegisterRoutes mounts the submission endpoints. r must already run the
@@ -45,6 +47,7 @@ func RegisterRoutes(r gin.IRouter, s *submission.Service, streamer submissioneve
 	h := &handler{
 		svc: s, streamer: streamer,
 		identities: o.IdentityLookup, activityHook: o.ActivityHook, rbac: o.RBAC,
+		comp: o.Companion,
 	}
 
 	// resolver 为 nil 时 LoadAccess 为空操作；生产环境 router 始终传入 RBAC
@@ -69,6 +72,7 @@ type handler struct {
 	identities   IdentityLookup
 	activityHook ActivityHook
 	rbac         *rbac.Service
+	comp         *companion.Service
 }
 
 // decorateItems 在 service 返回后批量填充当前页的公开身份，避免逐行查询。
@@ -264,6 +268,14 @@ func (h *handler) create(c *gin.Context) {
 		if err := h.activityHook.RecordSubmission(c.Request.Context(), claims.UserID, sub.ID); err != nil {
 			slog.Warn("activity submission hook failed",
 				"user_id", claims.UserID, "submission_id", sub.ID, "err", err)
+		}
+	}
+	if sub.ContestID != nil && h.comp != nil {
+		if err := h.comp.RecordContestSubmission(
+			c.Request.Context(), sub.UserID, *sub.ContestID, sub.CreatedAt,
+		); err != nil {
+			slog.Warn("companion contest submission hook failed",
+				"user_id", sub.UserID, "contest_id", *sub.ContestID, "err", err)
 		}
 	}
 	httpx.Created(c, submission.ToCreated(sub))
