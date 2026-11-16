@@ -13,6 +13,7 @@ import (
 
 	"github.com/kaptree/kapoj/apps/server/internal/activity"
 	"github.com/kaptree/kapoj/apps/server/internal/ai"
+	"github.com/kaptree/kapoj/apps/server/internal/companion"
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/learning"
@@ -346,6 +347,45 @@ func TestMigrateCreatesSiteSchema(t *testing.T) {
 	assert.True(t, g.Migrator().HasTable(&site.VisitCounter{}))
 	assert.True(t, g.Migrator().HasColumn(&site.Settings{}, "home_json"))
 	assert.True(t, g.Migrator().HasColumn(&site.Settings{}, "footer_police_url"))
+}
+
+func TestMigrateCreatesCompanionSchema(t *testing.T) {
+	dsn := os.Getenv("KAPOJ_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("KAPOJ_TEST_DATABASE_URL not set; skipping database test")
+	}
+	g, err := open(dsn, io.Discard)
+	require.NoError(t, err)
+	require.NoError(t, Migrate(g))
+	sqlDB, err := g.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	for _, table := range []string{"companion_states", "companion_events"} {
+		assert.True(t, g.Migrator().HasTable(table), "缺少表 %s", table)
+	}
+	assert.True(t, g.Migrator().HasIndex(&companion.Event{}, "uniq_companion_events_user_key"))
+	assert.True(t, g.Migrator().HasIndex(&companion.Event{}, "idx_companion_events_user_unread"))
+	assert.True(t, g.Migrator().HasIndex(&companion.Event{}, "idx_companion_events_user_date"))
+	assert.True(t, g.Migrator().HasColumn(&companion.State{}, "unlocked_skins_json"))
+
+	userID := time.Now().UnixNano()
+	key := fmt.Sprintf("test_companion_event_%d", userID)
+	t.Cleanup(func() {
+		require.NoError(t, g.Where("user_id = ?", userID).Delete(&companion.Event{}).Error)
+		require.NoError(t, g.Where("user_id = ?", userID).Delete(&companion.State{}).Error)
+	})
+
+	first := &companion.Event{
+		UserID: userID, Key: key, Type: "signin", Bond: 3,
+		EventDate: "2026-11-17", CreatedAt: time.Now(),
+	}
+	require.NoError(t, g.Create(first).Error)
+	duplicate := &companion.Event{
+		UserID: userID, Key: key, Type: "signin", Bond: 3,
+		EventDate: "2026-11-17", CreatedAt: time.Now(),
+	}
+	assert.Error(t, g.Create(duplicate).Error, "同一用户同一 key 只能有一条伙伴事件")
 }
 
 func TestMigrateCreatesAvatarColumns(t *testing.T) {

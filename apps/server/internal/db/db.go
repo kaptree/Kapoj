@@ -14,6 +14,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/ai"
 	"github.com/kaptree/kapoj/apps/server/internal/backup"
 	"github.com/kaptree/kapoj/apps/server/internal/certificate"
+	"github.com/kaptree/kapoj/apps/server/internal/companion"
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/learning"
@@ -97,6 +98,7 @@ func Migrate(g *gorm.DB) error {
 			&site.Settings{}, &site.VisitCounter{},
 			&mail.Settings{}, &Migration{},
 			&backup.BackupPackage{}, &backup.BackupSchedule{}, &backup.BackupRestoreJob{},
+			&companion.State{}, &companion.Event{},
 		); err != nil {
 			return err
 		}
