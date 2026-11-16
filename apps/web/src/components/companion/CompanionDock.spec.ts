@@ -31,6 +31,15 @@ async function mountDock(path = '/') {
   })
 }
 
+/** Document-order tabbables, so Tab behavior can be asserted in jsdom. */
+function tabbableElements(): HTMLElement[] {
+  return Array.from(
+    document.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  )
+}
+
 beforeEach(() => {
   localStorage.clear()
   auth.isLoggedIn = true
@@ -77,6 +86,25 @@ describe('CompanionDock', () => {
     await wrapper.get('.companion-dock__toggle').trigger('click')
     await wrapper.get('.companion-dock__quiet').trigger('click')
     expect(useCompanionStore().activityLevel).toBe('quiet')
+  })
+
+  it('moves keyboard focus into the panel and tabs to its controls', async () => {
+    const wrapper = await mountDock()
+    await flushPromises()
+    await wrapper.get('.companion-dock__toggle').trigger('click')
+    await flushPromises()
+
+    const panel = wrapper.get('.companion-dock__panel')
+    const active = document.activeElement as HTMLElement | null
+    expect(active).not.toBeNull()
+    expect(panel.element === active || panel.element.contains(active)).toBe(true)
+
+    const order = tabbableElements()
+    const index = order.indexOf(active!)
+    expect(index).toBeGreaterThanOrEqual(0)
+    const next = order[index + 1]
+    expect(next).toBeDefined()
+    expect(panel.element.contains(next)).toBe(true)
   })
 
   it('disappears when the companion is disabled', async () => {

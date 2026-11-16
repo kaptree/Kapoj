@@ -33,6 +33,7 @@ const summary = ref<ActivitySummary | null>(null)
 const signingIn = ref(false)
 const signInError = ref(false)
 const toggleRef = ref<HTMLButtonElement | null>(null)
+const panelRef = ref<HTMLElement | null>(null)
 
 const visible = computed(
   () => auth.isLoggedIn && store.enabled && !muted.value && !AUTH_ROUTES.has(String(route.name)),
@@ -78,9 +79,21 @@ function close(): void {
   })
 }
 
+function focusPanel(): void {
+  const target = panelRef.value?.querySelector<HTMLElement>(
+    'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+  )
+  ;(target ?? panelRef.value)?.focus()
+}
+
 function toggle(): void {
-  if (open.value) close()
-  else open.value = true
+  if (open.value) {
+    close()
+    return
+  }
+
+  open.value = true
+  void nextTick(focusPanel)
 }
 
 function onWindowKeydown(event: KeyboardEvent): void {
@@ -117,12 +130,40 @@ onBeforeUnmount(() => {
 
 <template>
   <div v-if="visible" class="companion-dock">
+    <div class="companion-dock__anchor">
+      <button
+        v-if="!open && signedInToday === false"
+        class="companion-dock__signin"
+        type="button"
+        :disabled="signingIn"
+        @click="handleSignIn"
+      >
+        {{ signingIn ? '签到中…' : '签到' }}
+      </button>
+      <button
+        ref="toggleRef"
+        class="companion-dock__toggle"
+        type="button"
+        :aria-expanded="open ? 'true' : 'false'"
+        aria-controls="companion-dock-panel"
+        :aria-label="open ? '收起伙伴面板' : '打开伙伴面板'"
+        @click="toggle"
+      >
+        <CompanionAvatar pose="chibi" size="sm" eager />
+        <span class="companion-dock__dot" aria-hidden="true" />
+      </button>
+    </div>
+
+    <p v-if="signInError" class="companion-dock__error">……线路断了。</p>
+
     <div
       v-if="open"
       id="companion-dock-panel"
+      ref="panelRef"
       class="companion-dock__panel"
       role="region"
       aria-label="KapOJ 伙伴"
+      tabindex="-1"
     >
       <div class="companion-dock__intro">
         <CompanionAvatar pose="bust" size="sm" eager />
@@ -168,32 +209,6 @@ onBeforeUnmount(() => {
         </button>
       </div>
     </div>
-
-    <p v-if="signInError" class="companion-dock__error">……线路断了。</p>
-
-    <div class="companion-dock__anchor">
-      <button
-        v-if="!open && signedInToday === false"
-        class="companion-dock__signin"
-        type="button"
-        :disabled="signingIn"
-        @click="handleSignIn"
-      >
-        {{ signingIn ? '签到中…' : '签到' }}
-      </button>
-      <button
-        ref="toggleRef"
-        class="companion-dock__toggle"
-        type="button"
-        :aria-expanded="open ? 'true' : 'false'"
-        aria-controls="companion-dock-panel"
-        :aria-label="open ? '收起伙伴面板' : '打开伙伴面板'"
-        @click="toggle"
-      >
-        <CompanionAvatar pose="chibi" size="sm" eager />
-        <span class="companion-dock__dot" aria-hidden="true" />
-      </button>
-    </div>
   </div>
 </template>
 
@@ -204,7 +219,7 @@ onBeforeUnmount(() => {
   bottom: var(--kapoj-space-5);
   z-index: 25;
   display: flex;
-  flex-direction: column;
+  flex-direction: column-reverse;
   align-items: flex-end;
   gap: 10px;
 }
