@@ -14,6 +14,7 @@ import type {
   UserActivity,
 } from '@/api/types'
 import { GUEST_PERM } from '@/permissions'
+import { useCompanionStore } from '@/stores/companion'
 import { DEFAULT_FOOTER, DEFAULT_HOME, useSiteStore } from '@/stores/site'
 import HomeView from './HomeView.vue'
 
@@ -225,6 +226,7 @@ function hrefs(wrapper: Awaited<ReturnType<typeof mountHome>>['wrapper']) {
 }
 
 beforeEach(() => {
+  localStorage.removeItem('kapoj.companion.prefs')
   auth.isLoggedIn = false
   auth.user = null
   guest.permissions = []
@@ -282,6 +284,24 @@ describe('HomeView', () => {
     expect(usersApi.getUserActivity).not.toHaveBeenCalled()
     expect(submissionsApi.listSubmissions).not.toHaveBeenCalled()
     expect(leaderboardApi.getRatingHistory).not.toHaveBeenCalled()
+  })
+
+  it('shows the companion and greeting in the hero', async () => {
+    const { wrapper } = await mountHome()
+    expect(wrapper.find('.hero__companion').exists()).toBe(true)
+    expect(wrapper.find('.companion-bubble').exists()).toBe(true)
+    expect(wrapper.find('.hero__companion').text().length).toBeGreaterThan(0)
+  })
+
+  it('shows the abstract fallback when the companion is disabled', async () => {
+    const { wrapper } = await mountHome()
+    const store = useCompanionStore()
+    store.load()
+    store.setEnabled(false)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.hero__companion').exists()).toBe(false)
+    expect(wrapper.find('.hero__signal').exists()).toBe(true)
+    store.reset()
   })
 
   it('falls back to the default home copy when the site config is unavailable', async () => {

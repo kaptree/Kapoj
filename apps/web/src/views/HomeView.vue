@@ -3,17 +3,23 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import Button from 'primevue/button'
 
 import type { SiteLink } from '@/api/types'
+import CompanionAvatar from '@/components/companion/CompanionAvatar.vue'
+import CompanionBubble from '@/components/companion/CompanionBubble.vue'
+import MangaLabel from '@/components/companion/MangaLabel.vue'
 import HomeLinkCard from '@/components/home/HomeLinkCard.vue'
 import HomeProfileCard from '@/components/home/HomeProfileCard.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppStatusTag from '@/components/ui/AppStatusTag.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
+import { pickCompanionLine } from '@/content/companion/lines.zh-CN'
 import { useHomeData } from '@/composables/useHomeData'
 import { usePlatformHealth } from '@/composables/usePlatformHealth'
 import { GUEST_PERM } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
+import { useCompanionStore } from '@/stores/companion'
 import { useGuestStore } from '@/stores/guest'
 import { useSiteStore } from '@/stores/site'
+import { localDateKey } from '@/utils/date'
 import { formatDateTime } from '@/utils/format'
 import { formatDelta } from '@/utils/rating'
 
@@ -40,8 +46,11 @@ const CHART_PADDING = 6
 const auth = useAuthStore()
 const guest = useGuestStore()
 const site = useSiteStore()
+const companion = useCompanionStore()
 const homeData = useHomeData()
 const health = usePlatformHealth()
+
+companion.load()
 
 const now = ref(new Date())
 const networkOnline = ref(typeof navigator === 'undefined' ? true : navigator.onLine)
@@ -132,6 +141,7 @@ const greeting = computed(() => {
 
 const greetingName = computed(() => auth.user?.nickname.trim() || '同学')
 const greetingText = computed(() => `${greeting.value}，${greetingName.value}`)
+const companionGreeting = computed(() => pickCompanionLine('greeting', localDateKey()))
 const presence = computed<'online' | 'away' | 'offline'>(() => {
   if (!networkOnline.value) return 'offline'
   return pageVisible.value ? 'online' : 'away'
@@ -295,7 +305,7 @@ onBeforeUnmount(() => {
       as="section"
       tone="default"
       padding="none"
-      class="hero"
+      class="hero companion-sticker"
       aria-labelledby="home-title"
     >
       <div class="hero__copy">
@@ -341,6 +351,16 @@ onBeforeUnmount(() => {
             outlined
           />
         </div>
+      </div>
+
+      <div v-if="companion.enabled" class="hero__companion" aria-hidden="false">
+        <CompanionAvatar pose="bust" expression="smug" size="lg" />
+        <CompanionBubble :text="companionGreeting" />
+      </div>
+      <div v-else class="hero__signal" aria-hidden="true">
+        <span class="hero__signal-ring" />
+        <span class="hero__signal-ring" />
+        <span class="hero__signal-mark">K</span>
       </div>
 
       <aside class="hero__status" aria-label="平台状态">
@@ -432,7 +452,7 @@ onBeforeUnmount(() => {
       aria-labelledby="home-overview-title"
     >
       <div class="section-head">
-        <p class="section-eyebrow">LEARNING OVERVIEW</p>
+        <MangaLabel index="01" label="LEARNING OVERVIEW" kana="学習記録" />
         <h2 id="home-overview-title" class="section-title">学习概览</h2>
         <p class="section-subtitle">根据你的真实练习数据生成，帮助你决定下一步。</p>
       </div>
@@ -618,7 +638,7 @@ onBeforeUnmount(() => {
       aria-labelledby="home-quick-title"
     >
       <div class="section-head">
-        <p class="section-eyebrow">QUICK START</p>
+        <MangaLabel index="02" label="QUICK START" kana="練習開始" />
         <h2 id="home-quick-title" class="section-title">{{ site.home.quickTitle }}</h2>
       </div>
       <div class="quick-grid">
@@ -639,7 +659,7 @@ onBeforeUnmount(() => {
       aria-labelledby="home-growth-title"
     >
       <div class="section-head">
-        <p class="section-eyebrow">GROWTH CENTER</p>
+        <MangaLabel index="03" label="GROWTH" kana="成長記録" />
         <h2 id="home-growth-title" class="section-title">{{ site.home.growthTitle }}</h2>
       </div>
       <div class="growth-grid">
@@ -668,7 +688,7 @@ onBeforeUnmount(() => {
 .hero {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.9fr);
+  grid-template-columns: minmax(0, 1.15fr) minmax(220px, 0.55fr) minmax(300px, 0.8fr);
   gap: var(--kapoj-space-5);
   overflow: hidden;
 }
@@ -689,10 +709,74 @@ onBeforeUnmount(() => {
 }
 
 .hero__copy,
+.hero__companion,
+.hero__signal,
 .hero__status {
   position: relative;
   z-index: 1;
   min-width: 0;
+}
+
+.hero__companion {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kapoj-space-3);
+  align-items: center;
+  align-self: center;
+  justify-content: center;
+  min-height: 300px;
+  padding: var(--kapoj-space-4) 0;
+}
+
+.hero__companion :deep(.companion-avatar) {
+  width: min(190px, 30vw);
+}
+
+.hero__companion :deep(.companion-bubble) {
+  align-self: flex-end;
+  max-width: 100%;
+}
+
+.hero__signal {
+  display: grid;
+  place-items: center;
+  align-self: center;
+  min-height: 300px;
+  padding: var(--kapoj-space-4) 0;
+}
+
+.hero__signal-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  border: 1px solid var(--kapoj-manga-line);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.hero__signal-ring:first-child {
+  width: 150px;
+  height: 150px;
+  background: var(--kapoj-kapo-soft);
+}
+
+.hero__signal-ring:nth-child(2) {
+  width: 210px;
+  height: 210px;
+}
+
+.hero__signal-mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  color: var(--kapoj-kapo-text);
+  font-family: var(--kapoj-font-mono);
+  font-size: 1.5rem;
+  font-weight: 700;
+  border: 1px solid var(--kapoj-manga-line);
+  border-radius: 50%;
 }
 
 .hero__copy {
@@ -1510,6 +1594,17 @@ onBeforeUnmount(() => {
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+@media (max-width: 1100px) {
+  .hero {
+    grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.9fr);
+  }
+
+  .hero__companion,
+  .hero__signal {
+    display: none;
   }
 }
 
