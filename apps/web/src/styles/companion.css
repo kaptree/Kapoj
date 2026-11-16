@@ -1,0 +1,4 @@
+.companion-sticker {
+  border: 1px solid var(--kapoj-manga-line);
+  box-shadow: var(--kapoj-sticker-shadow);
+}

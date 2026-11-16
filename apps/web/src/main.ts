@@ -13,6 +13,7 @@ import { primeVueLocale } from './theme/primevue-locale'
 import './styles/tokens.css'
 import './styles/base.css'
 import './styles.css'
+import './styles/companion.css'
 
 initTheme()
 

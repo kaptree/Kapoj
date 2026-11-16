@@ -37,6 +37,18 @@
   --kapoj-re: #f472b6;
   --kapoj-se: #fb7185;
 
+  /* Companion */
+  --kapoj-kapo: #e23a4e;
+  --kapoj-kapo-strong: #ff5c70;
+  --kapoj-kapo-text: #ff7a88;
+  --kapoj-kapo-soft: rgb(226 58 78 / 12%);
+  --kapoj-silver: #c9d1dc;
+  --kapoj-silver-strong: #eef2f7;
+  --kapoj-ink: #0b0b10;
+  --kapoj-manga-line: rgb(238 242 247 / 18%);
+  --kapoj-manga-dot: rgb(226 58 78 / 14%);
+  --kapoj-sticker-shadow: 4px 4px 0 rgb(0 0 0 / 45%);
+
   /* Learning tree */
   --kapoj-tree-trunk: #754c2e;
   --kapoj-tree-branch: #507b62;
@@ -126,6 +138,17 @@
   --kapoj-special: #6d5bd0;
   --kapoj-re: #b83280;
   --kapoj-se: #b91c1c;
+
+  --kapoj-kapo: #c81e36;
+  --kapoj-kapo-strong: #a8142a;
+  --kapoj-kapo-text: #a8142a;
+  --kapoj-kapo-soft: rgb(200 30 54 / 8%);
+  --kapoj-silver: #5e6f86;
+  --kapoj-silver-strong: #172b4d;
+  --kapoj-ink: #1a1a22;
+  --kapoj-manga-line: rgb(23 43 77 / 12%);
+  --kapoj-manga-dot: rgb(200 30 54 / 8%);
+  --kapoj-sticker-shadow: 4px 4px 0 rgb(23 43 77 / 14%);
 
   --kapoj-tree-trunk: #9b6b42;
   --kapoj-tree-branch: #57916e;
