@@ -26,7 +26,7 @@ const emit = defineEmits<{ retry: [] }>()
 const companion = getActivePinia() ? useCompanionStore() : null
 companion?.load()
 
-const showMascot = computed(() => Boolean(props.mascot) && (companion?.enabled ?? true))
+const showMascot = computed(() => Boolean(props.mascot) && (companion?.effectiveEnabled ?? true))
 </script>
 
 <template>

@@ -54,4 +54,31 @@ describe('AuthLayout', () => {
     expect(wrapper.find('.auth-intro__companion').exists()).toBe(false)
     expect(wrapper.find('.auth-panel__companion').exists()).toBe(false)
   })
+
+  it('hides both companion blocks when the site disables the companion globally', async () => {
+    const router = makeRouter()
+    await router.push('/')
+    await router.isReady()
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const wrapper = mount(AuthLayout, {
+      props: { title: '登录' },
+      global: { plugins: [router, pinia] },
+    })
+    expect(wrapper.find('.auth-intro__companion').exists()).toBe(true)
+
+    useCompanionStore().applyGlobalConfig({
+      enabled: false,
+      name: 'Kapo',
+      defaultActivityLevel: 'normal',
+      contestMute: true,
+      allowUserDisable: true,
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.auth-intro__companion').exists()).toBe(false)
+    expect(wrapper.find('.auth-panel__companion').exists()).toBe(false)
+  })
 })

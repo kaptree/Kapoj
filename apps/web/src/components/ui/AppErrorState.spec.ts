@@ -38,4 +38,16 @@ describe('AppErrorState', () => {
     expect(wrapper.find('.companion-avatar').exists()).toBe(false)
     expect(wrapper.find('.p-button').exists()).toBe(true)
   })
+
+  it('hides the mascot when the site disables the companion globally', () => {
+    useCompanionStore().applyGlobalConfig({
+      enabled: false,
+      name: 'Kapo',
+      defaultActivityLevel: 'normal',
+      contestMute: true,
+      allowUserDisable: true,
+    })
+    const wrapper = mountError({ mascot: 'annoyed' })
+    expect(wrapper.find('.companion-avatar').exists()).toBe(false)
+  })
 })

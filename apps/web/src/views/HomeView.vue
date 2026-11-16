@@ -353,7 +353,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div v-if="companion.enabled" class="hero__companion" aria-hidden="false">
+      <div v-if="companion.effectiveEnabled" class="hero__companion" aria-hidden="false">
         <CompanionAvatar pose="bust" expression="smug" size="lg" />
         <CompanionBubble :text="companionGreeting" />
       </div>

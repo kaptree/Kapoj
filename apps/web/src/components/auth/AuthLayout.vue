@@ -54,7 +54,7 @@ companion.load()
         <li><i class="pi pi-star" aria-hidden="true" /> 成就、任务与装扮</li>
       </ul>
 
-      <div v-if="companion.enabled" class="auth-intro__companion" aria-hidden="true">
+      <div v-if="companion.effectiveEnabled" class="auth-intro__companion" aria-hidden="true">
         <CompanionAvatar pose="full" expression="smug" size="lg" />
         <CompanionBubble text="登录而已……别紧张。" />
       </div>
@@ -77,7 +77,7 @@ companion.load()
         <p class="auth-panel__eyebrow">{{ eyebrow }}</p>
         <h2 :id="titleId" class="auth-panel__title">{{ title }}</h2>
         <p v-if="description" class="auth-panel__description">{{ description }}</p>
-        <div v-if="companion.enabled" class="auth-panel__companion" aria-hidden="true">
+        <div v-if="companion.effectiveEnabled" class="auth-panel__companion" aria-hidden="true">
           <CompanionAvatar pose="chibi" expression="pout" size="sm" />
           <span>登录而已……别紧张。</span>
         </div>

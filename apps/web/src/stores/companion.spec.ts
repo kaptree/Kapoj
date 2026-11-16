@@ -204,6 +204,17 @@ describe('companion store', () => {
     expect(store.latestEventLine).toBe('过了。下一题，别得意。')
   })
 
+  it('applies the remote public profile flag', () => {
+    const store = useCompanionStore()
+    expect(store.publicProfile).toBe(false)
+
+    store.applyRemoteState(remoteState({ publicProfile: true }))
+    expect(store.publicProfile).toBe(true)
+
+    store.applyRemoteState(remoteState({ publicProfile: 'yes' as never }))
+    expect(store.publicProfile).toBe(true)
+  })
+
   it('gates the effective companion on the site-wide switch', () => {
     const store = useCompanionStore()
     store.load()

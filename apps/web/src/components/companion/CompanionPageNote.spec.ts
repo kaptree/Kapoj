@@ -58,6 +58,18 @@ describe('CompanionPageNote', () => {
     expect((await mountAt('/problems')).find('.companion-note').exists()).toBe(false)
   })
 
+  it('renders nothing when the site disables the companion globally', async () => {
+    useCompanionStore().applyGlobalConfig({
+      enabled: false,
+      name: 'Kapo',
+      defaultActivityLevel: 'normal',
+      contestMute: true,
+      allowUserDisable: true,
+    })
+
+    expect((await mountAt('/problems')).find('.companion-note').exists()).toBe(false)
+  })
+
   it('stays hidden on a running contest while its status is unknown and after it resolves', async () => {
     let resolveContest!: (value: unknown) => void
     vi.mocked(getContest).mockImplementation(

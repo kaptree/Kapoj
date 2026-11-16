@@ -305,6 +305,16 @@ describe('HomeView', () => {
     store.reset()
   })
 
+  it('shows the abstract fallback when the site disables the companion globally', async () => {
+    const { wrapper } = await mountHome()
+    const store = useCompanionStore()
+    store.load()
+    store.applyGlobalConfig({ ...DEFAULT_COMPANION, enabled: false })
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.hero__companion').exists()).toBe(false)
+    expect(wrapper.find('.hero__signal').exists()).toBe(true)
+  })
+
   it('falls back to the default home copy when the site config is unavailable', async () => {
     guest.can.mockReturnValue(true)
     const { wrapper } = await mountHome()

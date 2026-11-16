@@ -138,6 +138,7 @@ export const useCompanionStore = defineStore('companion', () => {
   const unreadCount = ref(DEFAULT_COMPANION_PROGRESS.unreadCount)
   const latestEventLine = ref('')
   const globalEnabled = ref(true)
+  const publicProfile = ref(false)
 
   /** Both the site-wide switch and the visitor's own preference must allow it. */
   const effectiveEnabled = computed(() => globalEnabled.value && enabled.value)
@@ -240,6 +241,10 @@ export const useCompanionStore = defineStore('companion', () => {
     if (typeof state.levelName === 'string' && state.levelName.trim() !== '') {
       levelName.value = state.levelName.trim()
     }
+
+    if (typeof state.publicProfile === 'boolean') {
+      publicProfile.value = state.publicProfile
+    }
   }
 
   /** Applies the site-wide switch; a missing config is treated as enabled. */
@@ -274,6 +279,7 @@ export const useCompanionStore = defineStore('companion', () => {
     unreadCount,
     latestEventLine,
     globalEnabled,
+    publicProfile,
     effectiveEnabled,
     applyRemoteState,
     applyGlobalConfig,

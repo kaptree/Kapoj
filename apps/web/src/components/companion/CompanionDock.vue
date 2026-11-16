@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, RouterLink } from 'vue-router'
 
+import { getCompanion, petCompanion } from '../../api/companion'
 import { getActivitySummary, signInActivity } from '../../api/leaderboard'
 import type { ActivitySummary } from '../../api/types'
 import { useCompanionMute } from '../../composables/useCompanionMute'
@@ -10,6 +11,7 @@ import { useAuthStore } from '../../stores/auth'
 import { useCompanionStore } from '../../stores/companion'
 import { localDateKey } from '../../utils/date'
 import CompanionAvatar from './CompanionAvatar.vue'
+import CompanionBondMeter from './CompanionBondMeter.vue'
 import CompanionBubble from './CompanionBubble.vue'
 
 const AUTH_ROUTES = new Set([
@@ -32,20 +34,27 @@ const signedInToday = ref<boolean | null>(null)
 const summary = ref<ActivitySummary | null>(null)
 const signingIn = ref(false)
 const signInError = ref(false)
+const petting = ref(false)
+const petError = ref(false)
+const petLine = ref('')
 const toggleRef = ref<HTMLButtonElement | null>(null)
 const panelRef = ref<HTMLElement | null>(null)
 
 const visible = computed(
   () =>
     auth.isLoggedIn &&
-    store.enabled &&
+    store.effectiveEnabled &&
     !muted.value &&
     !checking.value &&
     !AUTH_ROUTES.has(String(route.name)),
 )
 
-const line = computed(() =>
-  pickCompanionLine(signedInToday.value === false ? 'signin' : 'greeting', localDateKey()),
+/** A just-petted response wins, then the latest synced event, then the greeting. */
+const line = computed(
+  () =>
+    petLine.value ||
+    store.latestEventLine ||
+    pickCompanionLine(signedInToday.value === false ? 'signin' : 'greeting', localDateKey()),
 )
 
 async function loadSummary(): Promise<void> {
@@ -72,6 +81,42 @@ async function handleSignIn(): Promise<void> {
     signInError.value = true
   } finally {
     signingIn.value = false
+  }
+}
+
+/**
+ * Pets once per day on the server. The button is guarded while in flight so a
+ * double click can never submit twice; failures keep the last known bond.
+ */
+async function handlePet(): Promise<void> {
+  if (petting.value) return
+
+  petting.value = true
+  petError.value = false
+  petLine.value = ''
+  try {
+    const result = await petCompanion()
+    store.bond = result.bond
+    store.level = result.level
+    petLine.value = result.awarded
+      ? pickCompanionLine('pet', localDateKey())
+      : '今天已经摸过了。……明天再来。'
+    // The pet response omits the level name, next threshold and daily gain, so
+    // an awarded pet refreshes the full state to keep the meter honest.
+    if (result.awarded) void refreshProgress()
+  } catch {
+    petError.value = true
+  } finally {
+    petting.value = false
+  }
+}
+
+/** Best-effort read model refresh; a failure leaves the pet result in place. */
+async function refreshProgress(): Promise<void> {
+  try {
+    store.applyRemoteState(await getCompanion())
+  } catch {
+    // The pet itself succeeded; the next sync will fill in the details.
   }
 }
 
@@ -121,6 +166,15 @@ watch(
   () => route.fullPath,
   () => {
     open.value = false
+  },
+)
+
+// The pet acknowledgement is transient: once the event poll delivers a newer
+// line it takes over the bubble again.
+watch(
+  () => store.latestEventLine,
+  () => {
+    petLine.value = ''
   },
 )
 
@@ -175,6 +229,16 @@ onBeforeUnmount(() => {
         <CompanionBubble :text="line" />
       </div>
 
+      <CompanionBondMeter
+        v-if="store.bond > 0"
+        :bond="store.bond"
+        :level="store.level"
+        :level-name="store.levelName"
+        :next-threshold="store.nextThreshold"
+        :daily-gain="store.dailyGain"
+        :daily-cap="store.dailyCap"
+      />
+
       <p v-if="summary" class="companion-dock__activity">
         <span>今日活跃 {{ summary.todayPoints }}</span>
         <span>总活跃 {{ summary.totalPoints }}</span>
@@ -189,6 +253,12 @@ onBeforeUnmount(() => {
       >
         {{ signingIn ? '签到中…' : '签到' }}
       </button>
+
+      <button class="companion-dock__pet" type="button" :disabled="petting" @click="handlePet">
+        {{ petting ? '抚摸中…' : '摸摸她' }}
+      </button>
+
+      <p v-if="petError" class="companion-dock__error">……线路断了。</p>
 
       <div class="companion-dock__links">
         <RouterLink class="companion-dock__link" to="/problems">去刷题</RouterLink>
@@ -313,6 +383,7 @@ onBeforeUnmount(() => {
 }
 
 .companion-dock__signin,
+.companion-dock__pet,
 .companion-dock__quiet {
   padding: 6px 12px;
   font-size: 0.82rem;
@@ -324,17 +395,20 @@ onBeforeUnmount(() => {
 }
 
 .companion-dock__signin:hover:not(:disabled),
+.companion-dock__pet:hover:not(:disabled),
 .companion-dock__quiet:hover:not(:disabled) {
   border-color: var(--kapoj-kapo);
 }
 
 .companion-dock__signin:disabled,
+.companion-dock__pet:disabled,
 .companion-dock__quiet:disabled {
   cursor: default;
   opacity: 0.55;
 }
 
 .companion-dock__signin:focus-visible,
+.companion-dock__pet:focus-visible,
 .companion-dock__quiet:focus-visible,
 .companion-dock__link:focus-visible,
 .companion-dock__close:focus-visible {

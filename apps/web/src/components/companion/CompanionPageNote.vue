@@ -24,7 +24,7 @@ const expression = computed(() => note.value?.expression ?? 'smug')
 const visible = computed(
   () =>
     Boolean(note.value) &&
-    store.enabled &&
+    store.effectiveEnabled &&
     store.activityLevel !== 'quiet' &&
     !muted.value &&
     !checking.value &&

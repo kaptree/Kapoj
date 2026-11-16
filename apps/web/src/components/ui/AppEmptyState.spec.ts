@@ -32,6 +32,18 @@ describe('AppEmptyState', () => {
     expect(wrapper.find('.app-empty__icon').exists()).toBe(true)
   })
 
+  it('hides the mascot when the site disables the companion globally', () => {
+    useCompanionStore().applyGlobalConfig({
+      enabled: false,
+      name: 'Kapo',
+      defaultActivityLevel: 'normal',
+      contestMute: true,
+      allowUserDisable: true,
+    })
+    const wrapper = mount(AppEmptyState, { props: { title: '空', mascot: 'lost' } })
+    expect(wrapper.find('.companion-avatar').exists()).toBe(false)
+  })
+
   it('drops the icon box while the mascot is visible', () => {
     const wrapper = mount(AppEmptyState, { props: { title: '空', mascot: 'lost' } })
     expect(wrapper.find('.app-empty__icon').exists()).toBe(false)

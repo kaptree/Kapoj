@@ -1,14 +1,20 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
+import { updateCompanionSettings } from '@/api/companion'
+import type { CompanionSettingsPatch } from '@/api/types'
 import AppSurface from '@/components/ui/AppSurface.vue'
+import { useAuthStore } from '@/stores/auth'
 import { useCompanionStore } from '@/stores/companion'
 import type { CompanionActivityLevel } from '@/stores/companion'
 
+const auth = useAuthStore()
 const store = useCompanionStore()
 
-// Preferences live in this browser only; loading once keeps every surface in sync.
+// Preferences live in this browser; loading once keeps every surface in sync.
 store.load()
+
+const syncError = ref(false)
 
 const ACTIVITY_OPTIONS: ReadonlyArray<{
   value: CompanionActivityLevel
@@ -25,12 +31,44 @@ const activityHint = computed(
   () => ACTIVITY_OPTIONS.find((option) => option.value === store.activityLevel)?.hint ?? '',
 )
 
+/**
+ * Signed-in visitors sync the server-supported fields. Guests and network
+ * failures keep the local preference: this is a best-effort mirror, never a
+ * gate on the Phase 0–1 behaviour.
+ */
+async function persistSettings(patch: CompanionSettingsPatch): Promise<void> {
+  if (!auth.isLoggedIn) return
+
+  syncError.value = false
+  try {
+    const state = await updateCompanionSettings(patch)
+    store.applyRemoteState(state)
+  } catch {
+    syncError.value = true
+  }
+}
+
 function toggleEnabled(): void {
-  store.setEnabled(!store.enabled)
+  const next = !store.enabled
+  store.setEnabled(next)
+  void persistSettings({ dockEnabled: next })
+}
+
+function selectActivity(value: CompanionActivityLevel): void {
+  store.setActivityLevel(value)
+  void persistSettings({ activityLevel: value })
 }
 
 function toggleMotion(): void {
   store.setMotion(store.motion === 'reduce' ? 'system' : 'reduce')
+}
+
+function togglePublicProfile(): void {
+  if (!auth.isLoggedIn) return
+
+  const next = !store.publicProfile
+  store.publicProfile = next
+  void persistSettings({ publicProfile: next })
 }
 </script>
 
@@ -39,9 +77,13 @@ function toggleMotion(): void {
     <div class="companion-settings__head">
       <span class="companion-settings__title">伙伴</span>
       <span class="companion-settings__desc">
-        她的出现频率、动效与显示方式。当前为本地偏好，仅本浏览器生效。
+        她的出现频率、动效与显示方式。登录后会同步到账号，未登录时仅本浏览器生效。
       </span>
     </div>
+
+    <p v-if="!store.globalEnabled" class="companion-settings__notice">
+      站点已关闭伙伴功能，这里的偏好会保留，重新开启后继续生效。
+    </p>
 
     <div class="companion-settings__rows">
       <div class="companion-settings__row">
@@ -79,7 +121,7 @@ function toggleMotion(): void {
             class="companion-settings__segment"
             :data-test="option.test"
             :aria-pressed="store.activityLevel === option.value"
-            @click="store.setActivityLevel(option.value)"
+            @click="selectActivity(option.value)"
           >
             {{ option.label }}
           </button>
@@ -107,6 +149,32 @@ function toggleMotion(): void {
           减少动效
         </button>
       </div>
+
+      <div v-if="auth.isLoggedIn" class="companion-settings__row">
+        <div class="companion-settings__copy">
+          <span class="companion-settings__label">公开资料展示</span>
+          <span class="companion-settings__hint">
+            {{
+              store.publicProfile
+                ? '其他访客可以在你的公开资料里看到她。'
+                : '伙伴不会出现在你的公开资料里。'
+            }}
+          </span>
+        </div>
+        <button
+          type="button"
+          class="companion-settings__toggle"
+          data-test="public-profile"
+          :aria-pressed="store.publicProfile"
+          @click="togglePublicProfile"
+        >
+          公开伙伴
+        </button>
+      </div>
+
+      <p v-if="syncError" class="companion-settings__hint" role="status">
+        未能同步到服务器，本地偏好已保存。
+      </p>
 
       <div class="companion-settings__footer">
         <span class="companion-settings__hint">重置会恢复默认设置并清空本地偏好。</span>
@@ -145,6 +213,17 @@ function toggleMotion(): void {
 .companion-settings__desc {
   color: var(--kapoj-text-muted);
   font-size: 12px;
+}
+
+.companion-settings__notice {
+  margin: 0 0 var(--kapoj-space-3);
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--kapoj-kapo-text);
+  background: var(--kapoj-kapo-soft);
+  border: 1px solid color-mix(in srgb, var(--kapoj-kapo) 30%, var(--kapoj-border));
+  border-radius: var(--kapoj-radius-sm);
 }
 
 .companion-settings__rows {
