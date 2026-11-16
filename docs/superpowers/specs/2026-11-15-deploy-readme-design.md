@@ -70,7 +70,7 @@ COPY --from=build --chown=65532:65532 /out/data /data
 USER 65532:65532
 ```
 
-行为等价：静态二进制（`CGO_ENABLED=0`）无运行时依赖，保持 nonroot、`/data` 可写；代价是镜像约大 30MB，可接受。`apps/judge/Dockerfile` 的基础 `docker:cli` 来自 Docker Hub，无需改动。
+行为等价：保持 nonroot、`/data` 可写；**注意静态二进制仍依赖运行时 CA 信任库**（出站 TLS：SMTP/AI/S3），运行阶段必须包含 `/etc/ssl/certs/ca-certificates.crt`（从构建阶段 COPY，golang 镜像自带）；代价是镜像约大 30MB + 200KB CA 包。`apps/judge/Dockerfile` 的基础 `docker:cli` 来自 Docker Hub，无需改动。
 
 ### 交付物 1：`apps/web/Dockerfile`（新增）
 
