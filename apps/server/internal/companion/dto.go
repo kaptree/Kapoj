@@ -36,3 +36,40 @@ type SubmissionInfo struct {
 	CreatedAt time.Time
 	JudgedAt  *time.Time
 }
+
+// StateView is the read model returned by the API for the companion state. It
+// carries the denormalized progress plus the unread event count and today's
+// gain breakdown for the dock bond meter.
+type StateView struct {
+	Bond          int         `json:"bond"`
+	Level         int         `json:"level"`
+	LevelName     string      `json:"levelName"`
+	NextThreshold int         `json:"nextThreshold"`
+	DailyGain     int         `json:"dailyGain"`
+	DailyCap      int         `json:"dailyCap"`
+	ActivityLevel string      `json:"activityLevel"`
+	DockEnabled   bool        `json:"dockEnabled"`
+	PublicProfile bool        `json:"publicProfile"`
+	EquippedSkin  string      `json:"equippedSkin"`
+	UnlockedSkins []string    `json:"unlockedSkins"`
+	UnreadCount   int         `json:"unreadCount"`
+	TodayEvents   []EventView `json:"todayEvents"`
+}
+
+// EventView is the read model for one companion event.
+type EventView struct {
+	ID        int64          `json:"id"`
+	Type      string         `json:"type"`
+	Bond      int            `json:"bond"`
+	Payload   map[string]any `json:"payload"`
+	ReadAt    *time.Time     `json:"readAt,omitempty"`
+	CreatedAt time.Time      `json:"createdAt"`
+}
+
+// PetResult describes the outcome of a pet interaction: whether bond was
+// awarded for this date, and the resulting bond/level for the meter.
+type PetResult struct {
+	Awarded bool `json:"awarded"`
+	Bond    int  `json:"bond"`
+	Level   int  `json:"level"`
+}

@@ -235,6 +235,30 @@ func (r *Repository) UnreadEvents(ctx context.Context, userID int64, limit int) 
 	return events, nil
 }
 
+// CountUnread returns the number of the user's unread events.
+func (r *Repository) CountUnread(ctx context.Context, userID int64) (int, error) {
+	var n int64
+	if err := r.db.WithContext(ctx).Model(&Event{}).
+		Where("user_id = ? AND read_at IS NULL", userID).
+		Count(&n).Error; err != nil {
+		return 0, err
+	}
+	return int(n), nil
+}
+
+// EventsByDate returns the user's events for a local date ordered by id. It
+// returns an empty slice when there are none.
+func (r *Repository) EventsByDate(ctx context.Context, userID int64, date string) ([]Event, error) {
+	events := []Event{}
+	if err := r.db.WithContext(ctx).
+		Where("user_id = ? AND event_date = ?", userID, date).
+		Order("id").
+		Find(&events).Error; err != nil {
+		return nil, err
+	}
+	return events, nil
+}
+
 // MarkRead marks the given event ids as read for the user. Ids belonging to
 // other users or already-read events are ignored.
 func (r *Repository) MarkRead(ctx context.Context, userID int64, ids []int64) error {
