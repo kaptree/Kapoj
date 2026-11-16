@@ -37,15 +37,26 @@ onMounted(() => {
 
 <style scoped>
 .companion-focus-chip {
+  position: fixed;
+  top: calc(var(--kapoj-header-height) + 8px);
+  right: var(--kapoj-space-5);
+  z-index: 29;
   display: inline-flex;
   align-items: center;
   padding: 2px 10px;
-  margin: 0 0 12px;
+  margin: 0;
   font-family: var(--kapoj-font-mono);
   font-size: 10px;
   letter-spacing: 0.12em;
   color: var(--kapoj-text-secondary);
+  background: var(--kapoj-surface);
   border: 1px solid var(--kapoj-border-strong);
   border-radius: 999px;
+}
+
+@media (max-width: 640px) {
+  .companion-focus-chip {
+    right: 16px;
+  }
 }
 </style>
