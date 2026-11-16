@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/api/http'
 import type { Me } from '@/api/types'
 import { useAuthStore } from '@/stores/auth'
+import { useCompanionStore } from '@/stores/companion'
 
 import App from './App.vue'
 
@@ -226,5 +227,18 @@ describe('App auto sign-in', () => {
     await flushPromises()
 
     expect(leaderboardApi.signInActivity).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('App companion preferences', () => {
+  it('loads companion preferences on startup', async () => {
+    localStorage.setItem(
+      'kapoj.companion.prefs',
+      JSON.stringify({ enabled: false, activityLevel: 'quiet', motion: 'reduce' }),
+    )
+    await mountApp()
+    const store = useCompanionStore()
+    expect(store.enabled).toBe(false)
+    expect(store.activityLevel).toBe('quiet')
   })
 })

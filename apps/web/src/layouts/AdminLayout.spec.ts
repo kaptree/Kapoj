@@ -58,6 +58,8 @@ describe('AdminLayout', () => {
     expect(wrapper.findComponent(AdminNav).exists()).toBe(true)
     expect(wrapper.text()).toContain('概览')
     expect(wrapper.text()).toContain('仪表盘内容')
+    expect(wrapper.find('.companion-dock').exists()).toBe(false)
+    expect(wrapper.find('.companion-note').exists()).toBe(false)
   })
 
   it('opens the mobile drawer with the admin nav and closes on navigate', async () => {

@@ -6,11 +6,17 @@ import { useToast } from 'primevue/usetoast'
 
 import { signInActivity } from '@/api/leaderboard'
 import { useAuthStore } from '@/stores/auth'
+import { useCompanionStore } from '@/stores/companion'
 import { useSiteStore } from '@/stores/site'
 
 const auth = useAuthStore()
 const site = useSiteStore()
+const companion = useCompanionStore()
 const toast = useToast()
+
+// Load once at startup so quiet/disabled preferences also apply on auth and
+// error pages, before any dock or page note mounts.
+companion.load()
 
 let signInInFlight = false
 const attemptedSignInKeys = new Set<string>()
