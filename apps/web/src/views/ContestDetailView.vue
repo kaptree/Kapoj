@@ -39,6 +39,7 @@ import type {
 } from '@/api/types'
 import ContestRanklist from '@/components/ContestRanklist.vue'
 import MarkdownView from '@/components/MarkdownView.vue'
+import ContestSimilarityPanel from '@/components/contest/similarity/ContestSimilarityPanel.vue'
 import AppEmptyState from '@/components/ui/AppEmptyState.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppFormField from '@/components/ui/AppFormField.vue'
@@ -104,6 +105,7 @@ const canClone = computed(() => auth.can(PERM.contest.create))
 const canDelete = computed(() => auth.can(PERM.contest.delete))
 const canManageAnnouncements = computed(() => auth.can(PERM.contest.announcement.manage))
 const canTestSubmit = computed(() => auth.can(PERM.contest.update))
+const canManageSimilarity = computed(() => auth.can(PERM.contest.update))
 const isLoggedIn = computed(() => auth.isLoggedIn)
 const loginTo = computed(() => ({
   name: 'login',
@@ -516,6 +518,7 @@ async function doRemoveAnnouncement(item: AnnouncementItem) {
             <Tab value="problems">题目</Tab>
             <Tab value="ranklist">榜单</Tab>
             <Tab value="announcements">公告</Tab>
+            <Tab v-if="isEnded && canManageSimilarity" value="similarity">查重</Tab>
           </TabList>
           <TabPanels>
             <TabPanel value="problems">
@@ -650,6 +653,10 @@ async function doRemoveAnnouncement(item: AnnouncementItem) {
                 </div>
                 <MarkdownView :source="item.contentMd" :theme="isDark ? 'dark' : 'light'" />
               </div>
+            </TabPanel>
+
+            <TabPanel v-if="isEnded && canManageSimilarity" value="similarity">
+              <ContestSimilarityPanel :contest-id="contest?.id ?? contestId" />
             </TabPanel>
           </TabPanels>
         </Tabs>
