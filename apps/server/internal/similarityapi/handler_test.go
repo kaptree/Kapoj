@@ -3,6 +3,7 @@ package similarityapi_test
 import (
 	"bytes"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -218,6 +219,10 @@ func (f *fixture) matchPath(contestID, matchID int64) string {
 	return fmt.Sprintf("/api/contests/%d/similarity/matches/%d", contestID, matchID)
 }
 
+func (f *fixture) exportPath(contestID int64) string {
+	return fmt.Sprintf("/api/contests/%d/similarity/export.csv", contestID)
+}
+
 func TestRequiresContestUpdatePermission(t *testing.T) {
 	f := newFixture(t)
 
@@ -323,6 +328,57 @@ func TestRunStatusAndMatchEndpoints(t *testing.T) {
 	// A run id from another contest is not visible through this contest.
 	w, _ = f.do(http.MethodGet, f.runPath(f.otherContestID, runID), f.managerToken, nil)
 	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestExportCSVEndpoint(t *testing.T) {
+	f := newFixture(t)
+
+	// The export requires contest management permission.
+	w, _ := f.do(http.MethodGet, f.exportPath(f.contestID), f.userToken, nil)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+
+	// Unfinished contests are rejected like every other similarity endpoint.
+	w, _ = f.do(http.MethodGet, f.exportPath(f.activeContestID), f.managerToken, nil)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	subA := insertSubmission(t, f.db, f.managerID, f.contestID, f.problemID,
+		submission.LanguageCPP, "int a;", f.start.Add(time.Minute))
+	subB := insertSubmission(t, f.db, f.userID, f.contestID, f.problemID,
+		submission.LanguageCPP, "int b;", f.start.Add(2*time.Minute))
+
+	finished := time.Now().UTC().Truncate(time.Microsecond)
+	run := &similarity.Run{
+		ContestID: f.contestID, ProblemID: f.problemID, Status: similarity.RunStatusCompleted,
+		ThresholdPercent: 85, IgnoreCommonCode: true, Engine: "winnowing-v1", EngineVersion: "1",
+		FinishedAt: &finished,
+	}
+	require.NoError(t, f.repo.CreateRun(context.Background(), run))
+	require.NoError(t, f.repo.ReplaceMatches(context.Background(), run.ID, []similarity.Match{{
+		ContestID: f.contestID, ProblemID: f.problemID,
+		OriginalSubmissionID: subA, SuspectSubmissionID: subB,
+		OriginalUserID: f.managerID, SuspectUserID: f.userID,
+		Language: submission.LanguageCPP, SimilarityPercent: 95.5, DicePercent: 90,
+		SharedFingerprints: 15, OriginalFingerprints: 20, SuspectFingerprints: 20,
+		OriginalCreatedAt: f.start.Add(time.Minute), SuspectCreatedAt: f.start.Add(2 * time.Minute),
+	}}))
+
+	path := f.exportPath(f.contestID) + "?problemId=" + fmt.Sprint(f.problemID)
+	w, _ = f.do(http.MethodGet, path, f.managerToken, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, "text/csv; charset=utf-8", w.Header().Get("Content-Type"))
+	assert.Equal(t, fmt.Sprintf(`attachment; filename="contest-%d-similarity.csv"`, f.contestID),
+		w.Header().Get("Content-Disposition"))
+	require.True(t, bytes.HasPrefix(w.Body.Bytes(), []byte{0xEF, 0xBB, 0xBF}))
+
+	records, err := csv.NewReader(bytes.NewReader(w.Body.Bytes()[3:])).ReadAll()
+	require.NoError(t, err)
+	require.Len(t, records, 2)
+	assert.Equal(t, "比赛ID", records[0][0])
+	assert.Equal(t, "最高重复率", records[0][17])
+	assert.Equal(t, "A", records[1][3])
+	assert.Equal(t, fmt.Sprint(subA), records[1][5])
+	assert.Equal(t, "95.5", records[1][17])
+	assert.Equal(t, "85", records[1][19])
 }
 
 func TestCrossContestMatchIsNotFound(t *testing.T) {

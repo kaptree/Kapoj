@@ -323,6 +323,43 @@ func (s *Service) Matches(ctx context.Context, v Viewer, contestID int64, proble
 	return MatchPage{Total: total, Items: items}, nil
 }
 
+// ExportCSV returns every match of the latest completed run per problem as a
+// CSV document encoded as UTF-8 with a BOM.
+func (s *Service) ExportCSV(ctx context.Context, v Viewer, contestID, problemID int64) ([]byte, error) {
+	if err := requireManage(v); err != nil {
+		return nil, err
+	}
+	c, err := s.findEndedContest(ctx, contestID)
+	if err != nil {
+		return nil, err
+	}
+	problems, err := s.contests.FindProblems(ctx, contestID)
+	if err != nil {
+		return nil, err
+	}
+	problemsByID := make(map[int64]contest.ProblemRow, len(problems))
+	for _, p := range problems {
+		problemsByID[p.ProblemID] = p
+	}
+
+	// ListMatches caps page sizes, so walk its pages to collect every row from
+	// the latest completed runs.
+	rows := make([]MatchRow, 0)
+	for page := 1; ; page++ {
+		batch, total, err := s.repo.ListMatches(ctx, MatchFilter{
+			ContestID: contestID, ProblemID: problemID, Page: page, PageSize: csvPageSize,
+		})
+		if err != nil {
+			return nil, err
+		}
+		rows = append(rows, batch...)
+		if len(batch) == 0 || int64(len(rows)) >= total {
+			break
+		}
+	}
+	return buildMatchesCSV(c, problemsByID, rows)
+}
+
 // MatchDetail returns both sides of a match, rejecting matches that belong to
 // a different contest.
 func (s *Service) MatchDetail(ctx context.Context, v Viewer, contestID, matchID int64) (*MatchDetail, error) {

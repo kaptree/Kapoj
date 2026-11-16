@@ -1,6 +1,8 @@
 package similarityapi
 
 import (
+	"fmt"
+	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -47,6 +49,7 @@ func RegisterRoutes(r gin.IRouter, s *similarity.Service, opts ...Options) {
 	r.GET("/contests/:id/similarity/runs/:runId", load, require, h.run)
 	r.GET("/contests/:id/similarity/matches", load, require, h.matches)
 	r.GET("/contests/:id/similarity/matches/:matchId", load, require, h.matchDetail)
+	r.GET("/contests/:id/similarity/export.csv", load, require, h.exportCSV)
 }
 
 type handler struct {
@@ -222,4 +225,22 @@ func (h *handler) matchDetail(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, result)
+}
+
+func (h *handler) exportCSV(c *gin.Context) {
+	contestID, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	problemID, ok := queryID(c, "problemId")
+	if !ok {
+		return
+	}
+	data, err := h.svc.ExportCSV(c.Request.Context(), viewer(c), contestID, problemID)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="contest-%d-similarity.csv"`, contestID))
+	c.Data(http.StatusOK, "text/csv; charset=utf-8", data)
 }
