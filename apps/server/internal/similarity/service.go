@@ -159,6 +159,7 @@ func (s *Service) Overview(ctx context.Context, v Viewer, contestID int64) (*Ove
 			view.ThresholdPercent = st.ThresholdPercent
 			view.IgnoreCommonCode = st.IgnoreCommonCode
 			view.BaseLanguage = st.BaseLanguage
+			view.BaseCode = st.BaseCode
 		}
 		if run := runs[p.ProblemID]; run != nil {
 			rv := toRunView(*run)

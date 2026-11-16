@@ -9252,6 +9252,8 @@ export interface components {
             thresholdPercent: number;
             ignoreCommonCode: boolean;
             baseLanguage: string;
+            /** @description 已保存的公共代码模板 */
+            baseCode: string;
             submissionCount: number;
             matchCount: number;
             /** @description 最近一次查重任务（任意状态）；从未运行时为 null */

@@ -53,6 +53,7 @@ function problem(overrides: Partial<ContestSimilarityProblem> = {}): ContestSimi
     thresholdPercent: 70,
     ignoreCommonCode: false,
     baseLanguage: '',
+    baseCode: '',
     submissionCount: 12,
     matchCount: 0,
     latestRun: null,
@@ -178,6 +179,38 @@ describe('ContestSimilarityPanel', () => {
     expect(wrapper.findAll('[data-test="similarity-problem-row"]')[0]!.text()).toContain('80%')
   })
 
+  it('preserves an existing common-code template when saving other settings', async () => {
+    vi.mocked(getSimilarityOverview).mockResolvedValue(
+      overview([problem({ thresholdPercent: 70, baseLanguage: 'cpp', baseCode: 'int main() {}' })]),
+    )
+    vi.mocked(updateSimilaritySettings).mockResolvedValue({
+      contestId: 7,
+      problemId: 42,
+      thresholdPercent: 80,
+      ignoreCommonCode: false,
+      baseLanguage: 'cpp',
+      baseCode: 'int main() {}',
+    })
+
+    const wrapper = await mountPanel()
+    await wrapper.findAll('[data-test="similarity-settings-open"]')[0]!.trigger('click')
+    await flushPromises()
+
+    expect(textareaOf('[data-test="similarity-settings-base-code"]').value).toBe('int main() {}')
+
+    setValue(inputOf('[data-test="similarity-settings-threshold"]'), '80')
+    await flushPromises()
+    click('[data-test="similarity-settings-save"]')
+    await flushPromises()
+
+    expect(updateSimilaritySettings).toHaveBeenCalledWith(7, 42, {
+      thresholdPercent: 80,
+      ignoreCommonCode: false,
+      baseLanguage: 'cpp',
+      baseCode: 'int main() {}',
+    })
+  })
+
   it('blocks saving a base code without a language', async () => {
     const wrapper = await mountPanel()
     await wrapper.findAll('[data-test="similarity-settings-open"]')[0]!.trigger('click')
@@ -190,6 +223,10 @@ describe('ContestSimilarityPanel', () => {
 
     expect(updateSimilaritySettings).not.toHaveBeenCalled()
     expect(field('[data-test="similarity-settings-error"]').textContent).toContain('语言')
+
+    setValue(inputOf('[data-test="similarity-settings-threshold"]'), '75')
+    await flushPromises()
+    expect(document.querySelector('[data-test="similarity-settings-error"]')).toBeNull()
   })
 
   it('starts a single problem run', async () => {
@@ -235,6 +272,85 @@ describe('ContestSimilarityPanel', () => {
     await vi.advanceTimersByTimeAsync(4000)
     await flushPromises()
     expect(getSimilarityOverview).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not restart polling after unmount', async () => {
+    vi.useFakeTimers()
+    let resolveOverview!: (value: ContestSimilarityOverview) => void
+    vi.mocked(getSimilarityOverview).mockImplementationOnce(
+      () =>
+        new Promise<ContestSimilarityOverview>((resolve) => {
+          resolveOverview = resolve
+        }),
+    )
+
+    const wrapper = await mountPanel()
+    expect(getSimilarityOverview).toHaveBeenCalledTimes(1)
+
+    wrapper.unmount()
+    resolveOverview(overview([problem({ latestRun: run({ status: 'running' }) })]))
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(6000)
+    await flushPromises()
+
+    expect(getSimilarityOverview).toHaveBeenCalledTimes(1)
+  })
+
+  it('refreshes after a run start that lands while a poll is in flight', async () => {
+    vi.useFakeTimers()
+    vi.mocked(getSimilarityOverview).mockResolvedValueOnce(
+      overview([problem({ latestRun: run({ status: 'running' }) })]),
+    )
+    const wrapper = await mountPanel()
+    expect(getSimilarityOverview).toHaveBeenCalledTimes(1)
+
+    let resolvePoll!: (value: ContestSimilarityOverview) => void
+    vi.mocked(getSimilarityOverview).mockImplementationOnce(
+      () =>
+        new Promise<ContestSimilarityOverview>((resolve) => {
+          resolvePoll = resolve
+        }),
+    )
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(getSimilarityOverview).toHaveBeenCalledTimes(2)
+
+    vi.mocked(startSimilarityRuns).mockResolvedValue([run({ status: 'queued' })])
+    vi.mocked(getSimilarityOverview).mockResolvedValueOnce(
+      overview([problem({ latestRun: run({ status: 'queued' }) })]),
+    )
+    await wrapper.find('[data-test="similarity-run-all"]').trigger('click')
+    await flushPromises()
+
+    resolvePoll(overview([problem({ latestRun: run({ status: 'running' }) })]))
+    await flushPromises()
+
+    expect(startSimilarityRuns).toHaveBeenCalledWith(7)
+    expect(getSimilarityOverview).toHaveBeenCalledTimes(3)
+  })
+
+  it('shows an error toast and keeps the dialog open when saving fails', async () => {
+    vi.mocked(updateSimilaritySettings).mockRejectedValue(new Error('save failed'))
+
+    const wrapper = await mountPanel()
+    await wrapper.findAll('[data-test="similarity-settings-open"]')[0]!.trigger('click')
+    await flushPromises()
+    click('[data-test="similarity-settings-save"]')
+    await flushPromises()
+
+    expect(toast.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }))
+    expect(document.querySelector('[data-test="similarity-settings-save"]')).not.toBeNull()
+    expect(wrapper.findAll('[data-test="similarity-problem-row"]')[0]!.text()).toContain('70%')
+  })
+
+  it('shows an error toast when starting runs fails', async () => {
+    vi.mocked(startSimilarityRuns).mockRejectedValue(new Error('queue down'))
+
+    const wrapper = await mountPanel()
+    await wrapper.find('[data-test="similarity-run-all"]').trigger('click')
+    await flushPromises()
+
+    expect(toast.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }))
+    expect(getSimilarityOverview).toHaveBeenCalledTimes(1)
   })
 
   it('shows empty and error states', async () => {

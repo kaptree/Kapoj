@@ -472,3 +472,28 @@ func TestOverviewShowsLatestRunAnyStatus(t *testing.T) {
 	require.Len(t, page.Items, 1)
 	assert.Equal(t, int64(1), page.Items[0].OriginalSubmissionID)
 }
+
+func TestOverviewIncludesSavedBaseCode(t *testing.T) {
+	e := newServiceEnv(t)
+	ctx := context.Background()
+
+	_, err := e.svc.SaveSettings(ctx, managerViewer, e.contestID, e.problemA,
+		similarity.SettingsInput{
+			ThresholdPercent: 80, IgnoreCommonCode: true,
+			BaseLanguage: "cpp", BaseCode: "int main() { return 0; }",
+		})
+	require.NoError(t, err)
+
+	overview, err := e.svc.Overview(ctx, managerViewer, e.contestID)
+	require.NoError(t, err)
+
+	var view similarity.ProblemView
+	for _, p := range overview.Problems {
+		if p.ProblemID == e.problemA {
+			view = p
+		}
+	}
+	assert.Equal(t, "cpp", view.BaseLanguage)
+	assert.Equal(t, "int main() { return 0; }", view.BaseCode,
+		"overview must expose the saved template so settings can be edited without clearing it")
+}

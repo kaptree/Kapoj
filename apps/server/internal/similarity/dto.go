@@ -24,6 +24,7 @@ type ProblemView struct {
 	ThresholdPercent int      `json:"thresholdPercent"`
 	IgnoreCommonCode bool     `json:"ignoreCommonCode"`
 	BaseLanguage     string   `json:"baseLanguage"`
+	BaseCode         string   `json:"baseCode"`
 	SubmissionCount  int      `json:"submissionCount"`
 	MatchCount       int      `json:"matchCount"`
 	LatestRun        *RunView `json:"latestRun"`

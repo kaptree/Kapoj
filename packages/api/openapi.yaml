@@ -4040,7 +4040,7 @@ components:
           items: { $ref: '#/components/schemas/ContestSimilarityProblem' }
     ContestSimilarityProblem:
       type: object
-      required: [problemId, displayId, title, slug, thresholdPercent, ignoreCommonCode, baseLanguage, submissionCount, matchCount, latestRun]
+      required: [problemId, displayId, title, slug, thresholdPercent, ignoreCommonCode, baseLanguage, baseCode, submissionCount, matchCount, latestRun]
       properties:
         problemId: { type: integer, format: int64 }
         displayId: { type: string }
@@ -4049,6 +4049,7 @@ components:
         thresholdPercent: { type: integer, description: 已保存的阈值；未保存时为默认阈值 }
         ignoreCommonCode: { type: boolean }
         baseLanguage: { type: string }
+        baseCode: { type: string, description: 已保存的公共代码模板 }
         submissionCount: { type: integer }
         matchCount: { type: integer }
         latestRun:

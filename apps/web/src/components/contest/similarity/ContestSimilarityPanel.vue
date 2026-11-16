@@ -40,6 +40,8 @@ const savingSettings = ref(false)
 
 let pollTimer: number | undefined
 let loadingOverview = false
+let refreshQueued = false
+let disposed = false
 
 const problems = computed(() => overview.value?.problems ?? [])
 const hasActiveRuns = computed(() =>
@@ -97,6 +99,7 @@ function stopPolling() {
 }
 
 function syncPolling() {
+  if (disposed) return
   if (hasActiveRuns.value) {
     if (pollTimer === undefined) {
       pollTimer = window.setInterval(() => {
@@ -109,22 +112,36 @@ function syncPolling() {
 }
 
 async function loadOverview(background = false) {
-  if (loadingOverview) return
+  if (disposed) return
+  if (loadingOverview) {
+    // A run start may land while a poll is in flight; refresh once it settles.
+    if (background) refreshQueued = true
+    return
+  }
   loadingOverview = true
   if (!background) {
     loading.value = true
     error.value = ''
   }
   try {
-    overview.value = await getSimilarityOverview(props.contestId)
+    const data = await getSimilarityOverview(props.contestId)
+    if (disposed) return
+    overview.value = data
     error.value = ''
   } catch (e) {
+    if (disposed) return
     const message = failureMessage(e, '加载查重概览失败，请稍后再试')
     error.value = background && overview.value ? '刷新查重状态失败，稍后将自动重试' : message
   } finally {
     loadingOverview = false
-    if (!background) loading.value = false
-    syncPolling()
+    if (!disposed) {
+      if (!background) loading.value = false
+      syncPolling()
+      if (refreshQueued) {
+        refreshQueued = false
+        void loadOverview(true)
+      }
+    }
   }
 }
 
@@ -144,6 +161,7 @@ function applySettings(problemId: number, saved: ContestSimilaritySettingsInput)
             thresholdPercent: saved.thresholdPercent,
             ignoreCommonCode: saved.ignoreCommonCode,
             baseLanguage: saved.baseLanguage,
+            baseCode: saved.baseCode,
           }
         : problem,
     ),
@@ -203,7 +221,11 @@ onMounted(() => {
   void loadOverview()
 })
 
-onBeforeUnmount(stopPolling)
+onBeforeUnmount(() => {
+  disposed = true
+  refreshQueued = false
+  stopPolling()
+})
 </script>
 
 <template>

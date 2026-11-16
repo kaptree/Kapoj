@@ -46,12 +46,15 @@ watch(
     threshold.value = props.problem?.thresholdPercent ?? 70
     ignoreCommonCode.value = props.problem?.ignoreCommonCode ?? false
     baseLanguage.value = props.problem?.baseLanguage ?? ''
-    // The overview does not expose the stored base code; it must be re-entered.
-    baseCode.value = ''
+    baseCode.value = props.problem?.baseCode ?? ''
     error.value = ''
   },
   { immediate: true },
 )
+
+watch([threshold, ignoreCommonCode, baseLanguage, baseCode], () => {
+  if (error.value) error.value = ''
+})
 
 function submit() {
   if (props.saving) return
