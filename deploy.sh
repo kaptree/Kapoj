@@ -10,7 +10,9 @@
 #          → 拉取评测语言镜像 → 健康检查 → 打印访问地址与管理员引导。
 # 重复执行 install 幂等：已存在的 .env 不会被覆盖或修改。
 #
-# 环境变量覆盖：
+# 环境变量覆盖（sudo 会重置环境，赋值必须放在 sudo 之后，例如：
+#   sudo KAPOJ_DOCKER_MIRRORS="https://你的加速地址" bash deploy.sh
+#   sudo KAPOJ_DOCKER_MIRRORS=off bash deploy.sh）：
 #   KAPOJ_DOCKER_MIRRORS  空格分隔的镜像加速地址；设为 off 跳过加速配置
 #   KAPOJ_COMPOSE_URL     compose v2 独立二进制下载地址（回退安装分支）
 #
@@ -154,6 +156,21 @@ ensure_mirrors() {
   else
     mirrors=("${DEFAULT_MIRRORS[@]}")
   fi
+  # 明确征得同意：此操作会修改宿主机配置并重启 Docker（影响本机其他容器）
+  if [ "$FLAG_YES" -eq 0 ]; then
+    log "将写入加速地址：${mirrors[*]}"
+    if [ -f "$daemon_json" ]; then
+      log "已存在的 ${daemon_json} 将备份为 daemon.json.bak 后合并 registry-mirrors 键"
+    fi
+    log "期间会重启 Docker（本机正在运行的其他容器会短暂中断）"
+    local reply=""
+    printf '%s' "继续？(回车=是 / n=否): "
+    if ! read -r reply; then reply="n"; fi
+    case "$reply" in
+      ""|y|Y|yes|Yes) ;;
+      *) warn "已跳过镜像加速配置（后续拉取可能失败；可设 KAPOJ_DOCKER_MIRRORS 或用 --yes 跳过询问）"; return ;;
+    esac
+  fi
   local json="["
   local first=1
   for m in "${mirrors[@]}"; do
@@ -189,13 +206,49 @@ PYEOF
 }
 
 # ---------- .env ----------
+# 从 .env 读取部署入口设置，供 summary/wait_entry/status 使用；
+# --domain 与 .env 不一致时更新这两个键（脚本唯一受支持的 .env 写路径，用户显式意图）。
+load_entry_settings() {
+  [ -f .env ] || return 0
+  local env_domain env_site
+  env_domain=$(grep -E '^KAPOJ_DOMAIN=' .env | head -1 | cut -d= -f2-)
+  env_site=$(grep -E '^KAPOJ_SITE_ADDRESS=' .env | head -1 | cut -d= -f2-)
+  if [ -n "$DOMAIN" ] && [ "$DOMAIN" != "$env_domain" ]; then
+    validate_domain "$DOMAIN"
+    set_env_key KAPOJ_DOMAIN "$DOMAIN"
+    SITE_ADDRESS="$DOMAIN"
+    set_env_key KAPOJ_SITE_ADDRESS "$SITE_ADDRESS"
+    ok "已更新 .env：KAPOJ_DOMAIN / KAPOJ_SITE_ADDRESS → $DOMAIN"
+  else
+    DOMAIN="$env_domain"
+    SITE_ADDRESS="${env_site:-:80}"
+    if [ -n "$DOMAIN" ] && [ "$SITE_ADDRESS" != "$DOMAIN" ]; then
+      SITE_ADDRESS="$DOMAIN"
+      set_env_key KAPOJ_SITE_ADDRESS "$SITE_ADDRESS"
+      ok "已同步 .env：KAPOJ_SITE_ADDRESS=$SITE_ADDRESS（与 KAPOJ_DOMAIN 对齐）"
+    fi
+  fi
+}
+
 gen_env() {
   if [ -f .env ]; then
     ok "检测到根目录 .env，保留现有配置（不覆盖任何密钥）"
     return
   fi
+  # 交互输入先于文件创建：避免 cp 之后因非交互/EOF 半途退出、留下占位符 .env
+  if [ -n "$DOMAIN" ]; then
+    validate_domain "$DOMAIN"
+  elif [ "$FLAG_YES" -eq 1 ]; then
+    DOMAIN=""
+  elif [ -t 0 ]; then
+    printf '%s' "请输入对外域名（如 oj.example.com；留空则仅用 HTTP 80 访问）: "
+    read -r DOMAIN || die "读取输入失败（EOF）。非交互环境请用 --domain <域名> 或 --yes（无域名 HTTP）。"
+    [ -n "$DOMAIN" ] && validate_domain "$DOMAIN"
+  else
+    die "检测到非交互终端且未提供 --domain/--yes。请使用：sudo bash deploy.sh --yes（仅 HTTP）或 sudo bash deploy.sh --domain <域名>（自动 HTTPS）。"
+  fi
   step "生成统一配置文件 .env"
-  cp .env.example .env
+  ( umask 077 && cp .env.example .env && chmod 600 .env )
   if [ -n "$DOMAIN" ]; then
     validate_domain "$DOMAIN"
   elif [ "$FLAG_YES" -eq 0 ]; then
@@ -217,10 +270,21 @@ gen_env() {
   set_env_key KAPOJ_AI_ENCRYPTION_KEY  "$(openssl rand -base64 32)"
   set_env_key KAPOJ_MAIL_ENCRYPTION_KEY "$(openssl rand -base64 32)"
   cur_trusted=$(grep -E '^KAPOJ_TRUSTED_PROXIES=' .env | head -1 | cut -d= -f2-)
-  [ -z "$cur_trusted" ] && set_env_key KAPOJ_TRUSTED_PROXIES "172.16.0.0/12"
+  if [ -z "$cur_trusted" ]; then
+    set_env_key KAPOJ_TRUSTED_PROXIES "172.16.0.0/12"
+  fi
   chmod 600 .env
+  # 占位符守卫：任何密钥仍为模板默认值/空值时大声警告（不该出现，出现即说明生成中断）
+  local bad=""
+  if grep -q '^POSTGRES_PASSWORD=change-me' .env; then bad+="POSTGRES_PASSWORD "; fi
+  if grep -q '^MINIO_ROOT_PASSWORD=change-me' .env; then bad+="MINIO_ROOT_PASSWORD "; fi
+  if grep -q '^KAPOJ_JWT_SECRET=change-me' .env; then bad+="KAPOJ_JWT_SECRET "; fi
+  if [ -z "$(grep -E '^KAPOJ_AI_ENCRYPTION_KEY=' .env | head -1 | cut -d= -f2-)" ]; then bad+="KAPOJ_AI_ENCRYPTION_KEY "; fi
+  if [ -z "$(grep -E '^KAPOJ_MAIL_ENCRYPTION_KEY=' .env | head -1 | cut -d= -f2-)" ]; then bad+="KAPOJ_MAIL_ENCRYPTION_KEY "; fi
+  if [ -n "$bad" ]; then
+    warn "警告：.env 中以下密钥仍为占位/空值：$bad—— 请立即修改或删除 .env 后重跑 install！"
+  fi
   ok "已生成 .env（随机数据库/MinIO 密码、JWT、AI/邮件加密密钥），请妥善备份"
-  chmod 600 .env
 }
 
 validate_domain() {
@@ -295,7 +359,9 @@ wait_entry() {
       sleep 2
       i=$((i + 1))
     done
-    warn "HTTPS 暂未就绪：证书签发需要域名解析正确、80/443 对公网开放（含云安全组）且域名已 ICP 备案。可稍后手动验证 https://$DOMAIN"
+    die "HTTPS 入口 60 秒内未就绪。服务容器已启动，常见原因：域名 A 记录未生效、云安全组未放行 80/443、域名未 ICP 备案。
+    排查：ss -ltnp | grep ':80\\|:443' 与 docker compose -f $BASE_COMPOSE -f $PROD_COMPOSE logs web
+    稍后可手动验证 https://$DOMAIN 或重跑 ./deploy.sh update"
   else
     local i=0
     while [ $i -lt 15 ]; do
@@ -306,7 +372,8 @@ wait_entry() {
       sleep 2
       i=$((i + 1))
     done
-    warn "80 端口入口暂未就绪，请检查 web 容器：docker compose -f $BASE_COMPOSE -f $PROD_COMPOSE logs web"
+    "${COMPOSE[@]}" logs --tail=30 web || true
+    die "HTTP 入口 30 秒内未就绪。请按上方 web 日志排查（常见：80 端口被宿主机其他进程占用）。"
   fi
 }
 
@@ -336,6 +403,7 @@ cmd_install() {
   step "环境检查（root/系统/内存/磁盘）"
   check_os
   check_resources
+  load_entry_settings
   install_docker
   ensure_mirrors
   gen_env
@@ -355,6 +423,7 @@ cmd_update() {
       die "当前目录不是 git 仓库，无法 --pull。请重新上传最新代码后直接运行 ./deploy.sh update。"
     fi
   fi
+  load_entry_settings
   build_up
   docker image prune -f >/dev/null 2>&1 || true
   wait_health
@@ -366,6 +435,7 @@ cmd_status() {
     warn "Docker 未安装（先运行 sudo bash deploy.sh install）"
     return 0
   fi
+  load_entry_settings
   "${COMPOSE[@]}" ps
   if curl -m 3 -fsS "$HEALTH_URL" 2>/dev/null | grep -q '"status"[[:space:]]*:[[:space:]]*"ok"'; then
     ok "后端健康：$HEALTH_URL"
@@ -389,7 +459,7 @@ cmd_restart(){ "${COMPOSE[@]}" restart; }
 
 # ---------- 入口 ----------
 usage() {
-  sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '2,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 main() {

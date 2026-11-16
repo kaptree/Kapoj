@@ -7,6 +7,8 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/serve
 RUN mkdir -p /out/data
 
 FROM debian:bookworm-slim
+# 静态二进制仍需运行时 CA 信任库：SMTP TLS、AI provider、S3 兼容存储都走出站 HTTPS
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 RUN groupadd -r -g 65532 kapoj && useradd -r -g 65532 -u 65532 kapoj \
     && mkdir -p /data && chown kapoj:kapoj /data
 COPY --from=build /out/server /server

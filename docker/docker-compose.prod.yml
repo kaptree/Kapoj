@@ -30,8 +30,10 @@ services:
     build:
       context: ..
       dockerfile: apps/web/Dockerfile
-    env_file:
-      - ../.env
+    # Caddy 只需要站点地址；不放 env_file，避免数据库/JWT/AI 密钥进入入口容器环境。
+    # ${VAR:-default} 同时覆盖「未设置」与「显式置空」两种情况（env_file 会把空值原样传给 Caddy 导致崩溃循环）。
+    environment:
+      KAPOJ_SITE_ADDRESS: "${KAPOJ_SITE_ADDRESS:-:80}"
     ports:
       - "80:80"
       - "443:443"
