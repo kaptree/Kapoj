@@ -81,91 +81,12 @@ func (r *Repository) ApplyEvent(ctx context.Context, in EventInput) (*Event, boo
 	var out Event
 	created := false
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec(insertStateSQL, in.UserID).Error; err != nil {
-			return err
-		}
-		var st State
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("user_id = ?", in.UserID).First(&st).Error; err != nil {
-			return err
-		}
-
-		// A new local date resets the daily counter.
-		dailyGain := st.DailyGain
-		if st.DailyDate != in.EventDate {
-			dailyGain = 0
-		}
-
-		bond := in.Bond
-		if bond < 0 {
-			bond = 0
-		}
-		if !in.DailyCapBypass {
-			if rem := dailyCap - dailyGain; bond > rem {
-				bond = rem
-			}
-			if bond < 0 {
-				bond = 0
-			}
-			if in.SubCap > 0 {
-				var count int64
-				if err := tx.Model(&Event{}).
-					Where("user_id = ? AND type = ? AND event_date = ?", in.UserID, in.Type, in.EventDate).
-					Count(&count).Error; err != nil {
-					return err
-				}
-				if rem := in.SubCap - int(count); bond > rem {
-					bond = rem
-				}
-				if bond < 0 {
-					bond = 0
-				}
-			}
-		}
-
-		payload := in.Payload
-		if payload == nil {
-			payload = map[string]any{}
-		}
-		ev := Event{
-			UserID:    in.UserID,
-			Key:       in.Key,
-			Type:      in.Type,
-			Bond:      bond,
-			EventDate: in.EventDate,
-			Payload:   dbtypes.JSON[map[string]any]{Data: payload},
-			CreatedAt: time.Now(),
-		}
-		res := tx.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "user_id"}, {Name: "key"}},
-			DoNothing: true,
-		}).Create(&ev)
-		if res.Error != nil {
-			return res.Error
-		}
-		if res.RowsAffected == 0 {
-			// Duplicate key: return the existing event without touching state.
-			if err := tx.Where("user_id = ? AND key = ?", in.UserID, in.Key).First(&out).Error; err != nil {
-				return err
-			}
-			return nil
-		}
-
-		newBond := st.Bond + bond
-		lvl := LevelForBond(newBond)
-		updates := map[string]any{
-			"bond":  newBond,
-			"level": lvl.Level,
-		}
-		if !in.DailyCapBypass {
-			updates["daily_gain"] = dailyGain + bond
-			updates["daily_date"] = in.EventDate
-		}
-		if err := tx.Model(&State{}).Where("user_id = ?", in.UserID).Updates(updates).Error; err != nil {
+		ev, c, err := r.applyEventTx(tx, in)
+		if err != nil {
 			return err
 		}
 		out = ev
-		created = true
+		created = c
 		return nil
 	})
 	if err != nil {
@@ -174,28 +95,130 @@ func (r *Repository) ApplyEvent(ctx context.Context, in EventInput) (*Event, boo
 	return &out, created, nil
 }
 
+// applyEventTx applies one bond event inside an already-open transaction. It is
+// split out so Pet can record last_pet_date in the same transaction.
+func (r *Repository) applyEventTx(tx *gorm.DB, in EventInput) (Event, bool, error) {
+	var out Event
+	if err := tx.Exec(insertStateSQL, in.UserID).Error; err != nil {
+		return out, false, err
+	}
+	var st State
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("user_id = ?", in.UserID).First(&st).Error; err != nil {
+		return out, false, err
+	}
+
+	// A new local date resets the daily counter.
+	dailyGain := st.DailyGain
+	if st.DailyDate != in.EventDate {
+		dailyGain = 0
+	}
+
+	bond := in.Bond
+	if bond < 0 {
+		bond = 0
+	}
+	if !in.DailyCapBypass {
+		if rem := dailyCap - dailyGain; bond > rem {
+			bond = rem
+		}
+		if bond < 0 {
+			bond = 0
+		}
+		if in.SubCap > 0 {
+			// Sum the bond already awarded for this type/date, not the row
+			// count, so zero-bond rows do not consume sub-cap slots.
+			var awarded int64
+			if err := tx.Model(&Event{}).
+				Where("user_id = ? AND type = ? AND event_date = ?", in.UserID, in.Type, in.EventDate).
+				Select("COALESCE(SUM(bond), 0)").
+				Scan(&awarded).Error; err != nil {
+				return out, false, err
+			}
+			if rem := in.SubCap - int(awarded); bond > rem {
+				bond = rem
+			}
+			if bond < 0 {
+				bond = 0
+			}
+		}
+	}
+
+	payload := in.Payload
+	if payload == nil {
+		payload = map[string]any{}
+	}
+	ev := Event{
+		UserID:    in.UserID,
+		Key:       in.Key,
+		Type:      in.Type,
+		Bond:      bond,
+		EventDate: in.EventDate,
+		Payload:   dbtypes.JSON[map[string]any]{Data: payload},
+		CreatedAt: time.Now(),
+	}
+	res := tx.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "user_id"}, {Name: "key"}},
+		DoNothing: true,
+	}).Create(&ev)
+	if res.Error != nil {
+		return out, false, res.Error
+	}
+	if res.RowsAffected == 0 {
+		// Duplicate key: return the existing event without touching state.
+		if err := tx.Where("user_id = ? AND key = ?", in.UserID, in.Key).First(&out).Error; err != nil {
+			return out, false, err
+		}
+		return out, false, nil
+	}
+
+	newBond := st.Bond + bond
+	lvl := LevelForBond(newBond)
+	updates := map[string]any{
+		"bond":  newBond,
+		"level": lvl.Level,
+	}
+	if !in.DailyCapBypass {
+		updates["daily_gain"] = dailyGain + bond
+		updates["daily_date"] = in.EventDate
+	}
+	if err := tx.Model(&State{}).Where("user_id = ?", in.UserID).Updates(updates).Error; err != nil {
+		return out, false, err
+	}
+	return ev, true, nil
+}
+
 // Pet records one daily pet interaction (key pet:{date}, +1). It returns the
-// event and whether it was awarded today. On a repeat within the same date the
-// event is not re-created and no bond is added.
+// event and whether it was awarded today. last_pet_date is set in the same
+// transaction as the event; it is also set when the key already exists, so a
+// retry after a failed earlier write repairs the date.
 func (r *Repository) Pet(ctx context.Context, userID int64, date string) (*Event, bool, error) {
-	ev, created, err := r.ApplyEvent(ctx, EventInput{
-		UserID:    userID,
-		Key:       "pet:" + date,
-		Type:      "pet",
-		Bond:      1,
-		EventDate: date,
-		Payload:   map[string]any{},
+	var out Event
+	created := false
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		ev, c, err := r.applyEventTx(tx, EventInput{
+			UserID:    userID,
+			Key:       "pet:" + date,
+			Type:      "pet",
+			Bond:      1,
+			EventDate: date,
+			Payload:   map[string]any{},
+		})
+		if err != nil {
+			return err
+		}
+		if err := tx.Model(&State{}).Where("user_id = ?", userID).
+			Update("last_pet_date", date).Error; err != nil {
+			return err
+		}
+		out = ev
+		created = c
+		return nil
 	})
 	if err != nil {
 		return nil, false, err
 	}
-	if created {
-		if err := r.db.WithContext(ctx).Model(&State{}).
-			Where("user_id = ?", userID).Update("last_pet_date", date).Error; err != nil {
-			return nil, false, err
-		}
-	}
-	return ev, created, nil
+	return &out, created, nil
 }
 
 // UnreadEvents returns the user's unread events ordered by id, limited to

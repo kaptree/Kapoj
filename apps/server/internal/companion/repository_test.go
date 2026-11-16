@@ -192,6 +192,34 @@ func TestApplyEventSubCap(t *testing.T) {
 	assert.Equal(t, 3, st.DailyGain)
 }
 
+func TestApplyEventSubCapSumsAwardedBond(t *testing.T) {
+	g := testutil.PG(t)
+	repo := companion.NewGormRepository(g)
+	ctx := context.Background()
+	uid := newUser(t, g, "sub_cap_sum")
+
+	const date = "2026-11-17"
+	apply := func(key string) *companion.Event {
+		ev, created, err := repo.ApplyEvent(ctx, companion.EventInput{
+			UserID: uid, Key: key, Type: "ac_first", Bond: 10,
+			EventDate: date, Payload: map[string]any{}, SubCap: 3,
+		})
+		require.NoError(t, err)
+		require.True(t, created)
+		return ev
+	}
+
+	ev1 := apply("ac:first:1")
+	assert.Equal(t, 3, ev1.Bond, "a +10 event clamps to the 3 sub-cap")
+
+	ev2 := apply("ac:first:2")
+	assert.Equal(t, 0, ev2.Bond, "sub-cap sums awarded bond, so a zero-bond row follows")
+
+	st, err := repo.EnsureState(ctx, uid)
+	require.NoError(t, err)
+	assert.Equal(t, 3, st.Bond, "total awarded is 3, not 6")
+}
+
 func TestPetOncePerDate(t *testing.T) {
 	g := testutil.PG(t)
 	repo := companion.NewGormRepository(g)
@@ -228,6 +256,32 @@ func TestPetOncePerDate(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "2026-11-18", st.LastPetDate)
 	assert.Equal(t, 2, st.Bond)
+}
+
+func TestPetRepairsLastPetDateOnDuplicate(t *testing.T) {
+	g := testutil.PG(t)
+	repo := companion.NewGormRepository(g)
+	ctx := context.Background()
+	uid := newUser(t, g, "pet_repair")
+
+	const date = "2026-11-17"
+	_, created, err := repo.Pet(ctx, uid, date)
+	require.NoError(t, err)
+	require.True(t, created)
+
+	// Simulate the last_pet_date write being lost after the event committed.
+	require.NoError(t, g.Model(&companion.State{}).Where("user_id = ?", uid).
+		Update("last_pet_date", "").Error)
+
+	// A retry hits the duplicate key but must still repair last_pet_date.
+	_, created, err = repo.Pet(ctx, uid, date)
+	require.NoError(t, err)
+	assert.False(t, created, "pet remains idempotent per date")
+
+	st, err := repo.EnsureState(ctx, uid)
+	require.NoError(t, err)
+	assert.Equal(t, date, st.LastPetDate, "duplicate pet still repairs last_pet_date")
+	assert.Equal(t, 1, st.Bond, "duplicate pet does not add bond")
 }
 
 func TestUnreadEventsAndMarkRead(t *testing.T) {
