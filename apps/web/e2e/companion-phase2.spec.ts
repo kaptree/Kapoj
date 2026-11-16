@@ -102,18 +102,29 @@ test.describe('companion phase 2', () => {
 
     const quiet = settings.locator('[data-test="activity-quiet"]')
     const normal = settings.locator('[data-test="activity-normal"]')
-    await expect(normal).toHaveAttribute('aria-pressed', 'true')
 
-    await quiet.click()
-    await expect(quiet).toHaveAttribute('aria-pressed', 'true')
+    try {
+      // Self-healing baseline: clears quiet left behind by an interrupted run,
+      // so this test never depends on the previous run's final state.
+      await normal.click()
+      await expect(normal).toHaveAttribute('aria-pressed', 'true')
 
-    await page.reload()
-    await expect(settings).toBeVisible()
-    await expect(quiet).toHaveAttribute('aria-pressed', 'true')
+      await quiet.click()
+      await expect(quiet).toHaveAttribute('aria-pressed', 'true')
 
-    // Leave the shared test account on its default instead of quiet mode.
-    await normal.click()
-    await expect(normal).toHaveAttribute('aria-pressed', 'true')
+      await page.reload()
+      await expect(settings).toBeVisible()
+      await expect(quiet).toHaveAttribute('aria-pressed', 'true')
+    } finally {
+      // Always leave the shared test account on normal, even when an assertion
+      // above fails. Keep this best-effort so it cannot mask the real failure.
+      try {
+        await normal.click({ timeout: 2_000 })
+        await expect(normal).toHaveAttribute('aria-pressed', 'true', { timeout: 2_000 })
+      } catch {
+        // The page may already be closing or navigating; nothing to restore.
+      }
+    }
   })
 
   test('admin site page shows the companion settings card', async ({ page }) => {
