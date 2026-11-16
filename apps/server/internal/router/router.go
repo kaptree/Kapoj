@@ -19,6 +19,8 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/backupapi"
 	"github.com/kaptree/kapoj/apps/server/internal/certificate"
 	"github.com/kaptree/kapoj/apps/server/internal/certificateapi"
+	"github.com/kaptree/kapoj/apps/server/internal/companion"
+	"github.com/kaptree/kapoj/apps/server/internal/companionapi"
 	"github.com/kaptree/kapoj/apps/server/internal/config"
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/contestapi"
@@ -76,6 +78,7 @@ type Deps struct {
 	Mail        *mail.Service
 	Backup      *backup.Service
 	Similarity  *similarity.Service
+	Companion   *companion.Service
 }
 
 func New(d Deps) *gin.Engine {
@@ -144,6 +147,9 @@ func New(d Deps) *gin.Engine {
 	}
 	if d.Game != nil {
 		gamificationapi.RegisterRoutes(api, uploads, d.Game, gamificationapi.Options{RBAC: d.RBAC})
+	}
+	if d.Companion != nil {
+		companionapi.RegisterRoutes(api, d.Companion)
 	}
 	if d.Rating != nil {
 		if d.Game != nil {

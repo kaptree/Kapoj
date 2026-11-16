@@ -19,6 +19,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/ai"
 	"github.com/kaptree/kapoj/apps/server/internal/backup"
 	"github.com/kaptree/kapoj/apps/server/internal/certificate"
+	"github.com/kaptree/kapoj/apps/server/internal/companion"
 	"github.com/kaptree/kapoj/apps/server/internal/config"
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/db"
@@ -143,6 +144,7 @@ func run() error {
 	defer func() { _ = queue.Close() }()
 	gamePublisher := gamequeue.NewPublisher(cfg.RedisAddr)
 	defer func() { _ = gamePublisher.Close() }()
+	companionSvc := companion.NewService(companion.NewGormRepository(g))
 	gameSvc := gamification.NewServiceWithOptions(
 		gamification.NewRepository(g),
 		gamification.ServiceOptions{MaxEquippedBadges: cfg.MaxEquippedBadges, Storage: store},
@@ -275,6 +277,7 @@ func run() error {
 			Rating: ratingSvc, Activity: activitySvc, Learning: learningSvc, RBAC: rbacSvc,
 			AI: aiSvc, AISettings: aiSettings, TestcaseGen: testcaseGenSvc, Certificate: certSvc,
 			Mail: mailSvc, Backup: backupSvc, Similarity: similaritySvc,
+			Companion: companionSvc,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
