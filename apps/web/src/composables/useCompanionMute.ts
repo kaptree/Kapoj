@@ -2,6 +2,7 @@ import { computed, ref, watch, type ComputedRef, type Ref } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { getContest } from '@/api/contests'
+import { useCompanionStore } from '@/stores/companion'
 
 const CACHE_TTL_MS = 15_000
 
@@ -47,6 +48,7 @@ export interface CompanionMute {
  */
 export function useCompanionMute(): CompanionMute {
   const route = useRoute()
+  const companionStore = useCompanionStore()
   const status = ref<string | null>(null)
   const checking = ref(false)
 
@@ -93,7 +95,9 @@ export function useCompanionMute(): CompanionMute {
     { immediate: true },
   )
 
-  const muted = computed(() => contestId.value > 0 && status.value === 'running')
+  const muted = computed(
+    () => companionStore.contestMute && contestId.value > 0 && status.value === 'running',
+  )
 
   return { muted, checking }
 }

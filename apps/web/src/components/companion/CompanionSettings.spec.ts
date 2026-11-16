@@ -166,4 +166,30 @@ describe('CompanionSettings', () => {
     expect(wrapper.find('.companion-settings').exists()).toBe(true)
     expect(wrapper.text()).toContain('站点已关闭伙伴功能')
   })
+
+  it('disables the enable toggle and shows a hint when the admin forbids it', () => {
+    const wrapper = mountSettings((store) =>
+      store.applyGlobalConfig({
+        enabled: true,
+        name: 'Kapo',
+        defaultActivityLevel: 'normal',
+        contestMute: true,
+        allowUserDisable: false,
+      }),
+    )
+
+    const toggle = wrapper.get('[data-test="companion-enabled"]')
+    expect(toggle.attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('管理员已关闭此选项')
+    // The admin lock forces the companion back on.
+    expect(useCompanionStore().enabled).toBe(true)
+  })
+
+  it('shows the configured companion name in the settings header', () => {
+    const wrapper = mountSettings((store) =>
+      store.applyGlobalConfig({ ...GLOBAL_OFF, enabled: true, name: '小助手' }),
+    )
+
+    expect(wrapper.get('.companion-settings__title').text()).toBe('小助手')
+  })
 })

@@ -313,4 +313,19 @@ describe('CompanionDock', () => {
 
     expect(wrapper.find('.companion-dock').exists()).toBe(false)
   })
+
+  it('labels the panel with the configured companion name', async () => {
+    const wrapper = await mountDock()
+    useCompanionStore().applyGlobalConfig({
+      enabled: true,
+      name: '小助手',
+      defaultActivityLevel: 'normal',
+      contestMute: true,
+      allowUserDisable: true,
+    })
+    await flushPromises()
+
+    await wrapper.get('.companion-dock__toggle').trigger('click')
+    expect(wrapper.get('.companion-dock__panel').attributes('aria-label')).toBe('小助手')
+  })
 })

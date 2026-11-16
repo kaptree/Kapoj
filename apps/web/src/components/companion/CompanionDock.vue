@@ -221,7 +221,7 @@ onBeforeUnmount(() => {
       ref="panelRef"
       class="companion-dock__panel"
       role="region"
-      aria-label="KapOJ 伙伴"
+      :aria-label="store.name"
       tabindex="-1"
     >
       <div class="companion-dock__intro">

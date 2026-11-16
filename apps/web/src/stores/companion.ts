@@ -139,6 +139,9 @@ export const useCompanionStore = defineStore('companion', () => {
   const latestEventLine = ref('')
   const globalEnabled = ref(true)
   const publicProfile = ref(false)
+  const name = ref('Kapo')
+  const contestMute = ref(true)
+  const allowUserDisable = ref(true)
 
   /** Both the site-wide switch and the visitor's own preference must allow it. */
   const effectiveEnabled = computed(() => globalEnabled.value && enabled.value)
@@ -213,9 +216,11 @@ export const useCompanionStore = defineStore('companion', () => {
   }
 
   /**
-   * Merges a server read model into the in-memory progress. Local preferences
-   * (`enabled`, `activityLevel`, `motion`) stay untouched: the API failing or
-   * returning nothing must never disable the local companion fallback.
+   * Merges a server read model into the in-memory progress. `activityLevel` and
+   * `dockEnabled` are server-owned: on login the server value wins and is
+   * persisted locally. `motion` has no server counterpart and always stays
+   * local, and `enabled` only changes through the server's `dockEnabled` flag.
+   * The API failing or returning nothing must never disable the local fallback.
    */
   function applyRemoteState(state: CompanionState | null | undefined): void {
     if (!state) return
@@ -245,11 +250,31 @@ export const useCompanionStore = defineStore('companion', () => {
     if (typeof state.publicProfile === 'boolean') {
       publicProfile.value = state.publicProfile
     }
+
+    let prefsChanged = false
+    if (ACTIVITY_LEVELS.includes(state.activityLevel as CompanionActivityLevel)) {
+      activityLevel.value = state.activityLevel as CompanionActivityLevel
+      prefsChanged = true
+    }
+    if (typeof state.dockEnabled === 'boolean') {
+      enabled.value = state.dockEnabled
+      prefsChanged = true
+    }
+    if (prefsChanged) persistPrefs()
   }
 
   /** Applies the site-wide switch; a missing config is treated as enabled. */
   function applyGlobalConfig(settings: SiteCompanionSettings | null | undefined): void {
     globalEnabled.value = settings?.enabled ?? true
+    name.value = settings?.name?.trim() || 'Kapo'
+    contestMute.value = settings?.contestMute ?? true
+    const allowDisable = settings?.allowUserDisable ?? true
+    allowUserDisable.value = allowDisable
+    // An admin who forbids user control keeps the companion switched on.
+    if (!allowDisable) {
+      enabled.value = true
+      persistPrefs()
+    }
   }
 
   function setLatestEventLine(line: string): void {
@@ -280,6 +305,9 @@ export const useCompanionStore = defineStore('companion', () => {
     latestEventLine,
     globalEnabled,
     publicProfile,
+    name,
+    contestMute,
+    allowUserDisable,
     effectiveEnabled,
     applyRemoteState,
     applyGlobalConfig,

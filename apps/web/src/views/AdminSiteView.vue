@@ -1062,8 +1062,8 @@ onMounted(() => {
                   </AppFormField>
                   <AppFormField
                     v-slot="{ id }"
-                    label="默认活跃度"
-                    hint="新用户首次启用伙伴时使用"
+                    label="新用户默认活跃度（后续版本生效）"
+                    hint="仅保存配置，本版本尚未用于新用户初始活跃度"
                     :error="companionErrors.defaultActivityLevel"
                   >
                     <Select

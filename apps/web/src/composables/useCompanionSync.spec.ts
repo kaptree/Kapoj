@@ -240,7 +240,7 @@ describe('useCompanionSync', () => {
     expect(store.level).toBe(4)
   })
 
-  it('keeps local preferences and the previous remote state when requests fail', async () => {
+  it('keeps the previous remote state and local motion when requests fail', async () => {
     const store = useCompanionStore()
     store.load()
     store.setEnabled(false)
@@ -260,8 +260,9 @@ describe('useCompanionSync', () => {
     expect(store.bond).toBe(55)
     expect(store.level).toBe(2)
     expect(store.unreadCount).toBe(1)
-    expect(store.enabled).toBe(false)
-    expect(store.activityLevel).toBe('lively')
+    // Server-owned prefs from the last successful sync are preserved.
+    expect(store.enabled).toBe(true)
+    expect(store.activityLevel).toBe('normal')
     expect(store.motion).toBe('reduce')
   })
 

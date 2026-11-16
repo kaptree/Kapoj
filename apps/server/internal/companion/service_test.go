@@ -268,6 +268,35 @@ func TestServiceStateView(t *testing.T) {
 	assert.Equal(t, "signin", view.TodayEvents[0].Type)
 }
 
+func TestServiceStateNormalizesStaleDailyGain(t *testing.T) {
+	fixedLocalZone(t)
+	g := testutil.PG(t)
+	repo := companion.NewGormRepository(g)
+	svc := companion.NewService(repo)
+	ctx := context.Background()
+	uid := newUser(t, g, "svc_state_stale")
+
+	// Seed a full day's gain dated yesterday so the stored counter is 15 while
+	// today is a fresh local day.
+	yesterday := time.Now().In(time.Local).AddDate(0, 0, -1).Format("2006-01-02")
+	_, created, err := repo.ApplyEvent(ctx, companion.EventInput{
+		UserID: uid, Key: "seed:yesterday", Type: "boost", Bond: 15,
+		EventDate: yesterday, Payload: map[string]any{},
+	})
+	require.NoError(t, err)
+	require.True(t, created)
+
+	st := stateFor(t, g, uid)
+	assert.Equal(t, 15, st.DailyGain)
+	assert.Equal(t, yesterday, st.DailyDate)
+
+	view, err := svc.State(ctx, uid)
+	require.NoError(t, err)
+	// Yesterday's gain must not leak into today's meter.
+	assert.Zero(t, view.DailyGain)
+	assert.Equal(t, 15, view.Bond, "bond itself persists across days")
+}
+
 func TestServiceStreakMilestones(t *testing.T) {
 	fixedLocalZone(t)
 	g := testutil.PG(t)

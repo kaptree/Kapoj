@@ -67,12 +67,19 @@ func (s *Service) State(ctx context.Context, userID int64) (*StateView, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The stored counter only counts bond earned on st.DailyDate; a user whose
+	// last gain landed on an earlier day must read zero until today's first
+	// event, otherwise yesterday's gain leaks into today's meter.
+	dailyGain := st.DailyGain
+	if st.DailyDate != today {
+		dailyGain = 0
+	}
 	return &StateView{
 		Bond:          st.Bond,
 		Level:         lvl.Level,
 		LevelName:     lvl.Name,
 		NextThreshold: lvl.Next,
-		DailyGain:     st.DailyGain,
+		DailyGain:     dailyGain,
 		DailyCap:      dailyCap,
 		ActivityLevel: st.ActivityLevel,
 		DockEnabled:   st.DockEnabled,

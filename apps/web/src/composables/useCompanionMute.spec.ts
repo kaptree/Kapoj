@@ -1,8 +1,10 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { getContest } from '@/api/contests'
+import { useCompanionStore } from '@/stores/companion'
 import { clearCompanionMuteCache, useCompanionMute } from './useCompanionMute'
 
 vi.mock('@/api/contests', () => ({ getContest: vi.fn() }))
@@ -12,10 +14,16 @@ const routes = [
   { path: '/problems/:id(\\d+)', name: 'problem-detail', component: { template: '<div />' } },
 ]
 
-async function mountAt(path: string) {
+async function mountAt(
+  path: string,
+  before?: (store: ReturnType<typeof useCompanionStore>) => void,
+) {
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push(path)
   await router.isReady()
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  before?.(useCompanionStore())
   let result!: ReturnType<typeof useCompanionMute>
   const Comp = defineComponent({
     setup() {
@@ -23,7 +31,7 @@ async function mountAt(path: string) {
       return () => null
     },
   })
-  mount(Comp, { global: { plugins: [router] } })
+  mount(Comp, { global: { plugins: [router, pinia] } })
   await flushPromises()
   return result
 }
@@ -56,6 +64,20 @@ describe('useCompanionMute', () => {
     const { muted } = await mountAt('/problems/3')
     expect(muted.value).toBe(false)
     expect(getContest).not.toHaveBeenCalled()
+  })
+
+  it('stays unmuted when the site config disables contest muting', async () => {
+    vi.mocked(getContest).mockResolvedValue({ status: 'running' } as never)
+    const { muted } = await mountAt('/contests/7', (store) =>
+      store.applyGlobalConfig({
+        enabled: true,
+        name: 'Kapo',
+        defaultActivityLevel: 'normal',
+        contestMute: false,
+        allowUserDisable: true,
+      }),
+    )
+    expect(muted.value).toBe(false)
   })
 
   it('keeps checking false when there is no contest id', async () => {

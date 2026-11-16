@@ -140,7 +140,7 @@ describe('companion store', () => {
     expect(store.motion).toBe('system')
   })
 
-  it('applies remote progress without overwriting local preferences', () => {
+  it('applies remote progress and hydrates server-owned prefs while keeping motion local', () => {
     const store = useCompanionStore()
     store.load()
     store.setEnabled(false)
@@ -156,9 +156,10 @@ describe('companion store', () => {
     expect(store.dailyGain).toBe(4)
     expect(store.dailyCap).toBe(15)
     expect(store.unreadCount).toBe(2)
-    // Local prefs stay authoritative until another task syncs them remotely.
-    expect(store.enabled).toBe(false)
-    expect(store.activityLevel).toBe('lively')
+    // activityLevel and dockEnabled are server-owned and win on sync.
+    expect(store.activityLevel).toBe('normal')
+    expect(store.enabled).toBe(true)
+    // Motion has no server counterpart and stays local.
     expect(store.motion).toBe('reduce')
   })
 
@@ -240,6 +241,59 @@ describe('companion store', () => {
     store.applyGlobalConfig(undefined)
 
     expect(store.globalEnabled).toBe(true)
+  })
+
+  it('hydrates server-owned activity and dock prefs and persists them', () => {
+    const store = useCompanionStore()
+    store.load()
+    store.setEnabled(true)
+    store.setActivityLevel('lively')
+
+    store.applyRemoteState(remoteState({ activityLevel: 'quiet', dockEnabled: false }))
+
+    expect(store.activityLevel).toBe('quiet')
+    expect(store.enabled).toBe(false)
+    const saved = JSON.parse(localStorage.getItem(COMPANION_PREFS_KEY)!)
+    expect(saved.activityLevel).toBe('quiet')
+    expect(saved.enabled).toBe(false)
+  })
+
+  it('ignores an invalid remote activity level', () => {
+    const store = useCompanionStore()
+    store.load()
+    store.setActivityLevel('lively')
+
+    store.applyRemoteState(remoteState({ activityLevel: 'chaotic' as never }))
+
+    expect(store.activityLevel).toBe('lively')
+  })
+
+  it('applies name, contest mute and user-disable from the global config', () => {
+    const store = useCompanionStore()
+    store.applyGlobalConfig(
+      siteSettings({ name: '小助手', contestMute: false, allowUserDisable: false }),
+    )
+
+    expect(store.name).toBe('小助手')
+    expect(store.contestMute).toBe(false)
+    expect(store.allowUserDisable).toBe(false)
+    // Forbidding user-disable keeps the companion switched on and persists it.
+    expect(store.enabled).toBe(true)
+    expect(JSON.parse(localStorage.getItem(COMPANION_PREFS_KEY)!)).toMatchObject({
+      enabled: true,
+    })
+  })
+
+  it('defaults missing global config fields to Kapo, muted and user-disable allowed', () => {
+    const store = useCompanionStore()
+    store.applyGlobalConfig(null)
+
+    expect(store.name).toBe('Kapo')
+    expect(store.contestMute).toBe(true)
+    expect(store.allowUserDisable).toBe(true)
+
+    store.applyGlobalConfig(siteSettings({ name: '   ' }))
+    expect(store.name).toBe('Kapo')
   })
 
   it('reset restores defaults and clears all three storage keys', () => {

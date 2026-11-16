@@ -35,6 +35,9 @@ const activityHint = computed(
   () => ACTIVITY_OPTIONS.find((option) => option.value === store.activityLevel)?.hint ?? '',
 )
 
+/** An admin can forbid users from switching the companion off themselves. */
+const userDisableLocked = computed(() => !store.allowUserDisable)
+
 /**
  * Signed-in visitors sync the server-supported fields. Guests and network
  * failures keep the local preference: this is a best-effort mirror, never a
@@ -90,7 +93,7 @@ async function togglePublicProfile(): Promise<void> {
 <template>
   <AppSurface padding="lg" class="companion-settings">
     <div class="companion-settings__head">
-      <span class="companion-settings__title">伙伴</span>
+      <span class="companion-settings__title">{{ store.name }}</span>
       <span class="companion-settings__desc">
         她的出现频率、动效与显示方式。登录后会同步到账号，未登录时仅本浏览器生效。
       </span>
@@ -106,7 +109,11 @@ async function togglePublicProfile(): Promise<void> {
           <span class="companion-settings__label">显示伙伴</span>
           <span class="companion-settings__hint">
             {{
-              store.enabled ? '已开启，她会在站点里偶尔出现。' : '已关闭，需要时可以随时重新开启。'
+              userDisableLocked
+                ? '管理员已关闭此选项'
+                : store.enabled
+                  ? '已开启，她会在站点里偶尔出现。'
+                  : '已关闭，需要时可以随时重新开启。'
             }}
           </span>
         </div>
@@ -115,6 +122,7 @@ async function togglePublicProfile(): Promise<void> {
           class="companion-settings__toggle"
           data-test="companion-enabled"
           :aria-pressed="store.enabled"
+          :disabled="userDisableLocked"
           @click="toggleEnabled"
         >
           启用伙伴
@@ -290,6 +298,11 @@ async function togglePublicProfile(): Promise<void> {
   color: var(--kapoj-kapo-text);
   background: var(--kapoj-kapo-soft);
   border-color: color-mix(in srgb, var(--kapoj-kapo) 45%, var(--kapoj-border));
+}
+
+.companion-settings__toggle:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 
 .companion-settings__toggle:hover,
