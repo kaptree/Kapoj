@@ -58,6 +58,15 @@ describe('useCompanionMute', () => {
     expect(getContest).not.toHaveBeenCalled()
   })
 
+  it.each(['7.5', '1e2'])('ignores the non-integer contest query %s', async (contestId) => {
+    vi.mocked(getContest).mockResolvedValue({ status: 'running' } as never)
+
+    const { muted } = await mountAt(`/problems/3?contestId=${contestId}`)
+
+    expect(muted.value).toBe(false)
+    expect(getContest).not.toHaveBeenCalled()
+  })
+
   it('reuses a contest status cached within the TTL', async () => {
     vi.mocked(getContest).mockResolvedValue({ status: 'running' } as never)
 

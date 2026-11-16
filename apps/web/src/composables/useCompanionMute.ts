@@ -10,6 +10,19 @@ interface CachedContestStatus {
   at: number
 }
 
+const POSITIVE_INTEGER = /^\d+$/
+
+/**
+ * Route params and query values arrive as strings, so only a plain positive
+ * integer is accepted. This keeps `7.5`, `1e2` or whitespace-padded values
+ * from turning into a contest request.
+ */
+function parsePositiveId(value: unknown): number {
+  if (typeof value !== 'string' || !POSITIVE_INTEGER.test(value)) return 0
+  const id = Number(value)
+  return Number.isSafeInteger(id) && id > 0 ? id : 0
+}
+
 const contestCache = new Map<number, CachedContestStatus>()
 
 /** Drops cached contest statuses; tests call this between cases. */
@@ -39,12 +52,10 @@ export function useCompanionMute(): CompanionMute {
 
   const contestId = computed(() => {
     if (route.name === 'contest-detail') {
-      const id = Number(route.params.id)
-      return Number.isFinite(id) && id > 0 ? id : 0
+      return parsePositiveId(route.params.id)
     }
     if (route.name === 'problem-detail' || route.name === 'problem-submit') {
-      const id = Number(route.query.contestId)
-      return Number.isFinite(id) && id > 0 ? id : 0
+      return parsePositiveId(route.query.contestId)
     }
     return 0
   })
