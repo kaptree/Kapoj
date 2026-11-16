@@ -31,12 +31,15 @@ test.describe('companion phase 0-1', () => {
     await expect(page.locator('.companion-note')).toBeVisible()
     await page.getByRole('button', { name: '关闭伙伴提示' }).click()
     await page.reload()
+    await expect(page.locator('.companion-dock__toggle')).toBeVisible()
     await expect(page.locator('.companion-note')).toHaveCount(0)
   })
 
   test('admin does not get the companion', async ({ page }) => {
     await login(page, adminUser, adminPassword)
     await page.goto('/admin')
+    await expect(page).toHaveURL(/\/admin/)
+    await expect(page.locator('.app-sidebar .app-brand__badge')).toHaveText('管理后台')
     await expect(page.locator('.companion-dock')).toHaveCount(0)
     await expect(page.locator('.companion-note')).toHaveCount(0)
   })
