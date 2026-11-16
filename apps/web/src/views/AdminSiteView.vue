@@ -22,7 +22,9 @@ import {
   deleteAdminSiteFavicon,
   deleteAdminSiteLogo,
   getAdminSite,
+  getAdminSiteCompanion,
   updateAdminSiteAppearance,
+  updateAdminSiteCompanion,
   updateAdminSiteDeployment,
   updateAdminSiteFooter,
   updateAdminSiteHome,
@@ -32,6 +34,7 @@ import {
 import type {
   SiteAdminView,
   SiteAppearance,
+  SiteCompanionSettings,
   SiteDeployment,
   SiteFooterInput,
   SiteHomeContent,
@@ -42,7 +45,7 @@ import AppFormField from '@/components/ui/AppFormField.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
-import { DEFAULT_HOME, useSiteStore } from '@/stores/site'
+import { DEFAULT_COMPANION, DEFAULT_HOME, useSiteStore } from '@/stores/site'
 import { copyText } from '@/utils/clipboard'
 
 const ACCEPT_IMAGES = 'image/png,image/jpeg,image/webp,image/gif'
@@ -52,6 +55,16 @@ const FAVICON_MAX_BYTES = 1 * 1024 * 1024
 const MAX_HOME_LINKS = 8
 const DEFAULT_HOME_TAGLINE = DEFAULT_HOME.tagline
 const MAX_TAGLINE_LEN = 80
+const COMPANION_NAME_MAX = 20
+
+const ACTIVITY_OPTIONS: Array<{
+  label: string
+  value: SiteCompanionSettings['defaultActivityLevel']
+}> = [
+  { label: '安静', value: 'quiet' },
+  { label: '普通', value: 'normal' },
+  { label: '活泼', value: 'lively' },
+]
 
 const ICON_OPTIONS: Array<{ label: string; value: string }> = [
   { label: '箭头', value: 'pi pi-arrow-right' },
@@ -103,6 +116,7 @@ const view = ref<SiteAdminView | null>(null)
 const homeSaving = ref(false)
 const footerSaving = ref(false)
 const appearanceSaving = ref(false)
+const companionSaving = ref(false)
 const deploymentSaving = ref(false)
 const uploadingLogo = ref(false)
 const removingLogo = ref(false)
@@ -115,6 +129,7 @@ const faviconInput = ref<HTMLInputElement | null>(null)
 const homeErrors = ref<FieldErrors>({})
 const footerErrors = ref<FieldErrors>({})
 const deploymentErrors = ref<FieldErrors>({})
+const companionErrors = ref<FieldErrors>({})
 
 function emptyLink(): SiteLink {
   return { icon: 'pi pi-arrow-right', iconPos: 'left', title: '', description: '', to: '/' }
@@ -191,6 +206,19 @@ function footerFromView(next: SiteAdminView): FooterForm {
 const homeForm = ref<SiteHomeContent>(emptyHome())
 const footerForm = ref<FooterForm>(emptyFooter())
 const appearanceForm = ref<SiteAppearance>({ badgeSize: 22 })
+const companionForm = ref<SiteCompanionSettings>({ ...DEFAULT_COMPANION })
+
+const companionNameLength = computed(() => [...companionForm.value.name].length)
+
+function cloneCompanion(value: SiteCompanionSettings): SiteCompanionSettings {
+  return {
+    enabled: value.enabled,
+    name: value.name,
+    defaultActivityLevel: value.defaultActivityLevel,
+    contestMute: value.contestMute,
+    allowUserDisable: value.allowUserDisable,
+  }
+}
 
 function emptyDeployment(): SiteDeployment {
   return {
@@ -239,10 +267,12 @@ function applyView(next: SiteAdminView) {
   homeForm.value = cloneHome(next.home)
   footerForm.value = footerFromView(next)
   appearanceForm.value = { badgeSize: next.appearance?.badgeSize ?? 22 }
+  companionForm.value = cloneCompanion(next.companion ?? DEFAULT_COMPANION)
   deploymentForm.value = { ...emptyDeployment(), ...next.deployment }
   homeErrors.value = {}
   footerErrors.value = {}
   deploymentErrors.value = {}
+  companionErrors.value = {}
 }
 
 /** Keep the public store in sync so this SPA's header/footer update immediately. */
@@ -251,11 +281,30 @@ function applyMutation(next: SiteAdminView) {
   site.setConfig(next)
 }
 
+/** The companion endpoints return the bare settings, so merge them into the view. */
+function applyCompanion(next: SiteCompanionSettings) {
+  if (view.value) {
+    view.value = { ...view.value, companion: next }
+    site.setConfig(view.value)
+  }
+  companionForm.value = cloneCompanion(next)
+}
+
 async function load() {
   loading.value = true
   error.value = ''
   try {
-    applyView(await getAdminSite())
+    const next = await getAdminSite()
+    applyView(next)
+    if (!next.companion) {
+      // Older deployments may omit companion from the admin view; the
+      // dedicated endpoint still knows the current defaults.
+      try {
+        companionForm.value = cloneCompanion(await getAdminSiteCompanion())
+      } catch {
+        companionForm.value = cloneCompanion(DEFAULT_COMPANION)
+      }
+    }
   } catch (e) {
     error.value = e instanceof ApiError ? e.message : '加载站点设置失败，请稍后再试'
   } finally {
@@ -530,6 +579,46 @@ async function saveAppearance() {
   }
 }
 
+function validateCompanion(): boolean {
+  const errors: FieldErrors = {}
+  const name = companionForm.value.name.trim()
+  if (name.length === 0) {
+    errors.name = '伙伴名称不能为空'
+  } else if ([...name].length > COMPANION_NAME_MAX) {
+    errors.name = `伙伴名称不能超过 ${COMPANION_NAME_MAX} 个字符`
+  }
+  if (!ACTIVITY_OPTIONS.some((item) => item.value === companionForm.value.defaultActivityLevel)) {
+    errors.defaultActivityLevel = '请选择有效的默认活跃度'
+  }
+  companionErrors.value = errors
+  return Object.keys(errors).length === 0
+}
+
+async function saveCompanion() {
+  if (!validateCompanion()) return
+  companionSaving.value = true
+  try {
+    const next = await updateAdminSiteCompanion({
+      enabled: companionForm.value.enabled,
+      name: companionForm.value.name.trim(),
+      defaultActivityLevel: companionForm.value.defaultActivityLevel,
+      contestMute: companionForm.value.contestMute,
+      allowUserDisable: companionForm.value.allowUserDisable,
+    })
+    applyCompanion(next)
+    toast.add({ severity: 'success', summary: '伙伴设置已保存', life: 3000 })
+  } catch (e) {
+    toast.add({
+      severity: 'error',
+      summary: '保存失败',
+      detail: apiErrorMessage(e, '保存伙伴设置失败，请稍后再试'),
+      life: 4000,
+    })
+  } finally {
+    companionSaving.value = false
+  }
+}
+
 function addLink(list: SiteLink[]) {
   if (list.length >= MAX_HOME_LINKS) {
     toast.add({ severity: 'warn', summary: `最多只能添加 ${MAX_HOME_LINKS} 张卡片`, life: 3000 })
@@ -700,6 +789,7 @@ onMounted(() => {
         <TabList>
           <Tab value="branding">品牌</Tab>
           <Tab value="appearance">外观</Tab>
+          <Tab value="companion">伙伴</Tab>
           <Tab value="home">首页</Tab>
           <Tab value="footer">页脚</Tab>
           <Tab value="deployment">部署</Tab>
@@ -864,6 +954,113 @@ onMounted(() => {
                   label="保存外观"
                   icon="pi pi-check"
                   :loading="appearanceSaving"
+                />
+              </div>
+            </form>
+          </TabPanel>
+
+          <TabPanel value="companion">
+            <form class="site-form" data-test="companion-form" @submit.prevent="saveCompanion">
+              <Message severity="info" :closable="false">
+                伙伴设置会应用到全站：站点开关关闭后所有用户都不显示伙伴，用户级偏好仍会保留。
+              </Message>
+
+              <section class="companion-card">
+                <div class="section__head">
+                  <h2 class="section__title">
+                    <i class="pi pi-sparkles" aria-hidden="true" />
+                    伙伴设置
+                  </h2>
+                  <Tag
+                    :value="companionForm.enabled ? '已启用' : '已停用'"
+                    :severity="companionForm.enabled ? 'success' : 'secondary'"
+                  />
+                </div>
+
+                <div class="field-grid">
+                  <AppFormField
+                    v-slot="{ id }"
+                    label="伙伴名称"
+                    required
+                    :hint="`${companionNameLength}/${COMPANION_NAME_MAX}`"
+                    :error="companionErrors.name"
+                  >
+                    <InputText
+                      :id="id"
+                      v-model="companionForm.name"
+                      data-test="companion-name"
+                      :maxlength="COMPANION_NAME_MAX"
+                      fluid
+                    />
+                  </AppFormField>
+                  <AppFormField
+                    v-slot="{ id }"
+                    label="默认活跃度"
+                    hint="新用户首次启用伙伴时使用"
+                    :error="companionErrors.defaultActivityLevel"
+                  >
+                    <Select
+                      v-model="companionForm.defaultActivityLevel"
+                      :input-id="id"
+                      data-test="companion-activity"
+                      :options="ACTIVITY_OPTIONS"
+                      option-label="label"
+                      option-value="value"
+                      fluid
+                    />
+                  </AppFormField>
+                </div>
+
+                <div class="field-grid">
+                  <AppFormField v-slot="{ id }" label="站点开关">
+                    <div class="toggle-row">
+                      <ToggleSwitch
+                        v-model="companionForm.enabled"
+                        :input-id="id"
+                        data-test="companion-enabled"
+                      />
+                      <span class="toggle-row__status">
+                        {{ companionForm.enabled ? '全站显示伙伴' : '全站隐藏伙伴' }}
+                      </span>
+                    </div>
+                  </AppFormField>
+                  <AppFormField v-slot="{ id }" label="比赛静音">
+                    <div class="toggle-row">
+                      <ToggleSwitch
+                        v-model="companionForm.contestMute"
+                        :input-id="id"
+                        data-test="companion-contest-mute"
+                      />
+                      <span class="toggle-row__status">
+                        {{ companionForm.contestMute ? '比赛期间不提示' : '比赛期间正常提示' }}
+                      </span>
+                    </div>
+                  </AppFormField>
+                  <AppFormField v-slot="{ id }" label="允许用户关闭">
+                    <div class="toggle-row">
+                      <ToggleSwitch
+                        v-model="companionForm.allowUserDisable"
+                        :input-id="id"
+                        data-test="companion-allow-disable"
+                      />
+                      <span class="toggle-row__status">
+                        {{
+                          companionForm.allowUserDisable
+                            ? '用户可以自行关闭伙伴'
+                            : '用户不能关闭伙伴'
+                        }}
+                      </span>
+                    </div>
+                  </AppFormField>
+                </div>
+              </section>
+
+              <div class="form-actions">
+                <Button
+                  type="submit"
+                  label="保存伙伴设置"
+                  icon="pi pi-check"
+                  :loading="companionSaving"
                 />
               </div>
             </form>
@@ -2093,7 +2290,8 @@ onMounted(() => {
   gap: var(--kapoj-space-4);
 }
 
-.cta-card {
+.cta-card,
+.companion-card {
   display: flex;
   flex-direction: column;
   gap: var(--kapoj-space-3);

@@ -12,7 +12,9 @@ import {
   deleteAdminSiteFavicon,
   deleteAdminSiteLogo,
   getAdminSite,
+  getAdminSiteCompanion,
   updateAdminSiteAppearance,
+  updateAdminSiteCompanion,
   updateAdminSiteDeployment,
   updateAdminSiteFooter,
   updateAdminSiteHome,
@@ -33,10 +35,12 @@ vi.mock('@/api/site', () => ({
   getSite: vi.fn(),
   recordSiteVisit: vi.fn(),
   getAdminSite: vi.fn(),
+  getAdminSiteCompanion: vi.fn(),
   updateAdminSiteAppearance: vi.fn(),
+  updateAdminSiteCompanion: vi.fn(),
   updateAdminSiteDeployment: vi.fn(),
-  updateAdminSiteHome: vi.fn(),
   updateAdminSiteFooter: vi.fn(),
+  updateAdminSiteHome: vi.fn(),
   uploadAdminSiteLogo: vi.fn(),
   deleteAdminSiteLogo: vi.fn(),
   uploadAdminSiteFavicon: vi.fn(),
@@ -149,6 +153,14 @@ function selectByTest(wrapper: Page, test: string) {
   return found!
 }
 
+function toggleByTest(wrapper: Page, test: string) {
+  const found = wrapper
+    .findAllComponents(ToggleSwitch)
+    .find((item) => item.attributes('data-test') === test)
+  expect(found, `toggle "${test}"`).toBeTruthy()
+  return found!
+}
+
 async function chooseFile(wrapper: Page, selector: string, file: File) {
   const input = wrapper.find(selector)
   Object.defineProperty(input.element, 'files', { configurable: true, value: [file] })
@@ -160,7 +172,9 @@ beforeEach(() => {
   toast.add.mockReset()
   confirm.require.mockReset()
   vi.mocked(getAdminSite).mockReset()
+  vi.mocked(getAdminSiteCompanion).mockReset()
   vi.mocked(updateAdminSiteAppearance).mockReset()
+  vi.mocked(updateAdminSiteCompanion).mockReset()
   vi.mocked(updateAdminSiteHome).mockReset()
   vi.mocked(updateAdminSiteFooter).mockReset()
   vi.mocked(uploadAdminSiteLogo).mockReset()
@@ -458,6 +472,92 @@ describe('AdminSiteView', () => {
     wrapper.unmount()
   })
 
+  it('renders, validates and saves companion settings', async () => {
+    vi.mocked(getAdminSite).mockResolvedValue(
+      siteView({
+        companion: {
+          enabled: true,
+          name: 'Kapo',
+          defaultActivityLevel: 'normal',
+          contestMute: true,
+          allowUserDisable: false,
+        },
+      }),
+    )
+    const wrapper = await mountPage()
+    await openTab(wrapper, '伙伴')
+
+    expect(inputValue(wrapper, '[data-test="companion-name"]')).toBe('Kapo')
+    expect(selectByTest(wrapper, 'companion-activity').props('modelValue')).toBe('normal')
+    expect(toggleByTest(wrapper, 'companion-enabled').props('modelValue')).toBe(true)
+    expect(toggleByTest(wrapper, 'companion-contest-mute').props('modelValue')).toBe(true)
+    expect(toggleByTest(wrapper, 'companion-allow-disable').props('modelValue')).toBe(false)
+
+    await wrapper.find('[data-test="companion-name"]').setValue('   ')
+    await wrapper.find('form[data-test="companion-form"]').trigger('submit')
+    await flushPromises()
+    expect(updateAdminSiteCompanion).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('伙伴名称不能为空')
+
+    await wrapper
+      .find('[data-test="companion-name"]')
+      .setValue('这是一个明显超过二十个字符限制的伙伴名称啊')
+    await wrapper.find('form[data-test="companion-form"]').trigger('submit')
+    await flushPromises()
+    expect(updateAdminSiteCompanion).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('伙伴名称不能超过 20 个字符')
+
+    await wrapper.find('[data-test="companion-name"]').setValue('小助手')
+    toggleByTest(wrapper, 'companion-enabled').vm.$emit('update:modelValue', false)
+    toggleByTest(wrapper, 'companion-contest-mute').vm.$emit('update:modelValue', false)
+    selectByTest(wrapper, 'companion-activity').vm.$emit('update:modelValue', 'quiet')
+    await nextTick()
+
+    vi.mocked(updateAdminSiteCompanion).mockResolvedValue({
+      enabled: false,
+      name: '小助手',
+      defaultActivityLevel: 'quiet',
+      contestMute: false,
+      allowUserDisable: false,
+    })
+
+    await wrapper.find('form[data-test="companion-form"]').trigger('submit')
+    await flushPromises()
+
+    expect(updateAdminSiteCompanion).toHaveBeenCalledWith({
+      enabled: false,
+      name: '小助手',
+      defaultActivityLevel: 'quiet',
+      contestMute: false,
+      allowUserDisable: false,
+    })
+    expect(useSiteStore().companion.name).toBe('小助手')
+    expect(toast.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }))
+    wrapper.unmount()
+  })
+
+  it('falls back to the companion endpoint when the admin view omits companion', async () => {
+    const legacy = siteView()
+    delete (legacy as Partial<SiteAdminView>).companion
+    vi.mocked(getAdminSite).mockResolvedValue(legacy)
+    vi.mocked(getAdminSiteCompanion).mockResolvedValue({
+      enabled: false,
+      name: '旧站伙伴',
+      defaultActivityLevel: 'lively',
+      contestMute: false,
+      allowUserDisable: true,
+    })
+
+    const wrapper = await mountPage()
+    await openTab(wrapper, '伙伴')
+
+    expect(getAdminSiteCompanion).toHaveBeenCalledTimes(1)
+    expect(inputValue(wrapper, '[data-test="companion-name"]')).toBe('旧站伙伴')
+    expect(selectByTest(wrapper, 'companion-activity').props('modelValue')).toBe('lively')
+    expect(toggleByTest(wrapper, 'companion-enabled').props('modelValue')).toBe(false)
+    wrapper.unmount()
+  })
+
   it('shows load error and retries', async () => {
     vi.mocked(getAdminSite)
       .mockRejectedValueOnce(new ApiError(500, 50000, '服务器错误'))
@@ -471,9 +571,10 @@ describe('AdminSiteView', () => {
     await flushPromises()
 
     expect(getAdminSite).toHaveBeenCalledTimes(2)
-    expect(wrapper.findAll('[role="tab"]')).toHaveLength(5)
+    expect(wrapper.findAll('[role="tab"]')).toHaveLength(6)
     expect(wrapper.text()).toContain('品牌')
     expect(wrapper.text()).toContain('外观')
+    expect(wrapper.text()).toContain('伙伴')
     expect(wrapper.text()).toContain('首页')
     expect(wrapper.text()).toContain('页脚')
     expect(wrapper.text()).toContain('部署')

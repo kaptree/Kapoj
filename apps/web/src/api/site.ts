@@ -2,6 +2,7 @@ import { http } from './client'
 import type {
   SiteAdminView,
   SiteAppearance,
+  SiteCompanionSettings,
   SiteDeployment,
   SiteFooterInput,
   SiteHomeContent,
@@ -28,6 +29,13 @@ export const updateAdminSiteFooter = (input: SiteFooterInput) =>
 /** Update the shared appearance settings, currently the badge size. */
 export const updateAdminSiteAppearance = (input: SiteAppearance) =>
   http.put<SiteAdminView>('/admin/site/appearance', input)
+
+/** Read the site-wide companion defaults (site.settings.manage). */
+export const getAdminSiteCompanion = () => http.get<SiteCompanionSettings>('/admin/site/companion')
+
+/** Replace all five site-wide companion defaults (site.settings.manage). */
+export const updateAdminSiteCompanion = (input: SiteCompanionSettings) =>
+  http.put<SiteCompanionSettings>('/admin/site/companion', input)
 
 /** Read deployment metadata (site.settings.manage). */
 export const getAdminSiteDeployment = () => http.get<SiteDeployment>('/admin/site/deployment')
