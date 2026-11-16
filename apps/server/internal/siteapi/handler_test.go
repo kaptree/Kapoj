@@ -212,6 +212,87 @@ func TestSiteAppearanceHTTP(t *testing.T) {
 	assert.EqualValues(t, 40, appearance["badgeSize"])
 }
 
+func TestSiteCompanionHTTP(t *testing.T) {
+	f := newSiteFx(t)
+
+	// 公开读取包含安全默认伙伴设置。
+	_, resp := f.do(http.MethodGet, "/api/site", "", nil)
+	publicCompanion := resp["data"].(map[string]any)["companion"].(map[string]any)
+	assert.Equal(t, true, publicCompanion["enabled"])
+	assert.Equal(t, "Kapo", publicCompanion["name"])
+	assert.Equal(t, "normal", publicCompanion["defaultActivityLevel"])
+	assert.Equal(t, true, publicCompanion["contestMute"])
+	assert.Equal(t, true, publicCompanion["allowUserDisable"])
+
+	userToken := f.tokenForRole(t, "site_user", nil)
+	w, _ := f.do(http.MethodGet, "/api/admin/site/companion", userToken, nil)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+
+	managerToken := f.tokenForRole(t, "site_manager", []string{"site.settings.manage"})
+
+	// 管理员 GET 返回全部设置。
+	w, resp = f.do(http.MethodGet, "/api/admin/site/companion", managerToken, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data := resp["data"].(map[string]any)
+	assert.Equal(t, true, data["enabled"])
+	assert.Equal(t, "Kapo", data["name"])
+	assert.Equal(t, "normal", data["defaultActivityLevel"])
+	assert.Equal(t, true, data["contestMute"])
+	assert.Equal(t, true, data["allowUserDisable"])
+
+	// PUT 持久化全部五个字段。
+	w, resp = f.do(http.MethodPut, "/api/admin/site/companion", managerToken, map[string]any{
+		"enabled":              false,
+		"name":                 "小助手",
+		"defaultActivityLevel": "quiet",
+		"contestMute":          false,
+		"allowUserDisable":     false,
+	})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data = resp["data"].(map[string]any)
+	assert.Equal(t, false, data["enabled"])
+	assert.Equal(t, "小助手", data["name"])
+	assert.Equal(t, "quiet", data["defaultActivityLevel"])
+	assert.Equal(t, false, data["contestMute"])
+	assert.Equal(t, false, data["allowUserDisable"])
+
+	w, resp = f.do(http.MethodGet, "/api/admin/site/companion", managerToken, nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	data = resp["data"].(map[string]any)
+	assert.Equal(t, "小助手", data["name"])
+	assert.Equal(t, "quiet", data["defaultActivityLevel"])
+	assert.Equal(t, false, data["enabled"])
+
+	_, resp = f.do(http.MethodGet, "/api/site", "", nil)
+	publicCompanion = resp["data"].(map[string]any)["companion"].(map[string]any)
+	assert.Equal(t, "小助手", publicCompanion["name"])
+	assert.Equal(t, "quiet", publicCompanion["defaultActivityLevel"])
+
+	// 非法活动级别与名称返回 400 / 40001。
+	w, resp = f.do(http.MethodPut, "/api/admin/site/companion", managerToken, map[string]any{
+		"name": "Kapo", "defaultActivityLevel": "chaotic",
+	})
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	w, resp = f.do(http.MethodPut, "/api/admin/site/companion", managerToken, map[string]any{
+		"name": strings.Repeat("名", 21), "defaultActivityLevel": "normal",
+	})
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	w, resp = f.do(http.MethodPut, "/api/admin/site/companion", managerToken, map[string]any{
+		"defaultActivityLevel": "normal",
+	})
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	var audit rbac.AdminAuditLog
+	require.NoError(t, f.db.Where("action = ? AND target_type = ? AND summary = ?",
+		"site.settings.manage", "site_settings", "修改伙伴设置").Order("id DESC").First(&audit).Error)
+	assert.NotZero(t, audit.ActorID)
+}
+
 func TestSiteDeploymentHTTP(t *testing.T) {
 	f := newSiteFx(t)
 	userToken := f.tokenForRole(t, "site_user", nil)

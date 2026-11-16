@@ -83,6 +83,7 @@ func (r *gormRepository) Update(ctx context.Context, settings *Settings) error {
 			"show_visits":          settings.ShowVisits,
 			"badge_size":           settings.BadgeSize,
 			"home_json":            settings.Home,
+			"companion_json":       settings.Companion,
 			"deployment_json":      settings.Deployment,
 			"updated_by":           settings.UpdatedBy,
 			"updated_at":           settings.UpdatedAt,
@@ -132,6 +133,7 @@ func ensureSettings(tx *gorm.DB) error {
 		ShowVisits:      true,
 		BadgeSize:       defaultBadgeSize,
 		Home:            dbtypes.JSON[HomeContent]{Data: DefaultHomeContent()},
+		Companion:       dbtypes.JSON[CompanionSettings]{Data: DefaultCompanionSettings()},
 		UpdatedAt:       now,
 	}
 	return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&settings).Error

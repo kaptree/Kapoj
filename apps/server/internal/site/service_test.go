@@ -209,6 +209,86 @@ func TestSiteFooterValidation(t *testing.T) {
 	assert.GreaterOrEqual(t, view.RunningDays, 2)
 }
 
+func TestSiteCompanionDefaults(t *testing.T) {
+	svc, _, _ := newSite(t)
+	ctx := context.Background()
+
+	want := site.CompanionSettings{
+		Enabled:              true,
+		Name:                 "Kapo",
+		DefaultActivityLevel: "normal",
+		ContestMute:          true,
+		AllowUserDisable:     true,
+	}
+	public, err := svc.Public(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, want, public.Companion)
+
+	admin, err := svc.Admin(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, want, admin.Companion)
+}
+
+func TestSiteCompanionFallsBackForEmptyJSON(t *testing.T) {
+	g := testutil.PG(t)
+	store, err := storage.NewLocal(t.TempDir())
+	require.NoError(t, err)
+	svc := site.NewService(site.NewGormRepository(g), store)
+	ctx := context.Background()
+
+	require.NoError(t, g.Exec(`
+		INSERT INTO site_settings (id, started_at, updated_at, companion_json)
+		VALUES (1, now(), now(), '{}'::jsonb)`).Error)
+
+	admin, err := svc.Admin(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, site.DefaultCompanionSettings(), admin.Companion)
+}
+
+func TestSiteCompanionUpdateAndValidation(t *testing.T) {
+	svc, repo, _ := newSite(t)
+	ctx := context.Background()
+
+	in := site.CompanionSettings{
+		Enabled:              false,
+		Name:                 "  小助手  ",
+		DefaultActivityLevel: "lively",
+		ContestMute:          false,
+		AllowUserDisable:     false,
+	}
+	view, err := svc.UpdateCompanion(ctx, 7, in)
+	require.NoError(t, err)
+	assert.Equal(t, site.CompanionSettings{
+		Enabled:              false,
+		Name:                 "小助手",
+		DefaultActivityLevel: "lively",
+		ContestMute:          false,
+		AllowUserDisable:     false,
+	}, view.Companion)
+
+	stored, err := repo.Get(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, "小助手", stored.Companion.Data.Name)
+	assert.Equal(t, "lively", stored.Companion.Data.DefaultActivityLevel)
+	assert.False(t, stored.Companion.Data.Enabled)
+	assert.Equal(t, int64(7), stored.UpdatedBy)
+
+	public, err := svc.Public(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, view.Companion, public.Companion)
+
+	for _, bad := range []site.CompanionSettings{
+		{Name: "", DefaultActivityLevel: "normal"},
+		{Name: "   ", DefaultActivityLevel: "normal"},
+		{Name: strings.Repeat("名", 21), DefaultActivityLevel: "normal"},
+		{Name: "Kapo", DefaultActivityLevel: "chaotic"},
+		{Name: "Kapo", DefaultActivityLevel: ""},
+	} {
+		_, err := svc.UpdateCompanion(ctx, 1, bad)
+		assertCode(t, err, 40001)
+	}
+}
+
 func TestSiteVisitCounter(t *testing.T) {
 	svc, _, _ := newSite(t)
 	ctx := context.Background()

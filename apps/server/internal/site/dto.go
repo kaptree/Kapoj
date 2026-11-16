@@ -58,6 +58,17 @@ type Appearance struct {
 	BadgeSize int `json:"badgeSize"`
 }
 
+// CompanionSettings is the public, site-wide companion configuration. It is
+// stored in site_settings.companion_json; per-user overrides live in the
+// companion_states table and never rewrite these defaults.
+type CompanionSettings struct {
+	Enabled              bool   `json:"enabled"`
+	Name                 string `json:"name"`
+	DefaultActivityLevel string `json:"defaultActivityLevel"`
+	ContestMute          bool   `json:"contestMute"`
+	AllowUserDisable     bool   `json:"allowUserDisable"`
+}
+
 // Deployment is the admin-managed deployment metadata. It never contains cloud
 // credentials, database passwords or JWT secrets.
 type Deployment struct {
@@ -78,15 +89,16 @@ type PublicDeployment struct {
 
 // PublicView is the public site configuration returned to visitors.
 type PublicView struct {
-	LogoURL     string           `json:"logoUrl"`
-	FaviconURL  string           `json:"faviconUrl"`
-	Home        HomeContent      `json:"home"`
-	Footer      FooterView       `json:"footer"`
-	Appearance  Appearance       `json:"appearance"`
-	Deployment  PublicDeployment `json:"deployment"`
-	StartedAt   time.Time        `json:"startedAt"`
-	RunningDays int              `json:"runningDays"`
-	VisitCount  int64            `json:"visitCount"`
+	LogoURL     string            `json:"logoUrl"`
+	FaviconURL  string            `json:"faviconUrl"`
+	Home        HomeContent       `json:"home"`
+	Footer      FooterView        `json:"footer"`
+	Appearance  Appearance        `json:"appearance"`
+	Companion   CompanionSettings `json:"companion"`
+	Deployment  PublicDeployment  `json:"deployment"`
+	StartedAt   time.Time         `json:"startedAt"`
+	RunningDays int               `json:"runningDays"`
+	VisitCount  int64             `json:"visitCount"`
 }
 
 // AdminView is the complete admin read model. It embeds the public view and

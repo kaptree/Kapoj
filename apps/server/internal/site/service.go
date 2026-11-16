@@ -117,6 +117,23 @@ func (s *Service) UpdateAppearance(ctx context.Context, actorID int64, in Appear
 	return s.Admin(ctx)
 }
 
+// UpdateCompanion validates and stores the site-wide companion defaults.
+func (s *Service) UpdateCompanion(ctx context.Context, actorID int64, in CompanionSettings) (*AdminView, error) {
+	if err := validateCompanion(&in); err != nil {
+		return nil, err
+	}
+	settings, err := s.repo.Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+	settings.Companion = dbtypes.JSON[CompanionSettings]{Data: in}
+	settings.UpdatedBy = actorID
+	if err := s.repo.Update(ctx, settings); err != nil {
+		return nil, err
+	}
+	return s.Admin(ctx)
+}
+
 // UpdateDeployment validates and stores the deployment metadata.
 func (s *Service) UpdateDeployment(ctx context.Context, actorID int64, in Deployment) (*AdminView, error) {
 	if err := validateDeployment(&in); err != nil {
@@ -172,6 +189,7 @@ func (s *Service) view(settings *Settings, visitCount int64) *PublicView {
 			ShowVisits:   settings.ShowVisits,
 		},
 		Appearance: Appearance{BadgeSize: badgeSize},
+		Companion:  normalizeCompanion(settings.Companion.Data),
 		Deployment: PublicDeployment{
 			CDNDomain:    settings.Deployment.Data.CDNDomain,
 			AssetsDomain: settings.Deployment.Data.AssetsDomain,

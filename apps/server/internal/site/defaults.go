@@ -102,3 +102,15 @@ func DefaultFooterInput() FooterInput {
 		ShowVisits: true,
 	}
 }
+
+// DefaultCompanionSettings is the site-wide companion configuration served
+// until an administrator overrides it.
+func DefaultCompanionSettings() CompanionSettings {
+	return CompanionSettings{
+		Enabled:              true,
+		Name:                 "Kapo",
+		DefaultActivityLevel: "normal",
+		ContestMute:          true,
+		AllowUserDisable:     true,
+	}
+}
