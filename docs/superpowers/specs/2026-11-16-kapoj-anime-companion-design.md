@@ -1,7 +1,7 @@
 # KapOJ 二次元风格与伙伴系统设计
 
 - 日期：2026-11-16
-- 状态：待批准
+- 状态：已批准（Phase 0–1）
 - 方案：角色化设计语言（B）+ 系统级伙伴（C）+ 毒舌傲娇人格
 - 首个实施范围：Phase 0–1（视觉骨架 + 角色接入，不含后端好感度）
 - 代号：Kapo（小 K，最终名字待定）
@@ -181,7 +181,7 @@ KapOJ 目前的视觉是深色优先的青绿科技风：`apps/web/src/styles/to
 
 ### 7.1 全局伙伴 dock
 
-挂在 `DefaultLayout.vue`，而不是 `AppShell.vue`：管理后台使用 `AdminLayout`，不出现伙伴。登录后页面可用；访客版只出现在首页、登录、注册和 404，不出现在题库、比赛和评测页，避免打扰。比赛进行中 dock 整体隐藏，见 9.1。
+挂在 `DefaultLayout.vue`，而不是 `AppShell.vue`：管理后台使用 `AdminLayout`，不出现伙伴。**dock 只给登录用户**；访客不显示 dock，只在首页 hero、登录/注册和 404 看到静态立绘。比赛进行中 dock 整体隐藏，见 9.1。
 
 Phase 0–1 收起态（没有后端好感度）：
 
@@ -242,11 +242,13 @@ Phase 0–1 的台词与反应全部由前端本地状态驱动：签到结果�
 - 登录用户 hero 右侧显示半身；访客显示 chibi + 注册 CTA。
 - 伙伴关闭时不回退旧版布局，右侧替换为抽象"观测信号"面板（同心圆 + K 字水印），保持新视觉语言和布局稳定；不维护双布局。
 
-### 7.3 登录/注册
+### 7.3 登录/注册（只放静态图）
 
-- 左侧表单不变，右侧或背景放半身立绘 + 一句傲娇欢迎。
+- 登录、注册、忘记密码、重置密码、验证邮箱都用**静态立绘**：桌面端右侧全身/半身图 + 一句欢迎；移动端图退到表单上方或背景，不遮挡输入。
+- 不使用 dock、不弹气泡、不做 hover 互动、不播放 idle 动画；就是一张图 + 一行字，保证首屏快、登录流程安静。
 - 登录失败不嘲讽，只给一句"……再看一眼密码。我等你。"
 - 注册成功："账号建好了。……别让我等太久。"
+- 图片必须带固定宽高或 `aspect-ratio`，移动端断点隐藏装饰图也不造成布局跳动。
 
 ### 7.4 空 / 加载 / 错误状态
 
@@ -290,6 +292,44 @@ AI 人格第一版只做**表现层**，不改服务端提示词和缓存，避�
 - 「礼服」和「新年」属于活动皮肤，不进等级表；活动皮肤可以直购或活动赠送。
 - 商店的皮肤价格由管理端配置，购买/装备走独立 API；Phase 4 才实现，第一版不建商店页面。
 - 换装只影响 dock、首页、主页和档案卡；不影响评测图标和语义色。
+
+### 7.9 全站页面出现位地图
+
+"每个页面都有她"不等于每个页面都放立绘。按三档控制：
+
+- **A 档 · 角色主场**：大幅静态立绘或半身像 + 台词，允许占据视觉焦点。
+- **B 档 · 角色点缀**：页面顶部或内容区底部放一条 `CompanionNote`（28px chibi + 一行字 + 关闭按钮），不改变原有布局，不遮挡数据。
+- **C 档 · 安静**：不常驻角色，只在空/加载/错误和关键成功反馈里出现 24–28px chibi；不逐个改造所有编辑页的成功 toast。
+
+`CompanionNote` 规则：每个页面每次访问最多一条；用户关闭后当天不再出现；不自动轮播；比赛进行中全部隐藏；高度固定，不能造成 CLS。
+
+实现上，B 档由 `CompanionPageNote` 挂在 `DefaultLayout` 的 `<RouterView />` 前，按路由名从 `COMPANION_PAGE_NOTES` 取台词统一渲染，避免逐页改模板；只有需要特殊位置的页面（如首页 hero、登录静态图、404）才单独放 `CompanionAvatar` / `CompanionNote`。
+
+| 页面 | 档位 | 具体表现 |
+| --- | --- | --- |
+| 首页 | A | hero 半身像 + 问候；移动端背景化 |
+| 登录 / 注册 / 忘记密码 / 重置密码 / 验证邮箱 | A（静态） | 右侧静态立绘 + 一句欢迎；无 dock、无交互 |
+| 404 / 403 | A（静态） | `lost` / `smug` 立绘 + 指路台词 + 返回按钮 |
+| 题库列表 | B | 题目列表上方 `CompanionNote`："今天的题……自己挑。" |
+| 题目详情 | B | 题面卡片底部一行批注；不进入题面正文，不遮挡样例/代码 |
+| 提交页 | B | 代码编辑器上方小徽记 + 提交成功/失败反应；不进入编辑器 |
+| 官方题解 / 题解列表 / 题解详情 | B | 作者信息下方 chibi 批注；不打断阅读 |
+| 比赛列表 | B | 赛程卡上方一条批注；进行中的比赛卡不显示 |
+| 比赛详情 | B（进行中 C） | 赛前/赛后批注；进行中静默，见 9.1 |
+| 提交记录 | B | 表格上方一条批注；结果变化用 toast 反应，不插入表格行 |
+| 排行榜 | B | 榜单标题旁 chibi 徽记 + 一句；不遮挡前三名 |
+| 学习路线列表 / 详情 | B | 路线卡旁小徽记；节点详情用空状态台词 |
+| 任务 / 成就 | A–B | 页面顶部半身/胸像 + 领取反应；列表本身保持数据密度 |
+| 徽章商店 / 称号商店 | B | 商品网格上方批注；试穿预览可用 chibi，不替换商品图 |
+| 装扮管理 | A–B | "伙伴"设置区 + 当前形象预览；其他装扮区不变 |
+| 通知中心 | B | 空状态 `sleepy`；有通知时只在顶部一条批注 |
+| 用户主页 | B（Phase 3 起 A–B） | 保留词云；伙伴徽记在 hero，档案卡在下方 |
+| 证书核验 | B | 核验成功盖一个 "K 已核验" 贴纸；失败用 `thinking` |
+| 个人资料 / 账号安全 / AI 设置 | C | 保存成功/失败时 chibi 反应；不常驻 |
+| 题目编辑 / 比赛编辑 / 学习路线编辑 / 测试数据生成 | C | 只在保存、生成、校验结果里出现；编辑区保持安静 |
+| 管理后台全部页面 | 无 | 不出现伙伴 |
+
+新增组件 `CompanionNote.vue`（纯展示）和 `CompanionPageNote.vue`（按路由取台词、处理关闭与静默）；页面不传配置时不渲染，保证渐进接入。
 
 ## 8. 好感度系统（Phase 2+，首个实施计划不包含）
 
@@ -451,9 +491,11 @@ Phase 0–1 需要：
 
 ```text
 apps/web/src/components/companion/
-  CompanionDock.vue          # 全局 dock
+  CompanionDock.vue          # 全局 dock（仅登录用户）
   CompanionAvatar.vue        # 立绘/表情渲染
   CompanionBubble.vue        # 气泡
+  CompanionNote.vue          # B 档页面批注条（纯展示）
+  CompanionPageNote.vue      # 按路由取台词、关闭与静默
   CompanionReaction.vue      # 签到/评测 toast 反应（本地）
   CompanionSettings.vue      # 设置区
 apps/web/src/composables/
@@ -482,11 +524,15 @@ apps/web/src/api/companion.ts
 
 改动点（Phase 0–1）：
 
-- `DefaultLayout.vue`：挂 `<CompanionDock />`；管理后台不挂。访客只在首页/登录/注册/404 显示。
+- `DefaultLayout.vue`：挂 `<CompanionDock />`（仅登录用户）；管理后台不挂。
 - `AppEmptyState.vue` / `AppLoadingState.vue` / `AppErrorState.vue`：可选 mascot/line props，默认不变。
 - `HomeView.vue` / `HomeProfileCard.vue`：hero 角色位与伙伴摘要。
-- `LoginView.vue` / `RegisterView.vue` / `NotFoundView.vue`：角色位。
-- `ProblemDetailView.vue`：AI 提示面板头像；`SubmitView.vue`：补全/格式化/优化按钮小头像。
+- `LoginView.vue` / `RegisterView.vue` / `ForgotPasswordView.vue` / `ResetPasswordView.vue` / `VerifyEmailView.vue`：静态立绘 + 一句欢迎，无交互。
+- `NotFoundView.vue` / `ForbiddenView.vue`：`lost` / `smug` 静态立绘。
+- `ProblemListView.vue` / `ProblemDetailView.vue` / `SubmitView.vue` / `ProblemSolutionsView.vue` / `ProblemSolutionDetailView.vue`：`CompanionNote` + AI 提示头像。
+- `ContestListView.vue` / `ContestDetailView.vue` / `SubmissionsView.vue` / `LeaderboardView.vue` / `LearningPathListView.vue` / `LearningPathDetailView.vue`：`CompanionNote`。
+- `AchievementsView.vue` / `TasksView.vue` / `BadgeShopView.vue` / `TitleShopView.vue` / `NotificationsView.vue` / `CertificateVerifyView.vue`：按 7.9 的 A/B 档接入。
+- `ProfileEditView.vue` / `SecuritySettingsView.vue` / `AiSettingsView.vue` / 各类编辑页：C 档，只在成功/失败反馈出现。
 - `AppearanceView.vue`：伙伴设置区（本地偏好）。
 - `styles/tokens.css` + `theme/preset.ts`：新增 token，保持同步。
 
@@ -581,9 +627,11 @@ Phase 0–1 不加管理端配置，角色开关和活跃度走用户本地偏�
 
 ### Phase 1：角色接入（用占位剪影）
 
-- 资源 manifest、`CompanionAvatar`、`CompanionBubble`、`CompanionDock`。
-- 首页、登录、404、空/加载/错误状态接入。
-- 访客版 dock；偏好本地存储。
+- 资源 manifest、`CompanionAvatar`、`CompanionBubble`、`CompanionNote`、`CompanionDock`。
+- 首页、登录/注册/找回密码/重置密码/验证邮箱、404/403、空/加载/错误状态接入。
+- 按 7.9 的页面地图接入 B 档 `CompanionNote`：题库、题目、提交、题解、比赛、提交记录、排行榜、学习路线、任务/成就、商店、通知、证书核验。
+- 登录/注册只放静态图，不挂 dock、不做交互。
+- 访客无 dock；偏好本地存储。
 - 签到/评测/404 的本地反应；不跨设备、不加好感。
 - 先用占位剪影和 3 个表情，验证布局与性能。
 
@@ -618,7 +666,10 @@ Phase 0–1（首个实施计划）：
 - [ ] dock 可键盘打开/关闭，`Esc` 生效，焦点不丢失。
 - [ ] 开启"减少动效"后无持续动画。
 - [ ] 比赛进行中（contestId + running）dock 隐藏、无弹窗、无主动台词、无 idle 动画；普通练习题不静默。
-- [ ] 用户关闭伙伴后，dock/气泡/头像全部消失；绯红视觉语言仍保留，布局不塌陷。
+- [ ] 用户关闭伙伴后，dock/气泡/头像/静态立绘/`CompanionNote` 全部消失；绯红视觉语言仍保留，布局不塌陷。
+- [ ] 登录/注册/找回密码/重置密码/验证邮箱只有静态图，没有 dock、气泡或 hover 互动。
+- [ ] 7.9 页面地图中的 A/B 档页面都有对应表现；C 档编辑页只在成功/失败反馈出现。
+- [ ] `CompanionNote` 每页每次访问最多一条，关闭后当天不再出现，且不造成 CLS。
 - [ ] 空/加载/错误状态在没有角色资源时仍正常显示；`lost` 表情缺失时回退 `neutral`。
 - [ ] 签到、评测结果、404 的本地反应不依赖新增后端接口。
 - [ ] 角色素材无性化内容，无既有 IP 相似风险。
