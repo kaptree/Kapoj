@@ -45,7 +45,7 @@ import AppFormField from '@/components/ui/AppFormField.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
-import { DEFAULT_COMPANION, DEFAULT_HOME, useSiteStore } from '@/stores/site'
+import { DEFAULT_HOME, useSiteStore } from '@/stores/site'
 import { copyText } from '@/utils/clipboard'
 
 const ACCEPT_IMAGES = 'image/png,image/jpeg,image/webp,image/gif'
@@ -117,6 +117,9 @@ const homeSaving = ref(false)
 const footerSaving = ref(false)
 const appearanceSaving = ref(false)
 const companionSaving = ref(false)
+const companionLoading = ref(false)
+const companionReady = ref(false)
+const companionLoadError = ref('')
 const deploymentSaving = ref(false)
 const uploadingLogo = ref(false)
 const removingLogo = ref(false)
@@ -206,9 +209,12 @@ function footerFromView(next: SiteAdminView): FooterForm {
 const homeForm = ref<SiteHomeContent>(emptyHome())
 const footerForm = ref<FooterForm>(emptyFooter())
 const appearanceForm = ref<SiteAppearance>({ badgeSize: 22 })
-const companionForm = ref<SiteCompanionSettings>({ ...DEFAULT_COMPANION })
+// Null until the real settings are hydrated; never expose defaults as editable.
+const companionForm = ref<SiteCompanionSettings | null>(null)
 
-const companionNameLength = computed(() => [...companionForm.value.name].length)
+const companionNameLength = computed(() =>
+  companionForm.value ? [...companionForm.value.name].length : 0,
+)
 
 function cloneCompanion(value: SiteCompanionSettings): SiteCompanionSettings {
   return {
@@ -267,7 +273,15 @@ function applyView(next: SiteAdminView) {
   homeForm.value = cloneHome(next.home)
   footerForm.value = footerFromView(next)
   appearanceForm.value = { badgeSize: next.appearance?.badgeSize ?? 22 }
-  companionForm.value = cloneCompanion(next.companion ?? DEFAULT_COMPANION)
+  if (next.companion) {
+    companionForm.value = cloneCompanion(next.companion)
+    companionReady.value = true
+    companionLoadError.value = ''
+  } else {
+    // Do not present defaults as real settings; `load` resolves them below.
+    companionForm.value = null
+    companionReady.value = false
+  }
   deploymentForm.value = { ...emptyDeployment(), ...next.deployment }
   homeErrors.value = {}
   footerErrors.value = {}
@@ -288,6 +302,24 @@ function applyCompanion(next: SiteCompanionSettings) {
     site.setConfig(view.value)
   }
   companionForm.value = cloneCompanion(next)
+  companionReady.value = true
+  companionLoadError.value = ''
+}
+
+/** Older admin payloads omit companion; fetch the dedicated endpoint on demand. */
+async function loadCompanionFallback() {
+  companionLoading.value = true
+  companionLoadError.value = ''
+  try {
+    companionForm.value = cloneCompanion(await getAdminSiteCompanion())
+    companionReady.value = true
+  } catch (e) {
+    companionForm.value = null
+    companionReady.value = false
+    companionLoadError.value = apiErrorMessage(e, '加载伙伴设置失败，请稍后再试')
+  } finally {
+    companionLoading.value = false
+  }
 }
 
 async function load() {
@@ -296,15 +328,7 @@ async function load() {
   try {
     const next = await getAdminSite()
     applyView(next)
-    if (!next.companion) {
-      // Older deployments may omit companion from the admin view; the
-      // dedicated endpoint still knows the current defaults.
-      try {
-        companionForm.value = cloneCompanion(await getAdminSiteCompanion())
-      } catch {
-        companionForm.value = cloneCompanion(DEFAULT_COMPANION)
-      }
-    }
+    if (!next.companion) await loadCompanionFallback()
   } catch (e) {
     error.value = e instanceof ApiError ? e.message : '加载站点设置失败，请稍后再试'
   } finally {
@@ -581,13 +605,18 @@ async function saveAppearance() {
 
 function validateCompanion(): boolean {
   const errors: FieldErrors = {}
-  const name = companionForm.value.name.trim()
+  const form = companionForm.value
+  if (!form) {
+    companionErrors.value = {}
+    return false
+  }
+  const name = form.name.trim()
   if (name.length === 0) {
     errors.name = '伙伴名称不能为空'
   } else if ([...name].length > COMPANION_NAME_MAX) {
     errors.name = `伙伴名称不能超过 ${COMPANION_NAME_MAX} 个字符`
   }
-  if (!ACTIVITY_OPTIONS.some((item) => item.value === companionForm.value.defaultActivityLevel)) {
+  if (!ACTIVITY_OPTIONS.some((item) => item.value === form.defaultActivityLevel)) {
     errors.defaultActivityLevel = '请选择有效的默认活跃度'
   }
   companionErrors.value = errors
@@ -595,15 +624,17 @@ function validateCompanion(): boolean {
 }
 
 async function saveCompanion() {
+  const form = companionForm.value
+  if (!companionReady.value || !form) return
   if (!validateCompanion()) return
   companionSaving.value = true
   try {
     const next = await updateAdminSiteCompanion({
-      enabled: companionForm.value.enabled,
-      name: companionForm.value.name.trim(),
-      defaultActivityLevel: companionForm.value.defaultActivityLevel,
-      contestMute: companionForm.value.contestMute,
-      allowUserDisable: companionForm.value.allowUserDisable,
+      enabled: form.enabled,
+      name: form.name.trim(),
+      defaultActivityLevel: form.defaultActivityLevel,
+      contestMute: form.contestMute,
+      allowUserDisable: form.allowUserDisable,
     })
     applyCompanion(next)
     toast.add({ severity: 'success', summary: '伙伴设置已保存', life: 3000 })
@@ -960,7 +991,43 @@ onMounted(() => {
           </TabPanel>
 
           <TabPanel value="companion">
-            <form class="site-form" data-test="companion-form" @submit.prevent="saveCompanion">
+            <Message
+              v-if="companionLoadError"
+              severity="error"
+              :closable="false"
+              data-test="companion-load-error"
+            >
+              <div class="companion-load-error">
+                <span>{{ companionLoadError }}</span>
+                <Button
+                  type="button"
+                  label="重试"
+                  icon="pi pi-refresh"
+                  size="small"
+                  severity="secondary"
+                  outlined
+                  :loading="companionLoading"
+                  data-test="companion-retry"
+                  @click="loadCompanionFallback"
+                />
+              </div>
+            </Message>
+
+            <Message
+              v-else-if="companionLoading || !companionForm"
+              severity="info"
+              :closable="false"
+              data-test="companion-loading"
+            >
+              正在加载伙伴设置…
+            </Message>
+
+            <form
+              v-else-if="companionForm"
+              class="site-form"
+              data-test="companion-form"
+              @submit.prevent="saveCompanion"
+            >
               <Message severity="info" :closable="false">
                 伙伴设置会应用到全站：站点开关关闭后所有用户都不显示伙伴，用户级偏好仍会保留。
               </Message>
@@ -1061,6 +1128,7 @@ onMounted(() => {
                   label="保存伙伴设置"
                   icon="pi pi-check"
                   :loading="companionSaving"
+                  :disabled="!companionReady"
                 />
               </div>
             </form>
@@ -2299,6 +2367,14 @@ onMounted(() => {
   background: var(--kapoj-bg);
   border: 1px solid var(--kapoj-border);
   border-radius: var(--kapoj-radius-md);
+}
+
+.companion-load-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kapoj-space-3);
 }
 
 .cta-card__title {

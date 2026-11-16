@@ -558,6 +558,62 @@ describe('AdminSiteView', () => {
     wrapper.unmount()
   })
 
+  it('shows a retryable error and blocks saving defaults when companion hydration fails', async () => {
+    const legacy = siteView()
+    delete (legacy as Partial<SiteAdminView>).companion
+    vi.mocked(getAdminSite).mockResolvedValue(legacy)
+    vi.mocked(getAdminSiteCompanion)
+      .mockRejectedValueOnce(new ApiError(500, 50000, '伙伴设置读取失败'))
+      .mockResolvedValueOnce({
+        enabled: true,
+        name: '恢复的伙伴',
+        defaultActivityLevel: 'lively',
+        contestMute: false,
+        allowUserDisable: true,
+      })
+
+    const wrapper = await mountPage()
+    await openTab(wrapper, '伙伴')
+
+    expect(getAdminSiteCompanion).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-test="companion-load-error"]').text()).toContain('伙伴设置读取失败')
+    // No form or save action exists, so default values can never be submitted.
+    expect(wrapper.find('form[data-test="companion-form"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="companion-name"]').exists()).toBe(false)
+    expect(
+      wrapper.findAll('button').find((item) => item.text().trim() === '保存伙伴设置'),
+    ).toBeUndefined()
+    expect(updateAdminSiteCompanion).not.toHaveBeenCalled()
+
+    await wrapper.find('[data-test="companion-retry"]').trigger('click')
+    await flushPromises()
+
+    expect(getAdminSiteCompanion).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[data-test="companion-load-error"]').exists()).toBe(false)
+    expect(inputValue(wrapper, '[data-test="companion-name"]')).toBe('恢复的伙伴')
+    expect(selectByTest(wrapper, 'companion-activity').props('modelValue')).toBe('lively')
+    expect(toggleByTest(wrapper, 'companion-enabled').props('modelValue')).toBe(true)
+
+    vi.mocked(updateAdminSiteCompanion).mockResolvedValue({
+      enabled: true,
+      name: '恢复的伙伴',
+      defaultActivityLevel: 'lively',
+      contestMute: false,
+      allowUserDisable: true,
+    })
+    await wrapper.find('form[data-test="companion-form"]').trigger('submit')
+    await flushPromises()
+
+    expect(updateAdminSiteCompanion).toHaveBeenCalledWith({
+      enabled: true,
+      name: '恢复的伙伴',
+      defaultActivityLevel: 'lively',
+      contestMute: false,
+      allowUserDisable: true,
+    })
+    wrapper.unmount()
+  })
+
   it('shows load error and retries', async () => {
     vi.mocked(getAdminSite)
       .mockRejectedValueOnce(new ApiError(500, 50000, '服务器错误'))
