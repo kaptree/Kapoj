@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/kaptree/kapoj/apps/server/internal/companion"
+	"github.com/kaptree/kapoj/apps/server/internal/gamequeue"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
 )
 
@@ -162,21 +163,25 @@ func TestServiceTaskAchievementDailyCap(t *testing.T) {
 	ctx := context.Background()
 	uid := newUser(t, g, "svc_task_ach")
 
+	at := time.Date(2026, 11, 17, 10, 0, 0, 0, time.Local)
+
 	// Task claims cap at 2/day across distinct task ids.
-	require.NoError(t, svc.RecordTaskClaim(ctx, uid, 1))
-	require.NoError(t, svc.RecordTaskClaim(ctx, uid, 2))
-	require.NoError(t, svc.RecordTaskClaim(ctx, uid, 3))
+	require.NoError(t, svc.RecordTaskClaim(ctx, uid, 1, at))
+	require.NoError(t, svc.RecordTaskClaim(ctx, uid, 2, at))
+	require.NoError(t, svc.RecordTaskClaim(ctx, uid, 3, at))
 
 	st := stateFor(t, g, uid)
 	assert.Equal(t, 2, st.Bond, "task claims cap at 2 bond/day")
+	assert.Equal(t, "2026-11-17", findEvent(t, g, uid, "task:1").EventDate)
 
 	// Achievements cap at 2/day independently of tasks.
-	require.NoError(t, svc.RecordAchievement(ctx, uid, 1))
-	require.NoError(t, svc.RecordAchievement(ctx, uid, 2))
-	require.NoError(t, svc.RecordAchievement(ctx, uid, 3))
+	require.NoError(t, svc.RecordAchievement(ctx, uid, 1, at))
+	require.NoError(t, svc.RecordAchievement(ctx, uid, 2, at))
+	require.NoError(t, svc.RecordAchievement(ctx, uid, 3, at))
 
 	st = stateFor(t, g, uid)
 	assert.Equal(t, 4, st.Bond, "2 from tasks + 2 from achievements")
+	assert.Equal(t, "2026-11-17", findEvent(t, g, uid, "achievement:1").EventDate)
 }
 
 func TestServiceRecordContestSubmission(t *testing.T) {
@@ -186,21 +191,23 @@ func TestServiceRecordContestSubmission(t *testing.T) {
 	ctx := context.Background()
 	uid := newUser(t, g, "svc_contest")
 
-	require.NoError(t, svc.RecordContestSubmission(ctx, uid, 42))
+	at := time.Date(2026, 11, 17, 10, 0, 0, 0, time.Local)
+	require.NoError(t, svc.RecordContestSubmission(ctx, uid, 42, at))
 
 	ev := findEvent(t, g, uid, "contest:42")
 	require.NotNil(t, ev)
 	assert.Equal(t, "contest", ev.Type)
 	assert.Equal(t, 5, ev.Bond)
+	assert.Equal(t, "2026-11-17", ev.EventDate)
 
 	// First submission per contest only.
-	require.NoError(t, svc.RecordContestSubmission(ctx, uid, 42))
+	require.NoError(t, svc.RecordContestSubmission(ctx, uid, 42, at))
 	st := stateFor(t, g, uid)
 	assert.Equal(t, 5, st.Bond, "contest submission awards +5 once")
 
 	// Non-positive contest ids are ignored.
-	require.NoError(t, svc.RecordContestSubmission(ctx, uid, 0))
-	require.NoError(t, svc.RecordContestSubmission(ctx, uid, -7))
+	require.NoError(t, svc.RecordContestSubmission(ctx, uid, 0, at))
+	require.NoError(t, svc.RecordContestSubmission(ctx, uid, -7, at))
 	assert.Nil(t, findEvent(t, g, uid, "contest:0"))
 	assert.Nil(t, findEvent(t, g, uid, "contest:-7"))
 	assert.Equal(t, 5, stateFor(t, g, uid).Bond)
@@ -303,4 +310,67 @@ func TestServiceStreakMilestones(t *testing.T) {
 	require.NotNil(t, streak7)
 	assert.Equal(t, 5, streak7.Bond, "streak milestone bypasses the natural cap")
 	assert.Equal(t, 20, stateFor(t, g, uidCap).Bond, "15 cap + 5 milestone")
+}
+
+func TestServiceRecordACFirstSubCap(t *testing.T) {
+	fixedLocalZone(t)
+	g := testutil.PG(t)
+	svc := newService(t, g)
+	ctx := context.Background()
+	uid := newUser(t, g, "svc_ac_subcap")
+
+	judged := time.Date(2026, 11, 17, 10, 0, 0, 0, time.Local)
+	for i := 1; i <= 4; i++ {
+		pid := newProblem(t, g, fmt.Sprintf("svc-ac-subcap-%d", i))
+		at := judged.Add(time.Duration(i) * time.Minute)
+		subID := newSubmission(t, g, uid, pid, "accepted", at, at)
+		require.NoError(t, svc.RecordAC(ctx, uid, subID))
+	}
+
+	// ac:daily awards +2 once; ac:first is capped at 3 total bond/day across
+	// distinct problems (the 4th first-AC awards 0).
+	assert.Equal(t, 2, findEvent(t, g, uid, "ac:daily:2026-11-17").Bond)
+	assert.Equal(t, 5, stateFor(t, g, uid).Bond, "daily +2 + three ac_first +1 = 5")
+
+	var firstTotal int64
+	require.NoError(t, g.Model(&companion.Event{}).
+		Where("user_id = ? AND type = ?", uid, "ac_first").
+		Select("COALESCE(SUM(bond), 0)").
+		Scan(&firstTotal).Error)
+	assert.Equal(t, int64(3), firstTotal, "ac_first sub-cap limits to 3 total bond/day")
+}
+
+func TestServiceHandleGameEvent(t *testing.T) {
+	fixedLocalZone(t)
+	g := testutil.PG(t)
+	svc := newService(t, g)
+	ctx := context.Background()
+	uid := newUser(t, g, "svc_gameevent")
+	pid := newProblem(t, g, "svc-gameevent-problem")
+
+	judged := time.Date(2026, 11, 17, 10, 0, 0, 0, time.Local)
+	subID := newSubmission(t, g, uid, pid, "accepted", judged.Add(-time.Minute), judged)
+
+	// An accepted event runs the AC path and writes the AC events.
+	require.NoError(t, svc.HandleGameEvent(ctx, gamequeue.Event{
+		Type: gamequeue.EventSubmissionAccepted, UserID: uid, SubmissionID: subID,
+	}))
+	require.NotNil(t, findEvent(t, g, uid, "ac:daily:2026-11-17"))
+	require.NotNil(t, findEvent(t, g, uid, fmt.Sprintf("ac:first:%d", pid)))
+	assert.Equal(t, 3, stateFor(t, g, uid).Bond)
+
+	// Non-accepted event types are a no-op.
+	require.NoError(t, svc.HandleGameEvent(ctx, gamequeue.Event{Type: gamequeue.EventUserLogin, UserID: uid}))
+	require.NoError(t, svc.HandleGameEvent(ctx, gamequeue.Event{Type: gamequeue.EventContestJoin, UserID: uid, ContestID: 1}))
+	assert.Equal(t, 3, stateFor(t, g, uid).Bond, "non-accepted event types write nothing")
+
+	// An AC-path error propagates so Asynq can retry. Closing the SQL pool
+	// forces SubmissionInfo to fail.
+	sqlDB, err := g.DB()
+	require.NoError(t, err)
+	require.NoError(t, sqlDB.Close())
+	err = svc.HandleGameEvent(ctx, gamequeue.Event{
+		Type: gamequeue.EventSubmissionAccepted, UserID: uid, SubmissionID: subID,
+	})
+	require.Error(t, err)
 }

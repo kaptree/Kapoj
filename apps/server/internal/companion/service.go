@@ -196,14 +196,16 @@ func (s *Service) RecordAC(ctx context.Context, userID, submissionID int64) erro
 	return err
 }
 
-// RecordTaskClaim awards +1 for claiming a task, capped at 2/day.
-func (s *Service) RecordTaskClaim(ctx context.Context, userID, taskID int64) error {
+// RecordTaskClaim awards +1 for claiming a task, capped at 2/day. The event
+// date is derived from the caller-supplied at (the claim timestamp), not the
+// processing time.
+func (s *Service) RecordTaskClaim(ctx context.Context, userID, taskID int64, at time.Time) error {
 	_, _, err := s.repo.ApplyEvent(ctx, EventInput{
 		UserID:    userID,
 		Key:       fmt.Sprintf("task:%d", taskID),
 		Type:      "task",
 		Bond:      taskBond,
-		EventDate: time.Now().In(time.Local).Format("2006-01-02"),
+		EventDate: at.In(time.Local).Format("2006-01-02"),
 		Payload:   map[string]any{"taskId": taskID},
 		SubCap:    taskDailySubCap,
 	})
@@ -211,13 +213,14 @@ func (s *Service) RecordTaskClaim(ctx context.Context, userID, taskID int64) err
 }
 
 // RecordAchievement awards +1 for unlocking an achievement, capped at 2/day.
-func (s *Service) RecordAchievement(ctx context.Context, userID, achievementID int64) error {
+// The event date is derived from the caller-supplied at (the unlock timestamp).
+func (s *Service) RecordAchievement(ctx context.Context, userID, achievementID int64, at time.Time) error {
 	_, _, err := s.repo.ApplyEvent(ctx, EventInput{
 		UserID:    userID,
 		Key:       fmt.Sprintf("achievement:%d", achievementID),
 		Type:      "achievement",
 		Bond:      achievementBond,
-		EventDate: time.Now().In(time.Local).Format("2006-01-02"),
+		EventDate: at.In(time.Local).Format("2006-01-02"),
 		Payload:   map[string]any{"achievementId": achievementID},
 		SubCap:    achievementSubCap,
 	})
@@ -225,8 +228,10 @@ func (s *Service) RecordAchievement(ctx context.Context, userID, achievementID i
 }
 
 // RecordContestSubmission awards +5 for the first submission in a contest,
-// fired on submission creation. Non-positive contest ids are ignored.
-func (s *Service) RecordContestSubmission(ctx context.Context, userID, contestID int64) error {
+// fired on submission creation. The event date is derived from the
+// caller-supplied at (the submission's created_at). Non-positive contest ids
+// are ignored.
+func (s *Service) RecordContestSubmission(ctx context.Context, userID, contestID int64, at time.Time) error {
 	if contestID <= 0 {
 		return nil
 	}
@@ -235,7 +240,7 @@ func (s *Service) RecordContestSubmission(ctx context.Context, userID, contestID
 		Key:       fmt.Sprintf("contest:%d", contestID),
 		Type:      "contest",
 		Bond:      contestBond,
-		EventDate: time.Now().In(time.Local).Format("2006-01-02"),
+		EventDate: at.In(time.Local).Format("2006-01-02"),
 		Payload:   map[string]any{"contestId": contestID},
 	})
 	return err
