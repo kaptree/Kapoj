@@ -3052,6 +3052,343 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/contests/{id}/similarity/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * 比赛查重概览（contest.update）；比赛结束后才可访问
+         * @description 返回每个赛题的查重设置与最近一次任务；比赛未结束时返回 40001。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 查重概览 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ContestSimilarityOverviewResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/contests/{id}/similarity/problems/{problemId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                problemId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** 保存赛题查重设置（contest.update） */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                    problemId: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ContestSimilaritySettingsInput"];
+                };
+            };
+            responses: {
+                /** @description 保存后的查重设置 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ContestSimilaritySettingsResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/contests/{id}/similarity/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 发起查重任务（contest.update）；返回 202 与已入队任务
+         * @description 请求体可省略；problemId 为 0 或省略时对全部赛题发起任务。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["ContestSimilarityRunRequest"];
+                };
+            };
+            responses: {
+                /** @description 已入队的查重任务 */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ContestSimilarityRunListResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/contests/{id}/similarity/runs/{runId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                runId: number;
+            };
+            cookie?: never;
+        };
+        /** 查询查重任务状态（contest.update） */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                    runId: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 查重任务 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ContestSimilarityRunResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/contests/{id}/similarity/matches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** 查重结果分页列表（contest.update） */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 仅返回该赛题的结果；非法值返回 40001 */
+                    problemId?: number;
+                    /** @description 仅返回该次任务的结果；非法值返回 40001 */
+                    runId?: number;
+                    page?: number;
+                    page_size?: number;
+                };
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 查重结果分页 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ContestSimilarityMatchPageResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/contests/{id}/similarity/matches/{matchId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                matchId: number;
+            };
+            cookie?: never;
+        };
+        /** 查重结果详情，含双方代码与评测状态（contest.update） */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                    matchId: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 查重结果详情 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ContestSimilarityMatchDetailResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/contests/{id}/similarity/export.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** 导出查重结果为 CSV（contest.update） */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 仅导出该赛题的结果；非法值返回 40001 */
+                    problemId?: number;
+                };
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description CSV 文件；Content-Disposition 携带下载文件名 */
+                200: {
+                    headers: {
+                        "Content-Disposition"?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/csv": string;
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/problems": {
         parameters: {
             query?: never;
@@ -8899,6 +9236,135 @@ export interface components {
             nickname: string;
             /** Format: date-time */
             registerTime: string;
+        };
+        ContestSimilarityOverview: {
+            /** Format: int64 */
+            contestId: number;
+            problems: components["schemas"]["ContestSimilarityProblem"][];
+        };
+        ContestSimilarityProblem: {
+            /** Format: int64 */
+            problemId: number;
+            displayId: string;
+            title: string;
+            slug: string;
+            /** @description 已保存的阈值；未保存时为默认阈值 */
+            thresholdPercent: number;
+            ignoreCommonCode: boolean;
+            baseLanguage: string;
+            submissionCount: number;
+            matchCount: number;
+            /** @description 最近一次查重任务（任意状态）；从未运行时为 null */
+            latestRun: components["schemas"]["ContestSimilarityRun"] | null;
+        };
+        ContestSimilarityRun: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            contestId: number;
+            /** Format: int64 */
+            problemId: number;
+            /** @description queued、running、completed 或 failed */
+            status: string;
+            thresholdPercent: number;
+            ignoreCommonCode: boolean;
+            engine: string;
+            engineVersion: string;
+            /** Format: int64 */
+            requestedBy: number;
+            submissionCount: number;
+            matchCount: number;
+            errorMessage: string;
+            /** Format: date-time */
+            startedAt: string | null;
+            /** Format: date-time */
+            finishedAt: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        ContestSimilarityRunRequest: {
+            /**
+             * Format: int64
+             * @description 仅对指定赛题发起任务；0 或省略表示全部赛题
+             */
+            problemId?: number;
+        };
+        ContestSimilarityRunList: components["schemas"]["ContestSimilarityRun"][];
+        ContestSimilaritySettingsInput: {
+            thresholdPercent: number;
+            ignoreCommonCode: boolean;
+            /** @description 公共代码语言；baseCode 非空时必填 */
+            baseLanguage: string;
+            baseCode: string;
+        };
+        ContestSimilarityMatch: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            runId: number;
+            /** Format: int64 */
+            contestId: number;
+            /** Format: int64 */
+            problemId: number;
+            /** Format: int64 */
+            originalSubmissionId: number;
+            /** Format: int64 */
+            suspectSubmissionId: number;
+            /** Format: int64 */
+            originalUserId: number;
+            originalUsername: string;
+            originalNickname: string;
+            /** Format: int64 */
+            suspectUserId: number;
+            suspectUsername: string;
+            suspectNickname: string;
+            language: components["schemas"]["SubmissionLanguage"];
+            similarityPercent: number;
+            dicePercent: number;
+            thresholdPercent: number;
+            /** Format: date-time */
+            originalCreatedAt: string;
+            /** Format: date-time */
+            suspectCreatedAt: string;
+            /** Format: date-time */
+            finishedAt: string | null;
+        };
+        ContestSimilarityMatchDetail: components["schemas"]["ContestSimilarityMatch"] & {
+            originalCode: string;
+            suspectCode: string;
+            originalStatus: components["schemas"]["SubmissionStatus"];
+            suspectStatus: components["schemas"]["SubmissionStatus"];
+        };
+        ContestSimilarityOverviewResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["ContestSimilarityOverview"];
+        };
+        ContestSimilaritySettingsResponse: components["schemas"]["Envelope"] & {
+            data: {
+                /** Format: int64 */
+                contestId: number;
+                /** Format: int64 */
+                problemId: number;
+                thresholdPercent: number;
+                ignoreCommonCode: boolean;
+                baseLanguage: string;
+                baseCode: string;
+            };
+        };
+        ContestSimilarityRunResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["ContestSimilarityRun"];
+        };
+        ContestSimilarityRunListResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["ContestSimilarityRunList"];
+        };
+        ContestSimilarityMatchPageResponse: components["schemas"]["Envelope"] & {
+            data: {
+                /** Format: int64 */
+                total: number;
+                items: components["schemas"]["ContestSimilarityMatch"][];
+            };
+        };
+        ContestSimilarityMatchDetailResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["ContestSimilarityMatchDetail"];
         };
         /** @enum {string} */
         Role: "user" | "problem_admin" | "contest_admin" | "super_admin";

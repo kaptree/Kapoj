@@ -1220,6 +1220,141 @@ paths:
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
+  /contests/{id}/similarity/overview:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      summary: 比赛查重概览（contest.update）；比赛结束后才可访问
+      description: 返回每个赛题的查重设置与最近一次任务；比赛未结束时返回 40001。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 查重概览
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ContestSimilarityOverviewResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /contests/{id}/similarity/problems/{problemId}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      - { name: problemId, in: path, required: true, schema: { type: integer, format: int64 } }
+    put:
+      summary: 保存赛题查重设置（contest.update）
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ContestSimilaritySettingsInput' }
+      responses:
+        '200':
+          description: 保存后的查重设置
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ContestSimilaritySettingsResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /contests/{id}/similarity/runs:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      summary: 发起查重任务（contest.update）；返回 202 与已入队任务
+      description: 请求体可省略；problemId 为 0 或省略时对全部赛题发起任务。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ContestSimilarityRunRequest' }
+      responses:
+        '202':
+          description: 已入队的查重任务
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ContestSimilarityRunListResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /contests/{id}/similarity/runs/{runId}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      - { name: runId, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      summary: 查询查重任务状态（contest.update）
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 查重任务
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ContestSimilarityRunResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /contests/{id}/similarity/matches:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      summary: 查重结果分页列表（contest.update）
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: problemId, in: query, schema: { type: integer, format: int64, minimum: 1 }, description: 仅返回该赛题的结果；非法值返回 40001 }
+        - { name: runId, in: query, schema: { type: integer, format: int64, minimum: 1 }, description: 仅返回该次任务的结果；非法值返回 40001 }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: 查重结果分页
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ContestSimilarityMatchPageResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /contests/{id}/similarity/matches/{matchId}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      - { name: matchId, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      summary: 查重结果详情，含双方代码与评测状态（contest.update）
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 查重结果详情
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ContestSimilarityMatchDetailResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /contests/{id}/similarity/export.csv:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      summary: 导出查重结果为 CSV（contest.update）
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: problemId, in: query, schema: { type: integer, format: int64, minimum: 1 }, description: 仅导出该赛题的结果；非法值返回 40001 }
+      responses:
+        '200':
+          description: CSV 文件；Content-Disposition 携带下载文件名
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            text/csv:
+              schema: { type: string, format: binary }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
   /problems:
     get:
       summary: 题目列表（游客可访问，只返回已公开题目）
@@ -3895,6 +4030,158 @@ components:
         username: { type: string }
         nickname: { type: string }
         registerTime: { type: string, format: date-time }
+    ContestSimilarityOverview:
+      type: object
+      required: [contestId, problems]
+      properties:
+        contestId: { type: integer, format: int64 }
+        problems:
+          type: array
+          items: { $ref: '#/components/schemas/ContestSimilarityProblem' }
+    ContestSimilarityProblem:
+      type: object
+      required: [problemId, displayId, title, slug, thresholdPercent, ignoreCommonCode, baseLanguage, submissionCount, matchCount, latestRun]
+      properties:
+        problemId: { type: integer, format: int64 }
+        displayId: { type: string }
+        title: { type: string }
+        slug: { type: string }
+        thresholdPercent: { type: integer, description: 已保存的阈值；未保存时为默认阈值 }
+        ignoreCommonCode: { type: boolean }
+        baseLanguage: { type: string }
+        submissionCount: { type: integer }
+        matchCount: { type: integer }
+        latestRun:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/ContestSimilarityRun'
+          description: 最近一次查重任务（任意状态）；从未运行时为 null
+    ContestSimilarityRun:
+      type: object
+      required: [id, contestId, problemId, status, thresholdPercent, ignoreCommonCode, engine, engineVersion, requestedBy, submissionCount, matchCount, errorMessage, startedAt, finishedAt, createdAt]
+      properties:
+        id: { type: integer, format: int64 }
+        contestId: { type: integer, format: int64 }
+        problemId: { type: integer, format: int64 }
+        status: { type: string, description: queued、running、completed 或 failed }
+        thresholdPercent: { type: integer }
+        ignoreCommonCode: { type: boolean }
+        engine: { type: string }
+        engineVersion: { type: string }
+        requestedBy: { type: integer, format: int64 }
+        submissionCount: { type: integer }
+        matchCount: { type: integer }
+        errorMessage: { type: string }
+        startedAt: { type: string, format: date-time, nullable: true }
+        finishedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+    ContestSimilarityRunRequest:
+      type: object
+      properties:
+        problemId: { type: integer, format: int64, description: 仅对指定赛题发起任务；0 或省略表示全部赛题 }
+    ContestSimilarityRunList:
+      type: array
+      items: { $ref: '#/components/schemas/ContestSimilarityRun' }
+    ContestSimilaritySettingsInput:
+      type: object
+      required: [thresholdPercent, ignoreCommonCode, baseLanguage, baseCode]
+      properties:
+        thresholdPercent: { type: integer, minimum: 1, maximum: 100 }
+        ignoreCommonCode: { type: boolean }
+        baseLanguage: { type: string, description: 公共代码语言；baseCode 非空时必填 }
+        baseCode: { type: string, maxLength: 65536 }
+    ContestSimilarityMatch:
+      type: object
+      required: [id, runId, contestId, problemId, originalSubmissionId, suspectSubmissionId, originalUserId, originalUsername, originalNickname, suspectUserId, suspectUsername, suspectNickname, language, similarityPercent, dicePercent, thresholdPercent, originalCreatedAt, suspectCreatedAt, finishedAt]
+      properties:
+        id: { type: integer, format: int64 }
+        runId: { type: integer, format: int64 }
+        contestId: { type: integer, format: int64 }
+        problemId: { type: integer, format: int64 }
+        originalSubmissionId: { type: integer, format: int64 }
+        suspectSubmissionId: { type: integer, format: int64 }
+        originalUserId: { type: integer, format: int64 }
+        originalUsername: { type: string }
+        originalNickname: { type: string }
+        suspectUserId: { type: integer, format: int64 }
+        suspectUsername: { type: string }
+        suspectNickname: { type: string }
+        language: { $ref: '#/components/schemas/SubmissionLanguage' }
+        similarityPercent: { type: number }
+        dicePercent: { type: number }
+        thresholdPercent: { type: integer }
+        originalCreatedAt: { type: string, format: date-time }
+        suspectCreatedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time, nullable: true }
+    ContestSimilarityMatchDetail:
+      allOf:
+        - $ref: '#/components/schemas/ContestSimilarityMatch'
+        - type: object
+          required: [originalCode, suspectCode, originalStatus, suspectStatus]
+          properties:
+            originalCode: { type: string }
+            suspectCode: { type: string }
+            originalStatus: { $ref: '#/components/schemas/SubmissionStatus' }
+            suspectStatus: { $ref: '#/components/schemas/SubmissionStatus' }
+    ContestSimilarityOverviewResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/ContestSimilarityOverview' }
+    ContestSimilaritySettingsResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              required: [contestId, problemId, thresholdPercent, ignoreCommonCode, baseLanguage, baseCode]
+              properties:
+                contestId: { type: integer, format: int64 }
+                problemId: { type: integer, format: int64 }
+                thresholdPercent: { type: integer }
+                ignoreCommonCode: { type: boolean }
+                baseLanguage: { type: string }
+                baseCode: { type: string }
+    ContestSimilarityRunResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/ContestSimilarityRun' }
+    ContestSimilarityRunListResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/ContestSimilarityRunList' }
+    ContestSimilarityMatchPageResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              required: [total, items]
+              properties:
+                total: { type: integer, format: int64 }
+                items:
+                  type: array
+                  items: { $ref: '#/components/schemas/ContestSimilarityMatch' }
+    ContestSimilarityMatchDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/ContestSimilarityMatchDetail' }
     Role:
       type: string
       enum: [user, problem_admin, contest_admin, super_admin]

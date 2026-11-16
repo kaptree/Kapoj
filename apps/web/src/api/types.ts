@@ -196,6 +196,15 @@ export type AdminMailView = Schemas['AdminMailView']
 export type MailSettingsInput = Schemas['MailSettingsInput']
 export type MailTestInput = Schemas['MailTestInput']
 export type PasswordState = Schemas['PasswordState']
+export type ContestSimilarityOverview = Schemas['ContestSimilarityOverview']
+export type ContestSimilarityProblem = Schemas['ContestSimilarityProblem']
+export type ContestSimilarityRun = Schemas['ContestSimilarityRun']
+export type ContestSimilaritySettingsInput = Schemas['ContestSimilaritySettingsInput']
+export type ContestSimilaritySettings = Schemas['ContestSimilaritySettingsResponse']['data']
+export type ContestSimilarityRunRequest = Schemas['ContestSimilarityRunRequest']
+export type ContestSimilarityRunList = Schemas['ContestSimilarityRunList']
+export type ContestSimilarityMatch = Schemas['ContestSimilarityMatch']
+export type ContestSimilarityMatchDetail = Schemas['ContestSimilarityMatchDetail']
 
 export interface Page<T> {
   total: number
