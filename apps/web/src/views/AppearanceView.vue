@@ -29,6 +29,7 @@ import type {
   TitleItem,
 } from '@/api/types'
 import IdentityShowcase from '@/components/IdentityShowcase.vue'
+import CompanionSettings from '@/components/companion/CompanionSettings.vue'
 import AppEmptyState from '@/components/ui/AppEmptyState.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
@@ -274,6 +275,8 @@ watch(
           </div>
         </div>
       </AppSurface>
+
+      <CompanionSettings />
 
       <AppSurface padding="lg" class="appearance-section">
         <div class="section-head">

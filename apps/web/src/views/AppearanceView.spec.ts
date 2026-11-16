@@ -225,6 +225,8 @@ describe('AppearanceView', () => {
     expect(listCoinTransactions).toHaveBeenCalledWith({ page: 1, pageSize: 20 })
 
     expect(wrapper.text()).toContain('装扮管理')
+    expect(wrapper.find('.companion-settings').exists()).toBe(true)
+    expect(wrapper.text()).toContain('伙伴')
     expect(wrapper.text()).toContain('金币余额')
     expect(wrapper.text()).toContain('500')
     expect(wrapper.text()).toContain('荣耀王者')
