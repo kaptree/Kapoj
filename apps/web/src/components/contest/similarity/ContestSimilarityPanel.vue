@@ -650,6 +650,7 @@ onBeforeUnmount(() => {
 
 .similarity-table {
   width: 100%;
+  min-width: 760px;
   border-collapse: collapse;
   font-size: 0.875rem;
 }
@@ -710,6 +711,12 @@ onBeforeUnmount(() => {
 
 .similarity-results-table {
   font-size: 0.875rem;
+}
+
+/* Keep the results table columns on one line so DataTable's scroll container
+   scrolls horizontally on narrow screens instead of squeezing Chinese text. */
+.similarity-results-table :deep(.p-datatable-table) {
+  min-width: 880px;
 }
 
 .similarity-pager {
