@@ -27,7 +27,7 @@ describe('ForbiddenView', () => {
   it('renders the smug companion mascot and line', () => {
     const wrapper = mountForbidden()
 
-    expect(wrapper.find('[data-testid="companion-placeholder"]').exists()).toBe(true)
+    expect(wrapper.find('.companion-avatar__image').exists()).toBe(true)
     expect(wrapper.text()).toContain('别硬闯')
   })
 

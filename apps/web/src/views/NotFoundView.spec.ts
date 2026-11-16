@@ -28,7 +28,7 @@ describe('NotFoundView', () => {
   it('renders the lost companion mascot and line', () => {
     const wrapper = mountNotFound()
 
-    expect(wrapper.find('[data-testid="companion-placeholder"]').exists()).toBe(true)
+    expect(wrapper.find('.companion-avatar__image').exists()).toBe(true)
     expect(wrapper.text()).toContain('跟着我')
   })
 

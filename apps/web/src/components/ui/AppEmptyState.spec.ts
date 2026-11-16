@@ -14,7 +14,7 @@ describe('AppEmptyState', () => {
     const wrapper = mount(AppEmptyState, {
       props: { title: '暂无记录', mascot: 'lost', companionLine: '这里什么都没有。' },
     })
-    expect(wrapper.find('[data-testid="companion-placeholder"]').exists()).toBe(true)
+    expect(wrapper.find('.companion-avatar__image').exists()).toBe(true)
     expect(wrapper.text()).toContain('这里什么都没有。')
   })
 
@@ -28,7 +28,7 @@ describe('AppEmptyState', () => {
     store.load()
     store.setEnabled(false)
     const wrapper = mount(AppEmptyState, { props: { title: '空', mascot: 'lost' } })
-    expect(wrapper.find('[data-testid="companion-placeholder"]').exists()).toBe(false)
+    expect(wrapper.find('.companion-avatar').exists()).toBe(false)
     expect(wrapper.find('.app-empty__icon').exists()).toBe(true)
   })
 
@@ -47,6 +47,6 @@ describe('AppEmptyState', () => {
   it('keeps rendering without an active Pinia', () => {
     setActivePinia(undefined)
     const wrapper = mount(AppEmptyState, { props: { title: '空', mascot: 'lost' } })
-    expect(wrapper.find('[data-testid="companion-placeholder"]').exists()).toBe(true)
+    expect(wrapper.find('.companion-avatar__image').exists()).toBe(true)
   })
 })

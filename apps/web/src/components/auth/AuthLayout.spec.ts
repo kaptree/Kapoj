@@ -31,7 +31,7 @@ describe('AuthLayout', () => {
     })
     expect(wrapper.find('.auth-intro__companion').exists()).toBe(true)
     expect(wrapper.find('.auth-panel__companion').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="companion-placeholder"]').exists()).toBe(true)
+    expect(wrapper.find('.companion-avatar__image').exists()).toBe(true)
     expect(wrapper.find('.companion-dock').exists()).toBe(false)
     expect(wrapper.find('.auth-intro__companion button').exists()).toBe(false)
   })

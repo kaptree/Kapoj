@@ -12,12 +12,12 @@ beforeEach(() => {
 describe('AppLoadingState', () => {
   it('shows a chibi when a mascot is provided', () => {
     const wrapper = mount(AppLoadingState, { props: { mascot: 'sleepy' } })
-    expect(wrapper.find('[data-testid="companion-placeholder"]').exists()).toBe(true)
+    expect(wrapper.find('.companion-avatar__image').exists()).toBe(true)
   })
 
   it('shows only the spinner and label without a mascot', () => {
     const wrapper = mount(AppLoadingState, { props: { label: '加载中' } })
-    expect(wrapper.find('[data-testid="companion-placeholder"]').exists()).toBe(false)
+    expect(wrapper.find('.companion-avatar').exists()).toBe(false)
     expect(wrapper.find('.app-loading__spinner').exists()).toBe(true)
     expect(wrapper.find('.app-loading__label').text()).toBe('加载中')
   })
@@ -27,7 +27,7 @@ describe('AppLoadingState', () => {
     store.load()
     store.setEnabled(false)
     const wrapper = mount(AppLoadingState, { props: { mascot: 'sleepy' } })
-    expect(wrapper.find('[data-testid="companion-placeholder"]').exists()).toBe(false)
+    expect(wrapper.find('.companion-avatar').exists()).toBe(false)
     expect(wrapper.find('.app-loading__spinner').exists()).toBe(true)
   })
 })

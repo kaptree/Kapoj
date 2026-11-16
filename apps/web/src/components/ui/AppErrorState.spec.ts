@@ -21,12 +21,12 @@ function mountError(props: { mascot?: CompanionExpression | '' } = {}) {
 describe('AppErrorState', () => {
   it('shows an annoyed mascot when requested', () => {
     const wrapper = mountError({ mascot: 'annoyed' })
-    expect(wrapper.find('[data-testid="companion-placeholder"]').exists()).toBe(true)
+    expect(wrapper.find('.companion-avatar__image').exists()).toBe(true)
   })
 
   it('keeps the warning icon when no mascot is set', () => {
     const wrapper = mountError({})
-    expect(wrapper.find('[data-testid="companion-placeholder"]').exists()).toBe(false)
+    expect(wrapper.find('.companion-avatar').exists()).toBe(false)
     expect(wrapper.find('.pi-exclamation-triangle').exists()).toBe(true)
   })
 
@@ -35,7 +35,7 @@ describe('AppErrorState', () => {
     store.load()
     store.setEnabled(false)
     const wrapper = mountError({ mascot: 'annoyed' })
-    expect(wrapper.find('[data-testid="companion-placeholder"]').exists()).toBe(false)
+    expect(wrapper.find('.companion-avatar').exists()).toBe(false)
     expect(wrapper.find('.p-button').exists()).toBe(true)
   })
 })

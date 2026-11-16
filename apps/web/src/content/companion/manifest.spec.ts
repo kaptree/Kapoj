@@ -18,9 +18,15 @@ describe('resolveCompanionAsset', () => {
     expect(resolveCompanionAsset('full', 'neutral', pack)).toBeNull()
   })
 
-  it('ships an empty pack so the placeholder renders until art arrives', () => {
-    expect(COMPANION_PACK_AVAILABLE).toBe(false)
-    expect(Object.keys(COMPANION_ASSETS)).toHaveLength(0)
-    expect(resolveCompanionAsset('chibi', 'neutral')).toBeNull()
+  it('ships the real art pack with all three poses', () => {
+    expect(COMPANION_PACK_AVAILABLE).toBe(true)
+    expect(Object.keys(COMPANION_ASSETS).sort()).toEqual(['bust', 'chibi', 'full'])
+    expect(resolveCompanionAsset('chibi', 'neutral')).toMatchObject({
+      src: '/mascot/chibi/neutral@2x.webp',
+      width: 512,
+      height: 512,
+    })
+    expect(resolveCompanionAsset('bust', 'pout')?.src).toBe('/mascot/bust/neutral@2x.webp')
+    expect(resolveCompanionAsset('full', 'neutral')?.src).toBe('/mascot/full/neutral@2x.webp')
   })
 })
