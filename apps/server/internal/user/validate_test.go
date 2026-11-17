@@ -39,7 +39,7 @@ func TestValidatePassword(t *testing.T) {
 	assert.NoError(t, ValidatePassword(strings.Repeat("a", 72)))
 	assertValidation(t, ValidatePassword(strings.Repeat("a", 7)))
 	assertValidation(t, ValidatePassword(strings.Repeat("a", 73)))
-	// 25 three-byte characters = 75 bytes, over bcrypt's limit.
+	// 25 three-byte characters = 75 bytes, over the configured limit.
 	assertValidation(t, ValidatePassword(strings.Repeat("密", 25)))
 }
 

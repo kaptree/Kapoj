@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"strconv"
 	"strings"
@@ -12,8 +13,10 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
+	pw "github.com/kaptree/kapoj/apps/server/internal/password"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
 
@@ -48,7 +51,7 @@ type failingPasswordRepo struct {
 	err error
 }
 
-func (r *failingPasswordRepo) UpdatePassword(context.Context, int64, string) error {
+func (r *failingPasswordRepo) UpdatePassword(context.Context, int64, string, string) error {
 	return r.err
 }
 
@@ -81,6 +84,69 @@ func TestRegisterReturnsSession(t *testing.T) {
 	assert.Equal(t, user.StatusActive, s.User.Status)
 	assert.Equal(t, 1500, s.User.Rating)
 	assert.NotEqual(t, password, s.User.PasswordHash)
+	assertHydroPassword(t, s.User.PasswordHash, s.User.Salt)
+}
+
+// assertHydroPassword checks the stored shape of a HydroOJ-compatible
+// password: a 64-character hex hash and a 32-character salt.
+func assertHydroPassword(t *testing.T, hash, salt string) {
+	t.Helper()
+	assert.Len(t, hash, 64)
+	_, err := hex.DecodeString(hash)
+	require.NoError(t, err, "password hash must be hex")
+	assert.Len(t, salt, pw.SaltLength)
+}
+
+func TestLoginAcceptsHydroOJUser(t *testing.T) {
+	svc, repo := newService(t)
+	ctx := context.Background()
+	u := &user.User{
+		Username:     "hydro",
+		Nickname:     "Hydro",
+		Email:        "hydro@example.com",
+		PasswordHash: "2d24d16b0954f655315984f33f1d03eb8fe888fcb4f162e7708a6861df7f2517",
+		Salt:         "abc",
+		Role:         user.RoleUser,
+		Status:       user.StatusActive,
+		Rating:       user.InitialRating,
+	}
+	require.NoError(t, repo.Create(ctx, u))
+
+	_, err := svc.Login(ctx, "hydro", "wrong-password")
+	assertCode(t, err, 40101)
+
+	s, err := svc.Login(ctx, "hydro", "test123")
+	require.NoError(t, err)
+	assert.Equal(t, u.ID, s.User.ID)
+}
+
+func TestLoginUpgradesLegacyBcryptUser(t *testing.T) {
+	svc, repo := newService(t)
+	ctx := context.Background()
+	legacy, err := bcrypt.GenerateFromPassword([]byte("legacy-password"), bcrypt.MinCost)
+	require.NoError(t, err)
+	u := &user.User{
+		Username:     "legacy",
+		Nickname:     "Legacy",
+		Email:        "legacy@example.com",
+		PasswordHash: string(legacy),
+		Role:         user.RoleUser,
+		Status:       user.StatusActive,
+		Rating:       user.InitialRating,
+	}
+	require.NoError(t, repo.Create(ctx, u))
+
+	_, err = svc.Login(ctx, "legacy", "legacy-password")
+	require.NoError(t, err)
+
+	got, err := repo.FindByID(ctx, u.ID)
+	require.NoError(t, err)
+	assert.False(t, strings.HasPrefix(got.PasswordHash, "$2"), "login must re-hash the legacy password")
+	assertHydroPassword(t, got.PasswordHash, got.Salt)
+	assert.True(t, pw.Verify("legacy-password", got.Salt, got.PasswordHash))
+
+	_, err = svc.Login(ctx, "legacy", "legacy-password")
+	require.NoError(t, err, "the upgraded password still logs in")
 }
 
 func TestRegisterRejectsCaseVariant(t *testing.T) {
@@ -342,6 +408,7 @@ func TestChangePassword(t *testing.T) {
 	u, err := svc.users.FindByID(ctx, id)
 	require.NoError(t, err)
 	assert.NotEqual(t, oldHash, u.PasswordHash)
+	assertHydroPassword(t, u.PasswordHash, u.Salt)
 
 	_, err = svc.Login(ctx, "alice", password)
 	assertCode(t, err, 40101)
@@ -352,6 +419,41 @@ func TestChangePassword(t *testing.T) {
 
 	_, err = svc.Refresh(ctx, s.RefreshToken)
 	assertCode(t, err, 40100)
+}
+
+// TestChangePasswordUpgradesLegacyBcrypt verifies that a bcrypt user can
+// change their password and receives a fresh HydroOJ hash and salt.
+func TestChangePasswordUpgradesLegacyBcrypt(t *testing.T) {
+	svc, repo := newService(t)
+	ctx := context.Background()
+	legacy, err := bcrypt.GenerateFromPassword([]byte("legacy-password"), bcrypt.MinCost)
+	require.NoError(t, err)
+	u := &user.User{
+		Username:     "legacy-change",
+		Nickname:     "Legacy",
+		Email:        "legacy-change@example.com",
+		PasswordHash: string(legacy),
+		Role:         user.RoleUser,
+		Status:       user.StatusActive,
+		Rating:       user.InitialRating,
+	}
+	require.NoError(t, repo.Create(ctx, u))
+
+	err = svc.ChangePassword(ctx, u.ID, ChangePasswordInput{
+		CurrentPassword: "legacy-password",
+		NewPassword:     "brand-new-password",
+	})
+	require.NoError(t, err)
+
+	got, err := repo.FindByID(ctx, u.ID)
+	require.NoError(t, err)
+	assert.False(t, strings.HasPrefix(got.PasswordHash, "$2"))
+	assertHydroPassword(t, got.PasswordHash, got.Salt)
+
+	_, err = svc.Login(ctx, "legacy-change", "legacy-password")
+	assertCode(t, err, 40101)
+	_, err = svc.Login(ctx, "legacy-change", "brand-new-password")
+	require.NoError(t, err)
 }
 
 // TestChangePasswordUpdateFailureKeepsOldPassword covers the spec-required
@@ -805,6 +907,7 @@ func TestResetPasswordVerifiesEmailAndRevokesSessions(t *testing.T) {
 	u, err := repo.FindByEmail(ctx, "alice@example.com")
 	require.NoError(t, err)
 	assert.NotNil(t, u.EmailVerifiedAt)
+	assertHydroPassword(t, u.PasswordHash, u.Salt)
 
 	_, err = svc.Refresh(ctx, oldRefresh)
 	assertCode(t, err, 40100)

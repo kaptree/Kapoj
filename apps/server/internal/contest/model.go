@@ -43,7 +43,9 @@ type Contest struct {
 	IsPublic        bool                 `gorm:"not null;default:false;index"`
 	DisableAI       bool                 `gorm:"column:disable_ai;not null;default:true"`
 	PasswordHash    string               `gorm:"size:100;not null;default:''"`
+	PasswordSalt    string               `gorm:"size:32;not null;default:''"`
 	InviteCodeHash  string               `gorm:"size:100;not null;default:''"`
+	InviteCodeSalt  string               `gorm:"size:32;not null;default:''"`
 	RegisterType    RegisterType         `gorm:"size:20;not null;default:open"`
 	CreatedBy       int64                `gorm:"not null;default:0"`
 	CreatedAt       time.Time            `gorm:"type:timestamptz;not null"`

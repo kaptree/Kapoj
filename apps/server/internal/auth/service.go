@@ -8,9 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/crypto/bcrypt"
-
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
+	pw "github.com/kaptree/kapoj/apps/server/internal/password"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
 
@@ -196,7 +195,7 @@ func (s *Service) RegisterWithMeta(ctx context.Context, in RegisterInput, meta S
 }
 
 func (s *Service) createUser(ctx context.Context, username, email, nickname, password string, verified bool) (*user.User, error) {
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hash, salt, err := pw.Hash(password)
 	if err != nil {
 		return nil, err
 	}
@@ -204,7 +203,8 @@ func (s *Service) createUser(ctx context.Context, username, email, nickname, pas
 		Username:     user.Normalize(username),
 		Email:        email,
 		Nickname:     nickname,
-		PasswordHash: string(hash),
+		PasswordHash: hash,
+		Salt:         salt,
 		Role:         user.RoleUser,
 		Status:       user.StatusActive,
 		Rating:       user.InitialRating,
@@ -250,10 +250,10 @@ func (s *Service) LoginWithMeta(ctx context.Context, account, password string, m
 
 	if u == nil {
 		// Hash anyway so unknown accounts take as long as wrong passwords.
-		_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
+		_ = pw.HydroHash(password, dummySalt)
 		return nil, httpx.ErrInvalidCredentials
 	}
-	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)) != nil {
+	if !pw.Verify(password, u.Salt, u.PasswordHash) {
 		return nil, httpx.ErrInvalidCredentials
 	}
 	if u.Status == user.StatusBanned {
@@ -265,7 +265,31 @@ func (s *Service) LoginWithMeta(ctx context.Context, account, password string, m
 	if err := s.limiter.Reset(ctx, key); err != nil {
 		return nil, err
 	}
+	s.upgradeLegacyPassword(ctx, u, password)
 	return s.newSession(ctx, u, meta)
+}
+
+// upgradeLegacyPassword lazily converts a bcrypt hash to the HydroOJ scheme
+// after a successful login. A failure only delays the upgrade; it must not
+// fail an otherwise valid login.
+func (s *Service) upgradeLegacyPassword(ctx context.Context, u *user.User, password string) {
+	legacyHash := u.PasswordHash
+	if !pw.IsLegacyBcrypt(legacyHash) {
+		return
+	}
+	hash, salt, err := pw.Hash(password)
+	if err != nil {
+		slog.Warn("auth: hash legacy password failed", "user_id", u.ID, "err", err)
+		return
+	}
+	upgraded, err := s.users.UpdatePasswordIfHash(ctx, u.ID, legacyHash, hash, salt)
+	if err != nil {
+		slog.Warn("auth: upgrade legacy password hash failed", "user_id", u.ID, "err", err)
+		return
+	}
+	if upgraded {
+		u.PasswordHash, u.Salt = hash, salt
+	}
 }
 
 func (s *Service) requireVerified(ctx context.Context, u *user.User) error {
@@ -365,7 +389,7 @@ func (s *Service) ChangePassword(ctx context.Context, userID int64, in ChangePas
 		return httpx.ErrTooManyPasswordAttempts
 	}
 
-	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(in.CurrentPassword)) != nil {
+	if !pw.Verify(in.CurrentPassword, u.Salt, u.PasswordHash) {
 		return httpx.ErrValidation("当前密码错误")
 	}
 	if err := user.ValidatePassword(in.NewPassword); err != nil {
@@ -375,7 +399,7 @@ func (s *Service) ChangePassword(ctx context.Context, userID int64, in ChangePas
 		return httpx.ErrValidation("新密码不能与当前密码相同")
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(in.NewPassword), bcrypt.DefaultCost)
+	hash, salt, err := pw.Hash(in.NewPassword)
 	if err != nil {
 		return err
 	}
@@ -383,7 +407,7 @@ func (s *Service) ChangePassword(ctx context.Context, userID int64, in ChangePas
 	if err := s.refresh.RevokeAll(ctx, userID); err != nil {
 		return err
 	}
-	if err := s.users.UpdatePassword(ctx, userID, string(hash)); err != nil {
+	if err := s.users.UpdatePassword(ctx, userID, hash, salt); err != nil {
 		return err
 	}
 	if err := s.limiter.Reset(ctx, key); err != nil {
@@ -562,7 +586,7 @@ func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) 
 		return httpx.ErrUserBanned
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	hash, salt, err := pw.Hash(newPassword)
 	if err != nil {
 		return err
 	}
@@ -575,7 +599,7 @@ func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) 
 			return err
 		}
 	}
-	if err := s.users.UpdatePassword(ctx, userID, string(hash)); err != nil {
+	if err := s.users.UpdatePassword(ctx, userID, hash, salt); err != nil {
 		return err
 	}
 	if err := s.emailTokens.InvalidateVerification(ctx, userID); err != nil {
@@ -647,4 +671,4 @@ func (s *Service) issuePair(ctx context.Context, u *user.User, meta SessionMeta)
 	return &TokenPair{AccessToken: access, RefreshToken: refresh, SessionID: sessionID}, nil
 }
 
-var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("kapoj-dummy-password"), bcrypt.DefaultCost)
+var dummySalt = strings.Repeat("0", pw.SaltLength)

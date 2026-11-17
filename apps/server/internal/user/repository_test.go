@@ -179,34 +179,82 @@ func TestConcurrentCreateSameUsername(t *testing.T) {
 	assert.Equal(t, 1, ok)
 }
 
-func TestUpdatePasswordUpdatesHash(t *testing.T) {
+func TestUpdatePasswordUpdatesHashAndSalt(t *testing.T) {
 	ctx := context.Background()
 
 	repo := user.NewGormRepository(testutil.PG(t))
 	u := newUser("gwen")
 	require.NoError(t, repo.Create(ctx, u))
-	require.NoError(t, repo.UpdatePassword(ctx, u.ID, "new-hash"))
+	require.NoError(t, repo.UpdatePassword(ctx, u.ID, "new-hash", "new-salt"))
 	got, err := repo.FindByID(ctx, u.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "new-hash", got.PasswordHash)
+	assert.Equal(t, "new-salt", got.Salt)
 
 	mem := user.NewMemoryRepository()
 	mu := newUser("memgwen")
 	require.NoError(t, mem.Create(ctx, mu))
-	require.NoError(t, mem.UpdatePassword(ctx, mu.ID, "mem-hash"))
+	require.NoError(t, mem.UpdatePassword(ctx, mu.ID, "mem-hash", "mem-salt"))
 	mgot, err := mem.FindByID(ctx, mu.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "mem-hash", mgot.PasswordHash)
+	assert.Equal(t, "mem-salt", mgot.Salt)
 }
 
 func TestUpdatePasswordMissingUser(t *testing.T) {
 	ctx := context.Background()
 
 	repo := user.NewGormRepository(testutil.PG(t))
-	assert.ErrorIs(t, repo.UpdatePassword(ctx, 999999, "x"), user.ErrNotFound)
+	assert.ErrorIs(t, repo.UpdatePassword(ctx, 999999, "x", "s"), user.ErrNotFound)
 
 	mem := user.NewMemoryRepository()
-	assert.ErrorIs(t, mem.UpdatePassword(ctx, 999999, "x"), user.ErrNotFound)
+	assert.ErrorIs(t, mem.UpdatePassword(ctx, 999999, "x", "s"), user.ErrNotFound)
+}
+
+func TestUpdatePasswordIfHashMemory(t *testing.T) {
+	ctx := context.Background()
+	mem := user.NewMemoryRepository()
+	u := newUser("cas-mem")
+	u.PasswordHash = "old-hash"
+	require.NoError(t, mem.Create(ctx, u))
+
+	updated, err := mem.UpdatePasswordIfHash(ctx, u.ID, "stale-hash", "new-hash", "new-salt")
+	require.NoError(t, err)
+	assert.False(t, updated, "a stale hash must not overwrite a concurrent change")
+	got, err := mem.FindByID(ctx, u.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "old-hash", got.PasswordHash)
+
+	updated, err = mem.UpdatePasswordIfHash(ctx, u.ID, "old-hash", "new-hash", "new-salt")
+	require.NoError(t, err)
+	assert.True(t, updated)
+	got, err = mem.FindByID(ctx, u.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "new-hash", got.PasswordHash)
+	assert.Equal(t, "new-salt", got.Salt)
+}
+
+func TestUpdatePasswordIfHashGorm(t *testing.T) {
+	ctx := context.Background()
+	repo := user.NewGormRepository(testutil.PG(t))
+	u := newUser("cas-gorm")
+	u.PasswordHash = "old-hash"
+	require.NoError(t, repo.Create(ctx, u))
+
+	updated, err := repo.UpdatePasswordIfHash(ctx, u.ID, "stale-hash", "new-hash", "new-salt")
+	require.NoError(t, err)
+	assert.False(t, updated, "a stale hash must not overwrite a concurrent change")
+	got, err := repo.FindByID(ctx, u.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "old-hash", got.PasswordHash)
+
+	updated, err = repo.UpdatePasswordIfHash(ctx, u.ID, "old-hash", "new-hash", "new-salt")
+	require.NoError(t, err)
+	assert.True(t, updated)
+	got, err = repo.FindByID(ctx, u.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "new-hash", got.PasswordHash)
+	assert.Equal(t, "new-salt", got.Salt)
 }
 
 func TestMarkEmailVerified(t *testing.T) {

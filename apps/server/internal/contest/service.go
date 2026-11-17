@@ -8,9 +8,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"golang.org/x/crypto/bcrypt"
-
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
+	pw "github.com/kaptree/kapoj/apps/server/internal/password"
 )
 
 type Viewer struct {
@@ -89,10 +88,10 @@ func (s *Service) Create(ctx context.Context, v Viewer, in Input) (*Contest, err
 		IsRated: in.IsRated, IsPublic: in.IsPublic, DisableAI: disableAI,
 		RegisterType: in.RegisterType, CreatedBy: v.UserID,
 	}
-	if c.PasswordHash, err = hash(in.Password); err != nil {
+	if c.PasswordHash, c.PasswordSalt, err = hash(in.Password); err != nil {
 		return nil, err
 	}
-	if c.InviteCodeHash, err = hash(in.InviteCode); err != nil {
+	if c.InviteCodeHash, c.InviteCodeSalt, err = hash(in.InviteCode); err != nil {
 		return nil, err
 	}
 	if err := s.repo.Create(ctx, c, toProblems(in.Problems)); err != nil {
@@ -146,12 +145,12 @@ func (s *Service) Update(ctx context.Context, v Viewer, id int64, in Input) (*Co
 		c.DisableAI = *in.DisableAI
 	}
 	if in.Password != "" {
-		if c.PasswordHash, err = hash(in.Password); err != nil {
+		if c.PasswordHash, c.PasswordSalt, err = hash(in.Password); err != nil {
 			return nil, err
 		}
 	}
 	if in.InviteCode != "" {
-		if c.InviteCodeHash, err = hash(in.InviteCode); err != nil {
+		if c.InviteCodeHash, c.InviteCodeSalt, err = hash(in.InviteCode); err != nil {
 			return nil, err
 		}
 	}
@@ -346,11 +345,11 @@ func (s *Service) Register(ctx context.Context, userID, id int64, password, invi
 	}
 	switch c.RegisterType {
 	case RegisterPassword:
-		if bcrypt.CompareHashAndPassword([]byte(c.PasswordHash), []byte(strings.TrimSpace(password))) != nil {
+		if !pw.Verify(strings.TrimSpace(password), c.PasswordSalt, c.PasswordHash) {
 			return invalid("比赛密码错误")
 		}
 	case RegisterInvite:
-		if bcrypt.CompareHashAndPassword([]byte(c.InviteCodeHash), []byte(strings.TrimSpace(inviteCode))) != nil {
+		if !pw.Verify(strings.TrimSpace(inviteCode), c.InviteCodeSalt, c.InviteCodeHash) {
 			return invalid("邀请码错误")
 		}
 	}
@@ -469,12 +468,11 @@ func toProblems(inputs []ProblemInput) []ContestProblem {
 	return out
 }
 
-func hash(value string) (string, error) {
+func hash(value string) (hash, salt string, err error) {
 	if value == "" {
-		return "", nil
+		return "", "", nil
 	}
-	h, err := bcrypt.GenerateFromPassword([]byte(value), bcrypt.DefaultCost)
-	return string(h), err
+	return pw.Hash(value)
 }
 
 func normalizeAnnouncement(title, content string) (string, error) {

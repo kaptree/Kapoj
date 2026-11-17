@@ -120,7 +120,7 @@ func (r *memoryRepository) UpdateProfile(_ context.Context, id int64, c ProfileC
 	return nil
 }
 
-func (r *memoryRepository) UpdatePassword(_ context.Context, id int64, hash string) error {
+func (r *memoryRepository) UpdatePassword(_ context.Context, id int64, hash, salt string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	u, ok := r.users[id]
@@ -128,9 +128,24 @@ func (r *memoryRepository) UpdatePassword(_ context.Context, id int64, hash stri
 		return ErrNotFound
 	}
 	u.PasswordHash = hash
+	u.Salt = salt
 	u.UpdatedAt = time.Now()
 	r.users[id] = u
 	return nil
+}
+
+func (r *memoryRepository) UpdatePasswordIfHash(_ context.Context, id int64, expectedHash, hash, salt string) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	u, ok := r.users[id]
+	if !ok || u.PasswordHash != expectedHash {
+		return false, nil
+	}
+	u.PasswordHash = hash
+	u.Salt = salt
+	u.UpdatedAt = time.Now()
+	r.users[id] = u
+	return true, nil
 }
 
 func (r *memoryRepository) MarkEmailVerified(_ context.Context, id int64, at time.Time) error {

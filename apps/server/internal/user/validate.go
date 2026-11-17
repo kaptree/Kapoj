@@ -32,7 +32,7 @@ func ValidateEmail(s string) error {
 	return nil
 }
 
-// ValidatePassword enforces 8–72 bytes; 72 is bcrypt's input limit.
+// ValidatePassword enforces 8–72 bytes.
 func ValidatePassword(s string) error {
 	if len(s) < 8 || len(s) > 72 {
 		return httpx.ErrValidation("密码长度需为 8–72 个字节")

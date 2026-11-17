@@ -25,9 +25,13 @@ type Repository interface {
 	// UpdateProfile writes only the provided profile fields, so concurrent
 	// changes to other columns (status, coins, role) are never overwritten.
 	UpdateProfile(ctx context.Context, id int64, changes ProfileChanges) error
-	// UpdatePassword replaces only the password hash; it returns ErrNotFound
-	// when the user does not exist.
-	UpdatePassword(ctx context.Context, id int64, hash string) error
+	// UpdatePassword replaces only the password hash and salt; it returns
+	// ErrNotFound when the user does not exist.
+	UpdatePassword(ctx context.Context, id int64, hash, salt string) error
+	// UpdatePasswordIfHash replaces the password hash and salt only when the
+	// stored hash still equals expectedHash. It reports whether the row was
+	// updated, so a lazy legacy upgrade cannot clobber a concurrent change.
+	UpdatePasswordIfHash(ctx context.Context, id int64, expectedHash, hash, salt string) (bool, error)
 	// MarkEmailVerified sets email_verified_at without touching other columns.
 	MarkEmailVerified(ctx context.Context, id int64, at time.Time) error
 	// Count returns the total number of users.
@@ -117,8 +121,9 @@ func (r *gormRepository) UpdateProfile(ctx context.Context, id int64, changes Pr
 	return nil
 }
 
-func (r *gormRepository) UpdatePassword(ctx context.Context, id int64, hash string) error {
-	res := r.db.WithContext(ctx).Model(&User{}).Where("id = ?", id).Update("password_hash", hash)
+func (r *gormRepository) UpdatePassword(ctx context.Context, id int64, hash, salt string) error {
+	res := r.db.WithContext(ctx).Model(&User{}).Where("id = ?", id).
+		Updates(map[string]any{"password_hash": hash, "salt": salt})
 	if res.Error != nil {
 		return mapErr(res.Error)
 	}
@@ -126,6 +131,16 @@ func (r *gormRepository) UpdatePassword(ctx context.Context, id int64, hash stri
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (r *gormRepository) UpdatePasswordIfHash(ctx context.Context, id int64, expectedHash, hash, salt string) (bool, error) {
+	res := r.db.WithContext(ctx).Model(&User{}).
+		Where("id = ? AND password_hash = ?", id, expectedHash).
+		Updates(map[string]any{"password_hash": hash, "salt": salt})
+	if res.Error != nil {
+		return false, mapErr(res.Error)
+	}
+	return res.RowsAffected > 0, nil
 }
 
 func (r *gormRepository) MarkEmailVerified(ctx context.Context, id int64, at time.Time) error {

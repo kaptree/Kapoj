@@ -2,6 +2,7 @@ package contest_test
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
@@ -410,6 +412,50 @@ func TestUpdateKeepsCredentials(t *testing.T) {
 	_, err = e.svc.Update(context.Background(), manager(), ic.ID, update)
 	require.NoError(t, err)
 	require.NoError(t, e.svc.Register(context.Background(), otherID, ic.ID, "", "code"))
+}
+
+func TestContestCredentialsUseHydroHash(t *testing.T) {
+	e := newEnv(t)
+	in := baseInput(e)
+	in.RegisterType = contest.RegisterPassword
+	in.Password = "secret"
+	in.InviteCode = "invite"
+	c, err := e.svc.Create(context.Background(), manager(), in)
+	require.NoError(t, err)
+
+	for _, stored := range []struct {
+		name string
+		hash string
+		salt string
+	}{
+		{"password", c.PasswordHash, c.PasswordSalt},
+		{"invite code", c.InviteCodeHash, c.InviteCodeSalt},
+	} {
+		assert.Len(t, stored.hash, 64, stored.name)
+		_, err := hex.DecodeString(stored.hash)
+		assert.NoError(t, err, "%s hash must be hex", stored.name)
+		assert.Len(t, stored.salt, 32, stored.name)
+		assert.NotEqual(t, "secret", stored.hash, stored.name)
+	}
+
+	require.NoError(t, e.svc.Register(context.Background(), userID, c.ID, "secret", ""))
+	assertCode(t, e.svc.Register(context.Background(), otherID, c.ID, "wrong", ""), 40001)
+}
+
+func TestContestLegacyBcryptPasswordStillWorks(t *testing.T) {
+	e := newEnv(t)
+	in := baseInput(e)
+	in.RegisterType = contest.RegisterPassword
+	in.Password = "secret"
+	c, err := e.svc.Create(context.Background(), manager(), in)
+	require.NoError(t, err)
+
+	legacy, err := bcrypt.GenerateFromPassword([]byte("legacy-secret"), bcrypt.MinCost)
+	require.NoError(t, err)
+	require.NoError(t, e.db.Model(&contest.Contest{}).Where("id = ?", c.ID).
+		Updates(map[string]any{"password_hash": string(legacy), "password_salt": ""}).Error)
+
+	require.NoError(t, e.svc.Register(context.Background(), userID, c.ID, "legacy-secret", ""))
 }
 
 func TestCloneTruncatesLongDefaultTitle(t *testing.T) {
