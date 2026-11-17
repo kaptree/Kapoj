@@ -52,8 +52,17 @@ func TestProblemPackageHandlerPermissions(t *testing.T) {
 	assert.Equal(t, "application/zip", w.Header().Get("Content-Type"))
 	assert.Contains(t, w.Header().Get("Content-Disposition"), "package-owner.zip")
 	assert.Equal(t, "private, no-store", w.Header().Get("Cache-Control"))
+	packageBody := append([]byte(nil), w.Body.Bytes()...)
 
-	manifest, files := readProblemPackage(t, w.Body.Bytes())
+	w, infoResp := f.do(http.MethodGet, endpoint+"/info", owner, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	info := infoResp["data"].(map[string]any)
+	assert.Equal(t, problem.PackageFormatProblem, info["format"])
+	assert.GreaterOrEqual(t, int(info["fileCount"].(float64)), 8)
+	assert.Greater(t, int64(info["sizeBytes"].(float64)), int64(0))
+	assert.Equal(t, "private, no-store", w.Header().Get("Cache-Control"))
+
+	manifest, files := readProblemPackage(t, packageBody)
 	assert.Equal(t, problem.PackageFormatProblem, manifest.Format)
 	assert.Equal(t, "package-owner", manifest.Problem.Slug)
 	assert.Contains(t, files, "statement.md")

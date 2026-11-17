@@ -32,6 +32,11 @@ func TestBulkActionsPartialSuccess(t *testing.T) {
 		assert.True(t, p.IsPublic)
 	}
 
+	already, err := e.svc.BulkAction(ctx, problem.BulkActionPublish, []int64{first.ID})
+	require.NoError(t, err)
+	require.Len(t, already, 1)
+	assert.Equal(t, "已公开", already[0].Message)
+
 	results, err = e.svc.BulkAction(ctx, problem.BulkActionHide, []int64{first.ID, second.ID})
 	require.NoError(t, err)
 	require.Len(t, results, 2)

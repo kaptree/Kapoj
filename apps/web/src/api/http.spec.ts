@@ -245,6 +245,26 @@ describe('createHttp', () => {
     expect(responseType).toBe('blob')
   })
 
+  it('getBlob surfaces JSON error envelopes received as blobs', async () => {
+    const http = createHttp(hooks(), {
+      adapter: (c) =>
+        respond(
+          c,
+          400,
+          new Blob([JSON.stringify({ code: 40001, message: '一次最多导出 100 道题目' })], {
+            type: 'application/json',
+          }),
+        ),
+    })
+
+    const err = (await http.getBlob('/problems/bulk/export').catch((e) => e)) as ApiError
+    expect(err).toMatchObject({
+      status: 400,
+      code: 40001,
+      message: '一次最多导出 100 道题目',
+    })
+  })
+
   it('getBlob does not unwrap an envelope-shaped body', async () => {
     const blob = new Blob(['x'])
     const http = createHttp(hooks(), {

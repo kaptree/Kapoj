@@ -72,6 +72,9 @@ func (h *handler) importHydro(c *gin.Context) {
 		}
 		h.recordImportAudit(c, action, imp.ID, imp.Slug)
 	}
+	h.recordImportSummaryAudit(c, "/api/problems/import/hydro", len(result.Imported),
+		len(result.Failed), len(result.Conflicts), len(result.Skipped), publish,
+		c.PostForm("conflictPolicy"))
 	httpx.OK(c, result)
 }
 

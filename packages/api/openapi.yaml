@@ -1565,6 +1565,21 @@ paths:
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
+  /problems/{id}/package/info:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      summary: 单题题包信息（创建者或 problem.manage_all）
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 格式、文件数与大致大小
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProblemPackageInfoResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
   /problems/{id}/package:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
@@ -5285,6 +5300,21 @@ components:
           required: [data]
           properties:
             data: { $ref: '#/components/schemas/HydroImportResult' }
+    ProblemPackageInfo:
+      type: object
+      required: [format, formatVersion, fileCount, sizeBytes]
+      properties:
+        format: { type: string, example: kapoj-problem }
+        formatVersion: { type: integer, example: 1 }
+        fileCount: { type: integer }
+        sizeBytes: { type: integer, format: int64, description: 未压缩内容的大致字节数 }
+    ProblemPackageInfoResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/ProblemPackageInfo' }
     ProblemImportResult:
       type: object
       description: kapOJ/HydroOJ 题包导入的逐题结果；合法题包允许部分成功。
@@ -5315,6 +5345,7 @@ components:
         id: { type: integer, format: int64 }
         status: { type: string, enum: [success, failed] }
         offlined: { type: boolean, description: 删除时 true 表示因已有提交记录仅下线 }
+        message: { type: string, description: 例如题目原本已公开时返回「已公开」 }
         error: { type: string }
     BulkProblemActionData:
       type: object

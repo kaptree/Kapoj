@@ -77,6 +77,14 @@ type TestdataManifest struct {
 	Testcases []TestcaseManifest `json:"testcases"`
 }
 
+// PackageInfo is the lightweight metadata shown before downloading a package.
+type PackageInfo struct {
+	Format        string `json:"format"`
+	FormatVersion int    `json:"formatVersion"`
+	FileCount     int    `json:"fileCount"`
+	SizeBytes     int64  `json:"sizeBytes"`
+}
+
 // ProblemsManifest is the root manifest of a batch problem package.
 type ProblemsManifest struct {
 	Format        string                  `json:"format"`

@@ -77,6 +77,13 @@ func TestImportPackageHandlerKapOJ(t *testing.T) {
 	require.NoError(t, f.db.First(&published, id).Error)
 	assert.True(t, published.IsPublic)
 
+	var importAudits int64
+	require.NoError(t, f.db.Table("admin_audit_logs").
+		Where("action = ? AND target_type = ? AND target_id IS NULL",
+			rbac.AuditActionProblemImport, "problem").
+		Count(&importAudits).Error)
+	assert.EqualValues(t, 1, importAudits, "each import request must record a summary audit")
+
 	// A user with problem.create but not problem.publish cannot request
 	// publish=true, and nothing is imported.
 	f.createRole("import_creator", rbac.PermProblemCreate)

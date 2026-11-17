@@ -2,6 +2,7 @@ package problemapi
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -71,7 +72,44 @@ func (h *handler) importPackage(c *gin.Context) {
 		}
 		h.recordImportAuditPath(c, "/api/problems/import/package", action, imported.ID, imported.Slug)
 	}
+	h.recordImportSummaryAudit(c, "/api/problems/import/package", len(result.Imported),
+		len(result.Failed), len(result.Conflicts), len(result.Skipped), publish,
+		c.PostForm("conflictPolicy"))
 	httpx.OK(c, result)
+}
+
+// recordImportSummaryAudit records the request-level outcome even when nothing
+// was imported (conflicts, skips or per-problem failures).
+func (h *handler) recordImportSummaryAudit(
+	c *gin.Context,
+	path string,
+	imported, failed, conflicts, skipped int,
+	publish bool,
+	policy string,
+) {
+	if h.rbac == nil {
+		return
+	}
+	access, ok := middleware.CurrentAccess(c)
+	if !ok || access == nil {
+		return
+	}
+	if policy == "" {
+		policy = "ask"
+	}
+	actor := rbac.AuditMeta{
+		ActorID:   access.UserID,
+		IP:        c.ClientIP(),
+		UserAgent: c.Request.UserAgent(),
+	}
+	summary := fmt.Sprintf(
+		"POST %s -> imported=%d failed=%d conflicts=%d skipped=%d publish=%t policy=%s",
+		path, imported, failed, conflicts, skipped, publish, policy)
+	if err := h.rbac.RecordAudit(c.Request.Context(), actor,
+		rbac.AuditActionProblemImport, auditTargetProblem, 0, summary); err != nil {
+		slog.Warn("rbac: problem import summary audit write failed",
+			"actorId", actor.ActorID, "path", path, "err", err)
+	}
 }
 
 // publishOption parses the import publish flag and rejects it without the

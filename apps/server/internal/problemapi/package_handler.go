@@ -11,6 +11,24 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 )
 
+// packageInfo returns the package format, file count and approximate size.
+func (h *handler) packageInfo(c *gin.Context) {
+	id, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	if _, ok := h.problemForManage(c, id); !ok {
+		return
+	}
+	info, err := h.svc.PackageInfo(c.Request.Context(), id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	c.Header("Cache-Control", "private, no-store")
+	httpx.OK(c, info)
+}
+
 // downloadPackage streams one kapOJ problem package. Only the problem creator
 // or a problem.manage_all administrator may download it.
 func (h *handler) downloadPackage(c *gin.Context) {

@@ -9,8 +9,13 @@ import { useToast } from 'primevue/usetoast'
 import { getAIHint } from '@/api/ai'
 import { getContest } from '@/api/contests'
 import { ApiError } from '@/api/http'
-import { exportProblemPackage, getProblem, getStatistics } from '@/api/problems'
-import type { ContestDetail, ProblemDetail, ProblemStats } from '@/api/types'
+import {
+  exportProblemPackage,
+  getProblem,
+  getProblemPackageInfo,
+  getStatistics,
+} from '@/api/problems'
+import type { ContestDetail, ProblemDetail, ProblemPackageInfo, ProblemStats } from '@/api/types'
 import MarkdownView from '@/components/MarkdownView.vue'
 import CompanionAvatar from '@/components/companion/CompanionAvatar.vue'
 import ProblemAttachmentsCard from '@/components/ProblemAttachmentsCard.vue'
@@ -56,6 +61,7 @@ const aiHintLoading = ref(false)
 const aiHintError = ref('')
 const aiConfigMissing = ref(false)
 const downloadingPackage = ref(false)
+const packageInfo = ref<ProblemPackageInfo | null>(null)
 
 const typeLabels = {
   traditional: '传统题',
@@ -73,6 +79,7 @@ async function load(id: string) {
   problem.value = null
   stats.value = null
   contest.value = null
+  packageInfo.value = null
 
   // AI hints are per-problem; reset local state whenever the problem changes.
   aiHint.value = ''
@@ -89,6 +96,7 @@ async function load(id: string) {
     if (seq !== latest) return
     problem.value = detail
     contest.value = nextContest
+    if (detail.canEdit) void loadPackageInfo(detail.id, seq)
 
     // Statistics are a nice-to-have; the page works without them, but a late
     // response for a previous problem must not overwrite this one. During a
@@ -120,6 +128,27 @@ function retry() {
   const id = route.params.id
   if (typeof id === 'string') void load(id)
 }
+
+async function loadPackageInfo(problemID: number, seq: number) {
+  try {
+    const info = await getProblemPackageInfo(problemID)
+    if (seq === latest && problem.value?.id === problemID) packageInfo.value = info
+  } catch {
+    if (seq === latest && problem.value?.id === problemID) packageInfo.value = null
+  }
+}
+
+function formatPackageSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KiB`
+  return `${bytes} B`
+}
+
+const packageInfoLabel = computed(() => {
+  const info = packageInfo.value
+  const meta = info ? `${info.fileCount} 个文件 · ${formatPackageSize(info.sizeBytes)} · ` : ''
+  return `kapOJ 题包 v1 · ${meta}包含测试数据、checker、附件和题解，请妥善保管`
+})
 
 async function requestAIHint() {
   if (!auth.isLoggedIn) {
@@ -532,9 +561,7 @@ async function downloadPackage() {
             </span>
             <span class="resource-card__body">
               <span class="resource-card__title">题目题包</span>
-              <span class="resource-card__sub">
-                kapOJ 题包 v1 · 包含测试数据、checker、附件和题解，请妥善保管
-              </span>
+              <span class="resource-card__sub">{{ packageInfoLabel }}</span>
             </span>
             <Button
               label="下载 ZIP"

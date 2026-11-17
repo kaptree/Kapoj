@@ -8,7 +8,12 @@ import { reactive } from 'vue'
 import { getAIHint } from '@/api/ai'
 import { getContest } from '@/api/contests'
 import { ApiError } from '@/api/http'
-import { exportProblemPackage, getProblem, getStatistics } from '@/api/problems'
+import {
+  exportProblemPackage,
+  getProblem,
+  getProblemPackageInfo,
+  getStatistics,
+} from '@/api/problems'
 import type { ContestDetail, ProblemDetail, ProblemStats } from '@/api/types'
 import { useCompanionStore } from '@/stores/companion'
 import ProblemDetailView from './ProblemDetailView.vue'
@@ -37,6 +42,7 @@ vi.mock('@/api/problems', () => ({
   getProblem: vi.fn(),
   getStatistics: vi.fn(),
   exportProblemPackage: vi.fn(),
+  getProblemPackageInfo: vi.fn(),
 }))
 vi.mock('@/api/contests', () => ({
   getContest: vi.fn(),
@@ -165,6 +171,13 @@ beforeEach(() => {
   vi.mocked(getAIHint).mockReset()
   vi.mocked(getContest).mockReset()
   vi.mocked(exportProblemPackage).mockReset()
+  vi.mocked(getProblemPackageInfo).mockReset()
+  vi.mocked(getProblemPackageInfo).mockResolvedValue({
+    format: 'kapoj-problem',
+    formatVersion: 1,
+    fileCount: 12,
+    sizeBytes: 2048,
+  })
   route.params.id = '1'
   route.query = {}
   route.fullPath = '/problems/1'
@@ -725,6 +738,8 @@ describe('ProblemDetailView', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('题目题包')
     expect(wrapper.text()).toContain('kapOJ 题包 v1')
+    expect(wrapper.text()).toContain('12 个文件')
+    expect(wrapper.text()).toContain('2.0 KiB')
     expect(wrapper.text()).toContain('包含测试数据、checker、附件和题解')
     wrapper.unmount()
   })

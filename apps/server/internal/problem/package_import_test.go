@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 )
 
@@ -492,4 +494,32 @@ func TestImportKapOJOverwriteStorageFailurePreservesOriginal(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, checker.Close())
 	assert.Equal(t, "old checker", string(checkerBody))
+}
+
+type failingFindRepo struct {
+	problem.Repository
+	err error
+}
+
+func (r failingFindRepo) FindBySlug(context.Context, string) (*problem.Problem, error) {
+	return nil, r.err
+}
+
+func TestImportPackageInternalErrorIsNotValidation(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	p := e.create(t, input("internal-import"))
+	var exported bytes.Buffer
+	_, err := e.svc.ExportProblem(ctx, p.ID, &exported)
+	require.NoError(t, err)
+	data := renamePackageSlug(t, exported.Bytes(), "internal-import-copy")
+
+	svc := problem.NewService(failingFindRepo{
+		Repository: e.repo, err: errors.New("database unavailable"),
+	}, e.store)
+	_, err = svc.ImportPackage(ctx, 1, bytes.NewReader(data), int64(len(data)),
+		problem.PackageImportOptions{ConflictPolicy: "skip"})
+	var appErr *httpx.AppError
+	require.ErrorAs(t, err, &appErr)
+	assert.Equal(t, 50000, appErr.Code)
 }

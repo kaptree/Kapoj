@@ -84,6 +84,9 @@ const bulkLabels: Record<BulkAction, string> = {
 const selectedRows = computed(() => [...selectedById.value.values()])
 const selectedIds = computed(() => [...selectedById.value.keys()])
 const bulkFailures = computed(() => bulkResults.value.filter((r) => r.status === 'failed'))
+const bulkNotes = computed(() =>
+  bulkResults.value.filter((r) => r.status === 'success' && r.message),
+)
 const bulkSuccessCount = computed(
   () => bulkResults.value.filter((r) => r.status === 'success').length,
 )
@@ -415,6 +418,9 @@ async function downloadSelected() {
         :closable="false"
       >
         <div>{{ bulkSummary }}</div>
+        <ul v-if="bulkNotes.length" class="bulk-notes">
+          <li v-for="item in bulkNotes" :key="item.id">#{{ item.id }}：{{ item.message }}</li>
+        </ul>
         <ul v-if="bulkFailures.length" class="bulk-failures">
           <li v-for="item in bulkFailures" :key="item.id">#{{ item.id }}：{{ item.error }}</li>
         </ul>
@@ -614,7 +620,8 @@ async function downloadSelected() {
   margin-left: var(--kapoj-space-1);
 }
 
-.bulk-failures {
+.bulk-failures,
+.bulk-notes {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -622,6 +629,10 @@ async function downloadSelected() {
   margin: var(--kapoj-space-1) 0 0;
   font-size: 12px;
   list-style: none;
+}
+
+.bulk-notes {
+  color: var(--kapoj-text-secondary);
 }
 
 .bulk-confirm-text {

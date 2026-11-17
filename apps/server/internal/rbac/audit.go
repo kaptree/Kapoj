@@ -28,6 +28,7 @@ const (
 	AuditActionSystemBackupManage   = "system.backup.manage"
 	AuditActionProblemExport        = "problem.export"
 	AuditActionProblemBulk          = "problem.bulk"
+	AuditActionProblemImport        = "problem.import"
 
 	AuditTargetRole            = "role"
 	AuditTargetUser            = "user"

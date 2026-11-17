@@ -20,23 +20,28 @@ type BulkResult struct {
 	ID       int64  `json:"id"`
 	Status   string `json:"status"`
 	Offlined bool   `json:"offlined"`
+	Message  string `json:"message,omitempty"`
 	Error    string `json:"error,omitempty"`
 }
 
 // SetVisibility publishes or hides one problem through the normal update path,
-// so learning-path guards and publishability checks still apply.
-func (s *Service) SetVisibility(ctx context.Context, id int64, public bool) error {
+// so learning-path guards and publishability checks still apply. The returned
+// message distinguishes a no-op from an actual visibility change.
+func (s *Service) SetVisibility(ctx context.Context, id int64, public bool) (string, error) {
 	p, err := s.repo.FindByID(ctx, id)
 	if err != nil {
-		return mapRepoErr(err)
+		return "", mapRepoErr(err)
 	}
 	if p.IsPublic == public {
-		return nil
+		if public {
+			return "已公开", nil
+		}
+		return "已隐藏", nil
 	}
 	in := inputFromProblem(p)
 	in.IsPublic = public
 	_, err = s.Update(ctx, id, in)
-	return err
+	return "", err
 }
 
 // BulkAction runs publish/hide/delete independently for every problem. A
@@ -62,15 +67,16 @@ func (s *Service) BulkAction(ctx context.Context, action string, ids []int64) ([
 		var err error
 		switch action {
 		case BulkActionPublish:
-			err = s.SetVisibility(ctx, id, true)
+			result.Message, err = s.SetVisibility(ctx, id, true)
 		case BulkActionHide:
-			err = s.SetVisibility(ctx, id, false)
+			result.Message, err = s.SetVisibility(ctx, id, false)
 		case BulkActionDelete:
 			result.Offlined, err = s.Delete(ctx, id)
 		}
 		if err != nil {
 			result.Status = BulkStatusFailed
 			result.Offlined = false
+			result.Message = ""
 			result.Error = packageErrorText(err)
 		}
 		results = append(results, result)

@@ -3843,6 +3843,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/problems/{id}/package/info": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** 单题题包信息（创建者或 problem.manage_all） */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 格式、文件数与大致大小 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProblemPackageInfoResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/problems/{id}/package": {
         parameters: {
             query?: never;
@@ -10578,6 +10621,21 @@ export interface components {
         HydroImportResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["HydroImportResult"];
         };
+        ProblemPackageInfo: {
+            /** @example kapoj-problem */
+            format: string;
+            /** @example 1 */
+            formatVersion: number;
+            fileCount: number;
+            /**
+             * Format: int64
+             * @description 未压缩内容的大致字节数
+             */
+            sizeBytes: number;
+        };
+        ProblemPackageInfoResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["ProblemPackageInfo"];
+        };
         /** @description kapOJ/HydroOJ 题包导入的逐题结果；合法题包允许部分成功。 */
         ProblemImportResult: {
             imported: components["schemas"]["HydroImportedProblem"][];
@@ -10602,6 +10660,8 @@ export interface components {
             status: "success" | "failed";
             /** @description 删除时 true 表示因已有提交记录仅下线 */
             offlined: boolean;
+            /** @description 例如题目原本已公开时返回「已公开」 */
+            message?: string;
             error?: string;
         };
         BulkProblemActionData: {

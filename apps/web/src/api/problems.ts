@@ -12,6 +12,7 @@ import type {
   ProblemImportResult,
   ProblemInput,
   ProblemListItem,
+  ProblemPackageInfo,
   ProblemStats,
   ProblemSubmissionMetric,
   ProblemUpdateInput,
@@ -199,6 +200,9 @@ export function importProblemPackage(file: File, options: ProblemImportOptions =
     problemImportForm(file, options),
   )
 }
+
+export const getProblemPackageInfo = (id: number | string) =>
+  http.get<ProblemPackageInfo>(`/problems/${id}/package/info`)
 
 export const exportProblemPackage = (id: number | string) => http.getBlob(`/problems/${id}/package`)
 

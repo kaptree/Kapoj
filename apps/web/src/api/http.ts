@@ -48,9 +48,18 @@ interface Envelope<T> {
   data: T
 }
 
-function toApiError(err: unknown): ApiError {
+async function toApiError(err: unknown): Promise<ApiError> {
   if (err instanceof AxiosError && err.response) {
-    const body = err.response.data as Partial<Envelope<unknown>> | undefined
+    let body = err.response.data as Partial<Envelope<unknown>> | undefined
+    // Blob downloads receive error envelopes as Blob bodies. Parse them so the
+    // server's validation message reaches the UI instead of a generic status.
+    if (body instanceof Blob) {
+      try {
+        body = JSON.parse(await body.text()) as Partial<Envelope<unknown>>
+      } catch {
+        body = undefined
+      }
+    }
     return new ApiError(
       err.response.status,
       body?.code ?? -1,
@@ -77,7 +86,7 @@ export function createHttp(hooks: AuthHooks, options: { adapter?: AxiosAdapter }
       hooks.setTokens(res.data.data)
       return null
     } catch (e) {
-      const err = toApiError(e)
+      const err = await toApiError(e)
       if (err.code === 40303) {
         hooks.onEmailNotVerified()
         return err
@@ -100,7 +109,7 @@ export function createHttp(hooks: AuthHooks, options: { adapter?: AxiosAdapter }
     try {
       return await instance.request({ ...config, headers })
     } catch (e) {
-      const err = toApiError(e)
+      const err = await toApiError(e)
       if (err.code === 40303 && !isAuthEndpoint) hooks.onEmailNotVerified()
       if (err.status === 401 && !retried && !isAuthEndpoint) {
         refreshing ??= refresh().finally(() => {

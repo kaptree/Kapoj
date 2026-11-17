@@ -234,7 +234,7 @@ describe('ProblemListView', () => {
     })
     problemsApi.bulkProblemAction.mockResolvedValue({
       results: [
-        { id: 1, status: 'success', offlined: false },
+        { id: 1, status: 'success', offlined: false, message: '已公开' },
         { id: 2, status: 'failed', offlined: false, error: '题目被学习路线引用' },
       ],
     })
@@ -258,6 +258,7 @@ describe('ProblemListView', () => {
     })
     expect(wrapper.text()).toContain('成功 1 道')
     expect(wrapper.text()).toContain('失败 1 道')
+    expect(wrapper.text()).toContain('已公开')
     expect(wrapper.text()).toContain('题目被学习路线引用')
     expect(problemsApi.listProblems).toHaveBeenCalledTimes(2)
   })

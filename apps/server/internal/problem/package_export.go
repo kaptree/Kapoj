@@ -443,3 +443,32 @@ func (s *Service) preflightStoredFile(ctx context.Context, label, key string) er
 	}
 	return rc.Close()
 }
+
+// PackageInfo reports the package format, file count and approximate
+// uncompressed size without generating the ZIP.
+func (s *Service) PackageInfo(ctx context.Context, id int64) (*PackageInfo, error) {
+	p, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	testcases, err := s.repo.ListTestcases(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	attachments, err := s.repo.ListAttachments(ctx, id, AttachmentKindFile)
+	if err != nil {
+		return nil, err
+	}
+	images, err := s.repo.ListAttachments(ctx, id, AttachmentKindStatementImage)
+	if err != nil {
+		return nil, err
+	}
+	entries, size, err := s.preflightProblemPackage(ctx, p, testcases, attachments, images)
+	if err != nil {
+		return nil, err
+	}
+	return &PackageInfo{
+		Format: PackageFormatProblem, FormatVersion: PackageFormatVersion,
+		FileCount: entries, SizeBytes: size,
+	}, nil
+}

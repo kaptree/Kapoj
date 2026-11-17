@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"path"
 	"sort"
 	"strings"
@@ -139,7 +140,8 @@ func (s *Service) ImportPackage(
 		if errors.As(err, &appErr) {
 			return nil, err
 		}
-		return nil, httpx.ErrValidation(packageErrorText(err))
+		slog.Error("problem package import failed", "err", err)
+		return nil, httpx.ErrInternal
 	}
 	return result, nil
 }
