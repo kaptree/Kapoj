@@ -163,3 +163,57 @@ func TestExportProblemPackageMissingProblem(t *testing.T) {
 	_, err := e.svc.ExportProblem(context.Background(), 999999, &buf)
 	assertCode(t, err, 40400)
 }
+
+func TestExportProblemsPackage(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	first := e.create(t, input("batch-one"))
+	e.addCase(t, first.ID)
+	second := e.create(t, input("batch-two"))
+	e.addCase(t, second.ID)
+
+	var buf bytes.Buffer
+	manifest, err := e.svc.ExportProblems(ctx, []int64{first.ID, second.ID}, &buf)
+	require.NoError(t, err)
+	assert.Equal(t, problem.PackageFormatProblems, manifest.Format)
+	assert.Equal(t, problem.PackageFormatVersion, manifest.FormatVersion)
+	require.Len(t, manifest.Problems, 2)
+	assert.Equal(t, "batch-one", manifest.Problems[0].Slug)
+	assert.Equal(t, "problems/batch-one", manifest.Problems[0].Directory)
+
+	entries := packageEntries(t, buf.Bytes())
+	require.Contains(t, entries, "manifest.json")
+	root := decodePackageJSON[problem.ProblemsManifest](t, entries["manifest.json"])
+	assert.Equal(t, problem.PackageFormatProblems, root.Format)
+	require.Len(t, root.Problems, 2)
+
+	for _, slug := range []string{"batch-one", "batch-two"} {
+		require.Contains(t, entries, "problems/"+slug+"/manifest.json")
+		inner := decodePackageJSON[problem.PackageManifest](t, entries["problems/"+slug+"/manifest.json"])
+		assert.Equal(t, slug, inner.Problem.Slug)
+		assert.Equal(t, "kapoj-problem", inner.Format)
+		assert.Contains(t, entries, "problems/"+slug+"/statement.md")
+		assert.Contains(t, entries, "problems/"+slug+"/"+inner.Files.Testdata)
+	}
+}
+
+func TestExportProblemsRejectsBatchBeforeWriting(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	p := e.create(t, input("batch-valid"))
+	e.addCase(t, p.ID)
+
+	var partial bytes.Buffer
+	_, err := e.svc.ExportProblems(ctx, []int64{p.ID, 999999}, &partial)
+	assertCode(t, err, 40400)
+	assert.Zero(t, partial.Len(), "a rejected batch must not leak a partial ZIP")
+
+	tooMany := make([]int64, problem.MaxPackageProblems+1)
+	for i := range tooMany {
+		tooMany[i] = int64(i + 1)
+	}
+	var limited bytes.Buffer
+	_, err = e.svc.ExportProblems(ctx, tooMany, &limited)
+	assertCode(t, err, 40001)
+	assert.Zero(t, limited.Len())
+}

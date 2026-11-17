@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
 )
 
@@ -41,6 +42,86 @@ func (s *Service) ExportProblem(ctx context.Context, id int64, w io.Writer) (Pac
 	}
 	if err := zw.Close(); err != nil {
 		return PackageManifest{}, err
+	}
+	return manifest, nil
+}
+
+type problemPackageBundle struct {
+	problem     *Problem
+	testcases   []Testcase
+	attachments []ProblemAttachment
+	images      []ProblemAttachment
+}
+
+// ExportProblems writes one batch ZIP with a root manifest and one
+// single-problem package per problems/<slug>/ directory. All ids are loaded
+// before any byte is written so a missing problem cannot leak a partial ZIP.
+func (s *Service) ExportProblems(ctx context.Context, ids []int64, w io.Writer) (ProblemsManifest, error) {
+	if len(ids) == 0 {
+		return ProblemsManifest{}, httpx.ErrValidation("请选择至少 1 道题目")
+	}
+	unique := make([]int64, 0, len(ids))
+	seen := make(map[int64]bool, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			return ProblemsManifest{}, httpx.ErrValidation("题目 ID 不合法")
+		}
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		unique = append(unique, id)
+	}
+	if len(unique) > MaxPackageProblems {
+		return ProblemsManifest{}, httpx.ErrValidation(fmt.Sprintf("一次最多导出 %d 道题目", MaxPackageProblems))
+	}
+
+	bundles := make([]problemPackageBundle, 0, len(unique))
+	for _, id := range unique {
+		p, err := s.repo.FindByID(ctx, id)
+		if err != nil {
+			return ProblemsManifest{}, mapRepoErr(err)
+		}
+		testcases, err := s.repo.ListTestcases(ctx, id)
+		if err != nil {
+			return ProblemsManifest{}, err
+		}
+		attachments, err := s.repo.ListAttachments(ctx, id, AttachmentKindFile)
+		if err != nil {
+			return ProblemsManifest{}, err
+		}
+		images, err := s.repo.ListAttachments(ctx, id, AttachmentKindStatementImage)
+		if err != nil {
+			return ProblemsManifest{}, err
+		}
+		bundles = append(bundles, problemPackageBundle{
+			problem: p, testcases: testcases, attachments: attachments, images: images,
+		})
+	}
+
+	zw := zip.NewWriter(w)
+	manifest := ProblemsManifest{
+		Format:        PackageFormatProblems,
+		FormatVersion: PackageFormatVersion,
+		ExportedAt:    time.Now().UTC(),
+		Problems:      make([]ProblemsManifestEntry, 0, len(bundles)),
+	}
+	for i := range bundles {
+		bundle := &bundles[i]
+		directory := "problems/" + bundle.problem.Slug
+		if _, err := s.writeProblemPackage(ctx, zw, directory+"/", bundle.problem,
+			bundle.testcases, bundle.attachments, bundle.images); err != nil {
+			return ProblemsManifest{}, err
+		}
+		manifest.Problems = append(manifest.Problems, ProblemsManifestEntry{
+			Slug: bundle.problem.Slug, Title: bundle.problem.Title, Directory: directory,
+		})
+	}
+	if err := writePackageJSON(zw, "manifest.json", manifest); err != nil {
+		return ProblemsManifest{}, err
+	}
+	if err := zw.Close(); err != nil {
+		return ProblemsManifest{}, err
 	}
 	return manifest, nil
 }

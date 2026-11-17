@@ -4,8 +4,11 @@ import "time"
 
 // kapOJ 题包 v1。单题包以 manifest.json 为入口，所有文件均为包内相对路径。
 const (
-	PackageFormatProblem = "kapoj-problem"
-	PackageFormatVersion = 1
+	PackageFormatProblem  = "kapoj-problem"
+	PackageFormatProblems = "kapoj-problems"
+	PackageFormatVersion  = 1
+	// MaxPackageProblems caps one batch import or export.
+	MaxPackageProblems = 100
 
 	packageImageScheme = "kapoj-package://"
 )
@@ -70,6 +73,21 @@ type TestcaseManifest struct {
 // TestdataManifest is the testdata/meta.json document.
 type TestdataManifest struct {
 	Testcases []TestcaseManifest `json:"testcases"`
+}
+
+// ProblemsManifest is the root manifest of a batch problem package.
+type ProblemsManifest struct {
+	Format        string                  `json:"format"`
+	FormatVersion int                     `json:"formatVersion"`
+	ExportedAt    time.Time               `json:"exportedAt"`
+	Problems      []ProblemsManifestEntry `json:"problems"`
+}
+
+// ProblemsManifestEntry locates one single-problem package inside the batch.
+type ProblemsManifestEntry struct {
+	Slug      string `json:"slug"`
+	Title     string `json:"title"`
+	Directory string `json:"directory"`
 }
 
 func packageImagePlaceholder(file string) string {
