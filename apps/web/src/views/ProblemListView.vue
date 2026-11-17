@@ -67,7 +67,7 @@ const error = ref('')
 type BulkAction = 'publish' | 'hide' | 'delete'
 
 const bulkMode = ref(false)
-const selectedRows = ref<ProblemListItem[]>([])
+const selectedById = ref(new Map<number, ProblemListItem>())
 const bulkBusy = ref(false)
 const bulkError = ref('')
 const bulkResults = ref<BulkProblemResult[]>([])
@@ -81,7 +81,8 @@ const bulkLabels: Record<BulkAction, string> = {
   delete: '删除',
 }
 
-const selectedIds = computed(() => [...new Set(selectedRows.value.map((p) => p.id))])
+const selectedRows = computed(() => [...selectedById.value.values()])
+const selectedIds = computed(() => [...selectedById.value.keys()])
 const bulkFailures = computed(() => bulkResults.value.filter((r) => r.status === 'failed'))
 const bulkSuccessCount = computed(
   () => bulkResults.value.filter((r) => r.status === 'success').length,
@@ -186,9 +187,35 @@ function rate(p: ProblemListItem) {
   return p.submitCount === 0 ? '-' : `${Math.round((p.acceptCount / p.submitCount) * 100)}%`
 }
 
+function clearSelection() {
+  selectedById.value = new Map()
+}
+
+function onRowSelect(event: { data: ProblemListItem }) {
+  const next = new Map(selectedById.value)
+  next.set(event.data.id, event.data)
+  selectedById.value = next
+}
+
+function onRowUnselect(event: { data: ProblemListItem }) {
+  const next = new Map(selectedById.value)
+  next.delete(event.data.id)
+  selectedById.value = next
+}
+
+function onRowSelectAll(event: { data: ProblemListItem[] }) {
+  const next = new Map(selectedById.value)
+  for (const item of event.data) next.set(item.id, item)
+  selectedById.value = next
+}
+
+function onRowUnselectAll() {
+  clearSelection()
+}
+
 function enterBulkMode() {
   bulkMode.value = true
-  selectedRows.value = []
+  clearSelection()
   bulkResults.value = []
   bulkError.value = ''
   lastBulkAction.value = null
@@ -196,7 +223,7 @@ function enterBulkMode() {
 
 function exitBulkMode() {
   bulkMode.value = false
-  selectedRows.value = []
+  clearSelection()
   bulkResults.value = []
   bulkError.value = ''
   lastBulkAction.value = null
@@ -220,11 +247,12 @@ async function runBulk(action: BulkAction) {
   if (!ids.length) return
   bulkBusy.value = true
   bulkError.value = ''
+  bulkResults.value = []
   try {
     const data = await bulkProblemAction({ action, problemIds: ids })
     bulkResults.value = data.results
     lastBulkAction.value = action
-    selectedRows.value = []
+    clearSelection()
     await load()
   } catch (e) {
     bulkError.value = e instanceof ApiError ? e.message : '批量操作失败，请稍后再试'
@@ -397,7 +425,7 @@ async function downloadSelected() {
       <AppLoadingState v-if="loading && items.length === 0" label="正在加载题目" />
       <DataTable
         v-else-if="!error || items.length > 0"
-        v-model:selection="selectedRows"
+        :selection="selectedRows"
         :value="items"
         :loading="loading"
         :selection-mode="bulkMode ? 'multiple' : undefined"
@@ -406,6 +434,10 @@ async function downloadSelected() {
         row-hover
         responsive-layout="scroll"
         class="problem-table"
+        @row-select="onRowSelect"
+        @row-unselect="onRowUnselect"
+        @row-select-all="onRowSelectAll"
+        @row-unselect-all="onRowUnselectAll"
       >
         <Column v-if="bulkMode" selection-mode="multiple" header-style="width: 3rem" />
         <Column header="编号" style="width: 64px">

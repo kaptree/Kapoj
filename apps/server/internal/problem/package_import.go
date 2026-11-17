@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"path"
 	"sort"
 	"strings"
@@ -161,6 +160,9 @@ func newKapOJArchive(zr *zip.Reader, limit int64) (*kapOJArchive, error) {
 		}
 		if strings.HasSuffix(f.Name, "/") || f.FileInfo().IsDir() || skipHydroEntry(f.Name) {
 			continue
+		}
+		if _, exists := archive.files[f.Name]; exists {
+			return nil, httpx.ErrValidation("题包包含重复文件：" + f.Name)
 		}
 		archive.files[f.Name] = f
 	}
@@ -471,83 +473,24 @@ func (s *Service) importKapOJProblem(
 		}
 		return fail(packageErrorText(err))
 	}
+	if existing != nil {
+		return s.replaceKapOJProblem(ctx, archive, desc, existing, prepared, opt)
+	}
 
-	var (
-		problemID        int64
-		addedCases       []int64
-		addedAttachments []*ProblemAttachment
-		checkerUploaded  bool
-	)
-	var cleanup func()
-	if existing == nil {
-		created, err := s.Create(ctx, createdBy, prepared.input)
-		if err != nil {
-			return fail(packageErrorText(err))
-		}
-		problemID = created.ID
-		*createdIDs = append(*createdIDs, problemID)
-		cleanup = func() {
-			s.cleanupHydroProblem(ctx, problemID)
-			if n := len(*createdIDs); n > 0 && (*createdIDs)[n-1] == problemID {
-				*createdIDs = (*createdIDs)[:n-1]
-			}
-		}
-	} else {
-		problemID = existing.ID
-		oldCases, err := s.repo.ListTestcases(ctx, problemID)
-		if err != nil {
-			return fail("读取原测试数据失败")
-		}
-		oldAttachments, err := s.repo.ListAttachments(ctx, problemID, AttachmentKindFile)
-		if err != nil {
-			return fail("读取原附件失败")
-		}
-		oldImages, err := s.repo.ListAttachments(ctx, problemID, AttachmentKindStatementImage)
-		if err != nil {
-			return fail("读取原题面图片失败")
-		}
-		oldChecker := existing.CheckerPath
-		if _, err := s.Update(ctx, problemID, prepared.input); err != nil {
-			return fail(packageErrorText(err))
-		}
-		for _, tc := range oldCases {
-			if err := s.DeleteTestcase(ctx, problemID, tc.ID); err != nil {
-				return fail("清理原测试数据失败")
-			}
-		}
-		for _, attachment := range append(oldAttachments, oldImages...) {
-			if err := s.DeleteAttachment(ctx, problemID, attachment.ID); err != nil {
-				return fail("清理原附件失败")
-			}
-		}
-		if oldChecker != "" {
-			if err := s.repo.SetCheckerPath(ctx, problemID, ""); err != nil {
-				return fail("清理原 checker 失败")
-			}
-			s.deleteFiles(ctx, []string{oldChecker})
-		}
-		cleanup = func() {
-			for _, id := range addedCases {
-				if err := s.DeleteTestcase(ctx, problemID, id); err != nil {
-					slog.Warn("kapoj import: cleanup testcase failed", "problemID", problemID, "testcaseID", id, "err", err)
-				}
-			}
-			for _, attachment := range addedAttachments {
-				if err := s.DeleteAttachment(ctx, problemID, attachment.ID); err != nil {
-					slog.Warn("kapoj import: cleanup attachment failed", "problemID", problemID, "attachmentID", attachment.ID, "err", err)
-				}
-			}
-			if checkerUploaded {
-				if p, err := s.repo.FindByID(ctx, problemID); err == nil && p.CheckerPath != "" {
-					_ = s.repo.SetCheckerPath(ctx, problemID, "")
-					s.deleteFiles(ctx, []string{p.CheckerPath})
-				}
-			}
+	created, err := s.Create(ctx, createdBy, prepared.input)
+	if err != nil {
+		return fail(packageErrorText(err))
+	}
+	problemID := created.ID
+	*createdIDs = append(*createdIDs, problemID)
+	cleanup := func() {
+		s.cleanupHydroProblem(ctx, problemID)
+		if n := len(*createdIDs); n > 0 && (*createdIDs)[n-1] == problemID {
+			*createdIDs = (*createdIDs)[:n-1]
 		}
 	}
 
-	addedCases, err = s.addKapOJTestcases(ctx, problemID, archive, desc.prefix, prepared.testdata)
-	if err != nil {
+	if _, err := s.addKapOJTestcases(ctx, problemID, archive, desc.prefix, prepared.testdata); err != nil {
 		cleanup()
 		if errors.Is(err, errHydroPackageLimit) {
 			return PackageImportedProblem{}, nil, err
@@ -572,17 +515,17 @@ func (s *Service) importKapOJProblem(
 			cleanup()
 			return fail(packageErrorText(err))
 		}
-		checkerUploaded = true
 	}
 
-	addedAttachments = make([]*ProblemAttachment, 0, len(prepared.attachments)+len(prepared.images))
 	for _, item := range prepared.attachments {
-		attachment, err := s.addKapOJAttachment(ctx, problemID, desc.prefix, archive, item, AttachmentKindFile)
-		if err != nil {
+		if _, err := s.addKapOJAttachment(ctx, problemID, desc.prefix, archive, item, AttachmentKindFile); err != nil {
 			cleanup()
 			return fail(packageErrorText(err))
 		}
-		addedAttachments = append(addedAttachments, attachment)
+		if archive.actual > archive.limit {
+			cleanup()
+			return PackageImportedProblem{}, nil, errHydroPackageLimit
+		}
 	}
 	addedImages := make([]*ProblemAttachment, 0, len(prepared.images))
 	for _, item := range prepared.images {
@@ -592,14 +535,17 @@ func (s *Service) importKapOJProblem(
 			return fail(packageErrorText(err))
 		}
 		addedImages = append(addedImages, attachment)
+		if archive.actual > archive.limit {
+			cleanup()
+			return PackageImportedProblem{}, nil, errHydroPackageLimit
+		}
 	}
 
-	rewritten := prepared.statement
+	imageURLs := make(map[string]string, len(prepared.images))
 	for i, image := range prepared.images {
-		placeholder := packageImagePlaceholder(image.File)
-		url := fmt.Sprintf("/api/problems/%d/assets/%d", problemID, addedImages[i].ID)
-		rewritten = strings.ReplaceAll(rewritten, placeholder, url)
+		imageURLs[image.File] = fmt.Sprintf("/api/problems/%d/assets/%d", problemID, addedImages[i].ID)
 	}
+	rewritten := rewriteImagePlaceholders(prepared.statement, imageURLs)
 	if rewritten != prepared.statement {
 		prepared.input.StatementMD = rewritten
 		if _, err := s.Update(ctx, problemID, prepared.input); err != nil {
@@ -616,7 +562,201 @@ func (s *Service) importKapOJProblem(
 
 	imported := PackageImportedProblem{
 		ID: problemID, Title: title, Slug: manifest.Problem.Slug,
-		TestcaseCount: len(prepared.testdata.Testcases), Overwritten: existing != nil,
+		TestcaseCount: len(prepared.testdata.Testcases),
+	}
+	if opt.Publish {
+		if err := s.Publish(ctx, problemID); err != nil {
+			imported.PublishError = packageErrorText(err)
+		} else {
+			imported.Published = true
+		}
+	}
+	return imported, nil, nil
+}
+
+// replaceKapOJProblem stages every new file first, then swaps the problem rows
+// in one transaction. A failure before or during the transaction leaves the
+// original problem and its files untouched.
+func (s *Service) replaceKapOJProblem(
+	ctx context.Context,
+	archive *kapOJArchive,
+	desc *kapOJDescriptor,
+	existing *Problem,
+	prepared *kapOJPrepared,
+	opt PackageImportOptions,
+) (PackageImportedProblem, *PackageImportFailure, error) {
+	manifest := desc.manifest
+	title := manifest.Problem.Title
+	fail := func(msg string) (PackageImportedProblem, *PackageImportFailure, error) {
+		return PackageImportedProblem{}, &PackageImportFailure{
+			Folder: desc.folder, Title: title, Error: msg,
+		}, nil
+	}
+	problemID := existing.ID
+	ids, err := s.repo.AllocateAttachmentIDs(ctx, len(prepared.attachments)+len(prepared.images))
+	if err != nil {
+		return fail(packageErrorText(err))
+	}
+	stagedKeys := make([]string, 0)
+	cleanup := func() { s.deleteFiles(ctx, stagedKeys) }
+
+	attachments := make([]*ProblemAttachment, 0, len(prepared.attachments))
+	images := make([]*ProblemAttachment, 0, len(prepared.images))
+	nextID := 0
+	stageOne := func(item PackageAttachment, kind string) (*ProblemAttachment, error) {
+		f, err := archive.file(desc.prefix, item.File)
+		if err != nil {
+			return nil, err
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = rc.Close() }()
+		filename := item.Filename
+		if strings.TrimSpace(filename) == "" {
+			filename = path.Base(item.File)
+		}
+		attachment, err := s.stageAttachment(ctx, problemID, 0, kind, AttachmentUpload{
+			Filename: filename, ContentType: item.ContentType,
+			Reader: &countingReader{r: rc, n: &archive.actual},
+		})
+		if err != nil {
+			return nil, err
+		}
+		attachment.ID = ids[nextID]
+		nextID++
+		stagedKeys = append(stagedKeys, attachment.StorageKey)
+		return attachment, nil
+	}
+
+	for _, item := range prepared.attachments {
+		attachment, err := stageOne(item, AttachmentKindFile)
+		if err != nil {
+			cleanup()
+			if errors.Is(err, errHydroPackageLimit) {
+				return PackageImportedProblem{}, nil, err
+			}
+			return fail(packageErrorText(err))
+		}
+		attachments = append(attachments, attachment)
+		if archive.actual > archive.limit {
+			cleanup()
+			return PackageImportedProblem{}, nil, errHydroPackageLimit
+		}
+	}
+	for _, item := range prepared.images {
+		attachment, err := stageOne(item, AttachmentKindStatementImage)
+		if err != nil {
+			cleanup()
+			if errors.Is(err, errHydroPackageLimit) {
+				return PackageImportedProblem{}, nil, err
+			}
+			return fail(packageErrorText(err))
+		}
+		images = append(images, attachment)
+		if archive.actual > archive.limit {
+			cleanup()
+			return PackageImportedProblem{}, nil, errHydroPackageLimit
+		}
+	}
+
+	testdata := append([]TestcaseManifest(nil), prepared.testdata.Testcases...)
+	sort.SliceStable(testdata, func(i, j int) bool { return testdata[i].SortOrder < testdata[j].SortOrder })
+	testcases := make([]*Testcase, 0, len(testdata))
+	for _, item := range testdata {
+		inFile, err := archive.file(desc.prefix, item.Input)
+		if err != nil {
+			cleanup()
+			return fail(packageErrorText(err))
+		}
+		outFile, err := archive.file(desc.prefix, item.Output)
+		if err != nil {
+			cleanup()
+			return fail(packageErrorText(err))
+		}
+		inRC, err := inFile.Open()
+		if err != nil {
+			cleanup()
+			return fail("测试数据读取失败")
+		}
+		outRC, err := outFile.Open()
+		if err != nil {
+			_ = inRC.Close()
+			cleanup()
+			return fail("测试数据读取失败")
+		}
+		tc, keys, err := s.stageTestcase(ctx, problemID, TestcaseUpload{
+			Input:  &countingReader{r: inRC, n: &archive.actual},
+			Output: &countingReader{r: outRC, n: &archive.actual},
+			Score:  item.Score, IsSample: item.IsSample,
+		})
+		_ = inRC.Close()
+		_ = outRC.Close()
+		if err != nil {
+			cleanup()
+			return fail(packageErrorText(err))
+		}
+		stagedKeys = append(stagedKeys, keys...)
+		testcases = append(testcases, tc)
+		if archive.actual > archive.limit {
+			cleanup()
+			return PackageImportedProblem{}, nil, errHydroPackageLimit
+		}
+	}
+
+	checkerPath := ""
+	if prepared.checker != "" {
+		f, err := archive.file(desc.prefix, prepared.checker)
+		if err != nil {
+			cleanup()
+			return fail(packageErrorText(err))
+		}
+		rc, err := f.Open()
+		if err != nil {
+			cleanup()
+			return fail("checker 读取失败")
+		}
+		key, err := s.stageChecker(ctx, problemID, &countingReader{r: rc, n: &archive.actual})
+		_ = rc.Close()
+		if err != nil {
+			cleanup()
+			return fail(packageErrorText(err))
+		}
+		stagedKeys = append(stagedKeys, key)
+		checkerPath = key
+		if archive.actual > archive.limit {
+			cleanup()
+			return PackageImportedProblem{}, nil, errHydroPackageLimit
+		}
+	}
+
+	imageURLs := make(map[string]string, len(images))
+	for i, image := range prepared.images {
+		imageURLs[image.File] = fmt.Sprintf("/api/problems/%d/assets/%d", problemID, images[i].ID)
+	}
+	statement := rewriteImagePlaceholders(prepared.statement, imageURLs)
+
+	updated := *existing
+	apply(&updated, prepared.input)
+	updated.ID = existing.ID
+	updated.StatementMD = statement
+	updated.IsPublic = false
+	updated.CheckerPath = checkerPath
+	updated.SolutionMD = prepared.solutionMD
+	updated.SolutionCode = prepared.solutionCode
+	updated.SolutionPriceCoins = prepared.price
+
+	oldKeys, err := s.repo.ReplaceContent(ctx, &updated, testcases, append(attachments, images...))
+	if err != nil {
+		cleanup()
+		return fail(packageErrorText(err))
+	}
+	s.deleteFiles(ctx, oldKeys)
+
+	imported := PackageImportedProblem{
+		ID: problemID, Title: title, Slug: manifest.Problem.Slug,
+		TestcaseCount: len(testcases), Overwritten: true,
 	}
 	if opt.Publish {
 		if err := s.Publish(ctx, problemID); err != nil {
@@ -685,12 +825,23 @@ func prepareKapOJProblem(archive *kapOJArchive, prefix string, manifest *Package
 		return nil, err
 	}
 
+	attachmentFiles := map[string]bool{}
+	var attachmentDeclared int64
 	for _, item := range append(append([]PackageAttachment{}, files.Attachments...), files.Images...) {
 		if !safePackageRel(item.File) {
 			return nil, fmt.Errorf("附件路径不合法")
 		}
-		if _, err := archive.file(prefix, item.File); err != nil {
+		if attachmentFiles[item.File] {
+			return nil, fmt.Errorf("附件文件重复：%s", item.File)
+		}
+		attachmentFiles[item.File] = true
+		f, err := archive.file(prefix, item.File)
+		if err != nil {
 			return nil, err
+		}
+		attachmentDeclared += int64(f.UncompressedSize64)
+		if attachmentDeclared > archive.limit {
+			return nil, errHydroPackageLimit
 		}
 	}
 	if len(files.Attachments)+len(files.Images) > maxAttachmentsPerProblem {
@@ -934,6 +1085,25 @@ func kapOJPath(prefix, rel string) string {
 		return prefix
 	}
 	return prefix + "/" + rel
+}
+
+// rewriteImagePlaceholders replaces package image placeholders with their new
+// URLs. Longest-first ordering keeps "a.png.bak" from being partially rewritten
+// by the shorter "a.png" placeholder.
+func rewriteImagePlaceholders(statement string, replacements map[string]string) string {
+	if len(replacements) == 0 {
+		return statement
+	}
+	keys := make([]string, 0, len(replacements))
+	for file := range replacements {
+		keys = append(keys, file)
+	}
+	sort.Slice(keys, func(i, j int) bool { return len(keys[i]) > len(keys[j]) })
+	for _, file := range keys {
+		statement = strings.ReplaceAll(statement,
+			packageImagePlaceholder(file), replacements[file])
+	}
+	return statement
 }
 
 func safePackageRel(rel string) bool {

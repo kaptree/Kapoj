@@ -77,7 +77,7 @@ beforeEach(() => {
 })
 
 async function selectRows(wrapper: ReturnType<typeof mount>, rows: ProblemListItem[]) {
-  wrapper.findComponent(DataTable).vm.$emit('update:selection', rows)
+  wrapper.findComponent(DataTable).vm.$emit('row-select-all', { data: rows })
   await nextTick()
   await flushPromises()
 }
@@ -288,6 +288,41 @@ describe('ProblemListView', () => {
     expect(problemsApi.exportProblems).toHaveBeenCalledWith([1, 2])
     expect(createObjectURL).toHaveBeenCalledWith(blob)
     expect(click).toHaveBeenCalled()
+    click.mockRestore()
+  })
+
+  it('keeps select-all selections across pages', async () => {
+    auth.can.mockImplementation((code) => code === 'problem.manage_all')
+    problemsApi.listProblems.mockImplementation((query: { page?: number }) =>
+      Promise.resolve(
+        query.page === 2
+          ? { total: 2, items: [problem({ id: 2, title: 'Second' })] }
+          : { total: 2, items: [problem({ id: 1 })] },
+      ),
+    )
+    const blob = new Blob(['zip'], { type: 'application/zip' })
+    problemsApi.exportProblems.mockResolvedValue(blob)
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      writable: true,
+      value: vi.fn(() => 'blob:mock'),
+    })
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+
+    const { wrapper, router } = await mountPage('/problems?page=1')
+    await button(wrapper, '批量管理').trigger('click')
+    await flushPromises()
+    await selectRows(wrapper, [problem({ id: 1 })])
+    expect(wrapper.text()).toContain('已选 1 道')
+
+    await router.push({ name: 'problems', query: { page: '2' } })
+    await flushPromises()
+    await selectRows(wrapper, [problem({ id: 2, title: 'Second' })])
+    expect(wrapper.text()).toContain('已选 2 道')
+
+    await button(wrapper, '下载').trigger('click')
+    await flushPromises()
+    expect(problemsApi.exportProblems).toHaveBeenCalledWith([1, 2])
     click.mockRestore()
   })
 

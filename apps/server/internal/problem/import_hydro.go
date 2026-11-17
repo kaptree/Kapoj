@@ -321,7 +321,12 @@ func (s *Service) ImportHydro(ctx context.Context, createdBy int64, r io.ReaderA
 				imp.Published = true
 			}
 		}
-		importedIDs = append(importedIDs, imp.ID)
+		if !imp.Overwritten {
+			// Rollback only deletes problems created by this import. Existing
+			// problems must survive a package-level error even if their
+			// content was already overwritten.
+			importedIDs = append(importedIDs, imp.ID)
+		}
 		result.Imported = append(result.Imported, imp)
 	}
 	return result, nil

@@ -8,12 +8,27 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
 )
+
+// WithPackageExportLimits overrides the uncompressed byte and entry caps used
+// by package export. Non-positive values keep the defaults.
+func WithPackageExportLimits(maxBytes int64, maxEntries int) Option {
+	return func(s *Service) {
+		if maxBytes > 0 {
+			s.packageExportMaxBytes = maxBytes
+		}
+		if maxEntries > 0 {
+			s.packageExportMaxEntries = maxEntries
+		}
+	}
+}
 
 // ExportProblem writes one kapOJ problem package to w. The caller is
 // responsible for checking that the request may download this problem.
@@ -33,6 +48,14 @@ func (s *Service) ExportProblem(ctx context.Context, id int64, w io.Writer) (Pac
 	images, err := s.repo.ListAttachments(ctx, id, AttachmentKindStatementImage)
 	if err != nil {
 		return PackageManifest{}, err
+	}
+
+	entries, size, err := s.preflightProblemPackage(ctx, p, testcases, attachments, images)
+	if err != nil {
+		return PackageManifest{}, err
+	}
+	if entries > s.packageExportMaxEntries || size > s.packageExportMaxBytes {
+		return PackageManifest{}, httpx.ErrValidation("题包内容超过导出限制")
 	}
 
 	zw := zip.NewWriter(w)
@@ -99,6 +122,22 @@ func (s *Service) ExportProblems(ctx context.Context, ids []int64, w io.Writer) 
 		})
 	}
 
+	totalEntries := 1 // root manifest.json
+	var totalSize int64
+	for i := range bundles {
+		bundle := &bundles[i]
+		entries, size, err := s.preflightProblemPackage(ctx, bundle.problem,
+			bundle.testcases, bundle.attachments, bundle.images)
+		if err != nil {
+			return ProblemsManifest{}, err
+		}
+		totalEntries += entries
+		totalSize += size
+	}
+	if totalEntries > s.packageExportMaxEntries || totalSize > s.packageExportMaxBytes {
+		return ProblemsManifest{}, httpx.ErrValidation("题包内容超过导出限制")
+	}
+
 	zw := zip.NewWriter(w)
 	manifest := ProblemsManifest{
 		Format:        PackageFormatProblems,
@@ -159,21 +198,17 @@ func (s *Service) writeProblemPackage(
 	manifest.Files.Testdata = "testdata/meta.json"
 
 	usedImages := map[string]bool{}
-	imageReplacements := make([][2]string, 0, len(images))
+	imageReplacements := make(map[int64]string, len(images))
 	for i := range images {
 		item, err := s.writePackageAttachment(ctx, zw, prefix, "images", &images[i], usedImages)
 		if err != nil {
 			return PackageManifest{}, err
 		}
 		manifest.Files.Images = append(manifest.Files.Images, item)
-		original := fmt.Sprintf("/api/problems/%d/assets/%d", p.ID, images[i].ID)
-		imageReplacements = append(imageReplacements, [2]string{original, packageImagePlaceholder(item.File)})
+		imageReplacements[images[i].ID] = packageImagePlaceholder(item.File)
 	}
 
-	statement := p.StatementMD
-	for _, replacement := range imageReplacements {
-		statement = strings.ReplaceAll(statement, replacement[0], replacement[1])
-	}
+	statement := replaceStatementAssetURLs(p.StatementMD, p.ID, imageReplacements)
 	if err := writePackageText(zw, prefix+manifest.Files.Statement, statement); err != nil {
 		return PackageManifest{}, err
 	}
@@ -319,6 +354,27 @@ func writePackageJSON(zw *zip.Writer, name string, value any) error {
 
 // packageUniqueName keeps an attachment's display name but makes the ZIP entry
 // safe and unique. The manifest keeps the original filename separately.
+// replaceStatementAssetURLs rewrites exact /api/problems/<id>/assets/<assetId>
+// URLs. Matching the numeric id as a whole avoids treating asset 4 as a prefix
+// of asset 45.
+func replaceStatementAssetURLs(statement string, problemID int64, replacements map[int64]string) string {
+	if len(replacements) == 0 {
+		return statement
+	}
+	pattern := regexp.MustCompile(fmt.Sprintf(`/api/problems/%d/assets/(\d+)`, problemID))
+	return pattern.ReplaceAllStringFunc(statement, func(match string) string {
+		index := strings.LastIndexByte(match, '/')
+		id, err := strconv.ParseInt(match[index+1:], 10, 64)
+		if err != nil {
+			return match
+		}
+		if replacement, ok := replacements[id]; ok {
+			return replacement
+		}
+		return match
+	})
+}
+
 func packageUniqueName(name string, used map[string]bool) string {
 	base := sanitizeAttachmentFilename(name)
 	ext := path.Ext(base)
@@ -329,4 +385,61 @@ func packageUniqueName(name string, used map[string]bool) string {
 	}
 	used[strings.ToLower(candidate)] = true
 	return candidate
+}
+
+func (s *Service) preflightProblemPackage(
+	ctx context.Context,
+	p *Problem,
+	testcases []Testcase,
+	attachments, images []ProblemAttachment,
+) (int, int64, error) {
+	entries := 7 // manifest, statement, input/output format, hint, samples, testdata meta
+	size := int64(len(p.StatementMD)+len(p.InputFormatMD)+len(p.OutputFormatMD)+len(p.HintMD)) + 1024
+	if len(p.Answers) > 0 {
+		entries++
+	}
+	for i := range testcases {
+		tc := &testcases[i]
+		entries += 2
+		size += tc.InputSize + tc.OutputSize
+		if err := s.preflightStoredFile(ctx, "测试数据", tc.InputFile); err != nil {
+			return 0, 0, err
+		}
+		if err := s.preflightStoredFile(ctx, "测试数据", tc.OutputFile); err != nil {
+			return 0, 0, err
+		}
+	}
+	if p.Type == TypeSpecial && p.CheckerPath != "" {
+		entries++
+		size += maxCheckerBytes
+		if err := s.preflightStoredFile(ctx, "checker", p.CheckerPath); err != nil {
+			return 0, 0, err
+		}
+	}
+	entries += len(attachments) + len(images)
+	for _, item := range append(append([]ProblemAttachment{}, attachments...), images...) {
+		size += item.Size
+		if err := s.preflightStoredFile(ctx, "附件", item.StorageKey); err != nil {
+			return 0, 0, err
+		}
+	}
+	if p.SolutionMD != "" || p.SolutionCode != "" {
+		entries += 2
+		size += int64(len(p.SolutionMD) + len(p.SolutionCode))
+	}
+	return entries, size, nil
+}
+
+func (s *Service) preflightStoredFile(ctx context.Context, label, key string) error {
+	if key == "" {
+		return httpx.ErrValidation("题包缺少" + label + "文件")
+	}
+	rc, err := s.store.Open(ctx, key)
+	if errors.Is(err, storage.ErrNotFound) {
+		return httpx.ErrValidation("题包缺少" + label + "文件")
+	}
+	if err != nil {
+		return err
+	}
+	return rc.Close()
 }

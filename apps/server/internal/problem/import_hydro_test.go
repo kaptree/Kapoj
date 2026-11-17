@@ -521,3 +521,30 @@ func TestImportHydroPublishOption(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, missing)
 }
+
+func TestImportHydroRollbackPreservesOverwrittenProblem(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	existing := e.create(t, input("hydro-6760"))
+	e.addCase(t, existing.ID)
+
+	svc := problem.NewService(e.repo, e.store, problem.WithHydroUncompressedLimit(100))
+	data := buildZip(t,
+		zipEntry{name: "6760/problem.yaml", body: []byte("title: A\n")},
+		zipEntry{name: "6760/problem_zh.md", body: []byte("A")},
+		zipEntry{name: "6760/testdata/1.in", body: []byte("in")},
+		zipEntry{name: "6760/testdata/1.out", body: []byte("o")},
+		zipEntry{name: "6761/problem.yaml", body: []byte("title: B\n")},
+		zipEntry{name: "6761/problem_zh.md", body: []byte("B")},
+		zipEntry{name: "6761/testdata/1.in", body: bytes.Repeat([]byte("x"), 200)},
+		zipEntry{name: "6761/testdata/1.out", body: []byte("o")},
+	)
+	_, err := importZipOpts(t, svc, 1, data, problem.HydroImportOptions{ConflictPolicy: "overwrite"})
+	require.Error(t, err)
+
+	_, err = e.repo.FindByID(ctx, existing.ID)
+	require.NoError(t, err, "rollback must not delete an overwritten existing problem")
+	var count int64
+	require.NoError(t, e.db.Model(&problem.Problem{}).Count(&count).Error)
+	assert.EqualValues(t, 1, count)
+}

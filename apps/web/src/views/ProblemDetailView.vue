@@ -533,7 +533,7 @@ async function downloadPackage() {
             <span class="resource-card__body">
               <span class="resource-card__title">题目题包</span>
               <span class="resource-card__sub">
-                kapOJ 题包 v1 · 包含测试数据、checker、附件和题解
+                kapOJ 题包 v1 · 包含测试数据、checker、附件和题解，请妥善保管
               </span>
             </span>
             <Button

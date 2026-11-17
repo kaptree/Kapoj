@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
@@ -22,13 +23,22 @@ func (h *handler) downloadPackage(c *gin.Context) {
 		return
 	}
 
-	c.Header("Cache-Control", "private, no-store")
-	c.Header("Content-Type", "application/zip")
-	c.Header("Content-Disposition", problem.AttachmentDisposition(p.Slug+".zip"))
-	if _, err := h.svc.ExportProblem(c.Request.Context(), id, c.Writer); err != nil {
-		// The response may already contain part of the ZIP; only log here.
+	writer := &deferredPackageWriter{
+		w:            c.Writer,
+		contentType:  "application/zip",
+		disposition:  problem.AttachmentDisposition(p.Slug + ".zip"),
+		cacheControl: "private, no-store",
+	}
+	if _, err := h.svc.ExportProblem(c.Request.Context(), id, writer); err != nil {
 		slog.Warn("problem package export failed",
 			"problemId", id, "slug", p.Slug, "err", err)
+		if writer.started {
+			// Headers are already committed; close the response without
+			// appending JSON to a truncated ZIP.
+			c.Abort()
+			return
+		}
+		httpx.Fail(c, err)
 		return
 	}
 	h.recordProblemExportAudit(c, p.ID, p.Slug)

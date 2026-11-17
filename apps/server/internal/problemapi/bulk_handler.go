@@ -95,6 +95,10 @@ func (h *handler) exportProblems(c *gin.Context) {
 		cacheControl: "private, no-store",
 	}
 	if _, err := h.svc.ExportProblems(c.Request.Context(), in.ProblemIDs, writer); err != nil {
+		if writer.started {
+			c.Abort()
+			return
+		}
 		httpx.Fail(c, err)
 		return
 	}
@@ -138,7 +142,7 @@ func (h *handler) recordBulkExportAudit(c *gin.Context, ids []int64) {
 		IP:        c.ClientIP(),
 		UserAgent: c.Request.UserAgent(),
 	}
-	summary := fmt.Sprintf("POST %s -> %d problems", c.Request.URL.Path, len(ids))
+	summary := fmt.Sprintf("POST %s -> %d problems ids=%v", c.Request.URL.Path, len(ids), ids)
 	if err := h.rbac.RecordAudit(c.Request.Context(), actor,
 		rbac.AuditActionProblemExport, auditTargetProblem, 0, summary); err != nil {
 		slog.Warn("rbac: bulk problem export audit write failed",

@@ -38,7 +38,6 @@ func kapOJPackageZip(t *testing.T, slug, title string, testcases bool) []byte {
 		{"output_format.md", ""},
 		{"hint.md", ""},
 		{"samples.json", "[]"},
-		{"testdata/meta.json", `{"testcases":[]}`},
 	}
 	if testcases {
 		entries = append(entries,
@@ -46,6 +45,8 @@ func kapOJPackageZip(t *testing.T, slug, title string, testcases bool) []byte {
 			struct{ name, body string }{"testdata/001.in", "1"},
 			struct{ name, body string }{"testdata/001.out", "2"},
 		)
+	} else {
+		entries = append(entries, struct{ name, body string }{"testdata/meta.json", `{"testcases":[]}`})
 	}
 	return hydroZipBytes(t, entries...)
 }

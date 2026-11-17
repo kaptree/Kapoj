@@ -98,7 +98,20 @@ func (s *Service) addAttachment(ctx context.Context, problemID, userID int64, ki
 	if count >= maxAttachmentsPerProblem {
 		return nil, httpx.ErrValidation(fmt.Sprintf("题目附件数量不能超过 %d 个", maxAttachmentsPerProblem))
 	}
+	a, err := s.stageAttachment(ctx, problemID, userID, kind, up)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.CreateAttachment(ctx, a); err != nil {
+		s.deleteFiles(ctx, []string{a.StorageKey})
+		return nil, err
+	}
+	return a, nil
+}
 
+// stageAttachment writes an attachment/image to storage without touching the
+// database. The caller owns the returned row's storage key until it commits.
+func (s *Service) stageAttachment(ctx context.Context, problemID, userID int64, kind string, up AttachmentUpload) (*ProblemAttachment, error) {
 	filename := sanitizeAttachmentFilename(up.Filename)
 	maxBytes := int64(maxAttachmentBytes)
 	if kind == AttachmentKindStatementImage {
@@ -141,15 +154,10 @@ func (s *Service) addAttachment(ctx context.Context, problemID, userID int64, ki
 		return nil, err
 	}
 
-	a := &ProblemAttachment{
+	return &ProblemAttachment{
 		ProblemID: problemID, Kind: kind, Filename: filename, StorageKey: key,
 		ContentType: contentType, Size: int64(len(data)), CreatedBy: userID,
-	}
-	if err := s.repo.CreateAttachment(ctx, a); err != nil {
-		s.deleteFiles(ctx, []string{key})
-		return nil, err
-	}
-	return a, nil
+	}, nil
 }
 
 // ListAttachments returns public attachments of a visible problem. Statement

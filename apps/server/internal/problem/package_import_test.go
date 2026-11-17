@@ -376,3 +376,120 @@ func TestImportKapOJNestedPackage(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, copied)
 }
+
+func TestImportKapOJRejectsDuplicateAttachmentReference(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	p := e.create(t, input("dup-attachment"))
+	_, err := e.svc.AddAttachment(ctx, p.ID, 1, problem.AttachmentUpload{
+		Filename: "dup.txt", ContentType: "text/plain", Reader: strings.NewReader("dup"),
+	})
+	require.NoError(t, err)
+	var exported bytes.Buffer
+	_, err = e.svc.ExportProblem(ctx, p.ID, &exported)
+	require.NoError(t, err)
+
+	data := rewritePackage(t, exported.Bytes(), func(name string, body []byte) (string, []byte) {
+		if name != "manifest.json" {
+			return name, body
+		}
+		var manifest problem.PackageManifest
+		require.NoError(t, json.Unmarshal(body, &manifest))
+		require.NotEmpty(t, manifest.Files.Attachments)
+		manifest.Files.Attachments = append(manifest.Files.Attachments, manifest.Files.Attachments[0])
+		updated, err := json.Marshal(manifest)
+		require.NoError(t, err)
+		return name, updated
+	})
+	data = renamePackageSlug(t, data, "dup-attachment-copy")
+
+	result, err := e.svc.ImportPackage(ctx, 1, bytes.NewReader(data), int64(len(data)),
+		problem.PackageImportOptions{ConflictPolicy: "skip"})
+	require.NoError(t, err)
+	require.Empty(t, result.Imported)
+	require.Len(t, result.Failed, 1)
+	assert.Contains(t, result.Failed[0].Error, "附件")
+	missing, err := e.repo.FindBySlug(ctx, "dup-attachment-copy")
+	require.NoError(t, err)
+	assert.Nil(t, missing)
+}
+
+func TestImportKapOJAttachmentBudget(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	p := e.create(t, input("budget-attachment"))
+	_, err := e.svc.AddAttachment(ctx, p.ID, 1, problem.AttachmentUpload{
+		Filename: "big.bin", Reader: bytes.NewReader(bytes.Repeat([]byte("x"), 5000)),
+	})
+	require.NoError(t, err)
+	var exported bytes.Buffer
+	_, err = e.svc.ExportProblem(ctx, p.ID, &exported)
+	require.NoError(t, err)
+	data := renamePackageSlug(t, exported.Bytes(), "budget-attachment-copy")
+
+	limited := problem.NewService(e.repo, e.store, problem.WithHydroUncompressedLimit(1500))
+	_, err = limited.ImportPackage(ctx, 1, bytes.NewReader(data), int64(len(data)),
+		problem.PackageImportOptions{ConflictPolicy: "skip"})
+	assertCode(t, err, 40001)
+	missing, err := e.repo.FindBySlug(ctx, "budget-attachment-copy")
+	require.NoError(t, err)
+	assert.Nil(t, missing)
+}
+
+func TestImportKapOJOverwriteStorageFailurePreservesOriginal(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	in := input("overwrite-safe")
+	in.Type = problem.TypeSpecial
+	in.StatementMD = "旧题面"
+	p := e.create(t, in)
+	e.addCase(t, p.ID)
+	_, err := e.svc.AddAttachment(ctx, p.ID, 1, problem.AttachmentUpload{
+		Filename: "old.txt", ContentType: "text/plain", Reader: strings.NewReader("old attachment"),
+	})
+	require.NoError(t, err)
+	require.NoError(t, e.svc.UploadChecker(ctx, p.ID, strings.NewReader("old checker")))
+	require.NoError(t, e.db.Model(&problem.Problem{}).Where("id = ?", p.ID).Updates(map[string]any{
+		"solution_md":          "old solution",
+		"solution_code":        "old code",
+		"solution_price_coins": 5,
+	}).Error)
+
+	var exported bytes.Buffer
+	_, err = e.svc.ExportProblem(ctx, p.ID, &exported)
+	require.NoError(t, err)
+
+	fs := &failingStore{Storage: e.store, failOnPut: 1}
+	svc := problem.NewService(e.repo, fs)
+	result, err := svc.ImportPackage(ctx, 1, bytes.NewReader(exported.Bytes()),
+		int64(exported.Len()), problem.PackageImportOptions{ConflictPolicy: "overwrite"})
+	require.NoError(t, err)
+	require.Empty(t, result.Imported)
+	require.Len(t, result.Failed, 1)
+
+	got, err := e.repo.FindByID(ctx, p.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "旧题面", got.StatementMD)
+	assert.Equal(t, "old solution", got.SolutionMD)
+	assert.Equal(t, "old code", got.SolutionCode)
+	assert.EqualValues(t, 5, got.SolutionPriceCoins)
+
+	cases, err := e.repo.ListTestcases(ctx, p.ID)
+	require.NoError(t, err)
+	require.Len(t, cases, 1)
+	content, err := e.svc.GetTestcaseContent(ctx, p.ID, cases[0].ID)
+	require.NoError(t, err)
+	assert.Equal(t, "3", content.Output)
+
+	attachments, err := e.repo.ListAttachments(ctx, p.ID, problem.AttachmentKindFile)
+	require.NoError(t, err)
+	require.Len(t, attachments, 1)
+	assert.Equal(t, "old.txt", attachments[0].Filename)
+
+	checker, err := e.store.Open(ctx, got.CheckerPath)
+	require.NoError(t, err)
+	checkerBody, err := io.ReadAll(checker)
+	require.NoError(t, err)
+	require.NoError(t, checker.Close())
+	assert.Equal(t, "old checker", string(checkerBody))
+}

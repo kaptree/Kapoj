@@ -217,3 +217,22 @@ func TestExportProblemsRejectsBatchBeforeWriting(t *testing.T) {
 	assertCode(t, err, 40001)
 	assert.Zero(t, limited.Len())
 }
+
+func TestExportProblemsRejectsOversizedPackage(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	p := e.create(t, input("export-limited"))
+	e.addCase(t, p.ID)
+
+	smallBytes := problem.NewService(e.repo, e.store, problem.WithPackageExportLimits(10, 1000))
+	var buf bytes.Buffer
+	_, err := smallBytes.ExportProblems(ctx, []int64{p.ID}, &buf)
+	assertCode(t, err, 40001)
+	assert.Zero(t, buf.Len())
+
+	smallEntries := problem.NewService(e.repo, e.store, problem.WithPackageExportLimits(1<<30, 8))
+	buf.Reset()
+	_, err = smallEntries.ExportProblems(ctx, []int64{p.ID}, &buf)
+	assertCode(t, err, 40001)
+	assert.Zero(t, buf.Len())
+}

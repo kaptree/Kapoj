@@ -9,6 +9,8 @@ const (
 	PackageFormatVersion  = 1
 	// MaxPackageProblems caps one batch import or export.
 	MaxPackageProblems = 100
+	// MaxPackageExportBytes caps the uncompressed content of one export.
+	MaxPackageExportBytes = 2 << 30
 
 	packageImageScheme = "kapoj-package://"
 )

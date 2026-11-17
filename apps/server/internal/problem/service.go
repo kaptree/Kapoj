@@ -98,11 +98,17 @@ type Service struct {
 	store         storage.Storage
 	learningGuard LearningGuard
 
-	hydroUncompressedLimit int64
+	hydroUncompressedLimit  int64
+	packageExportMaxBytes   int64
+	packageExportMaxEntries int
 }
 
 func NewService(repo Repository, store storage.Storage, opts ...Option) *Service {
-	s := &Service{repo: repo, store: store}
+	s := &Service{
+		repo: repo, store: store,
+		packageExportMaxBytes:   MaxPackageExportBytes,
+		packageExportMaxEntries: maxHydroEntries,
+	}
 	for _, opt := range opts {
 		opt(s)
 	}
@@ -289,31 +295,40 @@ func (s *Service) Statistics(ctx context.Context, v Viewer, id int64) (Stats, er
 }
 
 func (s *Service) AddTestcase(ctx context.Context, id int64, up TestcaseUpload) (*Testcase, error) {
-	if up.Score < 0 || up.Score > maxScore {
-		return nil, httpx.ErrValidation(fmt.Sprintf("分数需为 0–%d", maxScore))
-	}
 	if _, err := s.repo.FindByID(ctx, id); err != nil {
 		return nil, mapRepoErr(err)
 	}
+	tc, keys, err := s.stageTestcase(ctx, id, up)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.AddTestcase(ctx, tc); err != nil {
+		s.deleteFiles(ctx, keys)
+		return nil, mapRepoErr(err)
+	}
+	return tc, nil
+}
 
-	base := fmt.Sprintf("problems/%d/testcases/%s", id, randomHex())
+// stageTestcase writes testcase files without touching the database. The
+// caller owns keys and must delete them if the surrounding import fails.
+func (s *Service) stageTestcase(ctx context.Context, problemID int64, up TestcaseUpload) (*Testcase, []string, error) {
+	if up.Score < 0 || up.Score > maxScore {
+		return nil, nil, httpx.ErrValidation(fmt.Sprintf("分数需为 0–%d", maxScore))
+	}
+	base := fmt.Sprintf("problems/%d/testcases/%s", problemID, randomHex())
 	tc := &Testcase{
-		ProblemID: id, InputFile: base + ".in", OutputFile: base + ".out",
+		ProblemID: problemID, InputFile: base + ".in", OutputFile: base + ".out",
 		Score: up.Score, IsSample: up.IsSample,
 	}
 	var err error
 	if tc.InputSize, err = s.put(ctx, tc.InputFile, up.Input, maxTestcaseBytes, "输入文件"); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if tc.OutputSize, err = s.put(ctx, tc.OutputFile, up.Output, maxTestcaseBytes, "输出文件"); err != nil {
 		s.deleteFiles(ctx, []string{tc.InputFile})
-		return nil, err
+		return nil, nil, err
 	}
-	if err := s.repo.AddTestcase(ctx, tc); err != nil {
-		s.deleteFiles(ctx, []string{tc.InputFile, tc.OutputFile})
-		return nil, mapRepoErr(err)
-	}
-	return tc, nil
+	return tc, []string{tc.InputFile, tc.OutputFile}, nil
 }
 
 // GetTestcaseContent reads one testcase for the split online editor.
@@ -466,12 +481,8 @@ func (s *Service) UploadChecker(ctx context.Context, id int64, r io.Reader) erro
 	if p.Type != TypeSpecial {
 		return httpx.ErrValidation("只有特判题可以上传 checker")
 	}
-	br := bufio.NewReader(r)
-	if _, err := br.Peek(1); errors.Is(err, io.EOF) {
-		return httpx.ErrValidation("checker 文件不能为空")
-	}
-	key := fmt.Sprintf("problems/%d/checkers/%s.cpp", id, randomHex())
-	if _, err := s.put(ctx, key, br, maxCheckerBytes, "checker 文件"); err != nil {
+	key, err := s.stageChecker(ctx, id, r)
+	if err != nil {
 		return err
 	}
 	if err := s.repo.SetCheckerPath(ctx, id, key); err != nil {
@@ -482,6 +493,19 @@ func (s *Service) UploadChecker(ctx context.Context, id int64, r io.Reader) erro
 		s.deleteFiles(ctx, []string{p.CheckerPath})
 	}
 	return nil
+}
+
+// stageChecker writes a checker file without touching the database.
+func (s *Service) stageChecker(ctx context.Context, problemID int64, r io.Reader) (string, error) {
+	br := bufio.NewReader(r)
+	if _, err := br.Peek(1); errors.Is(err, io.EOF) {
+		return "", httpx.ErrValidation("checker 文件不能为空")
+	}
+	key := fmt.Sprintf("problems/%d/checkers/%s.cpp", problemID, randomHex())
+	if _, err := s.put(ctx, key, br, maxCheckerBytes, "checker 文件"); err != nil {
+		return "", err
+	}
+	return key, nil
 }
 
 func (s *Service) deleteFiles(ctx context.Context, keys []string) {

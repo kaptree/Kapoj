@@ -52,6 +52,11 @@ type Repository interface {
 	Update(ctx context.Context, p *Problem) error
 	SetCheckerPath(ctx context.Context, id int64, path string) error
 	UpdateSolution(ctx context.Context, id int64, solutionMD, solutionCode string, price int64) error
+	// AllocateAttachmentIDs reserves attachment ids before a staged overwrite.
+	AllocateAttachmentIDs(ctx context.Context, count int) ([]int64, error)
+	// ReplaceContent atomically replaces a problem's testcases/attachments and
+	// editable content, returning storage keys that are no longer referenced.
+	ReplaceContent(ctx context.Context, p *Problem, testcases []*Testcase, attachments []*ProblemAttachment) ([]string, error)
 	Delete(ctx context.Context, id int64) (DeleteResult, error)
 
 	// FindAuthor returns the public summary of a user (id/username/nickname),
@@ -236,6 +241,120 @@ func (r *gormRepository) UpdateSolution(ctx context.Context, id int64, solutionM
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (r *gormRepository) AllocateAttachmentIDs(ctx context.Context, count int) ([]int64, error) {
+	if count <= 0 {
+		return nil, nil
+	}
+	rows, err := r.db.WithContext(ctx).Raw(
+		`SELECT nextval(pg_get_serial_sequence('problem_attachments', 'id')) FROM generate_series(1, ?)`,
+		count).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	ids := make([]int64, 0, count)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// ReplaceContent stages an overwrite: old testcase/attachment rows and content
+// are swapped in one transaction. The returned storage keys are deleted by the
+// caller only after a successful commit.
+func (r *gormRepository) ReplaceContent(
+	ctx context.Context,
+	p *Problem,
+	testcases []*Testcase,
+	attachments []*ProblemAttachment,
+) ([]string, error) {
+	var oldKeys []string
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var current Problem
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, p.ID).Error; err != nil {
+			return err
+		}
+		if p.IsPublic && p.Type != TypeObjective && len(testcases) == 0 {
+			return ErrPublishNeedsTestcase
+		}
+		if p.IsPublic && p.Type == TypeSpecial && p.CheckerPath == "" {
+			return ErrPublishNeedsChecker
+		}
+
+		var oldCases []Testcase
+		if err := tx.Where("problem_id = ?", p.ID).Find(&oldCases).Error; err != nil {
+			return err
+		}
+		for _, tc := range oldCases {
+			oldKeys = append(oldKeys, tc.InputFile, tc.OutputFile)
+		}
+		if current.CheckerPath != "" {
+			oldKeys = append(oldKeys, current.CheckerPath)
+		}
+		var oldAttachments []ProblemAttachment
+		if err := tx.Where("problem_id = ?", p.ID).Find(&oldAttachments).Error; err != nil {
+			return err
+		}
+		for _, attachment := range oldAttachments {
+			oldKeys = append(oldKeys, attachment.StorageKey)
+		}
+
+		if err := tx.Where("problem_id = ?", p.ID).Delete(&Testcase{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("problem_id = ?", p.ID).Delete(&ProblemAttachment{}).Error; err != nil {
+			return err
+		}
+
+		p.UpdatedAt = time.Now()
+		res := tx.Model(&Problem{}).Where("id = ?", p.ID).Updates(map[string]any{
+			"title": p.Title, "slug": p.Slug,
+			"statement_md": p.StatementMD, "input_format_md": p.InputFormatMD,
+			"output_format_md": p.OutputFormatMD, "samples_json": p.Samples,
+			"hint_md": p.HintMD, "type": p.Type, "answers_json": p.Answers,
+			"tags_json": p.Tags, "difficulty": p.Difficulty,
+			"time_limit_ms": p.TimeLimitMS, "memory_limit_mb": p.MemoryLimitMB,
+			"is_public": p.IsPublic, "source": p.Source,
+			"solution_md": p.SolutionMD, "solution_code": p.SolutionCode,
+			"solution_price_coins": p.SolutionPriceCoins,
+			"checker_path":         p.CheckerPath, "updated_at": p.UpdatedAt,
+		})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrNotFound
+		}
+
+		for i := range testcases {
+			testcases[i].ProblemID = p.ID
+			testcases[i].SortOrder = i + 1
+		}
+		if len(testcases) > 0 {
+			if err := tx.Create(testcases).Error; err != nil {
+				return err
+			}
+		}
+		for i := range attachments {
+			attachments[i].ProblemID = p.ID
+		}
+		if len(attachments) > 0 {
+			if err := tx.Create(attachments).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return oldKeys, nil
 }
 
 func (r *gormRepository) Delete(ctx context.Context, id int64) (DeleteResult, error) {

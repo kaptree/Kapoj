@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -79,4 +80,25 @@ func TestProblemPackageHandlerPermissions(t *testing.T) {
 
 	w, _ = f.do(http.MethodGet, "/api/problems/999999/package", manager, nil)
 	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestProblemPackageHandlerMissingStorageReturnsJSONError(t *testing.T) {
+	f := newFx(t)
+	owner := f.token("problem_admin")
+	id := f.create(body("package-missing-file"))
+	f.addCase(id)
+	files := f.storedFiles()
+	require.NotEmpty(t, files)
+	require.NoError(t, os.Remove(files[0]))
+
+	w, resp := f.do(http.MethodGet, fmt.Sprintf("/api/problems/%d/package", id), owner, nil)
+	assert.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	assert.EqualValues(t, 40001, resp["code"])
+	assert.Contains(t, w.Header().Get("Content-Type"), "application/json")
+
+	var audits int64
+	require.NoError(t, f.db.Table("admin_audit_logs").
+		Where("action = ? AND target_id = ?", rbac.AuditActionProblemExport, id).
+		Count(&audits).Error)
+	assert.Zero(t, audits, "a failed export must not be audited as a successful download")
 }
