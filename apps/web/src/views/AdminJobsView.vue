@@ -48,6 +48,7 @@ const difficultyJobKey = 'problem.difficulty.recalculate'
 const ratingJobKey = 'user.rating.recalculate'
 const PAGE_SIZE = 20
 const POLL_MS = 2500
+const POLL_RETRY_MS = 5000
 
 type TagSeverity = 'success' | 'secondary' | 'info' | 'warn' | 'danger' | 'contrast'
 type ActiveTab = 'jobs' | 'difficulty' | 'history'
@@ -86,6 +87,7 @@ const activeTab = ref<ActiveTab>('jobs')
 const jobs = ref<JobView[]>([])
 const jobsLoading = ref(false)
 const jobsError = ref('')
+const pollError = ref('')
 const latestRun = ref<JobRunView | null>(null)
 const runningKey = ref('')
 
@@ -199,13 +201,13 @@ function clearPoll() {
   }
 }
 
-function schedulePoll() {
+function schedulePoll(delay = POLL_MS) {
   clearPoll()
   if (unmounted || !hasActiveRun.value) return
   pollTimer = setTimeout(() => {
     pollTimer = undefined
     void pollOnce()
-  }, POLL_MS)
+  }, delay)
 }
 
 async function syncLatestRun() {
@@ -227,12 +229,45 @@ async function syncLatestRun() {
   }
 }
 
+function pollFailureMessage(reason: string): string {
+  return hasActiveRun.value ? `${reason}，正在自动重试…` : `${reason}，请点击重试。`
+}
+
 async function pollOnce() {
   if (unmounted) return
   const ok = await loadJobs(true)
   if (unmounted) return
-  if (ok && runsLoaded.value) await loadRuns(true)
-  if (unmounted || !ok) return
+  if (!ok) {
+    // A transient refresh failure must not strand the stale active run: keep
+    // retrying with backoff, and expose a manual retry while it is visible.
+    pollError.value = pollFailureMessage('刷新任务状态失败')
+    if (hasActiveRun.value) schedulePoll(POLL_RETRY_MS)
+    return
+  }
+
+  pollError.value = ''
+  if (runsLoaded.value) {
+    const runsOk = await loadRuns(true)
+    if (unmounted) return
+    if (!runsOk) pollError.value = pollFailureMessage('刷新运行历史失败')
+  }
+  await syncLatestRun()
+  if (unmounted) return
+  schedulePoll()
+}
+
+async function retryPoll() {
+  clearPoll()
+  pollError.value = ''
+  const ok = await loadJobs()
+  if (unmounted) return
+  if (!ok) {
+    pollError.value = '刷新任务状态失败，请稍后重试'
+    if (hasActiveRun.value) schedulePoll(POLL_RETRY_MS)
+    return
+  }
+  if (runsLoaded.value) await loadRuns()
+  if (unmounted) return
   await syncLatestRun()
   if (unmounted) return
   schedulePoll()
@@ -607,6 +642,24 @@ onBeforeUnmount(() => {
               />
 
               <template v-else>
+                <Message
+                  v-if="pollError"
+                  severity="warn"
+                  :closable="false"
+                  role="status"
+                  class="poll-error"
+                >
+                  <span class="poll-error__text">{{ pollError }}</span>
+                  <Button
+                    label="重试"
+                    icon="pi pi-refresh"
+                    size="small"
+                    text
+                    type="button"
+                    @click="retryPoll"
+                  />
+                </Message>
+
                 <div v-if="latestRun" class="latest-run" data-test="latest-run" role="status">
                   <div class="latest-run__head">
                     <span class="latest-run__title">
@@ -933,7 +986,7 @@ smoothedPassRate = (accepted + priorStrength × priorPassRate) / (samples + prio
 target = round(1 + 99 × (1 − smoothedPassRate)^curveGamma)
 nextScore = clamp(current ± maxStep, 1, 100)</pre>
                   <p class="formula-block__note">
-                    示例：先验 50、10 个样本、6 人通过、先验强度 10、gamma 1.5 时，目标难度约为 60
+                    示例：先验 50、10 个样本、6 人通过、先验强度 10、gamma 1.5 时，目标难度约为 31
                     分。手动“立即重算”会直接移动到目标分，不受每日步长限制。
                   </p>
                 </section>
@@ -1284,6 +1337,11 @@ nextScore = clamp(current ± maxStep, 1, 100)</pre>
   flex-wrap: wrap;
   gap: var(--kapoj-space-2);
   margin-top: auto;
+}
+
+.poll-error__text {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .latest-run {

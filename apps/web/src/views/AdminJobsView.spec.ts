@@ -272,6 +272,8 @@ describe('AdminJobsView', () => {
 
     expect(getAdminDifficultySettings).toHaveBeenCalledTimes(1)
     expect(page.text()).toContain('target = round(1 + 99')
+    expect(page.text()).toContain('目标难度约为 31 分')
+    expect(page.text()).not.toContain('目标难度约为 60 分')
 
     page.findAllComponents(InputNumber)[0]!.vm.$emit('update:modelValue', 60)
     await flushPromises()
@@ -353,6 +355,44 @@ describe('AdminJobsView', () => {
     expect(listAdminJobRuns).toHaveBeenCalledWith(
       expect.objectContaining({ jobKey: DIFFICULTY_JOB_KEY, page: 1, pageSize: 20 }),
     )
+  })
+
+  it('keeps polling after a transient refresh failure and terminalizes the active run', async () => {
+    vi.useFakeTimers()
+    const running = runView({
+      status: 'running',
+      progressCurrent: 400,
+      progressTotal: 1200,
+      startedAt: '2026-11-18T10:00:00Z',
+    })
+    vi.mocked(listAdminJobs).mockResolvedValue([
+      jobView({ lastStatus: 'running', activeRun: running }),
+    ])
+    const page = await mountPage()
+    expect(listAdminJobs).toHaveBeenCalledTimes(1)
+
+    vi.mocked(listAdminJobs).mockRejectedValueOnce(new Error('network down'))
+    await vi.advanceTimersByTimeAsync(2500)
+    await flushPromises()
+
+    expect(listAdminJobs).toHaveBeenCalledTimes(2)
+    expect(page.text()).toContain('刷新任务状态失败')
+    expect(page.text()).toContain('当前运行')
+
+    vi.mocked(listAdminJobs).mockResolvedValue([jobView({ lastStatus: 'succeeded' })])
+    await vi.advanceTimersByTimeAsync(5000)
+    await flushPromises()
+
+    expect(listAdminJobs).toHaveBeenCalledTimes(3)
+    expect(page.text()).not.toContain('当前运行')
+    expect(page.text()).not.toContain('刷新任务状态失败')
+    const runButton = card(page, DIFFICULTY_JOB_KEY)
+      .findAll('button')
+      .find((item) => item.text().trim() === '立即执行')
+    expect(runButton?.attributes('disabled')).toBeUndefined()
+
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(listAdminJobs).toHaveBeenCalledTimes(3)
   })
 
   it('clears the poll timer on unmount', async () => {
