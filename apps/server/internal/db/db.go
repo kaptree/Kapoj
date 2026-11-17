@@ -16,6 +16,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/certificate"
 	"github.com/kaptree/kapoj/apps/server/internal/companion"
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
+	"github.com/kaptree/kapoj/apps/server/internal/difficulty"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/learning"
 	"github.com/kaptree/kapoj/apps/server/internal/mail"
@@ -80,6 +81,7 @@ func Migrate(g *gorm.DB) error {
 			&contest.Announcement{}, &submission.Submission{},
 			&similarity.Settings{}, &similarity.Run{}, &similarity.Match{},
 			&rating.RatingHistory{}, &rating.RatingSettings{}, &rating.RatingRun{},
+			&difficulty.Settings{},
 			&activity.ActivityLog{}, &activity.SharedItem{},
 			&social.Follow{}, &social.Notification{}, &social.UserEvaluation{},
 			&gamification.CoinTransaction{}, &gamification.Achievement{},
