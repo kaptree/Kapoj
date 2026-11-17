@@ -1,6 +1,6 @@
 # 题目批量管理与题包导入导出 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 交付 kapOJ 题包 v1 导入/导出、导入即公开、题库管理员批量操作与单题下载卡片。
 
@@ -44,10 +44,10 @@
 - `Service.ExportProblem(ctx, id int64, w io.Writer) (PackageManifest, error)`.
 - `GET /api/problems/:id/package`（创建者/`problem.manage_all`）。
 
-- [ ] **Step 1: 测试单题 ZIP 结构、图片 URL 占位、附件/checker/题解/答案、非法权限。**
-- [ ] **Step 2: 实现 manifest 与流式 ZIP 导出。**
-- [ ] **Step 3: 注册下载接口并设置 `Content-Disposition`/`no-store`。**
-- [ ] **Step 4: 测试并提交。**
+- [x] **Step 1: 测试单题 ZIP 结构、图片 URL 占位、附件/checker/题解/答案、非法权限。**
+- [x] **Step 2: 实现 manifest 与流式 ZIP 导出。**
+- [x] **Step 3: 注册下载接口并设置 `Content-Disposition`/`no-store`。**
+- [x] **Step 4: 测试并提交。**
 
 ### Task 2: 批量导出
 
@@ -60,9 +60,9 @@
 - `Service.ExportProblems(ctx, ids []int64, w io.Writer) (ProblemsManifest, error)`.
 - `POST /api/problems/bulk/export` body `{problemIds}`，返回总 ZIP。
 
-- [ ] **Step 1: 测试批量 ZIP 目录、根 manifest、100 题上限、越权整批拒绝。**
-- [ ] **Step 2: 实现批量导出和流式响应。**
-- [ ] **Step 3: 测试并提交。**
+- [x] **Step 1: 测试批量 ZIP 目录、根 manifest、100 题上限、越权整批拒绝。**
+- [x] **Step 2: 实现批量导出和流式响应。**
+- [x] **Step 3: 测试并提交。**
 
 ### Task 3: kapOJ 题包导入与导入即公开
 
@@ -80,10 +80,10 @@
 - `POST /api/problems/import/package`；Hydro import 接受 `publish=true`。
 - 自动识别 `kapoj-problem` / `kapoj-problems` / Hydro。
 
-- [ ] **Step 1: 测试 kapOJ 单题/批量往返、覆盖导入保留 ID、图片 URL 重写、验证发布失败逐题返回。**
-- [ ] **Step 2: 实现 manifest 校验、创建/覆盖、testdata/checker/附件/题解导入。**
-- [ ] **Step 3: 实现发布选项与权限校验。**
-- [ ] **Step 4: 测试并提交。**
+- [x] **Step 1: 测试 kapOJ 单题/批量往返、覆盖导入保留 ID、图片 URL 重写、验证发布失败逐题返回。**
+- [x] **Step 2: 实现 manifest 校验、创建/覆盖、testdata/checker/附件/题解导入。**
+- [x] **Step 3: 实现发布选项与权限校验。**
+- [x] **Step 4: 测试并提交。**
 
 ### Task 4: 批量公开/隐藏/删除
 
@@ -97,9 +97,9 @@
 - `BulkResult{ID, Status, Offlined, Error}`。
 - `POST /api/problems/bulk/actions` body `{action, problemIds}`，仅 `problem.manage_all`。
 
-- [ ] **Step 1: 测试 publish/hide/delete 三种动作、有提交只下线、学习路线逐题失败、部分成功。**
-- [ ] **Step 2: 实现服务与 handler，记录审计汇总。**
-- [ ] **Step 3: 测试并提交。**
+- [x] **Step 1: 测试 publish/hide/delete 三种动作、有提交只下线、学习路线逐题失败、部分成功。**
+- [x] **Step 2: 实现服务与 handler，记录审计汇总。**
+- [x] **Step 3: 测试并提交。**
 
 ### Task 5: 前端题库批量管理与详情下载卡片
 
@@ -116,17 +116,17 @@
 - 导入选项 `publish`。
 - 题库批量模式：选择列、公开/隐藏/删除/下载/取消、结果面板。
 
-- [ ] **Step 1: 写失败前端测试。**
-- [ ] **Step 2: 实现 API/页面/权限展示。**
-- [ ] **Step 3: OpenAPI + gen:api，测试/lint/build。**
+- [x] **Step 1: 写失败前端测试。**
+- [x] **Step 2: 实现 API/页面/权限展示。**
+- [x] **Step 3: OpenAPI + gen:api，测试/lint/build。**
 
 ### Task 6: 全量验证与部署
 
-- [ ] server/judge `go test -p 1 ./...`
-- [ ] web 全量测试/lint/build
-- [ ] 测试库真实导出→导入往返
-- [ ] 重建 server 容器，线上验证单题下载、批量接口、页面入口
-- [ ] 更新文档与提交
+- [x] server/judge `go test -p 1 ./...`
+- [x] web 全量测试/lint/build
+- [x] 测试库真实导出→导入往返
+- [x] 重建 server 容器，线上验证单题下载、批量接口、页面入口
+- [x] 更新文档与提交
 
 ## Self-Review
 
