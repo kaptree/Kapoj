@@ -5,10 +5,12 @@ import Avatar from 'primevue/avatar'
 import Button from 'primevue/button'
 import { useToast } from 'primevue/usetoast'
 
+import { getUserCompanion } from '@/api/companion'
 import { ApiError } from '@/api/http'
 import { followUser, getUserSocial, listUserEvaluations, unfollowUser } from '@/api/social'
 import { getProfile, getUserActivity } from '@/api/users'
-import type { EvaluationPage, Profile, UserActivity } from '@/api/types'
+import type { EvaluationPage, Profile, UserActivity, UserCompanion } from '@/api/types'
+import CompanionProfileCard from '@/components/companion/CompanionProfileCard.vue'
 import ContributionGrid from '@/components/profile/ContributionGrid.vue'
 import ProfileCertificatesCard from '@/components/profile/ProfileCertificatesCard.vue'
 import ProfileEvaluationDialog from '@/components/profile/ProfileEvaluationDialog.vue'
@@ -20,6 +22,7 @@ import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useCompanionStore } from '@/stores/companion'
 import { resolveAssetUrl } from '@/utils/asset'
 import { safeTitleColor } from '@/utils/gamification'
 
@@ -32,10 +35,12 @@ type ProfileSocial = {
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const companionStore = useCompanionStore()
 const toast = useToast()
 const profile = ref<Profile | null>(null)
 const social = ref<ProfileSocial | null>(null)
 const activity = ref<UserActivity | null>(null)
+const companion = ref<UserCompanion | null>(null)
 const error = ref('')
 const loading = ref(false)
 const activityLoading = ref(false)
@@ -136,6 +141,19 @@ async function loadEvaluations(id: string, seq: number) {
   }
 }
 
+async function loadCompanion(userID: number, seq: number) {
+  if (!companionStore.effectiveEnabled) return
+  try {
+    const data = await getUserCompanion(userID)
+    if (seq !== latestLoad) return
+    companion.value = data
+  } catch {
+    if (seq !== latestLoad) return
+    // A hidden, missing or failing companion summary never breaks the profile.
+    companion.value = null
+  }
+}
+
 async function loadProfile(id: string) {
   const seq = ++latestLoad
   loading.value = true
@@ -144,6 +162,7 @@ async function loadProfile(id: string) {
   social.value = null
   activity.value = null
   activityError.value = ''
+  companion.value = null
   evaluationPage.value = null
   evaluationError.value = ''
   evaluationDialogOpen.value = false
@@ -158,6 +177,7 @@ async function loadProfile(id: string) {
     if (seq !== latestLoad) return
     profile.value = profileData
     social.value = socialData
+    void loadCompanion(profileData.id, seq)
   } catch (e) {
     if (seq !== latestLoad) return
     error.value = e instanceof ApiError && e.code === 40400 ? '用户不存在' : '加载失败，请稍后再试'
@@ -386,6 +406,13 @@ watch(
           @retry="retryEvaluations"
         />
       </section>
+
+      <CompanionProfileCard
+        v-if="companion && companionStore.effectiveEnabled"
+        :state="companion"
+        :is-self="isSelf"
+        :name="companionStore.name"
+      />
 
       <dl
         class="profile-stats"

@@ -6,11 +6,13 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
+import { getUserCompanion } from '@/api/companion'
 import { ApiError } from '@/api/http'
 import { getRatingHistory } from '@/api/leaderboard'
 import { followUser, getUserSocial, listUserEvaluations, unfollowUser } from '@/api/social'
 import { getProfile, getUserActivity } from '@/api/users'
-import type { EvaluationPage, Profile, UserActivity } from '@/api/types'
+import type { EvaluationPage, Profile, UserActivity, UserCompanion } from '@/api/types'
+import { useCompanionStore } from '@/stores/companion'
 import UserProfileView from './UserProfileView.vue'
 
 const auth = vi.hoisted(() => ({ isLoggedIn: true, user: null as { id: number } | null }))
@@ -22,6 +24,10 @@ vi.mock('primevue/usetoast', () => ({ useToast: () => toast }))
 vi.mock('@/api/users', () => ({
   getProfile: vi.fn(),
   getUserActivity: vi.fn(),
+}))
+
+vi.mock('@/api/companion', () => ({
+  getUserCompanion: vi.fn(),
 }))
 
 vi.mock('@/api/leaderboard', () => ({
@@ -82,6 +88,21 @@ function evaluationPage(overrides: Partial<EvaluationPage> = {}): EvaluationPage
   }
 }
 
+function userCompanion(overrides: Partial<UserCompanion> = {}): UserCompanion {
+  return {
+    userId: 7,
+    bond: 120,
+    level: 3,
+    levelName: '搭档',
+    nextThreshold: 170,
+    equippedSkin: 'culture-festival',
+    unlockedSkins: ['culture-festival'],
+    publicProfile: true,
+    daysTogether: 42,
+    ...overrides,
+  }
+}
+
 const routes = [
   { path: '/users/:id', name: 'user-profile', component: { template: '<div />' } },
   { path: '/contests/:id(\\d+)', name: 'contest-detail', component: { template: '<div />' } },
@@ -118,10 +139,11 @@ const CertificateCardStub = {
   template: '<div data-test="certificate-slot">证书 {{ targetUserId }}</div>',
 }
 
-async function mountPage(path = '/users/7') {
+async function mountPage(path = '/users/7', setup?: () => void) {
   const router = createRouter({ history: createMemoryHistory(), routes })
   const pinia = createPinia()
   setActivePinia(pinia)
+  setup?.()
   await router.push(path)
   await router.isReady()
   const wrapper = mount(UserProfileView, {
@@ -157,6 +179,8 @@ beforeEach(() => {
   toast.add.mockReset()
   vi.mocked(getProfile).mockReset()
   vi.mocked(getProfile).mockResolvedValue(profile())
+  vi.mocked(getUserCompanion).mockReset()
+  vi.mocked(getUserCompanion).mockResolvedValue(userCompanion())
   vi.mocked(getUserActivity).mockReset()
   vi.mocked(getUserActivity).mockResolvedValue(activity())
   vi.mocked(getRatingHistory).mockReset()
@@ -240,6 +264,70 @@ describe('UserProfileView', () => {
       Array.from(aside.element.children).map((child) => child.getAttribute('data-test')),
     ).toEqual(['certificate-slot'])
     expect(wrapper.find('[data-test="evaluation-slot"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('renders the companion card between the hero and stats', async () => {
+    const { wrapper } = await mountPage('/users/7')
+
+    expect(getUserCompanion).toHaveBeenCalledWith(7)
+
+    const hero = wrapper.get('.profile-hero')
+    const card = wrapper.get('[data-test="companion-profile-card"]')
+    const stats = wrapper.get('.profile-stats')
+    expect(
+      hero.element.compareDocumentPosition(card.element) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(
+      card.element.compareDocumentPosition(stats.element) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+
+    expect(hero.find('[data-test="word-cloud"]').exists()).toBe(true)
+    expect(card.text()).toContain('搭档')
+    expect(card.text()).toContain('120 / 170')
+    expect(card.text()).toContain('相伴 42 天')
+    expect(card.text()).toContain('culture-festival')
+    wrapper.unmount()
+  })
+
+  it('hides the companion card when the API returns 404 and keeps the profile', async () => {
+    vi.mocked(getUserCompanion).mockRejectedValue(new ApiError(404, 40400, '伙伴不存在'))
+    const { wrapper } = await mountPage('/users/7')
+
+    expect(wrapper.text()).toContain('Alice')
+    expect(wrapper.find('[data-test="companion-profile-card"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('伙伴不存在')
+    wrapper.unmount()
+  })
+
+  it('hides the companion card when the API fails', async () => {
+    vi.mocked(getUserCompanion).mockRejectedValue(new ApiError(500, 50000, '服务器错误'))
+    const { wrapper } = await mountPage('/users/7')
+
+    expect(wrapper.text()).toContain('Alice')
+    expect(wrapper.find('[data-test="companion-profile-card"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('does not fetch or render the companion card when companions are disabled', async () => {
+    const { wrapper } = await mountPage('/users/7', () => {
+      useCompanionStore().globalEnabled = false
+    })
+
+    expect(getUserCompanion).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-test="companion-profile-card"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Alice')
+    wrapper.unmount()
+  })
+
+  it('shows the private hint and appearance link on your own hidden profile', async () => {
+    auth.user = { id: 7 }
+    vi.mocked(getUserCompanion).mockResolvedValue(userCompanion({ publicProfile: false }))
+    const { wrapper } = await mountPage('/users/7')
+
+    const card = wrapper.get('[data-test="companion-profile-card"]')
+    expect(card.text()).toContain('仅自己可见')
+    expect(card.find('a[href="/appearance"]').exists()).toBe(true)
     wrapper.unmount()
   })
 

@@ -4,6 +4,7 @@ import type {
   CompanionPetResult,
   CompanionSettingsPatch,
   CompanionState,
+  UserCompanion,
 } from './types'
 
 /** Current user's companion bond, level, settings and today's events. */
@@ -28,3 +29,7 @@ export const updateCompanionSettings = (input: CompanionSettingsPatch) =>
 
 /** Pets the companion once per local day; repeat calls are idempotent. */
 export const petCompanion = () => http.post<CompanionPetResult>('/companion/pet')
+
+/** Public companion summary for a user's profile; private profiles return 404. */
+export const getUserCompanion = (userID: number) =>
+  http.get<UserCompanion>(`/users/${userID}/companion`)
