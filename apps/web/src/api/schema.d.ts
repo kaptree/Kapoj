@@ -2088,6 +2088,604 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/ai/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 平台模型列表（ai.settings.manage）
+         * @description 返回全部平台级模型（token 脱敏），按创建顺序排列；绝不返回 token 明文或密文。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 平台模型列表 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlatformModelListResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        /**
+         * 新增平台模型（ai.settings.manage）
+         * @description 首次新增必须提供 apiKey；名称唯一，参数非法返回 40001。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PlatformModelInput"];
+                };
+            };
+            responses: {
+                /** @description 已创建的平台模型（脱敏） */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlatformModelResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/ai/models/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 编辑平台模型（ai.settings.manage）
+         * @description apiKey 为空表示保留原密文；参数非法返回 40001，模型不存在返回 40400。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PlatformModelInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的平台模型（脱敏） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlatformModelResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        /**
+         * 删除平台模型（ai.settings.manage）
+         * @description 当前选中的模型拒绝删除（40001），需先切换；模型不存在返回 40400。
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已删除 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/ai/models/{id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 测试平台模型连通性（ai.settings.manage）
+         * @description 对 {baseUrl}/chat/completions 发送一次轻量请求并更新 lastTest 字段；上游测试失败仍返回 200 与 {ok:false,...}，只有缺密钥（40002）或模型不存在（404）返回错误响应。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 连通性测试结果 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlatformModelTestResultResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/ai/platform-model": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 选择当前平台模型（ai.settings.manage）
+         * @description modelId 为 null 表示取消选择；模型不存在返回 40400，模型未启用返回 40001。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PlatformModelSelectInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的 AI 设置（含当前平台模型） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminAISettingsResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/difficulty/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 读取难度公式设置（system.jobs.manage）
+         * @description 返回难度重算公式参数；首次读取时懒创建默认设置。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 难度设置 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DifficultySettingsResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        /**
+         * 整体更新难度公式设置（system.jobs.manage）
+         * @description 校验各参数范围；修改写审计 system.jobs.manage / target difficulty_settings。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["DifficultySettingsInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的难度设置 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DifficultySettingsResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 定时任务列表（system.jobs.manage）
+         * @description 返回全部种子任务（含 activeRun）；data 为数组而不分页。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 定时任务列表 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["JobListResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/jobs/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 更新定时任务调度（system.jobs.manage）
+         * @description 校验 cron 与 IANA 时区；cron/时区非法返回 40001，任务不存在返回 40400。修改写审计。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["JobInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的定时任务 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["JobResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/jobs/{key}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 立即执行定时任务（system.jobs.manage）；返回 202 与 run
+         * @description 难度重算任务在 difficulty_settings.enabled=false 时返回 40001；同一任务已有 queued/running run 时返回 40904「任务正在执行」；任务不存在返回 40400。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已入队的运行记录 */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["JobRunResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+                409: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/jobs/{key}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * 单个任务的运行历史分页（system.jobs.manage）
+         * @description 支持 status 过滤；按创建时间倒序。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    status?: string;
+                    page?: number;
+                    page_size?: number;
+                };
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 运行历史分页 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["JobRunPageResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/job-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 全部运行历史分页（system.jobs.manage）
+         * @description 支持 jobKey/status 过滤；按创建时间倒序。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    jobKey?: string;
+                    status?: string;
+                    page?: number;
+                    page_size?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 运行历史分页 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["JobRunPageResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/job-runs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * 单个运行记录详情/进度（system.jobs.manage）
+         * @description 运行记录不存在返回 40400。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 运行记录 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["JobRunResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/permissions": {
         parameters: {
             query?: never;
@@ -3449,7 +4047,12 @@ export interface paths {
                     /** @description 匹配标题或题目标识，不区分大小写，按字面量匹配 */
                     keyword?: string;
                     tag?: string;
+                    /** @description 精确难度筛选（1–100） */
                     difficulty?: number;
+                    /** @description 最低难度（含，1–100） */
+                    difficultyMin?: number;
+                    /** @description 最高难度（含，1–100） */
+                    difficultyMax?: number;
                     /** @description public=公开题；mine=我的题目（需 problem.* 管理权限）；all=全部题目（需 problem.manage_all） */
                     scope?: "public" | "mine" | "all";
                     /** @description 需要 problem.view_hidden 或题目管理权限；出题人仅能通过该参数看到自己的隐藏题 */
@@ -3838,6 +4441,103 @@ export interface paths {
                 404: components["responses"]["Error"];
             };
         };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/problems/{id}/difficulty/assess": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 同步 AI 重评题目难度（problem.update，权限与编辑题目一致）
+         * @description 用当前题面调用平台 AI 重新评估难度并覆盖难度分/先验/来源，但不会改变 difficultyAuto （人工锁定在重评后仍保留）。AI 未启用/未配置返回 40001，上游失败或返回格式非法返回 50200。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 重评后的题目详情 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProblemDetailResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+                502: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/problems/{id}/difficulty/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * 题目难度变更历史分页（problem.update，权限与编辑题目一致）
+         * @description 按创建时间倒序返回难度变更记录，仅输出面向管理端的字段。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    page_size?: number;
+                };
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 难度历史分页 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DifficultyHistoryPageResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -10303,7 +11003,10 @@ export interface components {
             /** @description 客观题的标准答案；非客观题会被清空，客观题缺少答案时报错 */
             answers?: string[];
             tags?: string[];
+            /** @description 难度分（1–100）。difficultyAuto=true 时该值仅为占位，服务端用 AI 分或默认分覆盖 */
             difficulty: number;
+            /** @description 是否自动评估难度；创建时缺省为 true，false 表示人工锁定并直接采用请求值 */
+            difficultyAuto?: boolean;
             /** @description 0 表示默认 1000 */
             timeLimitMs?: number;
             /** @description 0 表示默认 256 */
@@ -10326,7 +11029,10 @@ export interface components {
             /** @description 客观题的标准答案；可选以兼容旧客户端；非客观题会被清空，客观题缺少答案时报错 */
             answers?: string[];
             tags: string[];
+            /** @description 难度分（1–100）。difficultyAuto 缺省表示分值不变则保留原状态、分值变化则视为人工锁定 */
             difficulty: number;
+            /** @description 是否自动评估难度；缺省表示分值不变则保留原状态，分值变化则视为人工锁定 */
+            difficultyAuto?: boolean;
             /** @description 0 表示默认 1000 */
             timeLimitMs: number;
             /** @description 0 表示默认 256 */
@@ -10342,6 +11048,7 @@ export interface components {
             slug: string;
             type: components["schemas"]["ProblemType"];
             tags: string[];
+            /** @description 难度分（1–100）；自动评估开启时会由服务端更新 */
             difficulty: number;
             timeLimitMs: number;
             memoryLimitMb: number;
@@ -10379,6 +11086,21 @@ export interface components {
             /** @description 当前用户是否可以编辑/管理该题目（创建者本人或 problem.manage_all） */
             canEdit: boolean;
             author?: components["schemas"]["ProblemAuthor"];
+            /** @description 是否自动评估难度；仅在有编辑权限时返回 */
+            difficultyAuto?: boolean;
+            /** @description 难度来源（如 ai/manual/default）；仅在有编辑权限时返回 */
+            difficultySource?: string;
+            /** @description 难度先验分（1–100）；仅在有编辑权限时返回 */
+            difficultyPrior?: number;
+            /** @description 先验来源（如 ai/manual/default）；仅在有编辑权限时返回 */
+            difficultyPriorSource?: string;
+            /** @description 最近一次难度评估理由；仅在有编辑权限时返回 */
+            difficultyReason?: string;
+            /**
+             * Format: date-time
+             * @description 最近一次难度元数据更新时间；仅在有编辑权限时返回
+             */
+            difficultyUpdatedAt?: string;
         };
         ProblemAttachment: {
             /** Format: int64 */
@@ -11196,6 +11918,13 @@ export interface components {
             enabled: boolean;
             /** @description 进程启动时是否已配置合法 AI 加密密钥（只读） */
             keyConfigured: boolean;
+            /**
+             * Format: int64
+             * @description 当前选择的平台模型 ID；未选择时为 null
+             */
+            platformModelId?: number | null;
+            /** @description 当前选择的平台模型名称；未选择时为空字符串 */
+            platformModelName?: string;
             /** Format: date-time */
             updatedAt: string;
         };
@@ -11229,6 +11958,193 @@ export interface components {
         };
         AIKeyGenerateResultResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["AIKeyGenerateResult"];
+        };
+        /** @description 平台模型脱敏视图；绝不包含 token 明文或密文。 */
+        PlatformModelView: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            baseUrl: string;
+            modelName: string;
+            enabled: boolean;
+            /** @description 脱敏 token；未配置时为空字符串 */
+            apiKeyMasked: string;
+            /**
+             * Format: date-time
+             * @description 最近一次连通性测试时间；从未测试时为 null
+             */
+            lastTestAt: string | null;
+            lastTestOk: boolean;
+            lastTestError: string;
+            lastTestLatencyMs: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        PlatformModelInput: {
+            name: string;
+            /** @description 必须以 http:// 或 https:// 开头，不能以 /chat/completions 结尾 */
+            baseUrl: string;
+            modelName: string;
+            /** @description 创建时必填；更新时为空表示保留原密文 */
+            apiKey?: string;
+            enabled: boolean;
+        };
+        PlatformModelTestResult: {
+            ok: boolean;
+            latencyMs: number;
+            /** @description 脱敏分类信息，不含 token 或上游响应正文 */
+            message: string;
+        };
+        PlatformModelSelectInput: {
+            /**
+             * Format: int64
+             * @description null 表示取消选择
+             */
+            modelId: number | null;
+        };
+        PlatformModelListResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["PlatformModelView"][];
+        };
+        PlatformModelResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["PlatformModelView"];
+        };
+        PlatformModelTestResultResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["PlatformModelTestResult"];
+        };
+        DifficultySettingsView: {
+            /** @description 是否启用每日难度自动调整 */
+            enabled: boolean;
+            defaultScore: number;
+            minSample: number;
+            priorStrength: number;
+            /** @description 每日最大调整步长 */
+            maxStep: number;
+            windowDays: number;
+            includeContest: boolean;
+            /** Format: double */
+            curveGamma: number;
+            aiAssessEnabled: boolean;
+            aiTimeoutSeconds: number;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        /** @description 整体替换全部难度公式参数。 */
+        DifficultySettingsInput: {
+            enabled: boolean;
+            defaultScore: number;
+            minSample: number;
+            priorStrength: number;
+            maxStep: number;
+            windowDays: number;
+            includeContest: boolean;
+            /** Format: double */
+            curveGamma: number;
+            aiAssessEnabled: boolean;
+            aiTimeoutSeconds: number;
+        };
+        DifficultySettingsResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["DifficultySettingsView"];
+        };
+        JobView: {
+            key: string;
+            name: string;
+            description: string;
+            /** @description 标准 5 段 cron 表达式 */
+            cronExpr: string;
+            /** @description IANA 时区名 */
+            timezone: string;
+            enabled: boolean;
+            /** Format: date-time */
+            nextRunAt: string | null;
+            /** Format: date-time */
+            lastRunAt: string | null;
+            /** @description 最近一次运行状态；从未运行时为空字符串 */
+            lastStatus: string;
+            lastError: string;
+            /** @description 当前 queued/running 的运行记录；无活动运行时为 null */
+            activeRun: components["schemas"]["JobRunView"] | null;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        JobInput: {
+            enabled: boolean;
+            cronExpr: string;
+            timezone: string;
+        };
+        JobListResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["JobView"][];
+        };
+        JobResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["JobView"];
+        };
+        JobRunView: {
+            /** Format: int64 */
+            id: number;
+            jobKey: string;
+            /** @description schedule 或 manual */
+            trigger: string;
+            /** @description queued/running/succeeded/failed/canceled */
+            status: string;
+            progressCurrent: number;
+            progressTotal: number;
+            /** @description 运行统计键值对 */
+            stats: {
+                [key: string]: unknown;
+            };
+            errorMessage: string;
+            /** Format: int64 */
+            createdBy: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            startedAt: string | null;
+            /** Format: date-time */
+            finishedAt: string | null;
+        };
+        JobRunResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["JobRunView"];
+        };
+        JobRunPageResponse: components["schemas"]["Envelope"] & {
+            data: {
+                /** Format: int64 */
+                total: number;
+                items: components["schemas"]["JobRunView"][];
+            };
+        };
+        /** @description 管理端可见的一次难度变更记录。 */
+        DifficultyHistoryItem: {
+            oldScore: number;
+            newScore: number;
+            prior: number;
+            source: string;
+            sampleUsers: number;
+            acceptedUsers: number;
+            /** Format: double */
+            passRate: number;
+            /** Format: double */
+            smoothedPassRate: number;
+            targetScore: number;
+            /** Format: double */
+            confidence: number;
+            reason: string;
+            /**
+             * Format: int64
+             * @description 由定时任务触发时关联的 run ID
+             */
+            runId: number | null;
+            /** Format: int64 */
+            createdBy: number;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        DifficultyHistoryPageResponse: components["schemas"]["Envelope"] & {
+            data: {
+                /** Format: int64 */
+                total: number;
+                items: components["schemas"]["DifficultyHistoryItem"][];
+            };
         };
         RatingSeasonResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["RatingSeasonView"];
