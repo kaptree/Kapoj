@@ -90,3 +90,75 @@ func TestBulkExportHandler(t *testing.T) {
 	assert.EqualValues(t, 40001, resp["code"])
 	assert.Contains(t, w.Header().Get("Content-Type"), "application/json")
 }
+
+func TestBulkActionsHandler(t *testing.T) {
+	f := newFx(t)
+	first := f.create(body("action-one"))
+	f.addCase(first)
+	second := f.create(body("action-two"))
+	f.addCase(second)
+	endpoint := "/api/problems/bulk/actions"
+
+	w, resp := f.do(http.MethodPost, endpoint, f.token("user"), map[string]any{
+		"action": "publish", "problemIds": []int64{first, second},
+	})
+	assert.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+	assert.EqualValues(t, 40300, resp["code"])
+
+	f.createRole("action_manager", rbac.PermProblemManageAll)
+	manager := f.userWithRole("action_manager")
+
+	w, resp = f.do(http.MethodPost, endpoint, manager, map[string]any{
+		"action": "publish", "problemIds": []int64{first, second, 999999},
+	})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	results := resp["data"].(map[string]any)["results"].([]any)
+	require.Len(t, results, 3)
+	assert.Equal(t, "success", results[0].(map[string]any)["status"])
+	assert.Equal(t, "success", results[1].(map[string]any)["status"])
+	assert.Equal(t, "failed", results[2].(map[string]any)["status"])
+
+	for _, id := range []int64{first, second} {
+		var p problem.Problem
+		require.NoError(t, f.db.First(&p, id).Error)
+		assert.True(t, p.IsPublic)
+	}
+
+	w, resp = f.do(http.MethodPost, endpoint, manager, map[string]any{
+		"action": "hide", "problemIds": []int64{first, second},
+	})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	results = resp["data"].(map[string]any)["results"].([]any)
+	for _, result := range results {
+		assert.Equal(t, "success", result.(map[string]any)["status"])
+	}
+
+	require.NoError(t, f.db.Model(&problem.Problem{}).Where("id = ?", first).
+		Update("submit_count", 2).Error)
+	w, resp = f.do(http.MethodPost, endpoint, manager, map[string]any{
+		"action": "delete", "problemIds": []int64{first, second},
+	})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	results = resp["data"].(map[string]any)["results"].([]any)
+	require.Len(t, results, 2)
+	assert.Equal(t, true, results[0].(map[string]any)["offlined"])
+	assert.Equal(t, false, results[1].(map[string]any)["offlined"])
+
+	var firstCount, secondCount int64
+	require.NoError(t, f.db.Model(&problem.Problem{}).Where("id = ?", first).Count(&firstCount).Error)
+	require.NoError(t, f.db.Model(&problem.Problem{}).Where("id = ?", second).Count(&secondCount).Error)
+	assert.EqualValues(t, 1, firstCount, "a problem with submissions is only taken offline")
+	assert.Zero(t, secondCount, "a problem without submissions is deleted")
+
+	var audits int64
+	require.NoError(t, f.db.Table("admin_audit_logs").
+		Where("action = ? AND target_type = ?", rbac.AuditActionProblemBulk, "problem").
+		Count(&audits).Error)
+	assert.EqualValues(t, 3, audits)
+
+	w, resp = f.do(http.MethodPost, endpoint, manager, map[string]any{
+		"action": "archive", "problemIds": []int64{first},
+	})
+	assert.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	assert.EqualValues(t, 40001, resp["code"])
+}

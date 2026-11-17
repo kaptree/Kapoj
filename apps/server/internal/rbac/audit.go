@@ -27,6 +27,7 @@ const (
 	AuditActionMailSettingsManage   = "mail.settings.manage"
 	AuditActionSystemBackupManage   = "system.backup.manage"
 	AuditActionProblemExport        = "problem.export"
+	AuditActionProblemBulk          = "problem.bulk"
 
 	AuditTargetRole            = "role"
 	AuditTargetUser            = "user"

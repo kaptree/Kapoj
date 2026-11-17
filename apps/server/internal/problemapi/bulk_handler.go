@@ -18,6 +18,57 @@ type bulkExportRequest struct {
 	ProblemIDs []int64 `json:"problemIds"`
 }
 
+type bulkActionRequest struct {
+	Action     string  `json:"action"`
+	ProblemIDs []int64 `json:"problemIds"`
+}
+
+// bulkActions runs publish/hide/delete for problem.manage_all only. Each
+// problem is handled independently and the per-problem results are returned.
+func (h *handler) bulkActions(c *gin.Context) {
+	in, ok := httpx.BindJSON[bulkActionRequest](c)
+	if !ok {
+		return
+	}
+	results, err := h.svc.BulkAction(c.Request.Context(), in.Action, in.ProblemIDs)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	h.recordBulkActionAudit(c, in.Action, in.ProblemIDs, results)
+	httpx.OK(c, gin.H{"results": results})
+}
+
+func (h *handler) recordBulkActionAudit(c *gin.Context, action string, ids []int64, results []problem.BulkResult) {
+	if h.rbac == nil {
+		return
+	}
+	access, ok := middleware.CurrentAccess(c)
+	if !ok || access == nil {
+		return
+	}
+	succeeded, failed := 0, 0
+	for _, result := range results {
+		if result.Status == problem.BulkStatusSuccess {
+			succeeded++
+		} else {
+			failed++
+		}
+	}
+	actor := rbac.AuditMeta{
+		ActorID:   access.UserID,
+		IP:        c.ClientIP(),
+		UserAgent: c.Request.UserAgent(),
+	}
+	summary := fmt.Sprintf("POST %s -> %s success=%d failed=%d ids=%v",
+		c.Request.URL.Path, action, succeeded, failed, ids)
+	if err := h.rbac.RecordAudit(c.Request.Context(), actor,
+		rbac.AuditActionProblemBulk, auditTargetProblem, 0, summary); err != nil {
+		slog.Warn("rbac: bulk problem action audit write failed",
+			"actorId", actor.ActorID, "action", action, "err", err)
+	}
+}
+
 // exportProblems streams one batch package for problem.manage_all only. The
 // response headers are deferred until the first ZIP byte so a rejected batch
 // still produces a normal JSON error.
