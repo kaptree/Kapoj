@@ -114,7 +114,10 @@ function emptyModelForm(): PlatformModelForm {
 const models = ref<PlatformModelView[]>([])
 const modelsLoading = ref(false)
 const modelsError = ref('')
+/** Server-persisted selection; drives the “当前使用” tag and delete guard. */
 const selectedModelId = ref<number | null>(null)
+/** Unsaved Select draft; only becomes the persisted selection after a successful save. */
+const selectionDraft = ref<number | null>(null)
 const selectionSaving = ref(false)
 
 /** Kept in script so the `://` literal never appears in the template. */
@@ -166,6 +169,18 @@ function applyView(view: AdminAISettingsView) {
   settings.value = view
   enabled.value = view.enabled
   selectedModelId.value = view.platformModelId ?? null
+  selectionDraft.value = selectedModelId.value
+}
+
+/** Applies only the selection fields so an unsaved enable-toggle draft is preserved. */
+function applySelection(view: AdminAISettingsView) {
+  settings.value = {
+    ...(settings.value ?? view),
+    platformModelId: view.platformModelId ?? null,
+    platformModelName: view.platformModelName ?? '',
+  }
+  selectedModelId.value = settings.value.platformModelId ?? null
+  selectionDraft.value = selectedModelId.value
 }
 
 async function load() {
@@ -368,7 +383,7 @@ async function loadModels() {
 async function saveSelection() {
   selectionSaving.value = true
   try {
-    applyView(await selectAdminAIPlatformModel(selectedModelId.value))
+    applySelection(await selectAdminAIPlatformModel(selectionDraft.value))
     toast.add({ severity: 'success', summary: '当前模型已更新', life: 3000 })
   } catch (e) {
     toast.add({
@@ -596,14 +611,14 @@ onMounted(() => {
         <AppFormField v-slot="{ id }" label="当前使用模型">
           <div class="platform-select__row">
             <Select
-              :model-value="selectedModelId"
+              :model-value="selectionDraft"
               :input-id="id"
               :options="modelOptions"
               option-label="label"
               option-value="value"
               :disabled="!canManage"
               fluid
-              @update:model-value="selectedModelId = $event"
+              @update:model-value="selectionDraft = $event"
             />
             <Button
               v-if="canManage"

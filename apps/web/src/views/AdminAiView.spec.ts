@@ -593,6 +593,85 @@ describe('AdminAiView', () => {
     wrapper.unmount()
   })
 
+  it('keeps the persisted model tagged and protected until the selection is saved', async () => {
+    auth.can.mockImplementation((code) => code === PERM.ai.settings.manage)
+    vi.mocked(getAdminAISettings).mockResolvedValue(
+      settingsView({ platformModelId: 1, platformModelName: '模型甲' }),
+    )
+    vi.mocked(listAdminAIPlatformModels).mockResolvedValue([
+      platformModelView({ id: 1, name: '模型甲' }),
+      platformModelView({ id: 2, name: '模型乙' }),
+    ])
+
+    const wrapper = await mountPage()
+
+    let rows = wrapper.findAll('tbody tr')
+    expect(rows).toHaveLength(2)
+    expect(rows[0]!.text()).toContain('当前使用')
+    expect(rows[1]!.text()).not.toContain('当前使用')
+    expect(
+      (wrapper.find('[data-test="delete-platform-model-1"]').element as HTMLButtonElement).disabled,
+    ).toBe(true)
+    expect(
+      (wrapper.find('[data-test="delete-platform-model-2"]').element as HTMLButtonElement).disabled,
+    ).toBe(false)
+
+    // Changing the draft selection must not move the "current" marker before saving.
+    wrapper.findComponent(Select).vm.$emit('update:modelValue', 2)
+    await flushPromises()
+
+    rows = wrapper.findAll('tbody tr')
+    expect(rows[0]!.text()).toContain('当前使用')
+    expect(rows[1]!.text()).not.toContain('当前使用')
+    expect(
+      (wrapper.find('[data-test="delete-platform-model-1"]').element as HTMLButtonElement).disabled,
+    ).toBe(true)
+    expect(
+      (wrapper.find('[data-test="delete-platform-model-2"]').element as HTMLButtonElement).disabled,
+    ).toBe(false)
+
+    await wrapper.find('[data-test="delete-platform-model-1"]').trigger('click')
+    await flushPromises()
+    expect(confirm.require).not.toHaveBeenCalled()
+    expect(selectAdminAIPlatformModel).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('keeps an unsaved AI enable toggle when saving the model selection', async () => {
+    auth.can.mockImplementation((code) => code === PERM.ai.settings.manage)
+    vi.mocked(getAdminAISettings).mockResolvedValue(
+      settingsView({ enabled: true, platformModelId: 1, platformModelName: '模型甲' }),
+    )
+    vi.mocked(listAdminAIPlatformModels).mockResolvedValue([
+      platformModelView({ id: 1, name: '模型甲' }),
+      platformModelView({ id: 2, name: '模型乙' }),
+    ])
+    vi.mocked(selectAdminAIPlatformModel).mockResolvedValue(
+      settingsView({ enabled: true, platformModelId: 2, platformModelName: '模型乙' }),
+    )
+
+    const wrapper = await mountPage()
+
+    // Flip the AI switch and leave it unsaved.
+    wrapper.findAllComponents(ToggleSwitch)[0]!.vm.$emit('update:modelValue', false)
+    await flushPromises()
+
+    wrapper.findComponent(Select).vm.$emit('update:modelValue', 2)
+    await flushPromises()
+    await wrapper.find('[data-test="save-platform-selection"]').trigger('click')
+    await flushPromises()
+
+    expect(selectAdminAIPlatformModel).toHaveBeenCalledWith(2)
+    expect(wrapper.findAllComponents(ToggleSwitch)[0]!.props('modelValue')).toBe(false)
+    expect(wrapper.findComponent(Tag).props('value')).toBe('已关闭')
+
+    // The saved selection is persisted and only then moves the current marker.
+    const rows = wrapper.findAll('tbody tr')
+    expect(rows[0]!.text()).not.toContain('当前使用')
+    expect(rows[1]!.text()).toContain('当前使用')
+    wrapper.unmount()
+  })
+
   it('disables adding and editing platform models when the encryption key is missing', async () => {
     auth.can.mockImplementation((code) => code === PERM.ai.settings.manage)
     vi.mocked(getAdminAISettings).mockResolvedValue(
