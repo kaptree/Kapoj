@@ -887,8 +887,8 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 - 权限（RBAC-C）：`POST /problems` 需要 `problem.create`；`PUT /problems/:id` 需要 `problem.update`，修改 `isPublic`（公开/下线）额外要求 `problem.publish`（仅 `problem.update` 不能发布/下线）；`DELETE` 需要 `problem.delete`；测试点与排序需要 `problem.testcase.manage`；checker 上传需要 `problem.checker.manage`。`super_admin` 总是放行。未公开题目对无 `problem.view_hidden` 者返回 40400，与不存在一致；`contest_admin` 不因比赛管理权限看到隐藏题。
 - 创建时忽略 `isPublic`，新题一律未公开；发布需至少 1 个测试点，特判题还需已上传 checker；公开题目不能删除最后一个测试点。发布校验与删除保护都在题目行锁事务内完成，并发删除测试点不会让公开题目变成 0 个测试点。
 - **更新是整体替换**：`PUT /problems/:id` 必须提交全部可编辑字段；未提交的字符串/数组会清空，`isPublic` 缺省为 `false`（即下线）。前端编辑页会先加载完整题目再提交。题目创建/更新的 JSON 请求体上限为 4 MiB。
-- 难度为整数 1–5（入门、普及、提高、省选、NOI）。
-- 列表筛选：`keyword` 同时匹配标题与 slug（不区分大小写、按字面量匹配，`%`/`_` 不作通配符）；`tag` 精确匹配整个标签；`difficulty` 精确匹配；`includeHidden` 需要 `problem.view_hidden` 权限（需携带 bearer token）。
+- 难度为整数 **1–100**（`1–20` 入门、`21–40` 普及、`41–60` 提高、`61–80` 省选、`81–100` NOI），存储、API、筛选、题包与前端显示统一使用精确分；旧数据 1–5 迁移为 10/30/50/70/90。详见下方「题目难度 1–100、平台 AI 模型与定时任务」。
+- 列表筛选：`keyword` 同时匹配标题与 slug（不区分大小写、按字面量匹配，`%`/`_` 不作通配符）；`tag` 精确匹配整个标签；`difficulty` 精确匹配（兼容旧链接）；`difficultyMin`/`difficultyMax` 为 1–100 范围筛选；`includeHidden` 需要 `problem.view_hidden` 权限（需携带 bearer token）。
 - 题解可见性：`solutionMd`、`solutionCode`、`checkerUploaded`、`createdBy` 返回给拥有题目管理权限（`problem.update`/`problem.delete`/`problem.publish`/`problem.testcase.manage`/`problem.checker.manage` 任一）的用户，或本人已在该题有 `accepted` 提交的普通用户；`problem.view_hidden` 只放开题面，不放开题解；`hintMd` 对所有人生效。
 - 交互题允许创建与存储，M1 不参与评测；提交时的拒绝逻辑在 M1-B。
 - 前端使用 md-editor-v3 编辑与渲染 Markdown，渲染结果统一经 `sanitize-html` 净化；KaTeX 与 highlight.js 使用本地实例，不加载 CDN 资源。
@@ -914,6 +914,17 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 - 测试数据在线编辑：新增 `GET/PUT /problems/:id/testcases/:tid/content` 与 `POST /problems/:id/testcases/online`；单文件上限 2 MiB，允许空输入/输出；更新先写新文件，DB 成功后删除旧文件。
 - 批量上传：`POST /problems/:id/testcases/batch`（multipart `files`，1–100 对）按 basename 配对 `.in` + `.out`/`.ans`，同名 `.out` 优先；任意一对不完整则整批失败并清理文件。
 - 导入：`POST /problems/import/hydro` 支持 `.in/.ans`、同名 `.out` 优先、`conflictPolicy=ask|skip|overwrite`、`overwriteSlugs`/`skipSlugs`；覆盖保留数字 ID/创建者/提交统计，替换题面与测试数据并强制下线；无权限覆盖他人题目返回 failed。
+
+**实现状态（题目难度 1–100、平台 AI 模型与定时任务，2026-11-18）**
+
+- 数据模型：`problems` 增加 `difficulty`（1–100，默认 50）、`difficulty_prior`、`difficulty_prior_source`（`ai/default/migrated/manual/import`）、`difficulty_auto`（默认 true）、`difficulty_source`（`ai/default/pass_rate/manual/migrated/import`）、`difficulty_reason`、`difficulty_updated_at`；新增 `problem_difficulty_history`（旧分/新分/先验/来源/样本/通过率/目标分/置信度/运行 ID/操作者）。迁移把旧 1–5 映射为 10/30/50/70/90；`source=HydroOJ` 且旧值为 1 的题目映射为 50（Hydro 的 1 只是默认值）。
+- 展示与筛选：五档颜色保留，标签显示精确分（如 `62 · 提高`）；题库支持 `difficultyMin`/`difficultyMax` 范围筛选；旧 `?difficulty=3` 仍按精确 3 筛选，不做档位映射。
+- 创建/编辑：`POST/PUT /api/problems` 接收 `difficulty`（1–100）与可选 `difficultyAuto`。创建时缺省自动：AI 可用则同步初评，否则回退 `default_score`（默认 50）；`difficultyAuto=false` 直接采用人工分值并锁定。编辑时未提交 `difficultyAuto` 表示分值不变保留原状态、分值变化视为人工锁定。自动题每天可被任务调整，锁定题不扫描、不写历史。
+- 公式：`p0 = 1 - (prior-1)/99`、`p_hat = (a + m*p0)/(n + m)`、`target = 1 + 99*(1-p_hat)^gamma`，四舍五入并 clamp 到 1–100；`n`/`a` 为统计窗口内去重终端用户数/其中 AC 用户数，`m=prior_strength`（默认 10）、`gamma` 默认 1.5（可调 1.0–3.0）、`min_sample` 默认 10、每日 `max_step` 默认 5、窗口默认 365 天、默认排除比赛提交。一键立即重算直接移动到目标分。
+- AI：新增平台级 `ai_platform_models`（显示名、OpenAI 兼容 `baseUrl`、模型名、AES-256-GCM 加密 token、启停、连通性测试），`ai_settings.platform_model_id` 记录当前选择；只服务系统任务，不影响用户自带 key 的 AI 功能。密钥轮换重加密平台 token；重置清空 token 与选择但保留模型元数据。
+- 定时任务：新增 `scheduled_jobs`/`scheduled_job_runs` 与 Asynq `jobs` 队列；本期注册 `problem.difficulty.recalculate`（默认 `0 3 * * *`、`Asia/Shanghai`、启用），支持启停、cron/时区、立即执行、运行历史与进度；同一 job 同时最多一个 `queued/running` run，启动时清理超时 run。
+- API：`POST /api/problems/:id/difficulty/assess`（`problem.update`，AI 重评，不改 `difficultyAuto`）、`GET /api/problems/:id/difficulty/history`（`problem.update`）、`GET/PUT /api/admin/difficulty/settings`、`GET/PUT /api/admin/jobs/:key`、`POST /api/admin/jobs/:key/run`、`GET /api/admin/jobs/:key/runs`、`GET /api/admin/job-runs[/:id]`（均需 `system.jobs.manage`）、`GET/POST/PUT/DELETE /api/admin/ai/models[/:id]`、`POST /api/admin/ai/models/:id/test`、`PUT /api/admin/ai/platform-model`（均需 `ai.settings.manage`）。OpenAPI 与 `apps/web/src/api/schema.d.ts` 已同步。
+- 题包与 Hydro：kapOJ 导出同时写 legacy `difficulty`（1–5 档位）与 `difficultyScore`（1–100）、`difficultyScale="1-100"`；导入优先精确分，旧包按 1–5 映射；Hydro 导入默认 50、`prior_source=default`、`source=import`、自动，并按题写 `source=import` 历史。详见 §7 与 `docs/题库批量管理与题包.md`。
 
 **Codex 提示词（题库与题目）**
 
@@ -1829,6 +1840,28 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 
 ---
 
+### 6.8 平台 AI 模型、难度设置与定时任务（2026-11-18）
+
+**平台 AI 模型**（`/admin/ai/models`，需 `ai.settings.manage`）
+
+- `GET/POST /api/admin/ai/models`、`PUT/DELETE /api/admin/ai/models/:id`、`POST /api/admin/ai/models/:id/test`、`PUT /api/admin/ai/platform-model`。字段：`name`（唯一显示名）、`baseUrl`（OpenAI 兼容接口，到 `/v1` 为止）、`modelName`、`apiKey`、`enabled`。列表/详情只返回 `apiKeyMasked`，不返回明文或密文。
+- 首次新增必须提供 token；更新时 `apiKey` 为空表示保留原密文。连通性测试向 `{baseUrl}/chat/completions` 发一次轻量请求，记录 `lastTestAt/lastTestOk/lastTestError/lastTestLatencyMs`；上游失败仍返回 200 + `{ok:false}`，只有缺密钥（40002）或模型不存在（40400）返回错误。当前选中的模型不能删除；`platformModelId=null` 取消选择；未启用模型不能选择。
+- AI 初评只在平台 AI 已启用、密钥已配置、已选择启用模型且 `difficulty_settings.ai_assess_enabled=true` 时调用；失败/超时回退 `default_score`，不阻塞创建。显式重评失败不改题目，成功也不改变 `difficultyAuto`。
+- 密钥轮换会同步重加密 `ai_platform_models` 的 token；`POST /api/admin/ai/key/reset` 清空平台 token 并取消选择，保留模型元数据。未配置密钥时平台模型接口返回 40002。
+
+**难度设置**（`GET/PUT /api/admin/difficulty/settings`，需 `system.jobs.manage`）
+
+- 单例 `difficulty_settings` 字段：`enabled`、`defaultScore`（默认 50，1–100）、`minSample`（默认 10）、`priorStrength`（默认 10）、`maxStep`（默认 5）、`windowDays`（默认 365，0 表示全部历史）、`includeContest`（默认 false）、`curveGamma`（默认 1.5，1.0–3.0）、`aiAssessEnabled`、`aiTimeoutSeconds`（默认 15）、`updatedAt`。首次读取懒创建默认行；PUT 为整体更新，校验失败返回 40001，并与审计在同一事务提交。
+
+**通用定时任务**（需 `system.jobs.manage`）
+
+- 表：`scheduled_jobs`（key/name/description/cron/timezone/enabled/next_run_at/last_run_at/last_status/last_error/updated_by）与 `scheduled_job_runs`（job_key/trigger=schedule|manual/status=queued|running|succeeded|failed|canceled/progress/stats/error/created_by/时间）。部分唯一索引保证同一 job 最多一个活跃 run。
+- 调度器按 `next_run_at` 到期认领并发到 Asynq `jobs` 队列；启动时执行 `Ensure`、`RunScheduler` 和 `ReconcileStale(2h)` 清理陈旧 run。handler 在 Go 代码中注册，本期只有 `problem.difficulty.recalculate`；后续 `user.rating.recalculate` 可复用同一套表、调度与页面。
+- 接口：`GET /api/admin/jobs`、`PUT /api/admin/jobs/:key`、`POST /api/admin/jobs/:key/run`（202 + run；已有活跃 run 或难度重算被关闭返回 40001/409）、`GET /api/admin/jobs/:key/runs`、`GET /api/admin/job-runs`、`GET /api/admin/job-runs/:id`。前端 `/admin/jobs` 展示任务卡片、开关、cron/时区编辑、立即执行、运行历史与进度轮询；非 `system.jobs.manage` 不可见。
+- 难度重算任务只扫描 `difficulty_auto=true` 的题目；`difficulty_settings.enabled=false` 时拒绝执行。每日按 `max_step` 逼近目标分，失败可重试；历史 `source=pass_rate`、`run_id` 指向当次 run，只有分数实际变化才写。
+
+---
+
 ## 7. 题目导入功能
 
 **功能需求**
@@ -1854,11 +1887,12 @@ problem/
 
 - 接口：`POST /api/problems/import/hydro`（multipart，字段 `file`），需登录且拥有 `problem.create`；路由 body 上限 210 MiB（200 MiB 文件 + multipart 开销）。
 - 格式与映射：zip 内每个含 `problem.yaml` 的目录视为一道题；`problem.yaml` 只取 `title`（trim 后 1–100 字符）与 `tag`（字符串数组，走 `normalizeTags`）；`problem_zh.md`（缺失/为空回退 `problem.md`）整体作为 `statement_md`（≤100,000 字符，不拆分 input/output/samples）；`testdata/` 下同名 `.in`/`.out` 成对映射为测试数据（score=10，按文件名数字优先再字典序排序）；slug=`hydro-` + 文件夹名净化（小写、非 `[a-z0-9-]` 替换为 `-`、去首尾 `-`，需满足 2–63 位 slug 规则）。`gen.py`/`std.cpp`/`additional_file/` 等非测试数据忽略，不执行题包内脚本。
-- 默认值：导入题目 `is_public=false`（下线）、`created_by`=上传者、`source='HydroOJ'`、`type='traditional'`、`difficulty=1`、`time_limit_ms=1000`、`memory_limit_mb=256`。
+- 默认值：导入题目 `is_public=false`（下线）、`created_by`=上传者、`source='HydroOJ'`、`type='traditional'`、`difficulty=50`（HydroOJ 不提供可评估难度，`problem.yaml` 的 difficulty 仍不解析）、`difficulty_prior=50`、`difficulty_prior_source='default'`、`difficulty_source='import'`、`difficulty_auto=true`，并写一条 `problem_difficulty_history(source='import', old_score=0/覆盖前分数, created_by=导入者)`；时间/内存默认 1000ms/256MB。
 - 限制：题包文件 ≤200 MiB、解压总量 ≤1 GiB、条目 ≤5000、题目文件夹 ≤100、单题测试点 ≤500、单个测试文件 ≤16 MiB、单题测试数据 ≤200 MiB、`problem.yaml` ≤1 MiB、题面 ≤100,000 字符。防 zip slip：拒绝绝对路径、反斜杠、`.`/`..` 路径段、符号链接、加密条目、非常规文件，忽略 `__MACOSX/` 与隐藏文件；实际解压字节按读取计数校验，防止伪造 `UncompressedSize64`。整包损坏/加密/无题目文件夹/超限返回 40001，body 超 210 MiB 由中间件返回 413。
 - 部分成功：题包可解析且至少发现一个题目文件夹时返回 200，`imported`/`failed` 逐题结果；slug 冲突（`题目标识已存在：hydro-xxxx`）、缺文件、非法 slug、测试数据不配对等单题失败进入 `failed`，不阻断其他题；若整包级错误（如实际解压超限）发生在已导入部分题目之后，回滚本次已导入题目及其测试文件再返回 40001，不残留部分数据。每个成功题目 best-effort 写 `problem.create` 审计。
 - 作者摘要：`GET /problems/:id` 公开返回可选 `author {id, username, nickname}`（所有能看到该题的用户，不含 email）；`created_by <= 0` 或用户不存在时省略 author；仅 GET 详情填充，POST/PUT 可省略。
 - Phase B（2026-11-14）：测试数据支持 `.in/.ans` 与 `.in/.out`，同名 `.out` 优先并写入 `warnings`；导入新增 `conflictPolicy=ask|skip|overwrite`、`overwriteSlugs`、`skipSlugs`。`ask` 有冲突时只返回 `conflicts` 不写库；`overwrite` 保留数字 ID、创建者、提交记录与统计，替换题面/测试数据并强制下线；无权限覆盖他人题目进入 `failed`。导入结果增加 `conflicts/skipped/warnings` 与 `imported[].overwritten`。
+- 难度兼容（2026-11-18）：kapOJ 题包导出同时写 legacy `difficulty`（1–20→1、21–40→2、41–60→3、61–80→4、81–100→5）、`difficultyScore`（1–100）与 `difficultyScale="1-100"`；旧版本应用只读 `difficulty`，可继续导入但精度降为档位。新版本优先 `difficultyScore`，无该字段时把旧 `difficulty` 映射为 10/30/50/70/90；未知 `difficultyScale` 或越界分值返回 40001。题包新建/覆盖均按 `source=import`、`prior_source=import`、`auto=true` 写难度元数据与每题一条历史（覆盖时 `old_score` 为覆盖前分数，`created_by` 为导入者）。
 
 **Codex 提示词（题目导入）**
 

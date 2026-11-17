@@ -8,13 +8,13 @@
 
 | 分组 | 能力概览 | 详见 |
 |------|---------|------|
-| 核心评测 | 题库（传统题/客观题/special judge）、CodeMirror 提交页、独立评测进程（Docker 沙盒，C/C++/Python3/Java/Go）、比赛（Rated/练习、公告、榜单）、测评记录与统计 | [`DEVELOPMENT.md` §4.2–4.4、§4.6](DEVELOPMENT.md)、[运行手册 §8](运行手册.md#8-日常操作) |
+| 核心评测 | 题库（传统题/客观题/special judge，难度 1–100 五档着色）、CodeMirror 提交页、独立评测进程（Docker 沙盒，C/C++/Python3/Java/Go）、比赛（Rated/练习、公告、榜单）、测评记录与统计 | [`DEVELOPMENT.md` §4.3–4.4、§4.6](DEVELOPMENT.md)、[运行手册 §8](运行手册.md#8-日常操作) |
 | 账号与安全 | 注册/登录、邮箱验证与密码找回（支持 QQ/腾讯云/阿里云 SMTP）、修改密码、活跃会话管理（单设备/其他/全部退出） | [`DEVELOPMENT.md` §4.1](DEVELOPMENT.md)、[运行手册 §5.3](运行手册.md#53-邮件服务配置qq--腾讯云--阿里云) |
 | 权限与管理后台 | 37 个权限码、7 个内置角色、实时权限校验、审计日志；仪表盘/用户/角色/审计/内容管理页面，legacy role 仅展示不再授权 | [`DEVELOPMENT.md` §4.7](DEVELOPMENT.md)、[运行手册 §7](运行手册.md#7-创建管理员账号与-rbac-权限) |
 | 游戏化与排行 | 金币流水、成就、任务、徽章/称号商店与装备、每日签到；排行榜四榜（Rating 天梯含 8 级颜色、月度衰减、赛季重置）、活跃度榜、共享榜、富豪榜与自动签到 | [`DEVELOPMENT.md` §5](DEVELOPMENT.md)、[运行手册 §8](运行手册.md#8-日常操作) |
 | 学习路线 | 官方/自定义路线树（算法之树可视化）、服务端进度计算与完成锁存、付费路线（金币购买、参与统计）、题目下线守卫 | [`DEVELOPMENT.md` §4.5](DEVELOPMENT.md)、[运行手册 §8](运行手册.md#8-日常操作) |
 | 社交互动 | 题解论坛（发帖/回复）、点赞、关注、站内通知铃铛；互动接入活跃度与共享分 | [`DEVELOPMENT.md` §4.8](DEVELOPMENT.md)、[运行手册 §8](运行手册.md#8-日常操作) |
-| AI 辅助 | 多 provider（deepseek/openai/qwen/glm）用户自带 key（AES-256-GCM 加密存储）、代码补全/格式化/优化、题目提示全局缓存、AI 出题造数据（judge 沙盒生成）、管理开关与密钥轮换 | [`DEVELOPMENT.md` §6](DEVELOPMENT.md)、[运行手册 §8](运行手册.md#8-日常操作) |
+| AI 辅助 | 多 provider（deepseek/openai/qwen/glm）用户自带 key（AES-256-GCM 加密存储）、代码补全/格式化/优化、题目提示全局缓存、AI 出题造数据（judge 沙盒生成）、管理开关与密钥轮换；平台级 AI 模型（自定义地址/token/模型、连通性测试、默认选择）用于题目难度初评与每日按通过率重算（通用定时任务 `system.jobs.manage`） | [`DEVELOPMENT.md` §6、§6.8](DEVELOPMENT.md)、[运行手册 §8](运行手册.md#8-日常操作) |
 | 内容运营 | 题目导入（HydroOJ 题包，防路径穿越、部分成功回滚）、题目详情资源（官方题解付费解锁/讨论区/统计/关联比赛）、证书认证（图片审核+公开验证码核验）、头像上传、账号安全设置页、站点管理（Logo/首页/页脚/访问统计）、平台与账号级备份/恢复 | [`DEVELOPMENT.md` §5.6、§7](DEVELOPMENT.md)、[运行手册 §8](运行手册.md#8-日常操作)、[docs/数据备份与恢复.md](docs/数据备份与恢复.md) |
 
 > 各功能的完整接口清单与规则以 DEVELOPMENT.md 对应章节为准；本表仅作索引入口。
