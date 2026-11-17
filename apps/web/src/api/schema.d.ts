@@ -11855,6 +11855,8 @@ export interface components {
             publicProfile: boolean;
             /** @description 相伴天数，创建当天记为第 1 天 */
             daysTogether: number;
+            /** @description 最常触发的事件类型（signin/ac_first/ac_daily/task/achievement/contest/pet/streak）；无事件时省略 */
+            favoriteEventType?: string;
         };
         UserCompanionResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["UserCompanion"];

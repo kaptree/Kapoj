@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
 import type { UserCompanion } from '@/api/types'
+import { pickCompanionLine } from '@/content/companion/lines.zh-CN'
 import CompanionAvatar from './CompanionAvatar.vue'
 import CompanionProfileCard from './CompanionProfileCard.vue'
 
@@ -46,6 +47,7 @@ describe('CompanionProfileCard', () => {
     const avatar = wrapper.getComponent(CompanionAvatar)
     expect(avatar.props('pose')).toBe('bust')
     expect(avatar.props('size')).toBe('md')
+    expect(avatar.props('alt')).toBe('')
 
     const bar = wrapper.get('[role="progressbar"]')
     expect(bar.attributes('aria-valuenow')).toBe('120')
@@ -59,6 +61,23 @@ describe('CompanionProfileCard', () => {
     const wrapper = mountCard({ unlockedSkins: [] })
 
     expect(wrapper.text()).toContain('还没有换装')
+  })
+
+  it('renders the most frequent event as a quote', () => {
+    const wrapper = mountCard({ favoriteEventType: 'ac_first' })
+    const expected = pickCompanionLine('ac', '7:ac_first')
+
+    expect(wrapper.get('.companion-profile-card__quote').text()).toContain(expected)
+  })
+
+  it('shows a max-level label instead of an overshooting fraction', () => {
+    const wrapper = mountCard({ level: 6, bond: 400, nextThreshold: 380 })
+
+    expect(wrapper.text()).toContain('已满级')
+    expect(wrapper.text()).not.toContain('400 / 380')
+    const bar = wrapper.get('[role="progressbar"]')
+    expect(bar.attributes('aria-valuenow')).toBe('380')
+    expect(bar.attributes('aria-valuemax')).toBe('380')
   })
 
   it('shows the private hint and appearance link only on your own hidden profile', () => {

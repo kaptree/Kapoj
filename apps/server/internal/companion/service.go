@@ -113,16 +113,20 @@ func (s *Service) PublicState(ctx context.Context, userID, viewerID int64) (*Pub
 	if skins == nil {
 		skins = []string{}
 	}
+	// The favorite quote is a nice-to-have; a stats failure must not hide the
+	// profile card.
+	favorite, _ := s.repo.MostFrequentEventType(ctx, userID)
 	return &PublicStateView{
-		UserID:        st.UserID,
-		Bond:          st.Bond,
-		Level:         lvl.Level,
-		LevelName:     lvl.Name,
-		NextThreshold: lvl.Next,
-		EquippedSkin:  st.EquippedSkin,
-		UnlockedSkins: skins,
-		PublicProfile: st.PublicProfile,
-		DaysTogether:  daysTogether(st.CreatedAt, time.Now()),
+		UserID:            st.UserID,
+		Bond:              st.Bond,
+		Level:             lvl.Level,
+		LevelName:         lvl.Name,
+		NextThreshold:     lvl.Next,
+		EquippedSkin:      st.EquippedSkin,
+		UnlockedSkins:     skins,
+		PublicProfile:     st.PublicProfile,
+		DaysTogether:      daysTogether(st.CreatedAt, time.Now()),
+		FavoriteEventType: favorite,
 	}, nil
 }
 

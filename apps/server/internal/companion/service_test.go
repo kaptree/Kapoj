@@ -465,6 +465,7 @@ func TestPublicStatePrivacy(t *testing.T) {
 	assert.Equal(t, "culture-festival", view.EquippedSkin)
 	assert.Equal(t, []string{"culture-festival"}, view.UnlockedSkins)
 	assert.False(t, view.PublicProfile)
+	assert.Equal(t, "boost", view.FavoriteEventType)
 
 	// Publishing the profile exposes the same summary to guests and others.
 	require.NoError(t, g.Model(&companion.State{}).Where("user_id = ?", uid).

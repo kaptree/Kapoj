@@ -71,15 +71,16 @@ type StateView struct {
 // profile. It intentionally omits settings and event details that belong to the
 // owner-only state view.
 type PublicStateView struct {
-	UserID        int64    `json:"userId"`
-	Bond          int      `json:"bond"`
-	Level         int      `json:"level"`
-	LevelName     string   `json:"levelName"`
-	NextThreshold int      `json:"nextThreshold"`
-	EquippedSkin  string   `json:"equippedSkin"`
-	UnlockedSkins []string `json:"unlockedSkins"`
-	PublicProfile bool     `json:"publicProfile"`
-	DaysTogether  int      `json:"daysTogether"`
+	UserID            int64    `json:"userId"`
+	Bond              int      `json:"bond"`
+	Level             int      `json:"level"`
+	LevelName         string   `json:"levelName"`
+	NextThreshold     int      `json:"nextThreshold"`
+	EquippedSkin      string   `json:"equippedSkin"`
+	UnlockedSkins     []string `json:"unlockedSkins"`
+	PublicProfile     bool     `json:"publicProfile"`
+	DaysTogether      int      `json:"daysTogether"`
+	FavoriteEventType string   `json:"favoriteEventType,omitempty"`
 }
 
 // EventView is the read model for one companion event.

@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import type { UserCompanion } from '@/api/types'
+import { pickCompanionLine, type CompanionLineKey } from '@/content/companion/lines.zh-CN'
 import CompanionAvatar from './CompanionAvatar.vue'
 
 const props = defineProps<{
@@ -23,6 +24,31 @@ const maxThreshold = computed(() => Math.max(0, props.state?.nextThreshold ?? 0)
 const showPrivateHint = computed(() =>
   Boolean(props.state && props.isSelf && !props.state.publicProfile),
 )
+const isMaxLevel = computed(() => props.state?.level === 6)
+
+const FAVORITE_LINE_KEYS: Record<string, CompanionLineKey> = {
+  signin: 'signin',
+  ac_first: 'ac',
+  ac_daily: 'ac',
+  task: 'note.tasks',
+  achievement: 'note.achievements',
+  contest: 'note.contest',
+  pet: 'greeting',
+  streak: 'greeting',
+}
+
+/** The most-triggered event type becomes one deterministic quote. */
+const favoriteLine = computed(() => {
+  const state = props.state
+  if (!state?.favoriteEventType) return ''
+  const key = FAVORITE_LINE_KEYS[state.favoriteEventType] ?? 'greeting'
+  return pickCompanionLine(key, `${state.userId}:${state.favoriteEventType}`)
+})
+
+const bondValue = computed(() => {
+  if (!props.state) return 0
+  return isMaxLevel.value ? maxThreshold.value : props.state.bond
+})
 </script>
 
 <template>
@@ -33,7 +59,7 @@ const showPrivateHint = computed(() =>
     aria-labelledby="companion-profile-name"
   >
     <div class="companion-profile-card__portrait">
-      <CompanionAvatar pose="bust" size="md" :alt="`${name} 的伙伴头像`" />
+      <CompanionAvatar pose="bust" size="md" alt="" />
     </div>
 
     <div class="companion-profile-card__body">
@@ -48,7 +74,12 @@ const showPrivateHint = computed(() =>
 
       <div class="companion-profile-card__bond">
         <p class="companion-profile-card__bond-text">
-          <span class="num">{{ state.bond }}</span> / {{ state.nextThreshold }}
+          <template v-if="isMaxLevel">
+            <span class="num">{{ state.bond }}</span> · 已满级
+          </template>
+          <template v-else>
+            <span class="num">{{ state.bond }}</span> / {{ state.nextThreshold }}
+          </template>
         </p>
         <div
           class="companion-profile-card__track"
@@ -56,13 +87,15 @@ const showPrivateHint = computed(() =>
           :aria-label="`与${name}的羁绊`"
           aria-valuemin="0"
           :aria-valuemax="maxThreshold"
-          :aria-valuenow="state.bond"
+          :aria-valuenow="bondValue"
         >
           <span class="companion-profile-card__fill" :style="{ width: `${fillPercent}%` }" />
         </div>
       </div>
 
       <p class="companion-profile-card__days">相伴 {{ state.daysTogether }} 天</p>
+
+      <p v-if="favoriteLine" class="companion-profile-card__quote">「{{ favoriteLine }}」</p>
 
       <div class="companion-profile-card__skins">
         <span class="companion-profile-card__skins-label">换装</span>
@@ -192,6 +225,13 @@ const showPrivateHint = computed(() =>
 .companion-profile-card__days {
   margin: 0;
   color: var(--kapoj-text-muted);
+  font-size: 12px;
+}
+
+.companion-profile-card__quote {
+  flex-basis: 100%;
+  margin: 2px 0 0;
+  color: var(--kapoj-text-secondary);
   font-size: 12px;
 }
 

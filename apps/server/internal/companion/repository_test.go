@@ -532,6 +532,31 @@ func TestGetStateMissingDoesNotCreate(t *testing.T) {
 	assert.Zero(t, count, "GetState must not create the state row")
 }
 
+func TestMostFrequentEventType(t *testing.T) {
+	g := testutil.PG(t)
+	repo := companion.NewGormRepository(g)
+	ctx := context.Background()
+	uid := newUser(t, g, "favorite_event")
+
+	got, err := repo.MostFrequentEventType(ctx, uid)
+	require.NoError(t, err)
+	assert.Empty(t, got)
+
+	for _, in := range []companion.EventInput{
+		{UserID: uid, Key: "fav:ac:1", Type: "ac_first", Bond: 1, EventDate: "2026-11-17", Payload: map[string]any{}},
+		{UserID: uid, Key: "fav:ac:2", Type: "ac_first", Bond: 1, EventDate: "2026-11-17", Payload: map[string]any{}},
+		{UserID: uid, Key: "fav:signin", Type: "signin", Bond: 3, EventDate: "2026-11-17", Payload: map[string]any{}},
+	} {
+		_, created, err := repo.ApplyEvent(ctx, in)
+		require.NoError(t, err)
+		require.True(t, created)
+	}
+
+	got, err = repo.MostFrequentEventType(ctx, uid)
+	require.NoError(t, err)
+	assert.Equal(t, "ac_first", got)
+}
+
 // GetState returns an existing state row unchanged.
 func TestGetStateReturnsExisting(t *testing.T) {
 	g := testutil.PG(t)

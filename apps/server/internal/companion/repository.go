@@ -61,6 +61,24 @@ func (r *Repository) GetState(ctx context.Context, userID int64) (*State, error)
 	return &st, nil
 }
 
+// MostFrequentEventType returns the event type this user triggers most often.
+// Ties resolve by type name so the profile quote is stable. An empty string
+// means the user has no events yet.
+func (r *Repository) MostFrequentEventType(ctx context.Context, userID int64) (string, error) {
+	var eventType string
+	err := r.db.WithContext(ctx).Model(&Event{}).
+		Select("type").
+		Where("user_id = ?", userID).
+		Group("type").
+		Order("COUNT(*) DESC, type ASC").
+		Limit(1).
+		Scan(&eventType).Error
+	if err != nil {
+		return "", err
+	}
+	return eventType, nil
+}
+
 // UpdateSettings persists the user-editable settings and returns the resulting
 // state. It ensures the state row exists first, so a fresh user can save
 // settings before any event has fired.
