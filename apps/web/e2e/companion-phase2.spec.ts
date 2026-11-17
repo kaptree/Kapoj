@@ -1,4 +1,11 @@
-import { expect, test, type APIRequestContext, type APIResponse, type Page } from '@playwright/test'
+import {
+  expect,
+  test,
+  type APIRequestContext,
+  type APIResponse,
+  type Locator,
+  type Page,
+} from '@playwright/test'
 
 const apiURL = process.env.E2E_API_URL ?? 'http://127.0.0.1:18080'
 const limitedUser = process.env.E2E_LIMITED_USER ?? 'm2bsolver1'
@@ -14,6 +21,18 @@ async function login(page: Page, account: string, password: string) {
   await page.getByLabel('密码').fill(password)
   await page.getByRole('button', { name: '登录' }).click()
   await expect(page).toHaveURL('/')
+}
+
+/** Wait for the settings PATCH before reloading; otherwise reload cancels it. */
+async function chooseActivity(page: Page, control: Locator): Promise<void> {
+  const saved = page.waitForResponse(
+    (res) =>
+      res.url().includes('/api/companion/settings') &&
+      res.request().method() === 'POST' &&
+      res.ok(),
+  )
+  await control.click()
+  await saved
 }
 
 async function apiData<T>(res: APIResponse): Promise<T> {
@@ -106,10 +125,10 @@ test.describe('companion phase 2', () => {
     try {
       // Self-healing baseline: clears quiet left behind by an interrupted run,
       // so this test never depends on the previous run's final state.
-      await normal.click()
+      await chooseActivity(page, normal)
       await expect(normal).toHaveAttribute('aria-pressed', 'true')
 
-      await quiet.click()
+      await chooseActivity(page, quiet)
       await expect(quiet).toHaveAttribute('aria-pressed', 'true')
 
       await page.reload()
@@ -119,7 +138,7 @@ test.describe('companion phase 2', () => {
       // Always leave the shared test account on normal, even when an assertion
       // above fails. Keep this best-effort so it cannot mask the real failure.
       try {
-        await normal.click({ timeout: 2_000 })
+        await chooseActivity(page, normal)
         await expect(normal).toHaveAttribute('aria-pressed', 'true', { timeout: 2_000 })
       } catch {
         // The page may already be closing or navigating; nothing to restore.

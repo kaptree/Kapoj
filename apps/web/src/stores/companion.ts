@@ -171,7 +171,7 @@ export const useCompanionStore = defineStore('companion', () => {
   }
 
   function setEnabled(value: boolean): void {
-    enabled.value = value
+    enabled.value = allowUserDisable.value ? value : true
     persistPrefs()
   }
 
@@ -257,7 +257,8 @@ export const useCompanionStore = defineStore('companion', () => {
       prefsChanged = true
     }
     if (typeof state.dockEnabled === 'boolean') {
-      enabled.value = state.dockEnabled
+      // An admin who forbids user control wins over a stale server opt-out.
+      enabled.value = allowUserDisable.value ? state.dockEnabled : true
       prefsChanged = true
     }
     if (prefsChanged) persistPrefs()

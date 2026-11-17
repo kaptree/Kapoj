@@ -284,6 +284,20 @@ describe('companion store', () => {
     })
   })
 
+  it('keeps the companion on when user-disable is forbidden, even on sync', () => {
+    const store = useCompanionStore()
+    store.applyGlobalConfig(siteSettings({ allowUserDisable: false }))
+
+    store.applyRemoteState(remoteState({ dockEnabled: false }))
+    expect(store.enabled).toBe(true)
+
+    store.setEnabled(false)
+    expect(store.enabled).toBe(true)
+    expect(JSON.parse(localStorage.getItem(COMPANION_PREFS_KEY)!)).toMatchObject({
+      enabled: true,
+    })
+  })
+
   it('defaults missing global config fields to Kapo, muted and user-disable allowed', () => {
     const store = useCompanionStore()
     store.applyGlobalConfig(null)
