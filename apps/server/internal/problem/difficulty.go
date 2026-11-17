@@ -8,12 +8,19 @@ import (
 
 // Values of problems.difficulty_source.
 const (
+	DifficultySourceDefault   = "default"
+	DifficultySourceAI        = "ai"
+	DifficultySourcePassRate  = "pass_rate"
+	DifficultySourceManual    = "manual"
+	DifficultySourceMigration = "migration"
+	DifficultySourceImport    = "import"
+)
+
+// Values of problem_difficulty_history.source. They distinguish the first AI
+// assessment from a later admin-triggered reassessment.
+const (
 	DifficultySourceAIInitial  = "ai_initial"
 	DifficultySourceAIReassess = "ai_reassess"
-	DifficultySourcePassRate   = "pass_rate"
-	DifficultySourceManual     = "manual"
-	DifficultySourceMigration  = "migration"
-	DifficultySourceImport     = "import"
 )
 
 // Values of problems.difficulty_prior_source.

@@ -24,6 +24,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/config"
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/contestapi"
+	"github.com/kaptree/kapoj/apps/server/internal/difficulty"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/gamificationapi"
 	"github.com/kaptree/kapoj/apps/server/internal/health"
@@ -79,6 +80,12 @@ type Deps struct {
 	Backup      *backup.Service
 	Similarity  *similarity.Service
 	Companion   *companion.Service
+	// Difficulty wires the difficulty settings service into the problem API.
+	// DifficultyAI/AISettings are seams for the platform assessor and the AI
+	// feature toggle; production wiring lands in Task 11.
+	Difficulty           *difficulty.SettingsService
+	DifficultyAI         problemapi.DifficultyAssessor
+	DifficultyAISettings problemapi.AISettings
 }
 
 func New(d Deps) *gin.Engine {
@@ -214,6 +221,9 @@ func New(d Deps) *gin.Engine {
 		Discussions: problem.NewDiscussionService(d.DB, problemRepo),
 		Social:      socialSvc,
 		TestcaseGen: d.TestcaseGen,
+		Difficulty:  d.Difficulty,
+		AI:          d.DifficultyAI,
+		AISettings:  d.DifficultyAISettings,
 	}
 	if d.Game != nil {
 		problemOpts.IdentityLookup = d.Game

@@ -28,6 +28,8 @@ type Filter struct {
 	Keyword       string
 	Tag           string
 	Difficulty    int
+	DifficultyMin int
+	DifficultyMax int
 	IncludeHidden bool
 	IncludeLocked bool
 	OwnerID       int64
@@ -211,6 +213,12 @@ func (r *gormRepository) List(ctx context.Context, f Filter, offset, limit int) 
 	}
 	if f.Difficulty != 0 {
 		q = q.Where("difficulty = ?", f.Difficulty)
+	}
+	if f.DifficultyMin > 0 {
+		q = q.Where("difficulty >= ?", f.DifficultyMin)
+	}
+	if f.DifficultyMax > 0 {
+		q = q.Where("difficulty <= ?", f.DifficultyMax)
 	}
 
 	var total int64

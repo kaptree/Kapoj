@@ -49,6 +49,8 @@ type ListQuery struct {
 	Keyword       string
 	Tag           string
 	Difficulty    int
+	DifficultyMin int
+	DifficultyMax int
 	IncludeHidden bool
 	// OwnerID limits the result to problems created by this user. It is set
 	// by the mine scope; zero means no owner filter.
@@ -141,7 +143,13 @@ func (s *Service) CreateWithDifficulty(ctx context.Context, createdBy int64, in 
 	apply(p, in)
 	p.IsPublic = false // new problems are published through Update
 	applyDifficultyDecision(p, d)
-	if err := s.repo.CreateWithHistory(ctx, p, newDifficultyHistory(0, d)); err != nil {
+	history := newDifficultyHistory(0, d)
+	// problems.difficulty_source records "ai" for both AI paths, while the
+	// history distinguishes the initial assessment from a reassessment.
+	if history.Source == DifficultySourceAI {
+		history.Source = DifficultySourceAIInitial
+	}
+	if err := s.repo.CreateWithHistory(ctx, p, history); err != nil {
 		return nil, mapRepoErr(err)
 	}
 	return p, nil
@@ -159,6 +167,13 @@ func apply(p *Problem, in Input) {
 }
 
 func (s *Service) Update(ctx context.Context, id int64, in Input) (*Problem, error) {
+	return s.UpdateAs(ctx, id, in, 0)
+}
+
+// UpdateAs computes the same decision as Update but records actorID as the
+// history author. The HTTP layer uses it so manual difficulty changes are
+// attributable to the caller.
+func (s *Service) UpdateAs(ctx context.Context, id int64, in Input, actorID int64) (*Problem, error) {
 	in, err := in.Normalize()
 	if err != nil {
 		return nil, err
@@ -167,7 +182,9 @@ func (s *Service) Update(ctx context.Context, id int64, in Input) (*Problem, err
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	return s.update(ctx, p, in, updateDifficultyDecision(p, in))
+	d := updateDifficultyDecision(p, in)
+	d.ActorID = actorID
+	return s.update(ctx, p, in, d)
 }
 
 // updateDifficultyDecision applies the PUT /api/problems/:id difficulty rules:
@@ -273,7 +290,13 @@ func (s *Service) UpdateDifficultyMeta(ctx context.Context, id int64, d Difficul
 	}
 	oldScore := p.Difficulty
 	applyDifficultyDecision(p, d)
-	if err := s.repo.UpdateDifficultyWithHistory(ctx, p, newDifficultyHistory(oldScore, d)); err != nil {
+	history := newDifficultyHistory(oldScore, d)
+	// A successful AI reassessment keeps problems.difficulty_source="ai" but
+	// its history row records the cause explicitly.
+	if history.Source == DifficultySourceAI {
+		history.Source = DifficultySourceAIReassess
+	}
+	if err := s.repo.UpdateDifficultyWithHistory(ctx, p, history); err != nil {
 		return nil, mapRepoErr(err)
 	}
 	return p, nil
@@ -344,6 +367,7 @@ func (s *Service) List(ctx context.Context, v Viewer, q ListQuery, page, size in
 
 	items, total, err := s.repo.List(ctx, Filter{
 		Keyword: q.Keyword, Tag: q.Tag, Difficulty: q.Difficulty,
+		DifficultyMin: q.DifficultyMin, DifficultyMax: q.DifficultyMax,
 		IncludeHidden: includeHidden, OwnerID: ownerID,
 		IncludeLocked: v.CanViewLocked, Now: time.Now(),
 	}, (page-1)*size, size)

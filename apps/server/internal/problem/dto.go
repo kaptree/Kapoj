@@ -40,6 +40,16 @@ type DetailDTO struct {
 	CreatedBy          *int64    `json:"createdBy,omitempty"`
 	Answers            *[]string `json:"answers,omitempty"`
 	CanEdit            bool      `json:"canEdit"`
+
+	// Difficulty metadata is manager-only. Accepted solvers can read the
+	// solution but must never see the prior/source internals, so these fields
+	// are gated by their own includeDifficultyMeta switch.
+	DifficultyAuto        *bool      `json:"difficultyAuto,omitempty"`
+	DifficultySource      *string    `json:"difficultySource,omitempty"`
+	DifficultyPrior       *int       `json:"difficultyPrior,omitempty"`
+	DifficultyPriorSource *string    `json:"difficultyPriorSource,omitempty"`
+	DifficultyReason      *string    `json:"difficultyReason,omitempty"`
+	DifficultyUpdatedAt   *time.Time `json:"difficultyUpdatedAt,omitempty"`
 }
 
 type TestcaseDTO struct {
@@ -74,7 +84,7 @@ func ToListItem(p *Problem) ListItem {
 	}
 }
 
-func ToDetail(p *Problem, includeSolution, includeAnswer bool, author *AuthorSummary) DetailDTO {
+func ToDetail(p *Problem, includeSolution, includeAnswer, includeDifficultyMeta bool, author *AuthorSummary) DetailDTO {
 	samples := []Sample(p.Samples)
 	if samples == nil {
 		samples = []Sample{}
@@ -100,6 +110,20 @@ func ToDetail(p *Problem, includeSolution, includeAnswer bool, author *AuthorSum
 			answers = []string{}
 		}
 		d.Answers = &answers
+	}
+	if includeDifficultyMeta {
+		auto := p.DifficultyAuto
+		source := p.DifficultySource
+		prior := p.DifficultyPrior
+		priorSource := p.DifficultyPriorSource
+		reason := p.DifficultyReason
+		updatedAt := p.DifficultyUpdatedAt.UTC()
+		d.DifficultyAuto = &auto
+		d.DifficultySource = &source
+		d.DifficultyPrior = &prior
+		d.DifficultyPriorSource = &priorSource
+		d.DifficultyReason = &reason
+		d.DifficultyUpdatedAt = &updatedAt
 	}
 	return d
 }

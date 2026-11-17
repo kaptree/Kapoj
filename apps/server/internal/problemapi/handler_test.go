@@ -61,7 +61,7 @@ type fx struct {
 	nextN  int
 }
 
-func newFx(t *testing.T) *fx {
+func newFx(t *testing.T, mutators ...func(*router.Deps)) *fx {
 	t.Helper()
 	g := testutil.PG(t)
 	rbacSvc := testutil.SeedRBAC(t, g)
@@ -77,7 +77,7 @@ func newFx(t *testing.T) *fx {
 		fakeGenScripts{},
 		fakeGenEnqueuer{},
 	)
-	h := router.New(router.Deps{
+	deps := router.Deps{
 		DB:      g,
 		Redis:   rdb,
 		Storage: store,
@@ -92,7 +92,11 @@ func newFx(t *testing.T) *fx {
 		Activity:    activity.NewService(g, rdb),
 		TestcaseGen: testcaseGenSvc,
 		Game:        gamification.NewService(gamification.NewRepository(g)),
-	})
+	}
+	for _, mutate := range mutators {
+		mutate(&deps)
+	}
+	h := router.New(deps)
 	return &fx{t: t, h: h, db: g, rbac: rbacSvc, root: root, tokens: map[string]string{}}
 }
 

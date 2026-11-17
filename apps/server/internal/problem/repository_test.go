@@ -560,3 +560,35 @@ func TestDeleteMissing(t *testing.T) {
 	_, err := repo.Delete(context.Background(), 999999)
 	assert.ErrorIs(t, err, problem.ErrNotFound)
 }
+
+func TestListDifficultyRangeAndExactScore(t *testing.T) {
+	repo, _ := setup(t)
+	ctx := context.Background()
+	for _, score := range []int{10, 50, 90} {
+		p := newProblem(fmt.Sprintf("range-%d", score))
+		p.Difficulty = score
+		mustCreate(t, repo, p)
+	}
+
+	items, total, err := repo.List(ctx, problem.Filter{
+		DifficultyMin: 40, DifficultyMax: 80, IncludeHidden: true,
+	}, 0, 20)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, total)
+	require.Len(t, items, 1)
+	assert.Equal(t, 50, items[0].Difficulty)
+
+	items, total, err = repo.List(ctx, problem.Filter{
+		Difficulty: 90, IncludeHidden: true,
+	}, 0, 20)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, total)
+	require.Len(t, items, 1)
+	assert.Equal(t, 90, items[0].Difficulty)
+
+	_, total, err = repo.List(ctx, problem.Filter{
+		DifficultyMin: 95, IncludeHidden: true,
+	}, 0, 20)
+	require.NoError(t, err)
+	assert.Zero(t, total)
+}

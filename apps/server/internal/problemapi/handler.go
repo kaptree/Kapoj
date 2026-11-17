@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/kaptree/kapoj/apps/server/internal/difficulty"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
@@ -51,6 +52,12 @@ type Options struct {
 	Discussions *problem.DiscussionService
 	// Social 是社交服务，供点赞/回复/删除钩子使用（Task 2 接入）。
 	Social *social.Service
+	// Difficulty 提供难度设置（默认分、AI 开关与超时）。为 nil 时创建接口
+	// 保持旧行为（直接采用请求分值），便于分阶段接入。
+	Difficulty *difficulty.SettingsService
+	// AI 是平台 AI 难度评估器；AISettings 是 AI 总开关。
+	AI         DifficultyAssessor
+	AISettings AISettings
 	// MaxImportFileBytes overrides the uploaded HydroOJ package file limit.
 	// Zero means problem.MaxHydroZipBytes. Tests may set a small value.
 	MaxImportFileBytes int64
@@ -85,7 +92,7 @@ func RegisterRoutes(
 	if o.MaxImportUncompressedBytes > 0 {
 		problem.WithHydroUncompressedLimit(o.MaxImportUncompressedBytes)(s)
 	}
-	h := &handler{svc: s, accepted: accepted, contests: contests, rbac: o.RBAC, solutions: o.Solutions, discussions: o.Discussions, social: o.Social, identities: o.IdentityLookup, maxImportFileBytes: maxImport, testcaseGen: o.TestcaseGen}
+	h := &handler{svc: s, accepted: accepted, contests: contests, rbac: o.RBAC, solutions: o.Solutions, discussions: o.Discussions, social: o.Social, identities: o.IdentityLookup, maxImportFileBytes: maxImport, testcaseGen: o.TestcaseGen, difficulty: o.Difficulty, ai: o.AI, aiSettings: o.AISettings}
 
 	// resolver 为 nil 时 RequirePermission 会拒绝所有写操作，LoadAccess 为
 	// 空操作；生产环境 router 始终传入 RBAC service。
@@ -132,6 +139,8 @@ func RegisterRoutes(
 	problemJSON.POST("/problems", require(string(rbac.PermProblemCreate)), audit(string(rbac.PermProblemCreate)), h.create)
 	problemJSON.PUT("/problems/:id", require(string(rbac.PermProblemUpdate)), audit(string(rbac.PermProblemUpdate)), h.update)
 	api.DELETE("/problems/:id", require(string(rbac.PermProblemDelete)), audit(string(rbac.PermProblemDelete)), h.delete)
+	api.POST("/problems/:id/difficulty/assess", require(string(rbac.PermProblemUpdate)), h.assessProblemDifficulty)
+	api.GET("/problems/:id/difficulty/history", require(string(rbac.PermProblemUpdate)), h.difficultyHistory)
 
 	api.GET("/problems/:id/testcases", require(string(rbac.PermProblemTestcaseManage)), h.listTestcases)
 	api.GET("/problems/:id/testcases/:tid/content", require(string(rbac.PermProblemTestcaseManage)), h.getTestcaseContent)
@@ -171,6 +180,10 @@ type handler struct {
 
 	maxImportFileBytes int64
 	testcaseGen        *testcasegen.Service
+
+	difficulty *difficulty.SettingsService
+	ai         DifficultyAssessor
+	aiSettings AISettings
 }
 
 func viewer(c *gin.Context) problem.Viewer {
@@ -347,6 +360,26 @@ func (h *handler) list(c *gin.Context) {
 		}
 		q.Difficulty = n
 	}
+	if v := c.Query("difficultyMin"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > 100 {
+			httpx.Fail(c, httpx.ErrValidation("difficultyMin 必须是 1–100 的整数"))
+			return
+		}
+		q.DifficultyMin = n
+	}
+	if v := c.Query("difficultyMax"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > 100 {
+			httpx.Fail(c, httpx.ErrValidation("difficultyMax 必须是 1–100 的整数"))
+			return
+		}
+		q.DifficultyMax = n
+	}
+	if q.DifficultyMin > 0 && q.DifficultyMax > 0 && q.DifficultyMin > q.DifficultyMax {
+		httpx.Fail(c, httpx.ErrValidation("difficultyMin 不能大于 difficultyMax"))
+		return
+	}
 	page, size := httpx.ParsePage(c.Request.URL.RawQuery)
 	result, err := h.svc.List(c.Request.Context(), v, q, page, size)
 	if err != nil {
@@ -420,7 +453,7 @@ func (h *handler) get(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
-	d := problem.ToDetail(p, includeSolution, includeAnswer, author)
+	d := problem.ToDetail(p, includeSolution, includeAnswer, manageThis, author)
 	d.CanEdit = manageThis
 	httpx.OK(c, d)
 }
@@ -502,12 +535,22 @@ func (h *handler) create(c *gin.Context) {
 		return
 	}
 	claims, _ := middleware.CurrentClaims(c)
-	p, err := h.svc.Create(c.Request.Context(), claims.UserID, in)
+	in, err := in.Normalize()
 	if err != nil {
 		httpx.Fail(c, err)
 		return
 	}
-	d := problem.ToDetail(p, true, true, nil)
+	decision, err := h.createDifficultyDecision(c.Request.Context(), in, claims.UserID)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	p, err := h.svc.CreateWithDifficulty(c.Request.Context(), claims.UserID, in, decision)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	d := problem.ToDetail(p, true, true, true, nil)
 	d.CanEdit = true
 	httpx.Created(c, d)
 }
@@ -529,12 +572,13 @@ func (h *handler) update(c *gin.Context) {
 		httpx.Fail(c, httpx.ErrForbidden)
 		return
 	}
-	p, err := h.svc.Update(c.Request.Context(), id, in)
+	claims, _ := middleware.CurrentClaims(c)
+	p, err := h.svc.UpdateAs(c.Request.Context(), id, in, claims.UserID)
 	if err != nil {
 		httpx.Fail(c, err)
 		return
 	}
-	d := problem.ToDetail(p, true, true, nil)
+	d := problem.ToDetail(p, true, true, true, nil)
 	d.CanEdit = true
 	httpx.OK(c, d)
 }
