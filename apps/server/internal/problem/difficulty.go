@@ -69,6 +69,10 @@ type DifficultyDecision struct {
 	Reason              string
 	Confidence          float64
 	ActorID             int64
+	// forceHistory makes an update log a row even when the score is
+	// unchanged. Imports use it so each imported problem has an import entry;
+	// follow-up content updates do not.
+	forceHistory bool
 }
 
 // validateDifficultyScore enforces the 1–100 scale shared by problems and

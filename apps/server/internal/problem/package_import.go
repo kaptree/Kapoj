@@ -437,6 +437,9 @@ func readPackageManifest(archive *kapOJArchive, prefix string) (*PackageManifest
 	if manifest.Problem.SolutionPriceCoins < 0 || manifest.Problem.SolutionPriceCoins > maxSolutionPrice {
 		return nil, fmt.Errorf("官方题解价格不合法")
 	}
+	if _, err := resolvePackageDifficulty(manifest.Problem); err != nil {
+		return nil, err
+	}
 	return &manifest, nil
 }
 
@@ -450,6 +453,18 @@ type kapOJPrepared struct {
 	solutionMD   string
 	solutionCode string
 	price        int64
+}
+
+// packageImportDifficultyDecision is the difficulty metadata written for an
+// imported problem: the package score becomes both current and prior, the
+// problem stays automatic, and the importer is recorded as the actor.
+func packageImportDifficultyDecision(score int, actorID int64) DifficultyDecision {
+	return DifficultyDecision{
+		Score: score, Prior: score,
+		PriorSource: DifficultyPriorSourceImport,
+		Source:      DifficultySourceImport,
+		Auto:        true, ActorID: actorID,
+	}
 }
 
 func (s *Service) importKapOJProblem(
@@ -476,10 +491,11 @@ func (s *Service) importKapOJProblem(
 		return fail(packageErrorText(err))
 	}
 	if existing != nil {
-		return s.replaceKapOJProblem(ctx, archive, desc, existing, prepared, opt)
+		return s.replaceKapOJProblem(ctx, createdBy, archive, desc, existing, prepared, opt)
 	}
 
-	created, err := s.Create(ctx, createdBy, prepared.input)
+	created, err := s.CreateWithDifficulty(ctx, createdBy, prepared.input,
+		packageImportDifficultyDecision(prepared.input.Difficulty, createdBy))
 	if err != nil {
 		return fail(packageErrorText(err))
 	}
@@ -581,6 +597,7 @@ func (s *Service) importKapOJProblem(
 // original problem and its files untouched.
 func (s *Service) replaceKapOJProblem(
 	ctx context.Context,
+	createdBy int64,
 	archive *kapOJArchive,
 	desc *kapOJDescriptor,
 	existing *Problem,
@@ -749,7 +766,12 @@ func (s *Service) replaceKapOJProblem(
 	updated.SolutionCode = prepared.solutionCode
 	updated.SolutionPriceCoins = prepared.price
 
-	oldKeys, err := s.repo.ReplaceContent(ctx, &updated, testcases, append(attachments, images...))
+	decision := packageImportDifficultyDecision(prepared.input.Difficulty, createdBy)
+	applyDifficultyDecision(&updated, decision)
+	history := newDifficultyHistory(existing.Difficulty, decision)
+
+	oldKeys, err := s.repo.ReplaceContentWithHistory(
+		ctx, &updated, testcases, append(attachments, images...), history)
 	if err != nil {
 		cleanup()
 		return fail(packageErrorText(err))
@@ -889,12 +911,16 @@ func prepareKapOJProblem(archive *kapOJArchive, prefix string, manifest *Package
 		return nil, fmt.Errorf("官方题解代码不能超过 %d 字节", maxSolutionCode)
 	}
 
+	difficulty, err := resolvePackageDifficulty(manifest.Problem)
+	if err != nil {
+		return nil, err
+	}
 	input := Input{
 		Title: manifest.Problem.Title, Slug: manifest.Problem.Slug,
 		StatementMD: string(statement), InputFormatMD: string(inputFormat),
 		OutputFormatMD: string(outputFormat), Samples: samples, HintMD: string(hint),
 		Type: manifest.Problem.Type, Answers: answers, Tags: manifest.Problem.Tags,
-		Difficulty: manifest.Problem.Difficulty, TimeLimitMS: manifest.Problem.TimeLimitMS,
+		Difficulty: difficulty, TimeLimitMS: manifest.Problem.TimeLimitMS,
 		MemoryLimitMB: manifest.Problem.MemoryLimitMB, IsPublic: false,
 		Source: manifest.Problem.Source,
 	}

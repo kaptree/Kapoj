@@ -266,7 +266,9 @@ func (s *Service) update(ctx context.Context, p *Problem, in Input, d Difficulty
 		}
 	}
 	var history *DifficultyHistory
-	if oldScore != p.Difficulty {
+	// Regular edits only log actual score changes; forced (import) decisions
+	// also log an unchanged score.
+	if oldScore != p.Difficulty || d.forceHistory {
 		history = newDifficultyHistory(oldScore, d)
 	}
 	// Publishability is checked by the repository inside the same transaction

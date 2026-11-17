@@ -176,13 +176,17 @@ func (s *Service) writeProblemPackage(
 	testcases []Testcase,
 	attachments, images []ProblemAttachment,
 ) (PackageManifest, error) {
+	score := p.Difficulty
 	manifest := PackageManifest{
 		Format:        PackageFormatProblem,
 		FormatVersion: PackageFormatVersion,
 		ExportedAt:    time.Now().UTC(),
 		Problem: PackageProblem{
-			Slug: p.Slug, Title: p.Title, Type: p.Type, Difficulty: p.Difficulty,
-			TimeLimitMS: p.TimeLimitMS, MemoryLimitMB: p.MemoryLimitMB,
+			Slug: p.Slug, Title: p.Title, Type: p.Type,
+			Difficulty:      packageDifficultyBand(score),
+			DifficultyScore: &score,
+			DifficultyScale: packageDifficultyScale,
+			TimeLimitMS:     p.TimeLimitMS, MemoryLimitMB: p.MemoryLimitMB,
 			Source: p.Source, Tags: []string(p.Tags), IsPublic: p.IsPublic,
 			SolutionPriceCoins: p.SolutionPriceCoins,
 		},

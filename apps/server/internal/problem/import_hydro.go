@@ -43,7 +43,22 @@ const (
 	hydroSource        = "HydroOJ"
 	hydroTestcaseScore = 10
 	hydroSlugPrefix    = "hydro-"
+	// hydroImportDifficulty is the neutral 1–100 default. HydroOJ packages
+	// carry no evaluable difficulty and problem.yaml is deliberately ignored.
+	hydroImportDifficulty = 50
 )
+
+// hydroImportDifficultyDecision marks a HydroOJ import as an automatic default
+// prior: the package cannot supply a score, so 50 stays until real data moves it.
+func hydroImportDifficultyDecision(actorID int64) DifficultyDecision {
+	return DifficultyDecision{
+		Score: hydroImportDifficulty, Prior: hydroImportDifficulty,
+		PriorSource: DifficultyPriorSourceDefault,
+		Source:      DifficultySourceImport,
+		Auto:        true, ActorID: actorID,
+		forceHistory: true,
+	}
+}
 
 var (
 	errHydroTooLarge     = errors.New("hydro: entry exceeds read limit")
@@ -474,13 +489,14 @@ func (s *Service) importHydroProblem(
 		Slug:          slug,
 		StatementMD:   statement,
 		Type:          TypeTraditional,
-		Difficulty:    1,
+		Difficulty:    hydroImportDifficulty,
 		TimeLimitMS:   1000,
 		MemoryLimitMB: 256,
 		Source:        hydroSource,
 		Tags:          meta.Tags,
 		IsPublic:      false,
 	}
+	decision := hydroImportDifficultyDecision(createdBy)
 
 	if existing != nil {
 		oldCases, err := s.repo.ListTestcases(ctx, existing.ID)
@@ -495,7 +511,7 @@ func (s *Service) importHydroProblem(
 			}
 			return fail(title, hydroTestcaseError(err))
 		}
-		if _, err := s.Update(ctx, existing.ID, in); err != nil {
+		if _, err := s.UpdateWithDifficulty(ctx, existing.ID, in, decision); err != nil {
 			s.cleanupHydroTestcases(ctx, existing.ID, added)
 			return fail(title, hydroCreateError(err, slug))
 		}
@@ -518,7 +534,7 @@ func (s *Service) importHydroProblem(
 		}, nil, nil
 	}
 
-	p, err := s.Create(ctx, createdBy, in)
+	p, err := s.CreateWithDifficulty(ctx, createdBy, in, decision)
 	if err != nil {
 		return fail(title, hydroCreateError(err, slug))
 	}

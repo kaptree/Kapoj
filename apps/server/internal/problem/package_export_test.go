@@ -95,7 +95,10 @@ func TestExportProblemPackage(t *testing.T) {
 	assert.Equal(t, p.Slug, manifest.Problem.Slug)
 	assert.Equal(t, p.Title, manifest.Problem.Title)
 	assert.Equal(t, problem.TypeSpecial, manifest.Problem.Type)
-	assert.Equal(t, 3, manifest.Problem.Difficulty)
+	assert.Equal(t, 1, manifest.Problem.Difficulty)
+	require.NotNil(t, manifest.Problem.DifficultyScore)
+	assert.Equal(t, 3, *manifest.Problem.DifficultyScore)
+	assert.Equal(t, "1-100", manifest.Problem.DifficultyScale)
 	assert.Equal(t, 1500, manifest.Problem.TimeLimitMS)
 	assert.Equal(t, 512, manifest.Problem.MemoryLimitMB)
 	assert.Equal(t, "自编", manifest.Problem.Source)
@@ -155,6 +158,68 @@ func TestExportProblemPackageIncludesObjectiveAnswers(t *testing.T) {
 	var answers []string
 	require.NoError(t, json.Unmarshal(entries[manifest.Files.Answers], &answers))
 	assert.Equal(t, []string{"A", "B"}, answers)
+}
+
+func TestPackageExportDualDifficultyFields(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	in := input("dual-difficulty")
+	in.Difficulty = 62
+	p := e.create(t, in)
+
+	var buf bytes.Buffer
+	manifest, err := e.svc.ExportProblem(ctx, p.ID, &buf)
+	require.NoError(t, err)
+
+	// The legacy field stays inside 1–5 so old applications keep importing
+	// new packages, while new applications read the exact score.
+	assert.Equal(t, 4, manifest.Problem.Difficulty)
+	require.NotNil(t, manifest.Problem.DifficultyScore)
+	assert.Equal(t, 62, *manifest.Problem.DifficultyScore)
+	assert.Equal(t, "1-100", manifest.Problem.DifficultyScale)
+
+	entries := packageEntries(t, buf.Bytes())
+	var raw struct {
+		Problem map[string]json.RawMessage `json:"problem"`
+	}
+	require.NoError(t, json.Unmarshal(entries["manifest.json"], &raw))
+	assert.JSONEq(t, "4", string(raw.Problem["difficulty"]))
+	assert.JSONEq(t, "62", string(raw.Problem["difficultyScore"]))
+	assert.JSONEq(t, `"1-100"`, string(raw.Problem["difficultyScale"]))
+}
+
+func TestLegacyPackageImportCompatibility(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	p := e.create(t, input("legacy-bands"))
+
+	cases := []struct {
+		score int
+		band  int
+	}{
+		{1, 1}, {20, 1}, {21, 2}, {40, 2}, {41, 3},
+		{60, 3}, {61, 4}, {80, 4}, {81, 5}, {100, 5},
+	}
+	for _, tc := range cases {
+		require.NoError(t, e.db.Model(&problem.Problem{}).Where("id = ?", p.ID).
+			Update("difficulty", tc.score).Error)
+		var buf bytes.Buffer
+		manifest, err := e.svc.ExportProblem(ctx, p.ID, &buf)
+		require.NoError(t, err)
+		assert.Equal(t, tc.band, manifest.Problem.Difficulty, "score %d", tc.score)
+		require.NotNil(t, manifest.Problem.DifficultyScore)
+		assert.Equal(t, tc.score, *manifest.Problem.DifficultyScore)
+
+		// The pre-1-100 Input.Normalize only accepted 1–5; every exported
+		// package must still pass that legacy contract.
+		legacy, err := (problem.Input{
+			Title: "Legacy", Slug: "legacy-package", StatementMD: "statement",
+			Type: problem.TypeTraditional, Difficulty: manifest.Problem.Difficulty,
+			TimeLimitMS: 1000, MemoryLimitMB: 256,
+		}).Normalize()
+		require.NoError(t, err, "legacy difficulty %d", manifest.Problem.Difficulty)
+		assert.Equal(t, tc.band, legacy.Difficulty)
+	}
 }
 
 func TestExportProblemPackageMissingProblem(t *testing.T) {

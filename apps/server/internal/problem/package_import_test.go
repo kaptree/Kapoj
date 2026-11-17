@@ -71,6 +71,30 @@ func replacePackageFile(t *testing.T, data []byte, file, content string) []byte 
 	})
 }
 
+// rewritePackageManifest rewrites the single-problem manifest.json.
+func rewritePackageManifest(t *testing.T, data []byte, mutate func(*problem.PackageProblem)) []byte {
+	t.Helper()
+	return rewritePackage(t, data, func(name string, body []byte) (string, []byte) {
+		if name != "manifest.json" {
+			return name, body
+		}
+		var manifest problem.PackageManifest
+		require.NoError(t, json.Unmarshal(body, &manifest))
+		mutate(&manifest.Problem)
+		updated, err := json.Marshal(manifest)
+		require.NoError(t, err)
+		return name, updated
+	})
+}
+
+func difficultyHistory(t *testing.T, e *env, problemID int64) []problem.DifficultyHistory {
+	t.Helper()
+	items, total, err := e.repo.ListDifficultyHistory(context.Background(), problemID, 0, 20)
+	require.NoError(t, err)
+	require.Equal(t, int64(len(items)), total)
+	return items
+}
+
 func TestImportKapOJPackageRoundTrip(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
@@ -179,6 +203,162 @@ func TestImportKapOJPackageRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, checker.Close())
 	assert.Equal(t, "int main() {}", string(checkerBody))
+
+	// The import decision records the importer and the import source.
+	history := difficultyHistory(t, e, copied.ID)
+	require.Len(t, history, 1)
+	assert.Equal(t, 0, history[0].OldScore)
+	assert.Equal(t, 4, history[0].NewScore)
+	assert.Equal(t, 4, history[0].Prior)
+	assert.Equal(t, problem.DifficultySourceImport, history[0].Source)
+	assert.Equal(t, int64(1), history[0].CreatedBy)
+	assert.Equal(t, problem.DifficultyPriorSourceImport, copied.DifficultyPriorSource)
+	assert.Equal(t, problem.DifficultySourceImport, copied.DifficultySource)
+	assert.True(t, copied.DifficultyAuto)
+}
+
+func TestPackageImportOldScale(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	source := e.create(t, input("old-scale-source"))
+	e.addCase(t, source.ID)
+
+	var exported bytes.Buffer
+	_, err := e.svc.ExportProblem(ctx, source.ID, &exported)
+	require.NoError(t, err)
+
+	// Simulate a package written by the pre-1-100 application: only the
+	// legacy 1–5 field is present.
+	data := renamePackageSlug(t, rewritePackageManifest(t, exported.Bytes(),
+		func(p *problem.PackageProblem) {
+			p.Difficulty = 3
+			p.DifficultyScore = nil
+			p.DifficultyScale = ""
+		}), "old-scale-copy")
+
+	result, err := e.svc.ImportPackage(ctx, 1, bytes.NewReader(data), int64(len(data)),
+		problem.PackageImportOptions{ConflictPolicy: "skip"})
+	require.NoError(t, err)
+	require.Len(t, result.Imported, 1)
+
+	copied, err := e.repo.FindBySlug(ctx, "old-scale-copy")
+	require.NoError(t, err)
+	require.NotNil(t, copied)
+	assert.Equal(t, 50, copied.Difficulty, "legacy band 3 maps to 50")
+	assert.Equal(t, 50, copied.DifficultyPrior)
+	assert.Equal(t, problem.DifficultyPriorSourceImport, copied.DifficultyPriorSource)
+	assert.Equal(t, problem.DifficultySourceImport, copied.DifficultySource)
+	assert.True(t, copied.DifficultyAuto)
+
+	history := difficultyHistory(t, e, copied.ID)
+	require.Len(t, history, 1)
+	assert.Equal(t, 0, history[0].OldScore)
+	assert.Equal(t, 50, history[0].NewScore)
+	assert.Equal(t, 50, history[0].Prior)
+	assert.Equal(t, problem.DifficultySourceImport, history[0].Source)
+	assert.Equal(t, int64(1), history[0].CreatedBy)
+}
+
+func TestPackageImportRejectsInvalidDifficultyFields(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	source := e.create(t, input("invalid-difficulty-source"))
+	e.addCase(t, source.ID)
+
+	var exported bytes.Buffer
+	_, err := e.svc.ExportProblem(ctx, source.ID, &exported)
+	require.NoError(t, err)
+	base := exported.Bytes()
+
+	cases := []struct {
+		name   string
+		slug   string
+		mutate func(*problem.PackageProblem)
+	}{
+		{
+			name: "unknown scale",
+			slug: "invalid-scale",
+			mutate: func(p *problem.PackageProblem) {
+				p.DifficultyScale = "0-10"
+			},
+		},
+		{
+			name: "legacy difficulty out of range",
+			slug: "invalid-legacy",
+			mutate: func(p *problem.PackageProblem) {
+				p.Difficulty = 9
+				p.DifficultyScore = nil
+				p.DifficultyScale = ""
+			},
+		},
+		{
+			name: "score too low",
+			slug: "invalid-low",
+			mutate: func(p *problem.PackageProblem) {
+				zero := 0
+				p.DifficultyScore = &zero
+			},
+		},
+		{
+			name: "score too high",
+			slug: "invalid-high",
+			mutate: func(p *problem.PackageProblem) {
+				high := 101
+				p.DifficultyScore = &high
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			data := renamePackageSlug(t, rewritePackageManifest(t, base, tc.mutate), tc.slug)
+			_, err := e.svc.ImportPackage(ctx, 1, bytes.NewReader(data), int64(len(data)),
+				problem.PackageImportOptions{ConflictPolicy: "skip"})
+			assertCode(t, err, 40001)
+		})
+	}
+}
+
+func TestPackageImportOverwriteWritesHistory(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	existing := e.create(t, input("overwrite-difficulty"))
+	e.addCase(t, existing.ID)
+	require.NoError(t, e.db.Model(&problem.Problem{}).Where("id = ?", existing.ID).
+		Update("difficulty_auto", false).Error)
+
+	var exported bytes.Buffer
+	_, err := e.svc.ExportProblem(ctx, existing.ID, &exported)
+	require.NoError(t, err)
+	data := rewritePackageManifest(t, exported.Bytes(), func(p *problem.PackageProblem) {
+		score := 73
+		p.Difficulty = 4
+		p.DifficultyScore = &score
+		p.DifficultyScale = "1-100"
+	})
+
+	result, err := e.svc.ImportPackage(ctx, 1, bytes.NewReader(data), int64(len(data)),
+		problem.PackageImportOptions{ConflictPolicy: "overwrite"})
+	require.NoError(t, err)
+	require.Len(t, result.Imported, 1)
+	assert.True(t, result.Imported[0].Overwritten)
+
+	updated, err := e.repo.FindByID(ctx, existing.ID)
+	require.NoError(t, err)
+	assert.Equal(t, 73, updated.Difficulty)
+	assert.Equal(t, 73, updated.DifficultyPrior)
+	assert.Equal(t, problem.DifficultyPriorSourceImport, updated.DifficultyPriorSource)
+	assert.Equal(t, problem.DifficultySourceImport, updated.DifficultySource)
+	assert.True(t, updated.DifficultyAuto, "package overwrite resets the problem to automatic")
+
+	history := difficultyHistory(t, e, existing.ID)
+	require.Len(t, history, 2)
+	// Newest first: the import row, then the original manual creation row.
+	assert.Equal(t, 1, history[0].OldScore, "old_score is the score before the overwrite")
+	assert.Equal(t, 73, history[0].NewScore)
+	assert.Equal(t, 73, history[0].Prior)
+	assert.Equal(t, problem.DifficultySourceImport, history[0].Source)
+	assert.Equal(t, int64(1), history[0].CreatedBy)
+	assert.Equal(t, problem.DifficultySourceManual, history[1].Source)
 }
 
 func TestImportKapOJObjectiveAnswers(t *testing.T) {

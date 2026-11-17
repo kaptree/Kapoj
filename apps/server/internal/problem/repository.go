@@ -70,6 +70,10 @@ type Repository interface {
 	// ReplaceContent atomically replaces a problem's testcases/attachments and
 	// editable content, returning storage keys that are no longer referenced.
 	ReplaceContent(ctx context.Context, p *Problem, testcases []*Testcase, attachments []*ProblemAttachment) ([]string, error)
+	// ReplaceContentWithHistory is ReplaceContent plus an optional difficulty
+	// history row written in the same transaction. old_score is taken from the
+	// locked row so a concurrent edit cannot make the log lie.
+	ReplaceContentWithHistory(ctx context.Context, p *Problem, testcases []*Testcase, attachments []*ProblemAttachment, history *DifficultyHistory) ([]string, error)
 	Delete(ctx context.Context, id int64) (DeleteResult, error)
 
 	// FindAuthor returns the public summary of a user (id/username/nickname),
@@ -359,11 +363,26 @@ func (r *gormRepository) ReplaceContent(
 	testcases []*Testcase,
 	attachments []*ProblemAttachment,
 ) ([]string, error) {
+	return r.ReplaceContentWithHistory(ctx, p, testcases, attachments, nil)
+}
+
+// ReplaceContentWithHistory also appends a difficulty history row. The locked
+// row's score is authoritative for old_score.
+func (r *gormRepository) ReplaceContentWithHistory(
+	ctx context.Context,
+	p *Problem,
+	testcases []*Testcase,
+	attachments []*ProblemAttachment,
+	history *DifficultyHistory,
+) ([]string, error) {
 	var oldKeys []string
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var current Problem
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, p.ID).Error; err != nil {
 			return err
+		}
+		if history != nil {
+			history.OldScore = current.Difficulty
 		}
 		if p.IsPublic && p.Type != TypeObjective && len(testcases) == 0 {
 			return ErrPublishNeedsTestcase
@@ -437,7 +456,7 @@ func (r *gormRepository) ReplaceContent(
 				return err
 			}
 		}
-		return nil
+		return createHistory(tx, p.ID, history)
 	})
 	if err != nil {
 		return nil, mapErr(err)
@@ -474,6 +493,9 @@ func (r *gormRepository) Delete(ctx context.Context, id int64) (DeleteResult, er
 			result.FileKeys = append(result.FileKeys, a.StorageKey)
 		}
 		if err := tx.Where("problem_id = ?", id).Delete(&ProblemAttachment{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("problem_id = ?", id).Delete(&DifficultyHistory{}).Error; err != nil {
 			return err
 		}
 		return tx.Delete(&Problem{}, id).Error

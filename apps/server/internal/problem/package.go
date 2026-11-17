@@ -1,6 +1,10 @@
 package problem
 
-import "time"
+import (
+	"time"
+
+	"github.com/kaptree/kapoj/apps/server/internal/httpx"
+)
 
 // kapOJ 题包 v1。单题包以 manifest.json 为入口，所有文件均为包内相对路径。
 const (
@@ -27,16 +31,70 @@ type PackageManifest struct {
 // PackageProblem carries portable problem metadata. Runtime fields such as
 // numeric ids, submission counters and the creator are intentionally absent.
 type PackageProblem struct {
-	Slug               string   `json:"slug"`
-	Title              string   `json:"title"`
-	Type               Type     `json:"type"`
-	Difficulty         int      `json:"difficulty"`
+	Slug  string `json:"slug"`
+	Title string `json:"title"`
+	Type  Type   `json:"type"`
+	// Difficulty is the legacy 1–5 band kept so pre-1-100 applications can
+	// still import new packages. New exports derive it from DifficultyScore.
+	Difficulty int `json:"difficulty"`
+	// DifficultyScore is the exact 1–100 score. Old applications ignore it.
+	DifficultyScore *int `json:"difficultyScore,omitempty"`
+	// DifficultyScale describes DifficultyScore's scale ("1-100" in new
+	// exports). It is informational and only used to reject unknown formats.
+	DifficultyScale    string   `json:"difficultyScale,omitempty"`
 	TimeLimitMS        int      `json:"timeLimitMs"`
 	MemoryLimitMB      int      `json:"memoryLimitMb"`
 	Source             string   `json:"source"`
 	Tags               []string `json:"tags"`
 	IsPublic           bool     `json:"isPublic"`
 	SolutionPriceCoins int64    `json:"solutionPriceCoins"`
+}
+
+const (
+	// packageDifficultyScale marks exact 1–100 scores in package manifests.
+	packageDifficultyScale = "1-100"
+	// legacyPackageDifficultyScale is accepted for packages that declare the
+	// old five-band scale explicitly.
+	legacyPackageDifficultyScale = "1-5"
+)
+
+// packageDifficultyBand maps an exact 1–100 score to the legacy five-band
+// scale used by old applications: 1–20→1, 21–40→2, 41–60→3, 61–80→4, 81–100→5.
+func packageDifficultyBand(score int) int {
+	switch {
+	case score <= 20:
+		return 1
+	case score <= 40:
+		return 2
+	case score <= 60:
+		return 3
+	case score <= 80:
+		return 4
+	default:
+		return 5
+	}
+}
+
+// resolvePackageDifficulty chooses the exact score for an imported problem.
+// A difficultyScore wins; otherwise the legacy 1–5 field is mapped to
+// 10/30/50/70/90. Unknown scales and out-of-range values are validation errors.
+func resolvePackageDifficulty(manifest PackageProblem) (int, error) {
+	switch manifest.DifficultyScale {
+	case "", packageDifficultyScale, legacyPackageDifficultyScale:
+	default:
+		return 0, httpx.ErrValidation("题包 difficultyScale 必须是 1-100 或 1-5")
+	}
+	if manifest.DifficultyScore != nil {
+		score := *manifest.DifficultyScore
+		if score < 1 || score > 100 {
+			return 0, httpx.ErrValidation("题包 difficultyScore 需为 1–100")
+		}
+		return score, nil
+	}
+	if manifest.Difficulty < 1 || manifest.Difficulty > 5 {
+		return 0, httpx.ErrValidation("题包 difficulty 需为 1–5")
+	}
+	return [...]int{10, 30, 50, 70, 90}[manifest.Difficulty-1], nil
 }
 
 // PackageAttachment maps one stored attachment to its package-relative path.

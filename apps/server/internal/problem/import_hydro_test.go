@@ -119,7 +119,11 @@ func TestImportHydroSamplePackage(t *testing.T) {
 	assert.Equal(t, []string{"循环", "DAI"}, []string(p.Tags))
 	assert.Equal(t, "## 题目描述\n求和 求和\n", p.StatementMD)
 	assert.Equal(t, problem.TypeTraditional, p.Type)
-	assert.Equal(t, 1, p.Difficulty)
+	assert.Equal(t, 50, p.Difficulty)
+	assert.Equal(t, 50, p.DifficultyPrior)
+	assert.Equal(t, problem.DifficultyPriorSourceDefault, p.DifficultyPriorSource)
+	assert.Equal(t, problem.DifficultySourceImport, p.DifficultySource)
+	assert.True(t, p.DifficultyAuto)
 	assert.Equal(t, 1000, p.TimeLimitMS)
 	assert.Equal(t, 256, p.MemoryLimitMB)
 
@@ -136,6 +140,32 @@ func TestImportHydroSamplePackage(t *testing.T) {
 		_ = rc.Close()
 		assert.Equal(t, fmt.Sprintf("in %d", i+1), string(b), "numeric ordering must hold")
 	}
+}
+
+func TestHydroImportDefaultsTo50(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	data := buildZip(t, hydroProblem("7003", "默认难度", 1)...)
+
+	res, err := importZip(t, e.svc, 1, data)
+	require.NoError(t, err)
+	require.Len(t, res.Imported, 1)
+
+	p, err := e.repo.FindByID(ctx, res.Imported[0].ID)
+	require.NoError(t, err)
+	assert.Equal(t, 50, p.Difficulty)
+	assert.Equal(t, 50, p.DifficultyPrior)
+	assert.Equal(t, problem.DifficultyPriorSourceDefault, p.DifficultyPriorSource)
+	assert.Equal(t, problem.DifficultySourceImport, p.DifficultySource)
+	assert.True(t, p.DifficultyAuto)
+
+	history := difficultyHistory(t, e, p.ID)
+	require.Len(t, history, 1)
+	assert.Equal(t, 0, history[0].OldScore)
+	assert.Equal(t, 50, history[0].NewScore)
+	assert.Equal(t, 50, history[0].Prior)
+	assert.Equal(t, problem.DifficultySourceImport, history[0].Source)
+	assert.Equal(t, int64(1), history[0].CreatedBy)
 }
 
 func TestImportHydroStatementFallbackToProblemMd(t *testing.T) {
@@ -224,6 +254,17 @@ func TestImportHydroOverwritePreservesIdentityAndStats(t *testing.T) {
 	assert.Equal(t, 7, got.SubmitCount)
 	assert.Equal(t, 3, got.AcceptCount)
 	assert.False(t, got.IsPublic)
+	assert.Equal(t, 50, got.Difficulty)
+	assert.Equal(t, 50, got.DifficultyPrior)
+	assert.Equal(t, problem.DifficultyPriorSourceDefault, got.DifficultyPriorSource)
+	assert.Equal(t, problem.DifficultySourceImport, got.DifficultySource)
+	assert.True(t, got.DifficultyAuto)
+	history := difficultyHistory(t, e, existing.ID)
+	require.Len(t, history, 2)
+	assert.Equal(t, 1, history[0].OldScore)
+	assert.Equal(t, 50, history[0].NewScore)
+	assert.Equal(t, problem.DifficultySourceImport, history[0].Source)
+	assert.Equal(t, int64(1), history[0].CreatedBy)
 	cases, err := e.repo.ListTestcases(ctx, existing.ID)
 	require.NoError(t, err)
 	require.Len(t, cases, 2)
