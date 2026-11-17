@@ -41,18 +41,26 @@ type Problem struct {
 	Type               Type                 `gorm:"size:20;not null;default:traditional"`
 	Answers            dbtypes.List[string] `gorm:"column:answers_json;type:jsonb;not null;default:'[]'"`
 	Tags               dbtypes.List[string] `gorm:"column:tags_json;type:jsonb;not null;default:'[]';index:idx_problems_tags,type:gin"`
-	Difficulty         int                  `gorm:"not null;default:1;index"`
-	TimeLimitMS        int                  `gorm:"column:time_limit_ms;not null;default:1000"`
-	MemoryLimitMB      int                  `gorm:"column:memory_limit_mb;not null;default:256"`
-	CheckerPath        string               `gorm:"size:255;not null;default:''"`
-	IsPublic           bool                 `gorm:"not null;default:false;index"`
-	Source             string               `gorm:"size:200;not null;default:''"`
-	SubmitCount        int                  `gorm:"not null;default:0"`
-	AcceptCount        int                  `gorm:"not null;default:0"`
-	CreatedBy          int64                `gorm:"not null;default:0"`
-	CreatedAt          time.Time            `gorm:"type:timestamptz;not null"`
-	UpdatedAt          time.Time            `gorm:"type:timestamptz;not null"`
-	Testcases          []Testcase           `gorm:"foreignKey:ProblemID;constraint:OnDelete:CASCADE" json:"-"`
+	Difficulty         int                  `gorm:"not null;default:50;index"`
+	// DifficultyPrior is the Bayesian prior anchor used by the daily recalc; it
+	// only changes on AI reassessment, manual edits, migration, or import.
+	DifficultyPrior       int        `gorm:"not null;default:50"`
+	DifficultyPriorSource string     `gorm:"size:20;not null;default:default"`
+	DifficultyAuto        bool       `gorm:"not null;default:true"`
+	DifficultySource      string     `gorm:"size:20;not null;default:default"`
+	DifficultyReason      string     `gorm:"type:text;not null;default:''"`
+	DifficultyUpdatedAt   time.Time  `gorm:"type:timestamptz;not null;default:now()"`
+	TimeLimitMS           int        `gorm:"column:time_limit_ms;not null;default:1000"`
+	MemoryLimitMB         int        `gorm:"column:memory_limit_mb;not null;default:256"`
+	CheckerPath           string     `gorm:"size:255;not null;default:''"`
+	IsPublic              bool       `gorm:"not null;default:false;index"`
+	Source                string     `gorm:"size:200;not null;default:''"`
+	SubmitCount           int        `gorm:"not null;default:0"`
+	AcceptCount           int        `gorm:"not null;default:0"`
+	CreatedBy             int64      `gorm:"not null;default:0"`
+	CreatedAt             time.Time  `gorm:"type:timestamptz;not null"`
+	UpdatedAt             time.Time  `gorm:"type:timestamptz;not null"`
+	Testcases             []Testcase `gorm:"foreignKey:ProblemID;constraint:OnDelete:CASCADE" json:"-"`
 }
 
 type Testcase struct {

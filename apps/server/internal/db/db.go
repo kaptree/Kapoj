@@ -53,6 +53,7 @@ const (
 	emailVerifiedBackfillKey      = "email_verified_at_backfill_v1"
 	submissionFieldsBackfillKey   = "submission_fields_backfill_v1"
 	learningPathCountsBackfillKey = "learning_path_counts_backfill_v1"
+	problemDifficultyBackfillKey  = "problem_difficulty_1_100_v1"
 	migrationAdvisoryLock         = int64(0x6b61706f6a)
 )
 
@@ -81,7 +82,7 @@ func Migrate(g *gorm.DB) error {
 			&contest.Announcement{}, &submission.Submission{},
 			&similarity.Settings{}, &similarity.Run{}, &similarity.Match{},
 			&rating.RatingHistory{}, &rating.RatingSettings{}, &rating.RatingRun{},
-			&difficulty.Settings{},
+			&difficulty.Settings{}, &problem.DifficultyHistory{},
 			&activity.ActivityLog{}, &activity.SharedItem{},
 			&social.Follow{}, &social.Notification{}, &social.UserEvaluation{},
 			&gamification.CoinTransaction{}, &gamification.Achievement{},
@@ -110,8 +111,50 @@ func Migrate(g *gorm.DB) error {
 		if err := backfillSubmissionFields(tx); err != nil {
 			return err
 		}
-		return backfillLearningPathCounts(tx)
+		if err := backfillLearningPathCounts(tx); err != nil {
+			return err
+		}
+		return backfillProblemDifficulty(tx)
 	})
+}
+
+// backfillProblemDifficulty converts the legacy 1..5 problem difficulty scale
+// to 1..100 once. HydroOJ imports used 1 as their default difficulty, so those
+// rows map to the neutral score 50 instead of 10.
+func backfillProblemDifficulty(tx *gorm.DB) error {
+	var count int64
+	if err := tx.Model(&Migration{}).Where("key = ?", problemDifficultyBackfillKey).Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	if err := tx.Exec(`
+		UPDATE problems AS p
+		SET difficulty = mapped.new_score,
+			difficulty_prior = mapped.new_score,
+			difficulty_prior_source = 'migrated',
+			difficulty_source = 'migrated',
+			difficulty_auto = true,
+			difficulty_updated_at = now()
+		FROM (
+			SELECT id,
+				CASE
+					WHEN source = 'HydroOJ' AND difficulty = 1 THEN 50
+					WHEN difficulty = 1 THEN 10
+					WHEN difficulty = 2 THEN 30
+					WHEN difficulty = 3 THEN 50
+					WHEN difficulty = 4 THEN 70
+					WHEN difficulty = 5 THEN 90
+					ELSE difficulty
+				END AS new_score
+			FROM problems
+			WHERE difficulty BETWEEN 1 AND 5
+		) AS mapped
+		WHERE p.id = mapped.id`).Error; err != nil {
+		return err
+	}
+	return tx.Create(&Migration{Key: problemDifficultyBackfillKey, AppliedAt: time.Now().UTC()}).Error
 }
 
 func backfillLearningPathCounts(tx *gorm.DB) error {
