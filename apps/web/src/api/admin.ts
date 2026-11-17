@@ -25,6 +25,9 @@ import type {
   CertificateTypeView,
   CertificateView,
   Page,
+  PlatformModelInput,
+  PlatformModelTestResult,
+  PlatformModelView,
   RatingSettingsInput,
   RatingSettingsView,
   Status,
@@ -58,6 +61,29 @@ export const resetAdminAIKey = () => http.post<AIKeyGenerateResult>('/admin/ai/k
 
 /** Manually set the AI encryption key, rotating (and re-encrypting user keys) if one exists (ai.settings.manage). */
 export const setAdminAIKey = (input: AIKeyInput) => http.put<AIKeyView>('/admin/ai/key', input)
+
+/** All platform-level AI models with masked tokens (ai.settings.manage). */
+export const listAdminAIPlatformModels = () => http.get<PlatformModelView[]>('/admin/ai/models')
+
+/** Create a platform model; apiKey is required and never returned (ai.settings.manage). */
+export const createAdminAIPlatformModel = (input: PlatformModelInput) =>
+  http.post<PlatformModelView>('/admin/ai/models', input)
+
+/** Update a platform model; an empty/omitted apiKey keeps the stored token (ai.settings.manage). */
+export const updateAdminAIPlatformModel = (id: number | string, input: PlatformModelInput) =>
+  http.put<PlatformModelView>(`/admin/ai/models/${id}`, input)
+
+/** Delete an unselected platform model (ai.settings.manage). */
+export const deleteAdminAIPlatformModel = (id: number | string) =>
+  http.delete<null>(`/admin/ai/models/${id}`)
+
+/** Send one lightweight request to the model and persist the masked result (ai.settings.manage). */
+export const testAdminAIPlatformModel = (id: number | string) =>
+  http.post<PlatformModelTestResult>(`/admin/ai/models/${id}/test`)
+
+/** Select the current platform model; null clears the selection (ai.settings.manage). */
+export const selectAdminAIPlatformModel = (modelId: number | null) =>
+  http.put<AdminAISettingsView>('/admin/ai/platform-model', { modelId })
 
 export interface ListAdminUsersQuery {
   keyword?: string
