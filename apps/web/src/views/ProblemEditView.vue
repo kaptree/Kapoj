@@ -100,7 +100,7 @@ function emptyForm(): FormState {
     type: 'traditional',
     answers: [],
     tags: [],
-    difficulty: 1,
+    difficulty: 50,
     difficultyAuto: true,
     timeLimitMs: 1000,
     memoryLimitMb: 256,
@@ -170,6 +170,16 @@ function resetDifficultyMeta() {
   difficultyUpdatedAt.value = ''
   difficultyReason.value = ''
   reassessWarning.value = ''
+}
+
+// A reassessment only refreshes difficulty metadata. Replacing the whole form
+// with the response would silently discard unsaved title/statement/tag edits.
+function applyDifficultyMeta(p: ProblemDetail) {
+  form.difficulty = p.difficulty
+  form.difficultyAuto = p.difficultyAuto ?? true
+  difficultySource.value = p.difficultySource ?? ''
+  difficultyUpdatedAt.value = p.difficultyUpdatedAt ?? ''
+  difficultyReason.value = p.difficultyReason ?? ''
 }
 
 async function load() {
@@ -340,7 +350,7 @@ function reassess() {
       error.value = ''
       try {
         const updated = await assessProblemDifficulty(problemId.value)
-        fill(updated)
+        applyDifficultyMeta(updated)
         if (updated.difficultyAuto ?? true) {
           reassessWarning.value = ''
           toast.add({ severity: 'success', summary: 'AI 评分已更新', life: 3000 })
@@ -531,7 +541,10 @@ function formatPercent(value: number) {
                       :min="1"
                       :max="100"
                       :step="1"
+                      :min-fraction-digits="0"
+                      :max-fraction-digits="0"
                       :disabled="form.difficultyAuto"
+                      placeholder="50"
                       @update:model-value="onDifficultyInput"
                     />
                     <Tag
@@ -556,6 +569,13 @@ function formatPercent(value: number) {
                         ? '每天按全站通过率自动调整难度。'
                         : '已锁定当前难度，定时任务不会覆盖。'
                     }}</span>
+                    <span
+                      v-if="!isEdit && form.difficultyAuto"
+                      data-test="difficulty-create-hint"
+                      class="difficulty-create-hint"
+                    >
+                      保存时由 AI 评估，未配置则默认 50。
+                    </span>
                     <span v-if="isEdit && difficultyUpdatedAt" class="difficulty-updated">
                       最近更新：{{ formatDateTime(difficultyUpdatedAt) }}
                     </span>

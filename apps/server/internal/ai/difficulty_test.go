@@ -103,6 +103,8 @@ func TestAssessDifficultyValidJSON(t *testing.T) {
 	assert.Equal(t, difficultyTestAPIKey, req.APIKey, "platform token must be decrypted before the call")
 	assert.Equal(t, model.ModelName, req.Model)
 	assert.InDelta(t, 0.2, req.Temperature, 1e-9)
+	assert.Greater(t, req.MaxTokens, 0, "assessment responses must be bounded")
+	assert.LessOrEqual(t, req.MaxTokens, 1024)
 
 	require.Len(t, req.Messages, 2)
 	assert.Equal(t, "system", req.Messages[0].Role)
@@ -198,6 +200,7 @@ func TestAssessDifficultyFallsBackOnInvalidJSON(t *testing.T) {
 			svc := newServiceWithPlatformModel(t, client)
 			_, err := svc.AssessDifficulty(context.Background(), ai.DifficultyAssessmentInput{Title: "x"})
 			assertValidationCode(t, err, 50200)
+			assert.ErrorIs(t, err, ai.ErrAssessmentFormat)
 		})
 	}
 }
@@ -210,6 +213,18 @@ func TestAssessDifficultyUpstreamError(t *testing.T) {
 
 	_, err := svc.AssessDifficulty(context.Background(), ai.DifficultyAssessmentInput{Title: "x"})
 	assertValidationCode(t, err, 50200)
+	assert.ErrorIs(t, err, ai.ErrAssessmentUpstream)
+}
+
+func TestAssessDifficultyTimeoutIsCategorized(t *testing.T) {
+	client := &fakeChatClient{fn: func(ai.ChatRequest) (string, error) {
+		return "", context.DeadlineExceeded
+	}}
+	svc := newServiceWithPlatformModel(t, client)
+
+	_, err := svc.AssessDifficulty(context.Background(), ai.DifficultyAssessmentInput{Title: "x"})
+	assertValidationCode(t, err, 50200)
+	assert.ErrorIs(t, err, ai.ErrAssessmentTimeout)
 }
 
 func TestAssessDifficultyMissingPlatformModel(t *testing.T) {

@@ -175,11 +175,17 @@ function go(next: Partial<ReturnType<typeof parseProblemQuery>>) {
   void router.push({ name: 'problems', query: toRouteQuery({ ...query.value, ...next }) })
 }
 
+// The API accepts integer scores only. InputNumber already hides fractions,
+// but programmatic or pasted values must not reach the route query.
+function integerDifficulty(value: number | null): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null
+  const rounded = Math.round(value)
+  return rounded >= 1 && rounded <= 100 ? rounded : null
+}
+
 function search() {
-  let difficultyMin =
-    typeof filters.value.difficultyMin === 'number' ? filters.value.difficultyMin : null
-  let difficultyMax =
-    typeof filters.value.difficultyMax === 'number' ? filters.value.difficultyMax : null
+  let difficultyMin = integerDifficulty(filters.value.difficultyMin)
+  let difficultyMax = integerDifficulty(filters.value.difficultyMax)
   if (difficultyMin !== null && difficultyMax !== null && difficultyMin > difficultyMax) {
     ;[difficultyMin, difficultyMax] = [difficultyMax, difficultyMin]
   }
@@ -371,6 +377,8 @@ async function downloadSelected() {
             :min="1"
             :max="100"
             :use-grouping="false"
+            :min-fraction-digits="0"
+            :max-fraction-digits="0"
             placeholder="最低难度"
             aria-label="最低难度"
             data-test="difficulty-min"
@@ -382,6 +390,8 @@ async function downloadSelected() {
             :min="1"
             :max="100"
             :use-grouping="false"
+            :min-fraction-digits="0"
+            :max-fraction-digits="0"
             placeholder="最高难度"
             aria-label="最高难度"
             data-test="difficulty-max"

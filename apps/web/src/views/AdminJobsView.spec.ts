@@ -297,6 +297,24 @@ describe('AdminJobsView', () => {
     )
   })
 
+  it('shows the run banner after enqueueing a recalculation from the difficulty tab', async () => {
+    vi.mocked(runAdminJob).mockResolvedValue(runView({ status: 'queued' }))
+    const page = await mountPage()
+
+    await tab(page, '题目难度').trigger('click')
+    await flushPromises()
+    const recalculate = page.findAll('button').find((item) => item.text().trim() === '立即重算')
+    expect(recalculate).toBeTruthy()
+    await recalculate!.trigger('click')
+    await flushPromises()
+
+    expect(runAdminJob).toHaveBeenCalledWith(DIFFICULTY_JOB_KEY)
+    const banner = page.find('[data-test="latest-run"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain('#12')
+    expect(banner.text()).toContain('排队中')
+  })
+
   it('renders run history and stops polling when the run finishes', async () => {
     vi.useFakeTimers()
     const running = runView({

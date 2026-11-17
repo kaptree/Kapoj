@@ -27,6 +27,9 @@ type ChatRequest struct {
 	Model       string
 	Messages    []ChatMessage
 	Temperature float64
+	// MaxTokens caps the generated output. Zero omits the field so existing
+	// callers keep the upstream default.
+	MaxTokens int
 }
 
 // ChatClient performs one OpenAI-compatible chat completion and returns the
@@ -54,6 +57,7 @@ type openAIChatRequest struct {
 	Model       string        `json:"model"`
 	Messages    []ChatMessage `json:"messages"`
 	Temperature float64       `json:"temperature"`
+	MaxTokens   int           `json:"max_tokens,omitempty"`
 }
 
 type openAIChatResponse struct {
@@ -78,6 +82,7 @@ func (c *OpenAIClient) Chat(ctx context.Context, req ChatRequest) (string, error
 		Model:       req.Model,
 		Messages:    req.Messages,
 		Temperature: req.Temperature,
+		MaxTokens:   req.MaxTokens,
 	})
 	if err != nil {
 		return "", err

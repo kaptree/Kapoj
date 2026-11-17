@@ -23,6 +23,7 @@ type decodedBody struct {
 	Model       string           `json:"model"`
 	Messages    []decodedMessage `json:"messages"`
 	Temperature float64          `json:"temperature"`
+	MaxTokens   int              `json:"max_tokens"`
 }
 
 func TestOpenAIClientSendsAuthAndParsesContent(t *testing.T) {
@@ -48,6 +49,7 @@ func TestOpenAIClientSendsAuthAndParsesContent(t *testing.T) {
 			{Role: "user", Content: "complete this"},
 		},
 		Temperature: 0.2,
+		MaxTokens:   128,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "hello world", out)
@@ -57,6 +59,7 @@ func TestOpenAIClientSendsAuthAndParsesContent(t *testing.T) {
 	assert.Equal(t, "system", gotBody.Messages[0].Role)
 	assert.Equal(t, "complete this", gotBody.Messages[1].Content)
 	assert.Equal(t, 0.2, gotBody.Temperature)
+	assert.Equal(t, 128, gotBody.MaxTokens)
 }
 
 func TestOpenAIClientErrors(t *testing.T) {

@@ -195,6 +195,30 @@ describe('ProblemListView', () => {
     })
   })
 
+  it('keeps difficulty filters integral before navigating', async () => {
+    problemsApi.listProblems.mockResolvedValue({ total: 0, items: [] })
+    const { wrapper, router } = await mountPage()
+    const numbers = wrapper.findAllComponents(InputNumber)
+
+    expect(numbers[0]!.props('maxFractionDigits')).toBe(0)
+    expect(numbers[1]!.props('maxFractionDigits')).toBe(0)
+
+    numbers[0]!.vm.$emit('update:modelValue', 40.5)
+    numbers[1]!.vm.$emit('update:modelValue', 80.4)
+    await nextTick()
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(router.currentRoute.value.query).toEqual({
+      difficultyMin: '41',
+      difficultyMax: '80',
+    })
+    expect(problemsApi.listProblems).toHaveBeenLastCalledWith(
+      expect.objectContaining({ difficultyMin: 41, difficultyMax: 80 }),
+    )
+    wrapper.unmount()
+  })
+
   it('resets filters through the URL', async () => {
     problemsApi.listProblems.mockResolvedValue({ total: 0, items: [] })
     const { wrapper, router } = await mountPage(

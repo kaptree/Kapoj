@@ -132,7 +132,7 @@ func TestCreateProblemAutoDifficulty(t *testing.T) {
 }
 
 func TestCreateProblemAutoFallbackOnAIError(t *testing.T) {
-	assessor := &fakeAssessor{err: errors.New("timeout"), configured: true}
+	assessor := &fakeAssessor{err: context.DeadlineExceeded, configured: true}
 	aiSettings := &fakeAISettings{enabled: true}
 	f := newDifficultyFixture(t, assessor, aiSettings)
 
@@ -144,6 +144,7 @@ func TestCreateProblemAutoFallbackOnAIError(t *testing.T) {
 	assert.Equal(t, "default", data["difficultySource"])
 	assert.Equal(t, "default", data["difficultyPriorSource"])
 	assert.Equal(t, true, data["difficultyAuto"])
+	assert.Equal(t, "AI 评估超时，使用默认难度", data["difficultyReason"])
 	assert.Equal(t, 1, assessor.calls, "a failed assessment still counts as one attempt")
 
 	id := int64(data["id"].(float64))
@@ -153,6 +154,61 @@ func TestCreateProblemAutoFallbackOnAIError(t *testing.T) {
 	require.Len(t, items, 1)
 	assert.Equal(t, "default", items[0]["source"])
 	assert.EqualValues(t, 50, items[0]["newScore"])
+	assert.Equal(t, "AI 评估超时，使用默认难度", items[0]["reason"])
+}
+
+func TestCreateProblemAutoFallbackReasonsAreCategorized(t *testing.T) {
+	assessor := &fakeAssessor{configured: true}
+	aiSettings := &fakeAISettings{enabled: true}
+	f := newDifficultyFixture(t, assessor, aiSettings)
+	admin := f.token("problem_admin")
+
+	cases := []struct {
+		name     string
+		prepare  func()
+		want     string
+		wantCall int
+	}{
+		{
+			name: "format",
+			prepare: func() {
+				assessor.err = ai.ErrAssessmentFormat
+			},
+			want:     "AI 返回格式无效，使用默认难度",
+			wantCall: 1,
+		},
+		{
+			name: "upstream",
+			prepare: func() {
+				assessor.err = errors.New("dial tcp: connection refused")
+			},
+			want:     "AI 服务调用失败，使用默认难度",
+			wantCall: 2,
+		},
+		{
+			name: "not configured",
+			prepare: func() {
+				assessor.err = nil
+				assessor.configured = false
+			},
+			want:     "AI 评估未启用或未配置，使用默认难度",
+			wantCall: 2,
+		},
+	}
+	for i, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.prepare()
+			slug := fmt.Sprintf("auto-reason-%d", i)
+			w, resp := f.do(http.MethodPost, "/api/problems", admin,
+				difficultyBody(slug, 50, boolPtr(true)))
+			require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+			data := detailData(t, resp)
+			assert.EqualValues(t, 50, data["difficulty"])
+			assert.Equal(t, "default", data["difficultySource"])
+			assert.Equal(t, tc.want, data["difficultyReason"])
+			assert.Equal(t, tc.wantCall, assessor.calls)
+		})
+	}
 }
 
 func TestCreateProblemManualSkipsAI(t *testing.T) {

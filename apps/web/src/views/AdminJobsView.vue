@@ -275,7 +275,7 @@ async function retryPoll() {
 
 // --- Manual runs ------------------------------------------------------------
 
-async function executeRun(key: string, name: string) {
+async function executeRun(key: string, name: string): Promise<boolean> {
   runningKey.value = key
   try {
     const run = await runAdminJob(key)
@@ -289,6 +289,7 @@ async function executeRun(key: string, name: string) {
       life: 3000,
     })
     schedulePoll()
+    return true
   } catch (e) {
     toast.add({
       severity: 'error',
@@ -296,6 +297,7 @@ async function executeRun(key: string, name: string) {
       detail: e instanceof ApiError ? e.message : '立即执行失败，请稍后再试',
       life: 4000,
     })
+    return false
   } finally {
     runningKey.value = ''
   }
@@ -512,8 +514,11 @@ function confirmRecalculate() {
     icon: 'pi pi-refresh',
     acceptLabel: '立即重算',
     rejectLabel: '取消',
-    accept: () => {
-      void executeRun(difficultyJobKey, '全站题目难度重算')
+    accept: async () => {
+      const queued = await executeRun(difficultyJobKey, '全站题目难度重算')
+      // The progress banner lives on the jobs tab, so show it after a
+      // successful enqueue instead of leaving the difficulty tab silent.
+      if (queued && activeTab.value === 'difficulty') activeTab.value = 'jobs'
     },
   })
 }

@@ -107,10 +107,18 @@ func TestPlatformModelUpdateWithNewToken(t *testing.T) {
 	g := testutil.PG(t)
 	ctx := context.Background()
 	keys := newKeyManager(t)
-	svc, _ := newPlatformService(t, g, keys, &fakeChatClient{})
+	client := &fakeChatClient{fn: func(ai.ChatRequest) (string, error) { return "pong", nil }}
+	svc, _ := newPlatformService(t, g, keys, client)
 
 	created, err := svc.Create(ctx, 7, platformInput(), nil)
 	require.NoError(t, err)
+
+	// Seed a successful connectivity result that belongs to the old token.
+	res, err := svc.Test(ctx, created.ID)
+	require.NoError(t, err)
+	require.True(t, res.OK)
+	require.Len(t, client.calls, 1)
+	assert.Greater(t, client.calls[0].MaxTokens, 0, "connectivity probes must cap output tokens")
 
 	in := platformInput()
 	in.APIKey = "sk-new-secret-9876"
@@ -123,6 +131,10 @@ func TestPlatformModelUpdateWithNewToken(t *testing.T) {
 	plain, err := keys.Decrypt(row.APIKeyEncrypted)
 	require.NoError(t, err)
 	assert.Equal(t, "sk-new-secret-9876", plain)
+	assert.Nil(t, row.LastTestAt, "a token change invalidates the previous test result")
+	assert.False(t, row.LastTestOK)
+	assert.Empty(t, row.LastTestError)
+	assert.Zero(t, row.LastTestLatencyMS)
 }
 
 func TestPlatformModelSelectAndDeleteSelected(t *testing.T) {
@@ -226,6 +238,9 @@ func TestPlatformModelValidation(t *testing.T) {
 		{"相对地址", func(in *ai.PlatformModelInput) { in.BaseURL = "/v1" }},
 		{"缺少主机", func(in *ai.PlatformModelInput) { in.BaseURL = "https://" }},
 		{"包含 userinfo", func(in *ai.PlatformModelInput) { in.BaseURL = "https://user:pass@example.com/v1" }},
+		{"包含查询参数", func(in *ai.PlatformModelInput) { in.BaseURL = "https://example.com/v1?api-version=1" }},
+		{"包含空查询串", func(in *ai.PlatformModelInput) { in.BaseURL = "https://example.com/v1?" }},
+		{"包含片段", func(in *ai.PlatformModelInput) { in.BaseURL = "https://example.com/v1#section" }},
 		{"以 chat/completions 结尾", func(in *ai.PlatformModelInput) { in.BaseURL = "https://example.com/v1/chat/completions" }},
 		{"以 chat/completions 结尾带斜杠", func(in *ai.PlatformModelInput) { in.BaseURL = "https://example.com/v1/chat/completions/" }},
 		{"地址过长", func(in *ai.PlatformModelInput) { in.BaseURL = "https://example.com/" + strings.Repeat("a", 600) }},
@@ -291,7 +306,8 @@ func TestPlatformModelTestConnection(t *testing.T) {
 	t.Run("成功且不受 AI 总开关影响", func(t *testing.T) {
 		var gotPath, gotAuth string
 		var gotBody struct {
-			Model string `json:"model"`
+			Model     string `json:"model"`
+			MaxTokens int    `json:"max_tokens"`
 		}
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			gotPath = r.URL.Path
@@ -322,6 +338,8 @@ func TestPlatformModelTestConnection(t *testing.T) {
 		assert.Equal(t, "/v1/chat/completions", gotPath)
 		assert.Equal(t, "Bearer sk-1234567890", gotAuth)
 		assert.Equal(t, "deepseek-chat", gotBody.Model)
+		assert.Greater(t, gotBody.MaxTokens, 0, "connectivity probes must cap output tokens")
+		assert.LessOrEqual(t, gotBody.MaxTokens, 64)
 
 		var row ai.PlatformModel
 		require.NoError(t, g.First(&row, created.ID).Error)

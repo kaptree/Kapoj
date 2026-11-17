@@ -32,6 +32,12 @@ const (
 	staleRunMessage = "任务执行超时，已标记为失败"
 )
 
+// DefaultStaleAfter bounds how long a run may go without a heartbeat before
+// ReconcileStale fails it. Handlers refresh the heartbeat through Reporter,
+// and the Asynq worker timeout is 30 minutes, so 15 minutes of silence means
+// the worker is gone rather than the batch still being productive.
+const DefaultStaleAfter = 15 * time.Minute
+
 // Enqueuer schedules a run for asynchronous execution.
 type Enqueuer interface {
 	Enqueue(ctx context.Context, runID int64) error
@@ -412,7 +418,11 @@ func (s *Service) Execute(ctx context.Context, runID int64) error {
 	now := time.Now().UTC()
 	res := s.db.WithContext(ctx).Model(&Run{}).
 		Where("id = ? AND status = ?", runID, StatusQueued).
-		Updates(map[string]any{"status": StatusRunning, "started_at": now})
+		Updates(map[string]any{
+			"status":       StatusRunning,
+			"started_at":   now,
+			"heartbeat_at": now,
+		})
 	if res.Error != nil {
 		return res.Error
 	}
@@ -465,13 +475,22 @@ func (s *Service) Execute(ctx context.Context, runID int64) error {
 	return s.finishRun(ctx, &run, StatusSucceeded, "")
 }
 
-// ReconcileStale marks queued/running runs older than olderThan as failed.
+// ReconcileStale marks abandoned runs as failed and frees their job for the
+// next run. Queued runs are stale once their queue wait exceeds olderThan; a
+// running run is stale only after its heartbeat (falling back to started_at,
+// then created_at for rows written before heartbeats existed) expires.
 func (s *Service) ReconcileStale(ctx context.Context, olderThan time.Duration) error {
+	if olderThan <= 0 {
+		olderThan = DefaultStaleAfter
+	}
 	cutoff := time.Now().UTC().Add(-olderThan)
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var stale []Run
-		if err := tx.Where("status IN ? AND created_at < ?", activeStatuses, cutoff).
-			Find(&stale).Error; err != nil {
+		if err := tx.Where(
+			"(status = ? AND created_at < ?) OR "+
+				"(status = ? AND COALESCE(heartbeat_at, started_at, created_at) < ?)",
+			StatusQueued, cutoff, StatusRunning, cutoff,
+		).Find(&stale).Error; err != nil {
 			return err
 		}
 		if len(stale) == 0 {
@@ -488,12 +507,20 @@ func (s *Service) ReconcileStale(ctx context.Context, olderThan time.Duration) e
 			}
 		}
 		now := time.Now().UTC()
-		if err := tx.Model(&Run{}).Where("id IN ?", ids).Updates(map[string]any{
-			"status":        StatusFailed,
-			"error_message": staleRunMessage,
-			"finished_at":   now,
-		}).Error; err != nil {
-			return err
+		// Only rows that are still active are failed. A run that finished
+		// between the scan and this update must keep its terminal status.
+		res := tx.Model(&Run{}).
+			Where("id IN ? AND status IN ?", ids, activeStatuses).
+			Updates(map[string]any{
+				"status":        StatusFailed,
+				"error_message": staleRunMessage,
+				"finished_at":   now,
+			})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return nil
 		}
 		return tx.Model(&Job{}).
 			Where("key IN ? AND last_status IN ?", keys, activeStatuses).
@@ -539,29 +566,65 @@ func (s *Service) activeRun(ctx context.Context, key string) (*Run, error) {
 func (s *Service) enqueue(ctx context.Context, run *Run) error {
 	if s.queue == nil {
 		msg := "任务队列未配置"
-		_ = s.finishRun(ctx, run, StatusFailed, msg)
+		_ = s.failQueuedRun(ctx, run, msg)
 		return errors.New("jobs: queue is not configured")
 	}
 	enqueueCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), enqueueTimeout)
 	defer cancel()
 	if err := s.queue.Enqueue(enqueueCtx, run.ID); err != nil {
-		_ = s.finishRun(ctx, run, StatusFailed, enqueueFailureMessage)
+		_ = s.failQueuedRun(ctx, run, enqueueFailureMessage)
 		return err
 	}
 	return nil
 }
 
+// failQueuedRun marks a run that never reached a worker as failed. Only a
+// still-queued row may transition, so a late enqueue failure cannot overwrite
+// a run that another worker already started or the reconciler already failed.
+func (s *Service) failQueuedRun(ctx context.Context, run *Run, errMsg string) error {
+	finishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), finishTimeout)
+	defer cancel()
+	now := time.Now().UTC()
+	return s.db.WithContext(finishCtx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&Run{}).Where("id = ? AND status = ?", run.ID, StatusQueued).
+			Updates(map[string]any{
+				"status":        StatusFailed,
+				"error_message": errMsg,
+				"finished_at":   now,
+			})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return nil
+		}
+		return tx.Model(&Job{}).Where("key = ?", run.JobKey).Updates(map[string]any{
+			"last_status": StatusFailed,
+			"last_error":  errMsg,
+			"updated_at":  now,
+		}).Error
+	})
+}
+
+// finishRun records the terminal state of a run that is still running. A run
+// reconciled as stale is already failed, so a late handler completion is a
+// no-op and must not flip the status or rewrite the job summary.
 func (s *Service) finishRun(ctx context.Context, run *Run, status, errMsg string) error {
 	finishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), finishTimeout)
 	defer cancel()
 	now := time.Now().UTC()
 	return s.db.WithContext(finishCtx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&Run{}).Where("id = ?", run.ID).Updates(map[string]any{
-			"status":        status,
-			"error_message": errMsg,
-			"finished_at":   now,
-		}).Error; err != nil {
-			return err
+		res := tx.Model(&Run{}).Where("id = ? AND status = ?", run.ID, StatusRunning).
+			Updates(map[string]any{
+				"status":        status,
+				"error_message": errMsg,
+				"finished_at":   now,
+			})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return nil
 		}
 		return tx.Model(&Job{}).Where("key = ?", run.JobKey).Updates(map[string]any{
 			"last_status": status,
@@ -584,6 +647,7 @@ func (r *runReporter) SetProgress(current, total int) {
 	if err := r.db.Model(&Run{}).Where("id = ?", r.runID).Updates(map[string]any{
 		"progress_current": current,
 		"progress_total":   total,
+		"heartbeat_at":     time.Now().UTC(),
 	}).Error; err != nil {
 		slog.Warn("jobs: update run progress failed", "run", r.runID, "err", err)
 	}
@@ -594,10 +658,12 @@ func (r *runReporter) SetStats(stats map[string]any) {
 	for k, v := range stats {
 		copied[k] = v
 	}
+	now := time.Now().UTC()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if err := r.db.Model(&Run{}).Where("id = ?", r.runID).
-		Select("stats_json").Updates(&Run{StatsJSON: copied}).Error; err != nil {
+		Select("stats_json", "heartbeat_at").
+		Updates(&Run{StatsJSON: copied, HeartbeatAt: &now}).Error; err != nil {
 		slog.Warn("jobs: update run stats failed", "run", r.runID, "err", err)
 	}
 }

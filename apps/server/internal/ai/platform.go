@@ -23,6 +23,9 @@ const (
 	platformLastTestErrMaxLen  = 500
 	platformTestTimeout        = 10 * time.Second
 	platformTestSuccessMessage = "连接成功"
+	// platformTestMaxTokens keeps the connectivity probe cheap; the client
+	// only checks that the upstream completes a chat request.
+	platformTestMaxTokens = 16
 )
 
 // PlatformModelView 是平台模型的脱敏视图，绝不包含 token 明文或密文。
@@ -184,6 +187,11 @@ func (s *PlatformService) Update(ctx context.Context, actorID, id int64, in Plat
 		}
 		if encrypted != nil {
 			updates["api_key_encrypted"] = *encrypted
+			// A previous connectivity result does not describe the new token.
+			updates["last_test_at"] = nil
+			updates["last_test_ok"] = false
+			updates["last_test_error"] = ""
+			updates["last_test_latency_ms"] = 0
 		}
 		if err := tx.Model(&PlatformModel{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 			return fmt.Errorf("ai: update platform model: %w", err)
@@ -270,6 +278,7 @@ func (s *PlatformService) Test(ctx context.Context, id int64) (*PlatformTestResu
 			Messages: []ChatMessage{
 				{Role: "user", Content: "ping"},
 			},
+			MaxTokens: platformTestMaxTokens,
 		})
 		cancel()
 		if chatErr == nil {
@@ -404,6 +413,12 @@ func normalizePlatformBaseURL(raw string) (string, error) {
 	}
 	if parsed.User != nil {
 		return "", httpx.ErrValidation("接口地址不能包含用户名或密码")
+	}
+	if parsed.RawQuery != "" || parsed.ForceQuery {
+		return "", httpx.ErrValidation("接口地址不能包含查询参数")
+	}
+	if parsed.Fragment != "" {
+		return "", httpx.ErrValidation("接口地址不能包含片段")
 	}
 	normalized := strings.TrimRight(trimmed, "/")
 	if strings.HasSuffix(strings.ToLower(normalized), "/chat/completions") {

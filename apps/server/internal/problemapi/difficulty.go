@@ -32,6 +32,15 @@ type AISettings interface {
 // defensive fallback for an unset timeout.
 const defaultAITimeoutSeconds = 15
 
+// Fallback reasons stored in difficulty_reason and the creation history when
+// the optional AI assessment could not produce a score.
+const (
+	aiFallbackReasonNotConfigured = "AI 评估未启用或未配置，使用默认难度"
+	aiFallbackReasonTimeout       = "AI 评估超时，使用默认难度"
+	aiFallbackReasonUpstream      = "AI 服务调用失败，使用默认难度"
+	aiFallbackReasonFormat        = "AI 返回格式无效，使用默认难度"
+)
+
 // createDifficultyDecision builds the difficulty metadata for POST
 // /api/problems. The legacy path (no settings service wired) keeps the old
 // behavior: the request score is stored as a manual value. In the full path an
@@ -60,13 +69,18 @@ func (h *handler) createDifficultyDecision(ctx context.Context, in problem.Input
 		Auto:        true,
 		ActorID:     actorID,
 	}
-	if assessment, ok := h.tryAssessDifficulty(ctx, settings, assessmentInputFromInput(in)); ok {
+	assessment, fallbackReason := h.tryAssessDifficulty(ctx, settings, assessmentInputFromInput(in))
+	if assessment != nil {
 		decision.Score = assessment.Score
 		decision.Prior = assessment.Score
 		decision.PriorSource = problem.DifficultyPriorSourceAI
 		decision.Source = problem.DifficultySourceAI
 		decision.Reason = assessment.Reason
 		decision.Confidence = assessment.Confidence
+	} else {
+		// The default score is still used, but the reason records why AI
+		// could not contribute so admins can diagnose the fallback.
+		decision.Reason = fallbackReason
 	}
 	return normalizeDecisionPrior(decision), nil
 }
@@ -91,38 +105,58 @@ func normalizeDecisionPrior(d problem.DifficultyDecision) problem.DifficultyDeci
 }
 
 // tryAssessDifficulty runs the configured platform assessment with the
-// difficulty timeout. It is best-effort: every failure is logged and reported
-// as not assessed so callers can fall back to the configured default.
+// difficulty timeout. It is best-effort: every failure is logged and returns a
+// categorized fallback reason so callers can keep the configured default while
+// persisting why AI was skipped.
 func (h *handler) tryAssessDifficulty(
 	ctx context.Context,
 	settings *difficulty.SettingsView,
 	in ai.DifficultyAssessmentInput,
-) (*ai.DifficultyAssessment, bool) {
+) (*ai.DifficultyAssessment, string) {
 	if h.ai == nil || h.aiSettings == nil || !settings.AIAssessEnabled {
-		return nil, false
+		return nil, aiFallbackReasonNotConfigured
 	}
 	enabled, err := h.aiSettings.Enabled(ctx)
 	if err != nil {
 		slog.Warn("problem: AI settings unavailable; using default difficulty", "err", err)
-		return nil, false
+		return nil, aiFallbackReasonNotConfigured
 	}
 	if !enabled {
-		return nil, false
+		return nil, aiFallbackReasonNotConfigured
 	}
 	configured, err := h.ai.PlatformModelConfigured(ctx)
 	if err != nil {
 		slog.Warn("problem: AI platform model check failed; using default difficulty", "err", err)
-		return nil, false
+		return nil, aiFallbackReasonNotConfigured
 	}
 	if !configured {
-		return nil, false
+		return nil, aiFallbackReasonNotConfigured
 	}
 	assessment, err := h.assessWithTimeout(ctx, settings, in)
 	if err != nil {
 		slog.Warn("problem: AI difficulty assessment failed; using default difficulty", "err", err)
-		return nil, false
+		return nil, assessmentFallbackReason(err)
 	}
-	return assessment, true
+	return assessment, ""
+}
+
+// assessmentFallbackReason maps an assessment error to the diagnostic reason
+// stored on the problem and its creation history.
+func assessmentFallbackReason(err error) string {
+	switch {
+	case errors.Is(err, ai.ErrAssessmentTimeout), errors.Is(err, context.DeadlineExceeded):
+		return aiFallbackReasonTimeout
+	case errors.Is(err, ai.ErrAssessmentFormat):
+		return aiFallbackReasonFormat
+	case errors.Is(err, httpx.ErrBadGateway):
+		return aiFallbackReasonUpstream
+	default:
+		var appErr *httpx.AppError
+		if errors.As(err, &appErr) {
+			return aiFallbackReasonNotConfigured
+		}
+		return aiFallbackReasonUpstream
+	}
 }
 
 func (h *handler) assessWithTimeout(

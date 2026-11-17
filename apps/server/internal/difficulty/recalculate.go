@@ -145,7 +145,8 @@ func (s *RecalculateService) RecalculateAll(ctx context.Context, opts Recalculat
 		}
 
 		if len(changes) > 0 {
-			if err := s.applyChanges(ctx, changes); err != nil {
+			applied, err := s.applyChanges(ctx, changes)
+			if err != nil {
 				stats.Processed += len(batch)
 				stats.Failed += len(changes)
 				if reporter != nil {
@@ -154,7 +155,9 @@ func (s *RecalculateService) RecalculateAll(ctx context.Context, opts Recalculat
 				}
 				return stats, err
 			}
-			stats.Changed += len(changes)
+			// Problems locked after the scan are skipped by the guarded
+			// UPDATE and must not count as changed.
+			stats.Changed += applied
 		}
 		stats.Processed += len(batch)
 
@@ -267,32 +270,47 @@ func newRecalcChange(p *problem.Problem, sample, accepted int, result FormulaRes
 	}
 }
 
-// applyChanges commits one batch of problem updates and history rows. The
-// prior is intentionally untouched; only the daily pass-rate score moves.
-func (s *RecalculateService) applyChanges(ctx context.Context, changes []recalcChange) error {
+// applyChanges commits one batch of problem updates and history rows and
+// returns how many problems were actually updated. The prior is intentionally
+// untouched; only the daily pass-rate score moves.
+//
+// The UPDATE keeps the `difficulty_auto = true` predicate from the scan. If an
+// admin locks the problem between the scan and this write, the row is left
+// alone and no history row is written for the score that was never stored.
+func (s *RecalculateService) applyChanges(ctx context.Context, changes []recalcChange) (int, error) {
 	now := s.now().UTC()
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	applied := 0
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for i := range changes {
 			change := &changes[i]
-			res := tx.Model(&problem.Problem{}).Where("id = ?", change.problemID).Updates(map[string]any{
-				"difficulty":            change.newScore,
-				"difficulty_source":     problem.DifficultySourcePassRate,
-				"difficulty_reason":     change.reason,
-				"difficulty_updated_at": now,
-			})
+			res := tx.Model(&problem.Problem{}).
+				Where("id = ? AND difficulty_auto = ?", change.problemID, true).
+				Updates(map[string]any{
+					"difficulty":            change.newScore,
+					"difficulty_source":     problem.DifficultySourcePassRate,
+					"difficulty_reason":     change.reason,
+					"difficulty_updated_at": now,
+				})
 			if res.Error != nil {
 				return fmt.Errorf("difficulty: update problem %d: %w", change.problemID, res.Error)
 			}
 			if res.RowsAffected == 0 {
-				return fmt.Errorf("difficulty: update problem %d: %w", change.problemID, gorm.ErrRecordNotFound)
+				// Locked or deleted after the scan: skip both the update and
+				// its history row instead of failing the whole batch.
+				continue
 			}
 			change.history.CreatedAt = now
 			if err := tx.Create(&change.history).Error; err != nil {
 				return fmt.Errorf("difficulty: history for problem %d: %w", change.problemID, err)
 			}
+			applied++
 		}
 		return nil
 	})
+	if err != nil {
+		return 0, err
+	}
+	return applied, nil
 }
 
 // statsMap renders Stats with the camelCase keys stored in jobs.run.stats_json.

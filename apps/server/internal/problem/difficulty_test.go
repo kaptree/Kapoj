@@ -156,6 +156,55 @@ func TestUpdateWrapsDifficultyDecision(t *testing.T) {
 	assert.Equal(t, 70, up.Difficulty)
 }
 
+func TestUpdateLockedProblemKeepsProvenanceWhenScoreUnchanged(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	p := e.create(t, input("locked-provenance"))
+
+	// A reassessment on a locked problem records AI provenance while keeping
+	// difficulty_auto=false.
+	locked, err := e.svc.UpdateDifficultyMeta(ctx, p.ID, problem.DifficultyDecision{
+		Score: 62, Prior: 57, PriorSource: problem.DifficultyPriorSourceAI,
+		Source: problem.DifficultySourceAI, Auto: false,
+		Reason: "AI 重评", Confidence: 0.8, ActorID: 1,
+	})
+	require.NoError(t, err)
+	require.False(t, locked.DifficultyAuto)
+	before, err := e.repo.FindByID(ctx, p.ID)
+	require.NoError(t, err)
+	historyBefore := historyCount(t, e, p.ID)
+
+	// An ordinary form save re-sends the same locked score. It must not
+	// rewrite the AI prior/source/reason or the updated timestamp.
+	in := input("locked-provenance")
+	in.Title = "Renamed while locked"
+	in.Difficulty = 62
+	in.DifficultyAuto = ptr(false)
+	up, err := e.svc.Update(ctx, p.ID, in)
+	require.NoError(t, err)
+	assert.Equal(t, "Renamed while locked", up.Title)
+	assert.False(t, up.DifficultyAuto)
+	assert.Equal(t, 62, up.Difficulty)
+	assert.Equal(t, 57, up.DifficultyPrior)
+	assert.Equal(t, problem.DifficultyPriorSourceAI, up.DifficultyPriorSource)
+	assert.Equal(t, problem.DifficultySourceAI, up.DifficultySource)
+	assert.Equal(t, "AI 重评", up.DifficultyReason)
+	assert.True(t, up.DifficultyUpdatedAt.Equal(before.DifficultyUpdatedAt),
+		"an unchanged score must not move difficulty_updated_at")
+	assert.Equal(t, historyBefore, historyCount(t, e, p.ID))
+
+	// A changed score is a real manual edit and does replace the metadata.
+	in.Difficulty = 70
+	up, err = e.svc.Update(ctx, p.ID, in)
+	require.NoError(t, err)
+	assert.False(t, up.DifficultyAuto)
+	assert.Equal(t, 70, up.Difficulty)
+	assert.Equal(t, 70, up.DifficultyPrior)
+	assert.Equal(t, problem.DifficultyPriorSourceManual, up.DifficultyPriorSource)
+	assert.Equal(t, problem.DifficultySourceManual, up.DifficultySource)
+	assert.Empty(t, up.DifficultyReason)
+}
+
 func TestUpdateWithDifficultyWritesHistoryOnlyOnChange(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()

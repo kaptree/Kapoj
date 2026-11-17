@@ -231,9 +231,20 @@ func run() error {
 	if err := jobsSvc.Ensure(context.Background()); err != nil {
 		return err
 	}
-	if err := jobsSvc.ReconcileStale(context.Background(), 2*time.Hour); err != nil {
+	if err := jobsSvc.ReconcileStale(context.Background(), jobs.DefaultStaleAfter); err != nil {
 		return err
 	}
+
+	// Workers must stop before the SQL pool is closed: an in-flight handler
+	// that is interrupted after Close would report a spurious database error.
+	// Shutdown is idempotent, so the deferred fallback covers early returns.
+	var workers []*asynq.Server
+	stopWorkers := func() {
+		for i := len(workers) - 1; i >= 0; i-- {
+			workers[i].Shutdown()
+		}
+	}
+	defer stopWorkers()
 
 	gameServer := asynq.NewServer(
 		asynq.RedisClientOpt{Addr: cfg.RedisAddr},
@@ -255,7 +266,7 @@ func run() error {
 	if err := gameServer.Start(gameMux); err != nil {
 		return err
 	}
-	defer gameServer.Shutdown()
+	workers = append(workers, gameServer)
 	slog.Info("kapoj game worker started",
 		"queue", gamequeue.QueueName, "concurrency", cfg.GameConcurrency)
 
@@ -272,7 +283,7 @@ func run() error {
 	if err := backupServer.Start(backupMux); err != nil {
 		return err
 	}
-	defer backupServer.Shutdown()
+	workers = append(workers, backupServer)
 	slog.Info("kapoj backup worker started", "queue", backup.QueueName)
 
 	similarityServer := asynq.NewServer(
@@ -288,7 +299,7 @@ func run() error {
 	if err := similarityServer.Start(similarityMux); err != nil {
 		return err
 	}
-	defer similarityServer.Shutdown()
+	workers = append(workers, similarityServer)
 	slog.Info("kapoj similarity worker started", "queue", similarityqueue.QueueName)
 
 	jobsServer := asynq.NewServer(
@@ -304,7 +315,7 @@ func run() error {
 	if err := jobsServer.Start(jobsMux); err != nil {
 		return err
 	}
-	defer jobsServer.Shutdown()
+	workers = append(workers, jobsServer)
 	slog.Info("kapoj jobs worker started", "queue", jobs.QueueName)
 
 	gin.SetMode(gin.ReleaseMode)
@@ -361,6 +372,10 @@ func run() error {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		return err
 	}
+	// Stop the Asynq workers explicitly before closing the SQL pool. The jobs
+	// worker in particular may still be writing progress and a terminal state.
+	cancelWork()
+	stopWorkers()
 	if sqlDB, err := g.DB(); err == nil {
 		_ = sqlDB.Close()
 	}

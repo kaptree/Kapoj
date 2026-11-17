@@ -317,6 +317,7 @@ func TestRunSuccessAndFailure(t *testing.T) {
 	assert.EqualValues(t, 3, got.StatsJSON["processed"])
 	assert.EqualValues(t, 1, got.StatsJSON["changed"])
 	assert.NotNil(t, got.StartedAt)
+	assert.NotNil(t, got.HeartbeatAt, "handlers refresh the heartbeat while they run")
 	assert.NotNil(t, got.FinishedAt)
 	assert.Empty(t, got.ErrorMessage)
 
@@ -410,6 +411,135 @@ func TestReconcileStale(t *testing.T) {
 	require.NoError(t, g.Where("key = ?", "job.stale").First(&job).Error)
 	assert.Equal(t, jobs.StatusFailed, job.LastStatus)
 }
+
+func TestReconcileStaleUsesHeartbeat(t *testing.T) {
+	svc, g, _ := newTestService(t)
+	ctx := context.Background()
+	registerTestJob(svc, "job.heartbeat.stale", nil)
+	registerTestJob(svc, "job.heartbeat.fresh", nil)
+	require.NoError(t, svc.Ensure(ctx))
+
+	started := time.Now().UTC().Add(-5 * time.Minute)
+	staleHeartbeat := time.Now().UTC().Add(-time.Hour)
+	fresh := &jobs.Run{
+		JobKey: "job.heartbeat.fresh", Trigger: jobs.TriggerManual,
+		Status: jobs.StatusRunning, StatsJSON: map[string]any{},
+		StartedAt: &started, HeartbeatAt: ptrTime(time.Now().UTC().Add(-time.Minute)),
+	}
+	require.NoError(t, g.Create(fresh).Error)
+
+	stale := &jobs.Run{
+		JobKey: "job.heartbeat.stale", Trigger: jobs.TriggerManual,
+		Status: jobs.StatusRunning, StatsJSON: map[string]any{},
+		StartedAt: &started,
+	}
+	require.NoError(t, g.Create(stale).Error)
+	require.NoError(t, g.Model(&jobs.Run{}).Where("id = ?", stale.ID).
+		Update("heartbeat_at", staleHeartbeat).Error)
+
+	// created_at is recent for both rows: only the stale heartbeat may fail.
+	require.NoError(t, svc.ReconcileStale(ctx, jobs.DefaultStaleAfter))
+
+	var got jobs.Run
+	require.NoError(t, g.First(&got, stale.ID).Error)
+	assert.Equal(t, jobs.StatusFailed, got.Status)
+	assert.Equal(t, "任务执行超时，已标记为失败", got.ErrorMessage)
+	assert.NotNil(t, got.FinishedAt)
+
+	got = jobs.Run{}
+	require.NoError(t, g.First(&got, fresh.ID).Error)
+	assert.Equal(t, jobs.StatusRunning, got.Status, "a fresh heartbeat must keep the run alive")
+	assert.Nil(t, got.FinishedAt)
+
+	// The stale run's unique-index slot is free again.
+	_, err := svc.CreateManualRun(ctx, 1, "job.heartbeat.stale", nil)
+	require.NoError(t, err)
+}
+
+func TestRunSchedulerReconcilesStaleRunsAndFreesSlot(t *testing.T) {
+	svc, g, _ := newTestService(t)
+	ctx := context.Background()
+	registerTestJob(svc, "job.sched.recover", nil)
+	require.NoError(t, svc.Ensure(ctx))
+
+	stale := &jobs.Run{
+		JobKey: "job.sched.recover", Trigger: jobs.TriggerSchedule,
+		Status: jobs.StatusRunning, StatsJSON: map[string]any{},
+		CreatedAt:   time.Now().UTC(),
+		HeartbeatAt: ptrTime(time.Now().UTC().Add(-time.Hour)),
+	}
+	require.NoError(t, g.Create(stale).Error)
+
+	runCtx, cancel := context.WithTimeout(ctx, 250*time.Millisecond)
+	defer cancel()
+	svc.RunScheduler(runCtx, 20*time.Millisecond)
+
+	var got jobs.Run
+	require.NoError(t, g.First(&got, stale.ID).Error)
+	require.Equal(t, jobs.StatusFailed, got.Status, "the scheduler tick must reconcile stale runs")
+
+	// A manual run is no longer blocked.
+	manual, err := svc.CreateManualRun(ctx, 1, "job.sched.recover", nil)
+	require.NoError(t, err)
+	require.NoError(t, g.Model(&jobs.Run{}).Where("id = ?", manual.ID).
+		Update("status", jobs.StatusSucceeded).Error)
+
+	// Neither is the next scheduled occurrence.
+	now := time.Now().UTC()
+	require.NoError(t, g.Model(&jobs.Job{}).Where("key = ?", "job.sched.recover").
+		Update("next_run_at", now.Add(-time.Minute)).Error)
+	runs, err := svc.ClaimDue(ctx, now)
+	require.NoError(t, err)
+	require.Len(t, runs, 1)
+	assert.Equal(t, jobs.TriggerSchedule, runs[0].Trigger)
+}
+
+func TestLateFinishAfterStaleFailureIsNoop(t *testing.T) {
+	svc, g, _ := newTestService(t)
+	ctx := context.Background()
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	registerTestJob(svc, "job.late", func(context.Context, *jobs.Run, jobs.Reporter) error {
+		once.Do(func() { close(started) })
+		<-release
+		return nil
+	})
+	require.NoError(t, svc.Ensure(ctx))
+
+	run, err := svc.CreateManualRun(ctx, 1, "job.late", nil)
+	require.NoError(t, err)
+
+	execErr := make(chan error, 1)
+	go func() { execErr <- svc.Execute(ctx, run.ID) }()
+	<-started
+
+	require.NoError(t, g.Model(&jobs.Run{}).Where("id = ?", run.ID).
+		Update("heartbeat_at", time.Now().UTC().Add(-time.Hour)).Error)
+	require.NoError(t, svc.ReconcileStale(ctx, jobs.DefaultStaleAfter))
+
+	var failed jobs.Run
+	require.NoError(t, g.First(&failed, run.ID).Error)
+	require.Equal(t, jobs.StatusFailed, failed.Status)
+	finishedAt := failed.FinishedAt
+	require.NotNil(t, finishedAt)
+
+	close(release)
+	require.NoError(t, <-execErr)
+
+	var late jobs.Run
+	require.NoError(t, g.First(&late, run.ID).Error)
+	assert.Equal(t, jobs.StatusFailed, late.Status, "late completion must not overwrite the stale failure")
+	assert.Equal(t, "任务执行超时，已标记为失败", late.ErrorMessage)
+	assert.True(t, late.FinishedAt.Equal(*finishedAt))
+
+	var job jobs.Job
+	require.NoError(t, g.Where("key = ?", "job.late").First(&job).Error)
+	assert.Equal(t, jobs.StatusFailed, job.LastStatus)
+}
+
+func ptrTime(t time.Time) *time.Time { return &t }
 
 func TestUpdateValidation(t *testing.T) {
 	svc, g, _ := newTestService(t)

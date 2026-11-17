@@ -3,6 +3,7 @@ package difficulty_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -321,6 +322,44 @@ func TestRecalculateSkipsManualProblems(t *testing.T) {
 	assert.Equal(t, 70, got.Difficulty)
 	assert.Equal(t, problem.DifficultySourceDefault, got.DifficultySource)
 	assert.Empty(t, e.history(t, p.ID))
+}
+
+// TestRecalculateSkipsProblemLockedAfterScan simulates an admin locking a
+// problem between the recalc scan and the batch write. The guarded UPDATE must
+// leave the locked score alone and skip its history row.
+func TestRecalculateSkipsProblemLockedAfterScan(t *testing.T) {
+	e := newRecalcEnv(t)
+	p := e.problem(t, "recalc-race-lock", 50, 50, true)
+	users := e.users(t, 10)
+	e.submissionsAt(t, p.ID, users, 9, nil, time.Now().UTC())
+
+	armed := true
+	locked := false
+	require.NoError(t, e.db.Callback().Query().After("gorm:query").
+		Register("test:lock_after_batch_scan", func(tx *gorm.DB) {
+			sql := strings.ToLower(tx.Statement.SQL.String())
+			if !armed || !strings.Contains(sql, "difficulty_auto") ||
+				!strings.Contains(sql, "limit") {
+				return
+			}
+			armed = false
+			require.NoError(t, e.db.Model(&problem.Problem{}).Where("id = ?", p.ID).
+				Update("difficulty_auto", false).Error)
+			locked = true
+		}))
+	defer e.db.Callback().Query().Remove("test:lock_after_batch_scan")
+
+	stats, err := e.svc.RecalculateAll(context.Background(), difficulty.RecalculateOptions{FullStep: true}, nil)
+	require.NoError(t, err)
+	require.True(t, locked, "the test hook must lock the problem after the batch scan")
+
+	// The problem was scanned and processed, but the guarded update skipped it.
+	assert.Equal(t, difficulty.Stats{Total: 1, Processed: 1}, stats)
+	got := e.reloadProblem(t, p.ID)
+	assert.Equal(t, 50, got.Difficulty, "a manually locked score must survive the race")
+	assert.False(t, got.DifficultyAuto)
+	assert.Equal(t, problem.DifficultySourceDefault, got.DifficultySource)
+	assert.Empty(t, e.history(t, p.ID), "no history for an update that never happened")
 }
 
 func TestRecalculateFullStepOnManualRun(t *testing.T) {

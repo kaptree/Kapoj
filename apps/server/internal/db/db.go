@@ -122,6 +122,13 @@ func Migrate(g *gorm.DB) error {
 		).Error; err != nil {
 			return err
 		}
+		// heartbeat_at lets the stale-run reconciler distinguish a crashed
+		// worker from a long batch that is still reporting progress.
+		if err := tx.Exec(
+			"ALTER TABLE scheduled_job_runs ADD COLUMN IF NOT EXISTS heartbeat_at timestamptz",
+		).Error; err != nil {
+			return err
+		}
 		if err := backfillEmailVerified(tx); err != nil {
 			return err
 		}

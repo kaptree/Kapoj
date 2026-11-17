@@ -477,6 +477,65 @@ describe('ProblemEditView', () => {
     wrapper.unmount()
   })
 
+  it('defaults create-mode difficulty to 50 and shows the fallback hint', async () => {
+    vi.mocked(createProblem).mockResolvedValue(detail({ id: 9 }))
+    const { wrapper } = await mountView('/problems/new')
+
+    expect(difficultyInput(wrapper).props('modelValue')).toBe(50)
+    expect(difficultyInput(wrapper).props('maxFractionDigits')).toBe(0)
+    expect(
+      (wrapper.find('[data-test="difficulty-input"] input').element as HTMLInputElement).value,
+    ).toBe('50')
+    expect(wrapper.find('[data-test="difficulty-create-hint"]').text()).toBe(
+      '保存时由 AI 评估，未配置则默认 50。',
+    )
+
+    // Turning auto off on create must send the neutral default, not 1.
+    difficultyAuto(wrapper).vm.$emit('update:modelValue', false)
+    await flushPromises()
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(createProblem).toHaveBeenCalledWith(
+      expect.objectContaining({ difficulty: 50, difficultyAuto: false }),
+    )
+    wrapper.unmount()
+  })
+
+  it('keeps unsaved form edits when AI reassessment updates difficulty metadata', async () => {
+    vi.mocked(assessProblemDifficulty).mockResolvedValue(
+      detail({
+        title: '服务端旧标题',
+        statementMd: '服务端旧题面',
+        difficulty: 88,
+        difficultyAuto: true,
+        difficultySource: 'ai',
+        difficultyReason: 'AI 重评结果',
+      }),
+    )
+    const { wrapper } = await mountView('/problems/1/edit')
+
+    const title = wrapper.find('input[name="title"]')
+    await title.setValue('未保存的新标题')
+    wrapper
+      .findComponent({ name: 'MarkdownEditor' })
+      .vm.$emit('update:modelValue', '未保存的新题面')
+    await flushPromises()
+
+    await button(wrapper, 'AI 重新评估').trigger('click')
+    await flushPromises()
+    const options = confirm.require.mock.calls[0]![0] as { accept: () => Promise<void> }
+    await options.accept()
+    await flushPromises()
+
+    expect((title.element as HTMLInputElement).value).toBe('未保存的新标题')
+    expect(wrapper.find('.md-stub').text()).toBe('未保存的新题面')
+    expect(wrapper.find('[data-test="difficulty-source"]').text()).toBe('AI 初评')
+    expect(wrapper.text()).toContain('AI 重评结果')
+    expect(difficultyInput(wrapper).props('modelValue')).toBe(88)
+    wrapper.unmount()
+  })
+
   it('unlocks difficulty when auto adjustment is turned off and saves the lock', async () => {
     vi.mocked(updateProblem).mockResolvedValue(detail())
     const { wrapper } = await mountView('/problems/1/edit')

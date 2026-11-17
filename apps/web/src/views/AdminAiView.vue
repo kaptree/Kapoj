@@ -155,6 +155,13 @@ const modelOptions = computed<{ label: string; value: number | null }[]>(() => {
   return [{ label: '未选择', value: null }, ...options]
 })
 
+/** The persisted selection may point at a model that was disabled later. */
+const selectedModelDisabled = computed(() => {
+  if (selectedModelId.value === null) return false
+  const current = models.value.find((model) => model.id === selectedModelId.value)
+  return current !== undefined && !current.enabled
+})
+
 function modelStatusSeverity(model: PlatformModelView): 'secondary' | 'success' | 'danger' {
   if (!model.lastTestAt) return 'secondary'
   return model.lastTestOk ? 'success' : 'danger'
@@ -278,7 +285,7 @@ function confirmResetKey() {
   confirm.require({
     header: '清除旧密钥并生成新密钥',
     message:
-      '将删除所有用户已保存的 AI API Key，并生成新的平台加密密钥。此操作不可撤销，用户需要重新填写自己的 API Key。',
+      '将删除所有用户已保存的 AI API Key，清空所有平台模型 Token 并重置当前模型选择，然后生成新的平台加密密钥。此操作不可撤销，用户需要重新填写自己的 API Key，平台模型需要重新填写 Token。',
     icon: 'pi pi-exclamation-triangle',
     acceptLabel: '清除并生成',
     rejectLabel: '取消',
@@ -295,10 +302,14 @@ async function doResetKey() {
     generatedKey.value = result.key
     manualKey.value = ''
     await refreshSettings()
+    // The reset also disables every platform model and clears the selection;
+    // refresh the table so enabled/masked state is not stale.
+    await loadModels()
     toast.add({
       severity: 'success',
       summary: '旧密钥已清除',
-      detail: '新密钥已生成；请立即备份，用户需重新填写 AI API Key',
+      detail:
+        '新密钥已生成；请立即备份。用户需重新填写 AI API Key，平台模型 Token 与当前选择已清空',
       life: 4000,
     })
   } catch (e) {
@@ -608,6 +619,16 @@ onMounted(() => {
           平台模型供系统任务使用；Token 只保存在服务端，列表与测试结果均不显示明文。
         </p>
 
+        <Message
+          v-if="selectedModelDisabled"
+          severity="warn"
+          :closable="false"
+          role="status"
+          data-test="selected-model-disabled"
+        >
+          当前选择的平台模型已停用，系统任务不会使用它。请启用该模型或重新选择。
+        </Message>
+
         <AppFormField v-slot="{ id }" label="当前使用模型">
           <div class="platform-select__row">
             <Select
@@ -783,7 +804,10 @@ onMounted(() => {
                 @click="confirmResetKey"
               />
             </div>
-            <p class="key-actions__hint">旧密钥丢失时使用此操作；会删除所有用户已保存的 AI Key。</p>
+            <p class="key-actions__hint">
+              旧密钥丢失时使用此操作；会删除所有用户已保存的 AI Key，并清空平台模型 Token
+              与当前模型选择。
+            </p>
 
             <form class="admin-ai__form" @submit.prevent="confirmSaveManual">
               <AppFormField

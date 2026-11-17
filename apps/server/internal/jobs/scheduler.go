@@ -29,6 +29,12 @@ func (s *Service) RunScheduler(ctx context.Context, interval time.Duration) {
 }
 
 func (s *Service) runDue(ctx context.Context) {
+	// Free a slot whose worker crashed or was restarted mid-run before looking
+	// for due work; otherwise the partial unique index blocks every future run
+	// of that job until the process restarts.
+	if err := s.ReconcileStale(ctx, DefaultStaleAfter); err != nil {
+		slog.Warn("jobs: reconcile stale runs failed", "err", err)
+	}
 	runs, err := s.ClaimDue(ctx, time.Now().UTC())
 	if err != nil {
 		slog.Warn("jobs: claim due jobs failed", "err", err)

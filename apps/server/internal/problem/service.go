@@ -188,9 +188,10 @@ func (s *Service) UpdateAs(ctx context.Context, id int64, in Input, actorID int6
 }
 
 // updateDifficultyDecision applies the PUT /api/problems/:id difficulty rules:
-// an explicit difficultyAuto=false is always a manual lock; an explicit true
-// keeps auto (anchoring a changed score); omitting the field locks a changed
-// score and preserves all metadata when the score is unchanged.
+// an explicit difficultyAuto=false locks the score but keeps the existing
+// prior/source/reason unless the score actually changes; an explicit true keeps
+// auto (anchoring a changed score); omitting the field locks a changed score
+// and preserves all metadata when the score is unchanged.
 func updateDifficultyDecision(p *Problem, in Input) DifficultyDecision {
 	manual := func(auto bool) DifficultyDecision {
 		return DifficultyDecision{
@@ -212,6 +213,12 @@ func updateDifficultyDecision(p *Problem, in Input) DifficultyDecision {
 		return manual(false)
 	}
 	if !*in.DifficultyAuto {
+		if in.Difficulty == p.Difficulty {
+			// Saving an already-locked problem (or locking it at its current
+			// score) must not rewrite provenance it did not change.
+			keep.Auto = false
+			return keep
+		}
 		return manual(false)
 	}
 	if in.Difficulty == p.Difficulty {

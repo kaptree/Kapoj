@@ -918,11 +918,11 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 **实现状态（题目难度 1–100、平台 AI 模型与定时任务，2026-11-18）**
 
 - 数据模型：`problems` 增加 `difficulty`（1–100，默认 50）、`difficulty_prior`、`difficulty_prior_source`（`ai/default/migrated/manual/import`）、`difficulty_auto`（默认 true）、`difficulty_source`（`ai/default/pass_rate/manual/migrated/import`）、`difficulty_reason`、`difficulty_updated_at`；新增 `problem_difficulty_history`（旧分/新分/先验/来源/样本/通过率/目标分/置信度/运行 ID/操作者）。迁移把旧 1–5 映射为 10/30/50/70/90；`source=HydroOJ` 且旧值为 1 的题目映射为 50（Hydro 的 1 只是默认值）。
-- 展示与筛选：五档颜色保留，标签显示精确分（如 `62 · 提高`）；题库支持 `difficultyMin`/`difficultyMax` 范围筛选；旧 `?difficulty=3` 仍按精确 3 筛选，不做档位映射。
+- 展示与筛选：五档颜色保留，标签显示精确分（如 `62 · 省选`）；题库支持 `difficultyMin`/`difficultyMax` 范围筛选；旧 `?difficulty=3` 仍按精确 3 筛选，不做档位映射。
 - 创建/编辑：`POST/PUT /api/problems` 接收 `difficulty`（1–100）与可选 `difficultyAuto`。创建时缺省自动：AI 可用则同步初评，否则回退 `default_score`（默认 50）；`difficultyAuto=false` 直接采用人工分值并锁定。编辑时未提交 `difficultyAuto` 表示分值不变保留原状态、分值变化视为人工锁定。自动题每天可被任务调整，锁定题不扫描、不写历史。
 - 公式：`p0 = 1 - (prior-1)/99`、`p_hat = (a + m*p0)/(n + m)`、`target = 1 + 99*(1-p_hat)^gamma`，四舍五入并 clamp 到 1–100；`n`/`a` 为统计窗口内去重终端用户数/其中 AC 用户数，`m=prior_strength`（默认 10）、`gamma` 默认 1.5（可调 1.0–3.0）、`min_sample` 默认 10、每日 `max_step` 默认 5、窗口默认 365 天、默认排除比赛提交。一键立即重算直接移动到目标分。
 - AI：新增平台级 `ai_platform_models`（显示名、OpenAI 兼容 `baseUrl`、模型名、AES-256-GCM 加密 token、启停、连通性测试），`ai_settings.platform_model_id` 记录当前选择；只服务系统任务，不影响用户自带 key 的 AI 功能。密钥轮换重加密平台 token；重置清空 token 与选择但保留模型元数据。
-- 定时任务：新增 `scheduled_jobs`/`scheduled_job_runs` 与 Asynq `jobs` 队列；本期注册 `problem.difficulty.recalculate`（默认 `0 3 * * *`、`Asia/Shanghai`、启用），支持启停、cron/时区、立即执行、运行历史与进度；同一 job 同时最多一个 `queued/running` run，启动时清理超时 run。
+- 定时任务：新增 `scheduled_jobs`/`scheduled_job_runs` 与 Asynq `jobs` 队列；本期注册 `problem.difficulty.recalculate`（默认 `0 3 * * *`、`Asia/Shanghai`、启用），支持启停、cron/时区、立即执行、运行历史与进度；同一 job 同时最多一个 `queued/running` run；运行中的 run 通过心跳续期，启动时与每个调度周期（15 分钟无心跳）清理超时 run 并释放占用。
 - API：`POST /api/problems/:id/difficulty/assess`（`problem.update`，AI 重评，不改 `difficultyAuto`）、`GET /api/problems/:id/difficulty/history`（`problem.update`）、`GET/PUT /api/admin/difficulty/settings`、`PUT /api/admin/jobs/:key`、`POST /api/admin/jobs/:key/run`、`GET /api/admin/jobs/:key/runs`、`GET /api/admin/job-runs[/:id]`（均需 `system.jobs.manage`）、`GET/POST/PUT/DELETE /api/admin/ai/models[/:id]`、`POST /api/admin/ai/models/:id/test`、`PUT /api/admin/ai/platform-model`（均需 `ai.settings.manage`）。OpenAPI 与 `apps/web/src/api/schema.d.ts` 已同步。
 - 题包与 Hydro：kapOJ 导出同时写 legacy `difficulty`（1–5 档位）与 `difficultyScore`（1–100）、`difficultyScale="1-100"`；导入优先精确分，旧包按 1–5 映射；Hydro 导入默认 50、`prior_source=default`、`source=import`、自动，并按题写 `source=import` 历史。详见 §7 与 `docs/题库批量管理与题包.md`。
 

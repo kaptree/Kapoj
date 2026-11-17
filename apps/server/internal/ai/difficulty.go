@@ -17,6 +17,9 @@ import (
 const (
 	// difficultyAssessmentTemperature keeps scoring close to deterministic.
 	difficultyAssessmentTemperature = 0.2
+	// difficultyAssessmentMaxTokens bounds the JSON response; the reason is
+	// already truncated to 500 runes after parsing.
+	difficultyAssessmentMaxTokens = 512
 	// Input is material for scoring only; cap each part so a single prompt
 	// cannot grow unbounded.
 	difficultyMaxStatementRunes = 20000
@@ -62,6 +65,14 @@ type DifficultyAssessment struct {
 // errDifficultyFormat marks model output that is not a usable assessment.
 // It is always mapped to httpx.ErrBadGateway so callers can safely fall back.
 var errDifficultyFormat = errors.New("ai: invalid difficulty assessment response")
+
+// Assessment failure categories. Callers that fall back to a default score
+// use these to persist a human-readable reason instead of a generic error.
+var (
+	ErrAssessmentTimeout  = errors.New("ai: difficulty assessment timed out")
+	ErrAssessmentUpstream = errors.New("ai: difficulty assessment upstream failed")
+	ErrAssessmentFormat   = errors.New("ai: difficulty assessment output invalid")
+)
 
 // Assessment system prompt: 1-100 rubric, JSON-only output, and an explicit
 // instruction that the statement is data rather than instructions.
@@ -120,16 +131,20 @@ func (s *Service) AssessDifficulty(ctx context.Context, in DifficultyAssessmentI
 	}
 	req.Messages = difficultyAssessmentMessages(in)
 	req.Temperature = difficultyAssessmentTemperature
+	req.MaxTokens = difficultyAssessmentMaxTokens
 
 	out, err := s.client.Chat(ctx, req)
 	if err != nil {
 		slog.Warn("ai: chat completion failed", "operation", "difficulty", "err", err)
-		return nil, httpx.ErrBadGateway
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, fmt.Errorf("%w: %w", httpx.ErrBadGateway, ErrAssessmentTimeout)
+		}
+		return nil, fmt.Errorf("%w: %w", httpx.ErrBadGateway, ErrAssessmentUpstream)
 	}
 	assessment, err := parseDifficultyAssessment(out)
 	if err != nil {
 		slog.Warn("ai: difficulty assessment response invalid", "operation", "difficulty", "err", err)
-		return nil, httpx.ErrBadGateway
+		return nil, fmt.Errorf("%w: %w", httpx.ErrBadGateway, ErrAssessmentFormat)
 	}
 	return assessment, nil
 }

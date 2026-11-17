@@ -59,7 +59,11 @@ type Run struct {
 	CreatedBy       int64          `gorm:"not null;default:0"`
 	CreatedAt       time.Time      `gorm:"type:timestamptz;not null;index:idx_scheduled_job_runs_job_created,priority:2,sort:desc"`
 	StartedAt       *time.Time     `gorm:"type:timestamptz"`
-	FinishedAt      *time.Time     `gorm:"type:timestamptz"`
+	// HeartbeatAt is refreshed by the handler through Reporter. The stale-run
+	// reconciler only fails a running run when this heartbeat expires, so a
+	// long batch that keeps reporting progress is never killed.
+	HeartbeatAt *time.Time `gorm:"type:timestamptz"`
+	FinishedAt  *time.Time `gorm:"type:timestamptz"`
 }
 
 // TableName keeps the table name stable.

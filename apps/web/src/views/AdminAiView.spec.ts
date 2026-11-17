@@ -418,6 +418,7 @@ describe('AdminAiView', () => {
 
     const fileWrapper = await mountPage()
     expect(fileWrapper.find('[data-test="reset-ai-key"]').exists()).toBe(true)
+    expect(fileWrapper.text()).toContain('清空平台模型 Token')
     fileWrapper.unmount()
 
     vi.mocked(getAdminAIKey).mockResolvedValue(
@@ -451,7 +452,12 @@ describe('AdminAiView', () => {
     expect(confirm.require).toHaveBeenCalledTimes(1)
     expect(resetAdminAIKey).not.toHaveBeenCalled()
 
-    const options = confirm.require.mock.calls[0]![0] as { accept?: () => void }
+    const options = confirm.require.mock.calls[0]![0] as {
+      message: string
+      accept?: () => void
+    }
+    expect(options.message).toContain('平台模型 Token')
+    expect(options.message).toContain('重置当前模型选择')
     options.accept?.()
     await flushPromises()
 
@@ -460,9 +466,14 @@ describe('AdminAiView', () => {
     expect(input.exists()).toBe(true)
     expect((input.element as HTMLInputElement).value).toBe('NEWSECRET')
     expect(toast.add).toHaveBeenCalledWith(
-      expect.objectContaining({ severity: 'success', summary: '旧密钥已清除' }),
+      expect.objectContaining({
+        severity: 'success',
+        summary: '旧密钥已清除',
+        detail: expect.stringContaining('平台模型 Token 与当前选择已清空'),
+      }),
     )
     expect(getAdminAISettings).toHaveBeenCalledTimes(2)
+    expect(listAdminAIPlatformModels).toHaveBeenCalledTimes(2)
     wrapper.unmount()
   })
 
@@ -590,6 +601,30 @@ describe('AdminAiView', () => {
     await flushPromises()
 
     expect(selectAdminAIPlatformModel).toHaveBeenCalledWith(null)
+    wrapper.unmount()
+  })
+
+  it('warns when the persisted selection points at a disabled model', async () => {
+    auth.can.mockImplementation((code) => code === PERM.ai.settings.manage)
+    vi.mocked(getAdminAISettings).mockResolvedValue(
+      settingsView({ platformModelId: 1, platformModelName: '停用模型' }),
+    )
+    vi.mocked(listAdminAIPlatformModels).mockResolvedValue([
+      platformModelView({ id: 1, name: '停用模型', enabled: false }),
+      platformModelView({ id: 2, name: '可用模型', enabled: true }),
+    ])
+
+    const wrapper = await mountPage()
+
+    const warning = wrapper.find('[data-test="selected-model-disabled"]')
+    expect(warning.exists()).toBe(true)
+    expect(warning.text()).toContain('当前选择的平台模型已停用')
+    expect(wrapper.findComponent(Select).props('modelValue')).toBe(1)
+    const options = wrapper.findComponent(Select).props('options') as {
+      label: string
+      value: number | null
+    }[]
+    expect(options.some((option) => option.label === '停用模型（已停用）')).toBe(true)
     wrapper.unmount()
   })
 
