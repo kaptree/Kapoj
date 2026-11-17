@@ -29,6 +29,8 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/gamificationapi"
 	"github.com/kaptree/kapoj/apps/server/internal/health"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
+	"github.com/kaptree/kapoj/apps/server/internal/jobs"
+	"github.com/kaptree/kapoj/apps/server/internal/jobsapi"
 	"github.com/kaptree/kapoj/apps/server/internal/learning"
 	"github.com/kaptree/kapoj/apps/server/internal/learningapi"
 	"github.com/kaptree/kapoj/apps/server/internal/mail"
@@ -74,6 +76,7 @@ type Deps struct {
 	RBAC        *rbac.Service
 	AI          *ai.Service
 	AISettings  *ai.SettingsService
+	AIPlatform  *ai.PlatformService
 	TestcaseGen *testcasegen.Service
 	Certificate *certificate.Service
 	Mail        *mail.Service
@@ -86,6 +89,8 @@ type Deps struct {
 	Difficulty           *difficulty.SettingsService
 	DifficultyAI         problemapi.DifficultyAssessor
 	DifficultyAISettings problemapi.AISettings
+	// Jobs wires the scheduled job service into the admin jobs API.
+	Jobs *jobs.Service
 }
 
 func New(d Deps) *gin.Engine {
@@ -150,8 +155,11 @@ func New(d Deps) *gin.Engine {
 	}
 	userapi.RegisterAvatarRoutes(public, uploads, userSvc)
 	if d.RBAC != nil {
-		adminapi.RegisterRoutes(api, d.RBAC, adminapi.Options{Game: d.Game, Rating: d.Rating, AI: d.AISettings})
+		adminapi.RegisterRoutes(api, d.RBAC, adminapi.Options{
+			Game: d.Game, Rating: d.Rating, AI: d.AISettings, AIPlatform: d.AIPlatform,
+		})
 	}
+	jobsapi.RegisterRoutes(api, d.Jobs, d.Difficulty, d.RBAC)
 	if d.Game != nil {
 		gamificationapi.RegisterRoutes(api, uploads, d.Game,
 			gamificationapi.Options{RBAC: d.RBAC, Companion: d.Companion})

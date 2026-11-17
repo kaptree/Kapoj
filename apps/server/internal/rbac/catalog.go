@@ -8,6 +8,7 @@ const (
 	PermAdminAuditView       PermissionCode = "admin.audit.view"
 	PermSystemSettingsManage PermissionCode = "system.settings.manage"
 	PermSystemBackupManage   PermissionCode = "system.backup.manage"
+	PermSystemJobsManage     PermissionCode = "system.jobs.manage"
 
 	PermUserRead              PermissionCode = "user.read"
 	PermUserUpdate            PermissionCode = "user.update"
@@ -88,6 +89,7 @@ var permissionCatalog = []PermissionDef{
 	{Code: PermAdminAuditView, Name: "查看审计日志", GroupName: PermissionGroupAdmin, Description: "查看管理员操作审计日志"},
 	{Code: PermSystemSettingsManage, Name: "管理系统设置", GroupName: PermissionGroupAdmin, Description: "修改平台系统配置（预留）"},
 	{Code: PermSystemBackupManage, Name: "管理系统备份", GroupName: PermissionGroupAdmin, Description: "创建、下载、恢复平台与用户账号备份，管理定时任务"},
+	{Code: PermSystemJobsManage, Name: "管理定时任务", GroupName: PermissionGroupAdmin, Description: "配置定时任务、立即执行、查看运行历史与题目难度设置"},
 
 	{Code: PermUserRead, Name: "查看用户", GroupName: PermissionGroupUser, Description: "查看用户列表与用户详情"},
 	{Code: PermUserUpdate, Name: "编辑用户资料", GroupName: PermissionGroupUser, Description: "编辑用户昵称、简介与头像链接"},

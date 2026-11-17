@@ -23,8 +23,10 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/config"
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/db"
+	"github.com/kaptree/kapoj/apps/server/internal/difficulty"
 	"github.com/kaptree/kapoj/apps/server/internal/gamequeue"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
+	"github.com/kaptree/kapoj/apps/server/internal/jobs"
 	"github.com/kaptree/kapoj/apps/server/internal/judgequeue"
 	"github.com/kaptree/kapoj/apps/server/internal/learning"
 	"github.com/kaptree/kapoj/apps/server/internal/mail"
@@ -191,10 +193,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	aiClient := ai.NewOpenAIClient(cfg.AIRequestTimeout)
 	aiSvc := ai.NewService(g, keyMgr,
 		ai.NewRedisLimiter(rdb, cfg.AICooldown),
-		ai.NewOpenAIClient(cfg.AIRequestTimeout))
+		aiClient)
 	aiSettings := ai.NewSettingsService(g, keyMgr, cfg.AIKeyFile)
+	platformSvc := ai.NewPlatformService(g, keyMgr, aiClient, aiSettings)
 	testcaseGenSvc := testcasegen.NewService(
 		testcasegen.NewGormRepository(g),
 		problem.NewGormRepository(g),
@@ -215,6 +219,19 @@ func run() error {
 	// 启动时核对密钥文件与数据库指纹，恢复“写文件成功但重加密事务未提交”
 	// 这一崩溃窗口；不一致且无法恢复时拒绝启动。
 	if err := ai.ReconcileKeyFile(context.Background(), g, keyMgr, cfg.AIKeyFile); err != nil {
+		return err
+	}
+
+	difficultySettings := difficulty.NewSettingsService(g)
+	difficultyRecalc := difficulty.NewRecalculateService(g, difficultySettings)
+	jobsQueue := jobs.NewQueue(cfg.RedisAddr)
+	defer func() { _ = jobsQueue.Close() }()
+	jobsSvc := jobs.NewService(g, jobsQueue)
+	difficulty.RegisterJob(jobsSvc, difficultyRecalc)
+	if err := jobsSvc.Ensure(context.Background()); err != nil {
+		return err
+	}
+	if err := jobsSvc.ReconcileStale(context.Background(), 2*time.Hour); err != nil {
 		return err
 	}
 
@@ -274,6 +291,22 @@ func run() error {
 	defer similarityServer.Shutdown()
 	slog.Info("kapoj similarity worker started", "queue", similarityqueue.QueueName)
 
+	jobsServer := asynq.NewServer(
+		asynq.RedisClientOpt{Addr: cfg.RedisAddr},
+		asynq.Config{
+			Concurrency:     1,
+			Queues:          map[string]int{jobs.QueueName: 1},
+			ShutdownTimeout: 10 * time.Second,
+		},
+	)
+	jobsMux := asynq.NewServeMux()
+	jobs.Register(jobsMux, jobsSvc)
+	if err := jobsServer.Start(jobsMux); err != nil {
+		return err
+	}
+	defer jobsServer.Shutdown()
+	slog.Info("kapoj jobs worker started", "queue", jobs.QueueName)
+
 	gin.SetMode(gin.ReleaseMode)
 	baseCtx, cancelBase := context.WithCancel(context.Background())
 	defer cancelBase()
@@ -282,9 +315,11 @@ func run() error {
 		Handler: router.New(router.Deps{
 			DB: g, Redis: rdb, Storage: store, Config: cfg, Enqueuer: queue, Game: gameSvc,
 			Rating: ratingSvc, Activity: activitySvc, Learning: learningSvc, RBAC: rbacSvc,
-			AI: aiSvc, AISettings: aiSettings, TestcaseGen: testcaseGenSvc, Certificate: certSvc,
+			AI: aiSvc, AISettings: aiSettings, AIPlatform: platformSvc, TestcaseGen: testcaseGenSvc, Certificate: certSvc,
 			Mail: mailSvc, Backup: backupSvc, Similarity: similaritySvc,
-			Companion: companionSvc,
+			Companion:  companionSvc,
+			Difficulty: difficultySettings, DifficultyAI: aiSvc, DifficultyAISettings: aiSettings,
+			Jobs: jobsSvc,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -299,6 +334,7 @@ func run() error {
 	workCtx, cancelWork := context.WithCancel(ctx)
 	defer cancelWork()
 	go backupSvc.RunScheduler(workCtx, 30*time.Second)
+	go jobsSvc.RunScheduler(workCtx, 30*time.Second)
 	go runSimilaritySweeper(workCtx, similarityRepo)
 
 	errCh := make(chan error, 1)

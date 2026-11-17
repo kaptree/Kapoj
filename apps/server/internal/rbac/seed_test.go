@@ -73,7 +73,7 @@ func countRows(t *testing.T, g *gorm.DB, model any) int64 {
 
 func TestCatalogDefinitions(t *testing.T) {
 	permissions := rbac.AllPermissions()
-	require.Len(t, permissions, 43)
+	require.Len(t, permissions, 44)
 
 	codes := make(map[string]struct{}, len(permissions))
 	for _, def := range permissions {
@@ -109,6 +109,7 @@ func TestPermissionCatalogExactCodes(t *testing.T) {
 		"admin.audit.view",
 		"system.settings.manage",
 		"system.backup.manage",
+		"system.jobs.manage",
 		"user.read",
 		"user.update",
 		"user.ban",
@@ -149,7 +150,7 @@ func TestPermissionCatalogExactCodes(t *testing.T) {
 		"mail.settings.manage",
 		"guest.growth.view",
 	}
-	require.Len(t, expected, 43)
+	require.Len(t, expected, 44)
 
 	codes := make([]string, len(rbac.PermissionCodes))
 	for i, code := range rbac.PermissionCodes {
@@ -176,15 +177,30 @@ func TestSiteSettingsPermissionCatalog(t *testing.T) {
 	}
 	require.True(t, found, "权限目录必须包含 site.settings.manage")
 
-	require.Len(t, rbac.PermissionCodes, 43)
-	assert.Equal(t, rbac.PermSiteSettingsManage, rbac.PermissionCodes[40])
-	assert.Equal(t, rbac.PermMailSettingsManage, rbac.PermissionCodes[41])
-	assert.Equal(t, rbac.PermGuestGrowthView, rbac.PermissionCodes[42], "游客权限应追加在目录最后")
+	require.Len(t, rbac.PermissionCodes, 44)
+	assert.Equal(t, rbac.PermSiteSettingsManage, rbac.PermissionCodes[41])
+	assert.Equal(t, rbac.PermMailSettingsManage, rbac.PermissionCodes[42])
+	assert.Equal(t, rbac.PermGuestGrowthView, rbac.PermissionCodes[43], "游客权限应追加在目录最后")
 
 	g := testutil.PG(t)
 	require.NoError(t, rbac.Seed(context.Background(), g))
 	assert.NotContains(t, rolePermissionCodes(t, g, "content_admin"), string(rbac.PermSiteSettingsManage),
 		"content_admin 不应自动获得站点设置权限")
+}
+
+func TestSystemJobsPermissionCatalog(t *testing.T) {
+	var jobsDef *rbac.PermissionDef
+	for _, def := range rbac.AllPermissions() {
+		if def.Code == rbac.PermSystemJobsManage {
+			def := def
+			jobsDef = &def
+			break
+		}
+	}
+	require.NotNil(t, jobsDef, "权限目录必须包含 system.jobs.manage")
+	assert.Equal(t, rbac.PermissionGroupAdmin, jobsDef.GroupName)
+	assert.Equal(t, "管理定时任务", jobsDef.Name)
+	assert.NotEmpty(t, jobsDef.Description)
 }
 
 func TestSeedCreatesCatalogAndRoles(t *testing.T) {
@@ -298,7 +314,7 @@ func TestSeedIsIdempotent(t *testing.T) {
 	assert.Equal(t, int64(1), userRoles)
 	assert.Equal(t, []string{"content_admin"}, userRoleCodes(t, g, legacyID))
 	assert.Equal(t, int64(9), roles, "内置角色应为 9 个")
-	assert.Equal(t, int64(43), permissions, "权限目录应为 43 项")
+	assert.Equal(t, int64(44), permissions, "权限目录应为 44 项")
 	assert.Empty(t, rolePermissionCodes(t, g, rbac.RoleCodeGuest), "重复 seed 后 guest 仍无权限")
 
 	var seedVersion string

@@ -6,8 +6,8 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/jobs"
 )
 
-// difficultyJobKey is the stable key of the daily difficulty recalculation job.
-const difficultyJobKey = "problem.difficulty.recalculate"
+// JobKey is the stable key of the daily difficulty recalculation job.
+const JobKey = "problem.difficulty.recalculate"
 
 // RegisterJob registers the daily difficulty recalculation handler. Scheduled
 // runs honour settings.max_step; manual runs move directly to the target score.
@@ -16,7 +16,7 @@ func RegisterJob(reg *jobs.Service, svc *RecalculateService) {
 		return
 	}
 	reg.Register(jobs.Definition{
-		Key:         difficultyJobKey,
+		Key:         JobKey,
 		Name:        "全站题目难度重算",
 		Description: "按统计窗口内的去重用户通过率重算自动调整题目的难度。",
 		DefaultCron: "0 3 * * *",
