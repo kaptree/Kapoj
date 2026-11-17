@@ -122,7 +122,13 @@ func TestNormalizeLimitsAndDefaults(t *testing.T) {
 }
 
 func TestNormalizeDifficultyAndType(t *testing.T) {
-	for _, d := range []int{0, 6, -1} {
+	for _, d := range []int{1, 50, 100} {
+		in := validInput()
+		in.Difficulty = d
+		_, err := in.Normalize()
+		assert.NoError(t, err, "difficulty %d", d)
+	}
+	for _, d := range []int{0, 101, -1} {
 		in := validInput()
 		in.Difficulty = d
 		assertInvalid(t, in, "difficulty")

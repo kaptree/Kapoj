@@ -18,11 +18,12 @@ import (
 )
 
 const (
-	maxTestcaseBytes       = 16 << 20
-	maxInlineTestcaseBytes = 2 << 20
-	maxCheckerBytes        = 256 << 10
-	maxScore               = 1000
-	maxListPage            = 1_000_000
+	maxTestcaseBytes             = 16 << 20
+	maxInlineTestcaseBytes       = 2 << 20
+	maxCheckerBytes              = 256 << 10
+	maxScore                     = 1000
+	maxListPage                  = 1_000_000
+	maxDifficultyHistoryPageSize = 100
 )
 
 // Viewer describes who is looking. The zero value is a guest or ordinary
@@ -116,14 +117,31 @@ func NewService(repo Repository, store storage.Storage, opts ...Option) *Service
 }
 
 func (s *Service) Create(ctx context.Context, createdBy int64, in Input) (*Problem, error) {
+	// Legacy callers keep a manual initial score; the AI-aware API layer calls
+	// CreateWithDifficulty with the assessment it computed.
+	return s.CreateWithDifficulty(ctx, createdBy, in, DifficultyDecision{
+		Score: in.Difficulty, Prior: in.Difficulty,
+		PriorSource: DifficultyPriorSourceManual,
+		Source:      DifficultySourceManual,
+		Auto:        true, ActorID: createdBy,
+	})
+}
+
+// CreateWithDifficulty creates a problem and its initial history row in one
+// transaction. d is authoritative for the stored score and metadata.
+func (s *Service) CreateWithDifficulty(ctx context.Context, createdBy int64, in Input, d DifficultyDecision) (*Problem, error) {
 	in, err := in.Normalize()
 	if err != nil {
+		return nil, err
+	}
+	if err := validateDifficultyScore(d.Score); err != nil {
 		return nil, err
 	}
 	p := &Problem{CreatedBy: createdBy}
 	apply(p, in)
 	p.IsPublic = false // new problems are published through Update
-	if err := s.repo.Create(ctx, p); err != nil {
+	applyDifficultyDecision(p, d)
+	if err := s.repo.CreateWithHistory(ctx, p, newDifficultyHistory(0, d)); err != nil {
 		return nil, mapRepoErr(err)
 	}
 	return p, nil
@@ -149,12 +167,69 @@ func (s *Service) Update(ctx context.Context, id int64, in Input) (*Problem, err
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
+	return s.update(ctx, p, in, updateDifficultyDecision(p, in))
+}
+
+// updateDifficultyDecision applies the PUT /api/problems/:id difficulty rules:
+// an explicit difficultyAuto=false is always a manual lock; an explicit true
+// keeps auto (anchoring a changed score); omitting the field locks a changed
+// score and preserves all metadata when the score is unchanged.
+func updateDifficultyDecision(p *Problem, in Input) DifficultyDecision {
+	manual := func(auto bool) DifficultyDecision {
+		return DifficultyDecision{
+			Score: in.Difficulty, Prior: in.Difficulty,
+			PriorSource: DifficultyPriorSourceManual,
+			Source:      DifficultySourceManual,
+			Auto:        auto,
+		}
+	}
+	keep := DifficultyDecision{
+		Score: in.Difficulty, Prior: p.DifficultyPrior,
+		PriorSource: p.DifficultyPriorSource, Source: p.DifficultySource,
+		Auto: p.DifficultyAuto, Reason: p.DifficultyReason,
+	}
+	if in.DifficultyAuto == nil {
+		if in.Difficulty == p.Difficulty {
+			return keep
+		}
+		return manual(false)
+	}
+	if !*in.DifficultyAuto {
+		return manual(false)
+	}
+	if in.Difficulty == p.Difficulty {
+		keep.Auto = true
+		return keep
+	}
+	return manual(true)
+}
+
+// UpdateWithDifficulty updates a problem with the caller's difficulty decision.
+// History is written only when the score actually changes.
+func (s *Service) UpdateWithDifficulty(ctx context.Context, id int64, in Input, d DifficultyDecision) (*Problem, error) {
+	in, err := in.Normalize()
+	if err != nil {
+		return nil, err
+	}
+	p, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	return s.update(ctx, p, in, d)
+}
+
+func (s *Service) update(ctx context.Context, p *Problem, in Input, d DifficultyDecision) (*Problem, error) {
+	if err := validateDifficultyScore(d.Score); err != nil {
+		return nil, err
+	}
+	oldScore := p.Difficulty
 	wasPublic := p.IsPublic
 	apply(p, in)
+	applyDifficultyDecision(p, d)
 	// Taking a public problem offline is guarded against active learning path
 	// references.
 	if wasPublic && !p.IsPublic && s.learningGuard != nil {
-		referenced, err := s.learningGuard.IsProblemInActivePath(ctx, id)
+		referenced, err := s.learningGuard.IsProblemInActivePath(ctx, p.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -165,7 +240,7 @@ func (s *Service) Update(ctx context.Context, id int64, in Input) (*Problem, err
 	// A problem referenced by an active paid path must stay private so users
 	// cannot bypass the path purchase.
 	if p.IsPublic && s.learningGuard != nil {
-		paid, err := s.learningGuard.IsProblemInPaidPath(ctx, id)
+		paid, err := s.learningGuard.IsProblemInPaidPath(ctx, p.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -173,12 +248,50 @@ func (s *Service) Update(ctx context.Context, id int64, in Input) (*Problem, err
 			return nil, httpx.ErrValidation("题目被付费学习路线引用，不能公开")
 		}
 	}
+	var history *DifficultyHistory
+	if oldScore != p.Difficulty {
+		history = newDifficultyHistory(oldScore, d)
+	}
 	// Publishability is checked by the repository inside the same transaction
 	// as the update, together with the row lock.
-	if err := s.repo.Update(ctx, p); err != nil {
+	if err := s.repo.UpdateWithHistory(ctx, p, history); err != nil {
 		return nil, mapRepoErr(err)
 	}
 	return p, nil
+}
+
+// UpdateDifficultyMeta updates only the difficulty metadata, used by
+// "re-assess with AI". Every call is audited, including same-score
+// reassessments, because the prior/source/reason can still change.
+func (s *Service) UpdateDifficultyMeta(ctx context.Context, id int64, d DifficultyDecision) (*Problem, error) {
+	if err := validateDifficultyScore(d.Score); err != nil {
+		return nil, err
+	}
+	p, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	oldScore := p.Difficulty
+	applyDifficultyDecision(p, d)
+	if err := s.repo.UpdateDifficultyWithHistory(ctx, p, newDifficultyHistory(oldScore, d)); err != nil {
+		return nil, mapRepoErr(err)
+	}
+	return p, nil
+}
+
+// DifficultyHistory returns one page of a problem's difficulty history,
+// newest first.
+func (s *Service) DifficultyHistory(ctx context.Context, problemID int64, page, pageSize int) ([]DifficultyHistory, int64, error) {
+	page = min(max(page, 1), maxListPage)
+	pageSize = min(max(pageSize, 1), maxDifficultyHistoryPageSize)
+	items, total, err := s.repo.ListDifficultyHistory(ctx, problemID, (page-1)*pageSize, pageSize)
+	if err != nil {
+		return nil, 0, mapRepoErr(err)
+	}
+	if items == nil {
+		items = []DifficultyHistory{}
+	}
+	return items, total, nil
 }
 
 // Get returns a problem the viewer may see. A hidden problem looks exactly

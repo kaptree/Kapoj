@@ -23,10 +23,13 @@ type Input struct {
 	Answers        []string `json:"answers"`
 	Tags           []string `json:"tags"`
 	Difficulty     int      `json:"difficulty"`
-	TimeLimitMS    int      `json:"timeLimitMs"`
-	MemoryLimitMB  int      `json:"memoryLimitMb"`
-	IsPublic       bool     `json:"isPublic"`
-	Source         string   `json:"source"`
+	// DifficultyAuto is nil when the client did not send it. Nil on create
+	// means true; on update it means "keep the current automatic setting".
+	DifficultyAuto *bool  `json:"difficultyAuto"`
+	TimeLimitMS    int    `json:"timeLimitMs"`
+	MemoryLimitMB  int    `json:"memoryLimitMb"`
+	IsPublic       bool   `json:"isPublic"`
+	Source         string `json:"source"`
 }
 
 const (
@@ -94,8 +97,8 @@ func (in Input) Normalize() (Input, error) {
 	} else {
 		in.Answers = []string{}
 	}
-	if in.Difficulty < 1 || in.Difficulty > 5 {
-		return in, invalid("难度需为 1–5")
+	if in.Difficulty < 1 || in.Difficulty > 100 {
+		return in, invalid("难度需为 1–100")
 	}
 
 	if in.TimeLimitMS == 0 {

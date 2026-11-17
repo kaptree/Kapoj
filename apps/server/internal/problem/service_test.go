@@ -293,7 +293,7 @@ func TestCreateDuplicateSlug(t *testing.T) {
 func TestCreateValidates(t *testing.T) {
 	e := newEnv(t)
 	in := input("bad")
-	in.Difficulty = 9
+	in.Difficulty = 101
 	_, err := e.svc.Create(context.Background(), 1, in)
 	assertCode(t, err, 40001)
 }

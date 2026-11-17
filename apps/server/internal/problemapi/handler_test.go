@@ -353,7 +353,7 @@ func TestCreateValidationErrors(t *testing.T) {
 	for name, mutate := range map[string]func(map[string]any){
 		"bad slug":   func(b map[string]any) { b["slug"] = "-bad" },
 		"no title":   func(b map[string]any) { b["title"] = "" },
-		"difficulty": func(b map[string]any) { b["difficulty"] = 9 },
+		"difficulty": func(b map[string]any) { b["difficulty"] = 101 },
 		"bad type":   func(b map[string]any) { b["type"] = "nope" },
 	} {
 		b := body("valid")

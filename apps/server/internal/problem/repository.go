@@ -44,12 +44,23 @@ type DeleteResult struct {
 
 type Repository interface {
 	Create(ctx context.Context, p *Problem) error
+	// CreateWithHistory inserts the problem and, when history is not nil, its
+	// initial difficulty history row in one transaction.
+	CreateWithHistory(ctx context.Context, p *Problem, history *DifficultyHistory) error
 	FindByID(ctx context.Context, id int64) (*Problem, error)
 	FindBySlug(ctx context.Context, slug string) (*Problem, error)
 	List(ctx context.Context, f Filter, offset, limit int) ([]Problem, int64, error)
 	// Update writes only the editable columns, never the checker path,
 	// counters or creator.
 	Update(ctx context.Context, p *Problem) error
+	// UpdateWithHistory writes the editable columns and, when history is not
+	// nil, appends a difficulty history row in the same transaction.
+	UpdateWithHistory(ctx context.Context, p *Problem, history *DifficultyHistory) error
+	// UpdateDifficultyWithHistory writes only the difficulty metadata columns,
+	// plus the optional history row.
+	UpdateDifficultyWithHistory(ctx context.Context, p *Problem, history *DifficultyHistory) error
+	// ListDifficultyHistory returns one page of history, newest first.
+	ListDifficultyHistory(ctx context.Context, problemID int64, offset, limit int) ([]DifficultyHistory, int64, error)
 	SetCheckerPath(ctx context.Context, id int64, path string) error
 	UpdateSolution(ctx context.Context, id int64, solutionMD, solutionCode string, price int64) error
 	// AllocateAttachmentIDs reserves attachment ids before a staged overwrite.
@@ -93,12 +104,42 @@ func NewGormRepository(db *gorm.DB) Repository { return &gormRepository{db: db} 
 var editableColumns = []string{
 	"title", "slug", "statement_md", "input_format_md", "output_format_md",
 	"samples_json", "hint_md", "type", "answers_json",
-	"tags_json", "difficulty", "time_limit_ms", "memory_limit_mb",
+	"tags_json", "difficulty", "difficulty_prior", "difficulty_prior_source",
+	"difficulty_auto", "difficulty_source", "difficulty_reason",
+	"difficulty_updated_at", "time_limit_ms", "memory_limit_mb",
 	"is_public", "source", "updated_at",
+}
+
+// difficultyColumns are the columns owned by the difficulty subsystem.
+var difficultyColumns = []string{
+	"difficulty", "difficulty_prior", "difficulty_prior_source",
+	"difficulty_auto", "difficulty_source", "difficulty_reason",
+	"difficulty_updated_at", "updated_at",
 }
 
 func (r *gormRepository) Create(ctx context.Context, p *Problem) error {
 	return mapErr(r.db.WithContext(ctx).Create(p).Error)
+}
+
+func (r *gormRepository) CreateWithHistory(ctx context.Context, p *Problem, history *DifficultyHistory) error {
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// GORM replaces a false zero value with the `default:true` tag when it
+		// builds an INSERT, so a locked problem would silently become auto.
+		// Insert first, then force the intended value in the same transaction.
+		auto := p.DifficultyAuto
+		if err := tx.Create(p).Error; err != nil {
+			return err
+		}
+		if !auto {
+			if err := tx.Model(&Problem{}).Where("id = ?", p.ID).
+				UpdateColumn("difficulty_auto", false).Error; err != nil {
+				return err
+			}
+			p.DifficultyAuto = false
+		}
+		return createHistory(tx, p.ID, history)
+	})
+	return mapErr(err)
 }
 
 func (r *gormRepository) FindByID(ctx context.Context, id int64) (*Problem, error) {
@@ -184,14 +225,27 @@ func (r *gormRepository) List(ctx context.Context, f Filter, offset, limit int) 
 }
 
 func (r *gormRepository) Update(ctx context.Context, p *Problem) error {
+	return mapErr(r.update(ctx, p, nil, editableColumns))
+}
+
+func (r *gormRepository) UpdateWithHistory(ctx context.Context, p *Problem, history *DifficultyHistory) error {
+	return mapErr(r.update(ctx, p, history, editableColumns))
+}
+
+func (r *gormRepository) UpdateDifficultyWithHistory(ctx context.Context, p *Problem, history *DifficultyHistory) error {
+	return mapErr(r.update(ctx, p, history, difficultyColumns))
+}
+
+// update writes the given columns under a row lock. Publishability is checked
+// in the same transaction so a concurrent testcase deletion cannot leave a
+// public problem empty or without a checker.
+func (r *gormRepository) update(ctx context.Context, p *Problem, history *DifficultyHistory, columns []string) error {
 	p.UpdatedAt = time.Now()
-	return mapErr(r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var current Problem
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, p.ID).Error; err != nil {
 			return err
 		}
-		// Publishing is checked under the same row lock as the write, so a
-		// concurrent testcase deletion cannot leave a public problem empty.
 		// Objective problems are answered directly, so they need no testcases.
 		if p.IsPublic {
 			if p.Type != TypeObjective {
@@ -207,15 +261,38 @@ func (r *gormRepository) Update(ctx context.Context, p *Problem) error {
 				return ErrPublishNeedsChecker
 			}
 		}
-		res := tx.Model(&Problem{}).Where("id = ?", p.ID).Select(editableColumns).Updates(p)
+		res := tx.Model(&Problem{}).Where("id = ?", p.ID).Select(columns).Updates(p)
 		if res.Error != nil {
 			return res.Error
 		}
 		if res.RowsAffected == 0 {
 			return ErrNotFound
 		}
+		return createHistory(tx, p.ID, history)
+	})
+}
+
+// createHistory appends one history row; a nil history is a no-op.
+func createHistory(tx *gorm.DB, problemID int64, history *DifficultyHistory) error {
+	if history == nil {
 		return nil
-	}))
+	}
+	history.ProblemID = problemID
+	return tx.Create(history).Error
+}
+
+func (r *gormRepository) ListDifficultyHistory(ctx context.Context, problemID int64, offset, limit int) ([]DifficultyHistory, int64, error) {
+	q := r.db.WithContext(ctx).Model(&DifficultyHistory{}).Where("problem_id = ?", problemID)
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var items []DifficultyHistory
+	if err := q.Order("created_at DESC, id DESC").Offset(offset).Limit(limit).
+		Find(&items).Error; err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
 }
 
 func (r *gormRepository) SetCheckerPath(ctx context.Context, id int64, path string) error {
@@ -319,6 +396,9 @@ func (r *gormRepository) ReplaceContent(
 			"output_format_md": p.OutputFormatMD, "samples_json": p.Samples,
 			"hint_md": p.HintMD, "type": p.Type, "answers_json": p.Answers,
 			"tags_json": p.Tags, "difficulty": p.Difficulty,
+			"difficulty_prior": p.DifficultyPrior, "difficulty_prior_source": p.DifficultyPriorSource,
+			"difficulty_auto": p.DifficultyAuto, "difficulty_source": p.DifficultySource,
+			"difficulty_reason": p.DifficultyReason, "difficulty_updated_at": p.DifficultyUpdatedAt,
 			"time_limit_ms": p.TimeLimitMS, "memory_limit_mb": p.MemoryLimitMB,
 			"is_public": p.IsPublic, "source": p.Source,
 			"solution_md": p.SolutionMD, "solution_code": p.SolutionCode,
