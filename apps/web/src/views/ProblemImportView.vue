@@ -314,7 +314,7 @@ function reset() {
       :style="{ width: 'min(96vw, 760px)' }"
     >
       <p class="conflict-hint">
-        以下题目标识已存在。勾选需要覆盖的题目，未勾选的将跳过；覆盖后题目会强制下线。
+        以下题目标识已存在。勾选需要覆盖的题目，未勾选的将跳过；覆盖后题目会强制下线，同时会重置题目难度并重新开启自动难度调整。
       </p>
       <DataTable :value="result?.conflicts ?? []" data-key="slug" size="small">
         <Column header="覆盖" style="width: 70px">

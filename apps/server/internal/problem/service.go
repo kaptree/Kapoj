@@ -222,7 +222,8 @@ func updateDifficultyDecision(p *Problem, in Input) DifficultyDecision {
 }
 
 // UpdateWithDifficulty updates a problem with the caller's difficulty decision.
-// History is written only when the score actually changes.
+// History is written when the score changes, or whenever the decision forces it
+// (imports log even an unchanged score).
 func (s *Service) UpdateWithDifficulty(ctx context.Context, id int64, in Input, d DifficultyDecision) (*Problem, error) {
 	in, err := in.Normalize()
 	if err != nil {

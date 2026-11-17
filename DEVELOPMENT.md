@@ -923,7 +923,7 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 - 公式：`p0 = 1 - (prior-1)/99`、`p_hat = (a + m*p0)/(n + m)`、`target = 1 + 99*(1-p_hat)^gamma`，四舍五入并 clamp 到 1–100；`n`/`a` 为统计窗口内去重终端用户数/其中 AC 用户数，`m=prior_strength`（默认 10）、`gamma` 默认 1.5（可调 1.0–3.0）、`min_sample` 默认 10、每日 `max_step` 默认 5、窗口默认 365 天、默认排除比赛提交。一键立即重算直接移动到目标分。
 - AI：新增平台级 `ai_platform_models`（显示名、OpenAI 兼容 `baseUrl`、模型名、AES-256-GCM 加密 token、启停、连通性测试），`ai_settings.platform_model_id` 记录当前选择；只服务系统任务，不影响用户自带 key 的 AI 功能。密钥轮换重加密平台 token；重置清空 token 与选择但保留模型元数据。
 - 定时任务：新增 `scheduled_jobs`/`scheduled_job_runs` 与 Asynq `jobs` 队列；本期注册 `problem.difficulty.recalculate`（默认 `0 3 * * *`、`Asia/Shanghai`、启用），支持启停、cron/时区、立即执行、运行历史与进度；同一 job 同时最多一个 `queued/running` run，启动时清理超时 run。
-- API：`POST /api/problems/:id/difficulty/assess`（`problem.update`，AI 重评，不改 `difficultyAuto`）、`GET /api/problems/:id/difficulty/history`（`problem.update`）、`GET/PUT /api/admin/difficulty/settings`、`GET/PUT /api/admin/jobs/:key`、`POST /api/admin/jobs/:key/run`、`GET /api/admin/jobs/:key/runs`、`GET /api/admin/job-runs[/:id]`（均需 `system.jobs.manage`）、`GET/POST/PUT/DELETE /api/admin/ai/models[/:id]`、`POST /api/admin/ai/models/:id/test`、`PUT /api/admin/ai/platform-model`（均需 `ai.settings.manage`）。OpenAPI 与 `apps/web/src/api/schema.d.ts` 已同步。
+- API：`POST /api/problems/:id/difficulty/assess`（`problem.update`，AI 重评，不改 `difficultyAuto`）、`GET /api/problems/:id/difficulty/history`（`problem.update`）、`GET/PUT /api/admin/difficulty/settings`、`PUT /api/admin/jobs/:key`、`POST /api/admin/jobs/:key/run`、`GET /api/admin/jobs/:key/runs`、`GET /api/admin/job-runs[/:id]`（均需 `system.jobs.manage`）、`GET/POST/PUT/DELETE /api/admin/ai/models[/:id]`、`POST /api/admin/ai/models/:id/test`、`PUT /api/admin/ai/platform-model`（均需 `ai.settings.manage`）。OpenAPI 与 `apps/web/src/api/schema.d.ts` 已同步。
 - 题包与 Hydro：kapOJ 导出同时写 legacy `difficulty`（1–5 档位）与 `difficultyScore`（1–100）、`difficultyScale="1-100"`；导入优先精确分，旧包按 1–5 映射；Hydro 导入默认 50、`prior_source=default`、`source=import`、自动，并按题写 `source=import` 历史。详见 §7 与 `docs/题库批量管理与题包.md`。
 
 **Codex 提示词（题库与题目）**
@@ -1845,7 +1845,7 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 **平台 AI 模型**（`/admin/ai/models`，需 `ai.settings.manage`）
 
 - `GET/POST /api/admin/ai/models`、`PUT/DELETE /api/admin/ai/models/:id`、`POST /api/admin/ai/models/:id/test`、`PUT /api/admin/ai/platform-model`。字段：`name`（唯一显示名）、`baseUrl`（OpenAI 兼容接口，到 `/v1` 为止）、`modelName`、`apiKey`、`enabled`。列表/详情只返回 `apiKeyMasked`，不返回明文或密文。
-- 首次新增必须提供 token；更新时 `apiKey` 为空表示保留原密文。连通性测试向 `{baseUrl}/chat/completions` 发一次轻量请求，记录 `lastTestAt/lastTestOk/lastTestError/lastTestLatencyMs`；上游失败仍返回 200 + `{ok:false}`，只有缺密钥（40002）或模型不存在（40400）返回错误。当前选中的模型不能删除；`platformModelId=null` 取消选择；未启用模型不能选择。
+- 首次新增必须提供 token；更新时 `apiKey` 为空表示保留原密文。连通性测试向 `{baseUrl}/chat/completions` 发一次轻量请求，记录 `lastTestAt/lastTestOk/lastTestError/lastTestLatencyMs`；上游失败仍返回 200 + `{ok:false}`，只有缺密钥（40002）或模型不存在（40400）返回错误。当前选中的模型不能删除；`modelId=null` 取消选择（响应/设置视图字段为 `platformModelId`）；未启用模型不能选择。
 - AI 初评只在平台 AI 已启用、密钥已配置、已选择启用模型且 `difficulty_settings.ai_assess_enabled=true` 时调用；失败/超时回退 `default_score`，不阻塞创建。显式重评失败不改题目，成功也不改变 `difficultyAuto`。
 - 密钥轮换会同步重加密 `ai_platform_models` 的 token；`POST /api/admin/ai/key/reset` 清空平台 token 并取消选择，保留模型元数据。未配置密钥时平台模型接口返回 40002。
 

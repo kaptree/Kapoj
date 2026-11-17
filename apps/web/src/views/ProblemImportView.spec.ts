@@ -192,6 +192,8 @@ describe('ProblemImportView', () => {
     await flushPromises()
 
     expect(document.body.textContent).toContain('发现同名题目')
+    expect(document.body.textContent).toContain('覆盖后题目会强制下线')
+    expect(document.body.textContent).toContain('重置题目难度并重新开启自动难度调整')
     wrapper.findAllComponents(Checkbox)[0]!.vm.$emit('update:modelValue', ['hydro-6760'])
     await nextTick()
     const apply = Array.from(document.querySelectorAll('.p-dialog button')).find((item) =>
