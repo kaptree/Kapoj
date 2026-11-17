@@ -108,6 +108,7 @@ func RegisterRoutes(
 	api.GET("/problems/:id/attachments", load, h.listAttachments)
 	api.GET("/problems/:id/attachments/:aid", load, h.downloadAttachment)
 	api.GET("/problems/:id/assets/:aid", load, h.statementImage)
+	api.GET("/problems/:id/package", middleware.RequireAuth(), load, h.downloadPackage)
 	api.DELETE("/problems/:id/attachments/:aid", require(string(rbac.PermProblemUpdate)), audit(string(rbac.PermProblemUpdate)), h.deleteAttachment)
 
 	api.GET("/problems/:id/official-solution", load, h.getOfficialSolution)
