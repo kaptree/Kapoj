@@ -1,10 +1,12 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
+import DataTable from 'primevue/datatable'
 import InputText from 'primevue/inputtext'
 import Paginator from 'primevue/paginator'
 import Select from 'primevue/select'
 import ToggleSwitch from 'primevue/toggleswitch'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { ApiError } from '@/api/http'
@@ -13,6 +15,8 @@ import ProblemListView from './ProblemListView.vue'
 
 const problemsApi = vi.hoisted(() => ({
   listProblems: vi.fn(),
+  bulkProblemAction: vi.fn(),
+  exportProblems: vi.fn(),
 }))
 
 const auth = vi.hoisted(() => ({
@@ -21,6 +25,8 @@ const auth = vi.hoisted(() => ({
 
 vi.mock('@/api/problems', () => ({
   listProblems: problemsApi.listProblems,
+  bulkProblemAction: problemsApi.bulkProblemAction,
+  exportProblems: problemsApi.exportProblems,
 }))
 
 vi.mock('@/stores/auth', () => ({
@@ -66,7 +72,21 @@ beforeEach(() => {
   auth.can.mockReset()
   auth.can.mockReturnValue(false)
   problemsApi.listProblems.mockReset()
+  problemsApi.bulkProblemAction.mockReset()
+  problemsApi.exportProblems.mockReset()
 })
+
+async function selectRows(wrapper: ReturnType<typeof mount>, rows: ProblemListItem[]) {
+  wrapper.findComponent(DataTable).vm.$emit('update:selection', rows)
+  await nextTick()
+  await flushPromises()
+}
+
+function button(wrapper: ReturnType<typeof mount>, label: string) {
+  const found = wrapper.findAll('button').find((b) => b.text().includes(label))
+  expect(found, `button "${label}"`).toBeTruthy()
+  return found!
+}
 
 describe('ProblemListView', () => {
   it('loads from the route query and renders a problem row', async () => {
@@ -192,5 +212,111 @@ describe('ProblemListView', () => {
     await retry!.trigger('click')
     await flushPromises()
     expect(problemsApi.listProblems).toHaveBeenCalledTimes(2)
+  })
+
+  it('shows bulk management only with problem.manage_all', async () => {
+    problemsApi.listProblems.mockResolvedValue({ total: 0, items: [] })
+    let view = await mountPage()
+    expect(view.wrapper.text()).not.toContain('批量管理')
+    view.wrapper.unmount()
+
+    auth.can.mockImplementation((code) => code === 'problem.manage_all')
+    view = await mountPage()
+    expect(view.wrapper.text()).toContain('批量管理')
+    view.wrapper.unmount()
+  })
+
+  it('publishes selected problems after confirmation and reports per-problem failures', async () => {
+    auth.can.mockImplementation((code) => code === 'problem.manage_all')
+    problemsApi.listProblems.mockResolvedValue({
+      total: 2,
+      items: [problem({ id: 1 }), problem({ id: 2, title: 'Another' })],
+    })
+    problemsApi.bulkProblemAction.mockResolvedValue({
+      results: [
+        { id: 1, status: 'success', offlined: false },
+        { id: 2, status: 'failed', offlined: false, error: '题目被学习路线引用' },
+      ],
+    })
+    const { wrapper } = await mountPage()
+
+    await button(wrapper, '批量管理').trigger('click')
+    await flushPromises()
+    await selectRows(wrapper, [problem({ id: 1 }), problem({ id: 2, title: 'Another' })])
+    await button(wrapper, '公开').trigger('click')
+    await flushPromises()
+    expect(problemsApi.bulkProblemAction).not.toHaveBeenCalled()
+
+    const confirm = document.querySelector('[data-test="bulk-confirm-submit"]') as HTMLButtonElement
+    expect(confirm).not.toBeNull()
+    confirm.click()
+    await flushPromises()
+
+    expect(problemsApi.bulkProblemAction).toHaveBeenCalledWith({
+      action: 'publish',
+      problemIds: [1, 2],
+    })
+    expect(wrapper.text()).toContain('成功 1 道')
+    expect(wrapper.text()).toContain('失败 1 道')
+    expect(wrapper.text()).toContain('题目被学习路线引用')
+    expect(problemsApi.listProblems).toHaveBeenCalledTimes(2)
+  })
+
+  it('downloads selected problems as one ZIP', async () => {
+    auth.can.mockImplementation((code) => code === 'problem.manage_all')
+    problemsApi.listProblems.mockResolvedValue({
+      total: 2,
+      items: [problem({ id: 1 }), problem({ id: 2, title: 'Another' })],
+    })
+    const blob = new Blob(['zip'], { type: 'application/zip' })
+    problemsApi.exportProblems.mockResolvedValue(blob)
+    const createObjectURL = vi.fn(() => 'blob:mock')
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      writable: true,
+      value: createObjectURL,
+    })
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+
+    const { wrapper } = await mountPage()
+    await button(wrapper, '批量管理').trigger('click')
+    await flushPromises()
+    await selectRows(wrapper, [problem({ id: 1 }), problem({ id: 2, title: 'Another' })])
+    await button(wrapper, '下载').trigger('click')
+    await flushPromises()
+
+    expect(problemsApi.exportProblems).toHaveBeenCalledWith([1, 2])
+    expect(createObjectURL).toHaveBeenCalledWith(blob)
+    expect(click).toHaveBeenCalled()
+    click.mockRestore()
+  })
+
+  it('deletes selected problems only after confirmation', async () => {
+    auth.can.mockImplementation((code) => code === 'problem.manage_all')
+    problemsApi.listProblems.mockResolvedValue({
+      total: 1,
+      items: [problem({ id: 1 })],
+    })
+    problemsApi.bulkProblemAction.mockResolvedValue({
+      results: [{ id: 1, status: 'success', offlined: true }],
+    })
+    const { wrapper } = await mountPage()
+
+    await button(wrapper, '批量管理').trigger('click')
+    await flushPromises()
+    await selectRows(wrapper, [problem({ id: 1 })])
+    await button(wrapper, '删除').trigger('click')
+    await flushPromises()
+    expect(problemsApi.bulkProblemAction).not.toHaveBeenCalled()
+
+    const confirm = document.querySelector('[data-test="bulk-confirm-submit"]') as HTMLButtonElement
+    confirm.click()
+    await flushPromises()
+
+    expect(problemsApi.bulkProblemAction).toHaveBeenCalledWith({
+      action: 'delete',
+      problemIds: [1],
+    })
+    expect(wrapper.text()).toContain('已下线')
   })
 })

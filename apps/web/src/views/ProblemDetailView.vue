@@ -9,7 +9,7 @@ import { useToast } from 'primevue/usetoast'
 import { getAIHint } from '@/api/ai'
 import { getContest } from '@/api/contests'
 import { ApiError } from '@/api/http'
-import { getProblem, getStatistics } from '@/api/problems'
+import { exportProblemPackage, getProblem, getStatistics } from '@/api/problems'
 import type { ContestDetail, ProblemDetail, ProblemStats } from '@/api/types'
 import MarkdownView from '@/components/MarkdownView.vue'
 import CompanionAvatar from '@/components/companion/CompanionAvatar.vue'
@@ -55,6 +55,7 @@ const aiHintCached = ref(false)
 const aiHintLoading = ref(false)
 const aiHintError = ref('')
 const aiConfigMissing = ref(false)
+const downloadingPackage = ref(false)
 
 const typeLabels = {
   traditional: '传统题',
@@ -204,6 +205,31 @@ const authorName = computed(() => {
   if (!author) return ''
   return author.nickname || author.username
 })
+
+async function downloadPackage() {
+  if (!problem.value || downloadingPackage.value) return
+  downloadingPackage.value = true
+  try {
+    const blob = await exportProblemPackage(problem.value.id)
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `${problem.value.slug}.zip`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 0)
+  } catch (e) {
+    toast.add({
+      severity: 'error',
+      summary: '下载题包失败',
+      detail: e instanceof ApiError ? e.message : '请稍后再试',
+      life: 3000,
+    })
+  } finally {
+    downloadingPackage.value = false
+  }
+}
 </script>
 
 <template>
@@ -494,6 +520,34 @@ const authorName = computed(() => {
             </RouterLink>
           </template>
 
+          <AppSurface
+            v-if="canEdit && problem"
+            as="div"
+            padding="md"
+            class="resource-card package-card"
+            data-test="problem-package-card"
+          >
+            <span class="resource-card__icon" aria-hidden="true">
+              <i class="pi pi-box" />
+            </span>
+            <span class="resource-card__body">
+              <span class="resource-card__title">题目题包</span>
+              <span class="resource-card__sub">
+                kapOJ 题包 v1 · 包含测试数据、checker、附件和题解
+              </span>
+            </span>
+            <Button
+              label="下载 ZIP"
+              icon="pi pi-download"
+              size="small"
+              severity="secondary"
+              outlined
+              :loading="downloadingPackage"
+              data-test="problem-package-download"
+              @click="downloadPackage"
+            />
+          </AppSurface>
+
           <ProblemAttachmentsCard v-if="problem" :problem-id="problem.id" />
         </aside>
       </div>
@@ -766,6 +820,14 @@ const authorName = computed(() => {
 .resource-card__arrow {
   color: var(--kapoj-text-muted);
   font-size: 0.85rem;
+}
+
+.package-card {
+  flex-wrap: wrap;
+}
+
+.package-card .resource-card__sub {
+  line-height: 1.5;
 }
 
 .contest-problem-nav {

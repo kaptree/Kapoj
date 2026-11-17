@@ -1,5 +1,7 @@
 import { http } from './client'
 import type {
+  BulkProblemActionData,
+  BulkProblemActionRequest,
   HydroImportResult,
   OfficialSolutionInput,
   OnlineTestcaseInput,
@@ -7,6 +9,7 @@ import type {
   Page,
   ProblemAttachment,
   ProblemDetail,
+  ProblemImportResult,
   ProblemInput,
   ProblemListItem,
   ProblemStats,
@@ -160,13 +163,17 @@ export function uploadChecker(id: number | string, file: File) {
   return http.postForm<null>(`/problems/${id}/checker`, form)
 }
 
-export interface HydroImportOptions {
+export interface ProblemImportOptions {
   conflictPolicy?: 'ask' | 'skip' | 'overwrite'
   overwriteSlugs?: string[]
   skipSlugs?: string[]
+  publish?: boolean
 }
 
-export function importHydroProblems(file: File, options: HydroImportOptions = {}) {
+/** @deprecated use ProblemImportOptions */
+export type HydroImportOptions = ProblemImportOptions
+
+function problemImportForm(file: File, options: ProblemImportOptions): FormData {
   const form = new FormData()
   form.append('file', file)
   if (options.conflictPolicy) form.append('conflictPolicy', options.conflictPolicy)
@@ -174,8 +181,32 @@ export function importHydroProblems(file: File, options: HydroImportOptions = {}
     form.append('overwriteSlugs', JSON.stringify(options.overwriteSlugs))
   }
   if (options.skipSlugs?.length) form.append('skipSlugs', JSON.stringify(options.skipSlugs))
-  return http.postForm<HydroImportResult>('/problems/import/hydro', form)
+  if (options.publish) form.append('publish', 'true')
+  return form
 }
+
+export function importHydroProblems(file: File, options: ProblemImportOptions = {}) {
+  return http.postForm<HydroImportResult>(
+    '/problems/import/hydro',
+    problemImportForm(file, options),
+  )
+}
+
+/** Imports a kapOJ single/batch package or a HydroOJ package (auto-detected). */
+export function importProblemPackage(file: File, options: ProblemImportOptions = {}) {
+  return http.postForm<ProblemImportResult>(
+    '/problems/import/package',
+    problemImportForm(file, options),
+  )
+}
+
+export const exportProblemPackage = (id: number | string) => http.getBlob(`/problems/${id}/package`)
+
+export const bulkProblemAction = (input: BulkProblemActionRequest) =>
+  http.post<BulkProblemActionData>('/problems/bulk/actions', input)
+
+export const exportProblems = (problemIds: number[]) =>
+  http.postBlob('/problems/bulk/export', { problemIds })
 
 export const createTestcaseGeneration = (id: number | string, input: TestcaseGenerationInput) =>
   http.post<TestcaseGenerationView>(`/problems/${id}/testcase-generations`, input)

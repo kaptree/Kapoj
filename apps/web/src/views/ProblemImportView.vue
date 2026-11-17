@@ -9,8 +9,8 @@ import Message from 'primevue/message'
 import Tag from 'primevue/tag'
 
 import { ApiError } from '@/api/http'
-import { importHydroProblems, type HydroImportOptions } from '@/api/problems'
-import type { HydroImportResult } from '@/api/types'
+import { importProblemPackage, type ProblemImportOptions } from '@/api/problems'
+import type { ProblemImportResult } from '@/api/types'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
 import { PERM } from '@/permissions'
@@ -22,12 +22,14 @@ const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024
 const auth = useAuthStore()
 
 const canEdit = computed(() => auth.can(PERM.problem.update))
+const canPublish = computed(() => auth.can(PERM.problem.publish))
 
 const fileInput = ref<HTMLInputElement | null>(null)
 const file = ref<File | null>(null)
 const uploading = ref(false)
 const dragActive = ref(false)
-const result = ref<HydroImportResult | null>(null)
+const publishAfterImport = ref(false)
+const result = ref<ProblemImportResult | null>(null)
 const error = ref('')
 const conflictVisible = ref(false)
 const overwriteSlugs = ref<string[]>([])
@@ -66,12 +68,15 @@ function onDrop(event: DragEvent) {
   pickFile(event.dataTransfer?.files?.[0] ?? null)
 }
 
-async function runImport(options: HydroImportOptions) {
+async function runImport(options: ProblemImportOptions) {
   if (!file.value || uploading.value) return
   uploading.value = true
   error.value = ''
   try {
-    const next = await importHydroProblems(file.value, options)
+    const next = await importProblemPackage(file.value, {
+      ...options,
+      publish: publishAfterImport.value,
+    })
     result.value = next
     if (next.conflicts?.length) {
       overwriteSlugs.value = []
@@ -111,6 +116,7 @@ function reset() {
   error.value = ''
   conflictVisible.value = false
   overwriteSlugs.value = []
+  publishAfterImport.value = false
   if (fileInput.value) fileInput.value.value = ''
 }
 </script>
@@ -120,7 +126,7 @@ function reset() {
     <AppPageHeader
       eyebrow="PROBLEMS // IMPORT"
       title="导入题包"
-      description="上传 HydroOJ 导出的 zip 题包，批量导入为下线题目，稍后可编辑并发布。"
+      description="上传 kapOJ 或 HydroOJ 的 zip 题包，导入后默认下线；有发布权限时可选择立即公开。"
     >
       <template #actions>
         <Button
@@ -169,6 +175,11 @@ function reset() {
         />
       </div>
 
+      <label v-if="canPublish" class="publish-option">
+        <Checkbox v-model="publishAfterImport" binary input-id="publish-after-import" />
+        <span>导入后立即公开</span>
+      </label>
+
       <div class="import-actions">
         <Button
           label="开始导入"
@@ -186,7 +197,9 @@ function reset() {
         />
       </div>
 
-      <p class="limit-note">导入的题目默认下线，创建者为当前用户；同名题目标识会先询问是否覆盖。</p>
+      <p class="limit-note">
+        导入的题目默认下线，创建者为当前用户；同名题目标识会先询问是否覆盖。勾选立即公开时，每道题独立发布，失败不会回滚已导入内容。
+      </p>
     </AppSurface>
 
     <template v-if="result">
@@ -225,6 +238,15 @@ function reset() {
           </Column>
           <Column header="测试点数" style="width: 100px">
             <template #body="{ data }">{{ data.testcaseCount }}</template>
+          </Column>
+          <Column header="可见性" style="min-width: 130px">
+            <template #body="{ data }">
+              <Tag
+                :value="data.published ? '已公开' : '未公开'"
+                :severity="data.published ? 'success' : 'secondary'"
+              />
+              <div v-if="data.publishError" class="publish-error">{{ data.publishError }}</div>
+            </template>
           </Column>
           <Column header="操作" style="width: 160px">
             <template #body="{ data }">
@@ -395,6 +417,15 @@ function reset() {
   font-size: 12px;
 }
 
+.publish-option {
+  display: flex;
+  align-items: center;
+  gap: var(--kapoj-space-2);
+  color: var(--kapoj-text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
 .import-actions {
   display: flex;
   flex-wrap: wrap;
@@ -471,5 +502,11 @@ function reset() {
 .offline-note {
   color: var(--kapoj-text-muted);
   font-size: 12px;
+}
+
+.publish-error {
+  margin-top: 2px;
+  color: var(--kapoj-danger);
+  font-size: 11px;
 }
 </style>

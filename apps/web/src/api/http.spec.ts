@@ -225,6 +225,26 @@ describe('createHttp', () => {
     expect(seenType).toBe('blob')
   })
 
+  it('postBlob sends a JSON body and returns the raw blob', async () => {
+    const blob = new Blob(['zip-bytes'], { type: 'application/zip' })
+    let method: unknown
+    let body: unknown
+    let responseType: unknown
+    const http = createHttp(hooks(), {
+      adapter: (c) => {
+        method = c.method
+        body = c.data
+        responseType = c.responseType
+        return respond(c, 200, blob)
+      },
+    })
+
+    await expect(http.postBlob('/problems/bulk/export', { problemIds: [1, 2] })).resolves.toBe(blob)
+    expect(method).toBe('post')
+    expect(JSON.parse(String(body))).toEqual({ problemIds: [1, 2] })
+    expect(responseType).toBe('blob')
+  })
+
   it('getBlob does not unwrap an envelope-shaped body', async () => {
     const blob = new Blob(['x'])
     const http = createHttp(hooks(), {

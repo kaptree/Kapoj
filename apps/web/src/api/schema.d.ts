@@ -3549,6 +3549,11 @@ export interface paths {
                         overwriteSlugs?: string;
                         /** @description JSON 数组，选择跳过的 slug */
                         skipSlugs?: string;
+                        /**
+                         * @description 导入后立即公开；需要 problem.publish，新建和覆盖题逐题尝试发布
+                         * @default false
+                         */
+                        publish?: boolean;
                     };
                 };
             };
@@ -3566,6 +3571,166 @@ export interface paths {
                 401: components["responses"]["Error"];
                 403: components["responses"]["Error"];
                 413: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/problems/import/package": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 导入 kapOJ 题包或 HydroOJ 题包（problem.create）；自动识别格式
+         * @description 上传 kapOJ 单题/批量题包或 HydroOJ 题包（不超过 200MB）。kapOJ 题包包含题面、样例、测试数据、 checker、附件、题面图片、客观题答案和官方题解。新建题目默认下线；conflictPolicy=ask 时只返回冲突。 publish=true 需要 problem.publish；新建和覆盖题逐题尝试发布，发布失败保留题目并返回 publishError。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "multipart/form-data": {
+                        /**
+                         * Format: binary
+                         * @description .zip 题包，不超过 200 MiB
+                         */
+                        file: string;
+                        /**
+                         * @default ask
+                         * @enum {string}
+                         */
+                        conflictPolicy?: "ask" | "skip" | "overwrite";
+                        /** @description JSON 数组，选择覆盖的 slug；空表示覆盖全部冲突（仍需权限） */
+                        overwriteSlugs?: string;
+                        /** @description JSON 数组，选择跳过的 slug */
+                        skipSlugs?: string;
+                        /**
+                         * @description 导入后立即公开；需要 problem.publish
+                         * @default false
+                         */
+                        publish?: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description 导入结果（逐题 imported/failed/conflicts/skipped/warnings） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProblemImportResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                413: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/problems/bulk/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 批量公开/隐藏/删除题目（problem.manage_all）
+         * @description 逐题独立执行，部分成功是正常结果；删除沿用单题规则（有提交只下线，学习路线引用逐题失败）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["BulkProblemActionRequest"];
+                };
+            };
+            responses: {
+                /** @description 逐题结果 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BulkProblemActionResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/problems/bulk/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 批量导出 kapOJ 题包（problem.manage_all）
+         * @description 一次最多导出 100 道题；任一题目不存在时整批拒绝，不返回部分 ZIP。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["BulkProblemExportRequest"];
+                };
+            };
+            responses: {
+                /** @description 总 ZIP，内部为 manifest.json + problems/&lt;slug&gt;/ */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/zip": string;
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
             };
         };
         delete?: never;
@@ -3673,6 +3838,53 @@ export interface paths {
                 404: components["responses"]["Error"];
             };
         };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/problems/{id}/package": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * 下载单题 kapOJ 题包（创建者或 problem.manage_all）
+         * @description ZIP 包含题面、样例、测试数据、checker、附件、题面图片、客观题答案和官方题解；不进入公共缓存。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description kapOJ 题包 ZIP */
+                200: {
+                    headers: {
+                        "Cache-Control"?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/zip": string;
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -10330,6 +10542,10 @@ export interface components {
             testcaseCount: number;
             /** @description 是否覆盖了已有题目 */
             overwritten: boolean;
+            /** @description 是否在导入后成功公开 */
+            published?: boolean;
+            /** @description 导入成功但发布失败时的原因 */
+            publishError?: string;
         };
         HydroImportConflict: {
             slug: string;
@@ -10361,6 +10577,41 @@ export interface components {
         };
         HydroImportResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["HydroImportResult"];
+        };
+        /** @description kapOJ/HydroOJ 题包导入的逐题结果；合法题包允许部分成功。 */
+        ProblemImportResult: {
+            imported: components["schemas"]["HydroImportedProblem"][];
+            failed: components["schemas"]["HydroImportFailure"][];
+            /** @description ask 模式下未写入的冲突列表 */
+            conflicts?: components["schemas"]["HydroImportConflict"][];
+            skipped?: components["schemas"]["HydroImportSkipped"][];
+            warnings?: string[];
+        };
+        ProblemImportResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["ProblemImportResult"];
+        };
+        BulkProblemActionRequest: {
+            /** @enum {string} */
+            action: "publish" | "hide" | "delete";
+            problemIds: number[];
+        };
+        BulkProblemResult: {
+            /** Format: int64 */
+            id: number;
+            /** @enum {string} */
+            status: "success" | "failed";
+            /** @description 删除时 true 表示因已有提交记录仅下线 */
+            offlined: boolean;
+            error?: string;
+        };
+        BulkProblemActionData: {
+            results: components["schemas"]["BulkProblemResult"][];
+        };
+        BulkProblemActionResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["BulkProblemActionData"];
+        };
+        BulkProblemExportRequest: {
+            problemIds: number[];
         };
         DeleteProblemResponse: components["schemas"]["Envelope"] & {
             data: {

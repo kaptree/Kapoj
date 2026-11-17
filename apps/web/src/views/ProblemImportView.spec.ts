@@ -6,11 +6,11 @@ import { nextTick } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { ApiError } from '@/api/http'
-import type { HydroImportResult } from '@/api/types'
+import type { ProblemImportResult } from '@/api/types'
 import ProblemImportView from './ProblemImportView.vue'
 
 const problemsApi = vi.hoisted(() => ({
-  importHydroProblems: vi.fn(),
+  importProblemPackage: vi.fn(),
 }))
 
 const auth = vi.hoisted(() => ({
@@ -18,7 +18,7 @@ const auth = vi.hoisted(() => ({
 }))
 
 vi.mock('@/api/problems', () => ({
-  importHydroProblems: problemsApi.importHydroProblems,
+  importProblemPackage: problemsApi.importProblemPackage,
 }))
 
 vi.mock('@/stores/auth', () => ({
@@ -41,7 +41,7 @@ async function mountView() {
   return { wrapper, router }
 }
 
-function result(overrides: Partial<HydroImportResult> = {}): HydroImportResult {
+function result(overrides: Partial<ProblemImportResult> = {}): ProblemImportResult {
   return { imported: [], failed: [], ...overrides }
 }
 
@@ -67,12 +67,12 @@ function button(wrapper: VueWrapper, label: string) {
 beforeEach(() => {
   auth.can.mockReset()
   auth.can.mockReturnValue(false)
-  problemsApi.importHydroProblems.mockReset()
+  problemsApi.importProblemPackage.mockReset()
 })
 
 describe('ProblemImportView', () => {
   it('uploads a zip and renders imported/failed results', async () => {
-    problemsApi.importHydroProblems.mockResolvedValue(
+    problemsApi.importProblemPackage.mockResolvedValue(
       result({
         imported: [
           {
@@ -81,6 +81,7 @@ describe('ProblemImportView', () => {
             slug: 'hydro-6760',
             testcaseCount: 10,
             overwritten: false,
+            published: true,
           },
         ],
         failed: [{ folder: '6761', title: '坏题', error: '缺少 problem_zh.md' }],
@@ -92,13 +93,15 @@ describe('ProblemImportView', () => {
     await button(wrapper, '开始导入').trigger('click')
     await flushPromises()
 
-    expect(problemsApi.importHydroProblems).toHaveBeenCalledWith(expect.any(File), {
+    expect(problemsApi.importProblemPackage).toHaveBeenCalledWith(expect.any(File), {
       conflictPolicy: 'ask',
+      publish: false,
     })
     expect(wrapper.text()).toContain('导入成功 1 道')
     expect(wrapper.text()).toContain('求和')
     expect(wrapper.text()).toContain('hydro-6760')
     expect(wrapper.text()).toContain('10')
+    expect(wrapper.text()).toContain('已公开')
     expect(wrapper.text()).toContain('导入失败 1 道')
     expect(wrapper.text()).toContain('6761')
     expect(wrapper.text()).toContain('缺少 problem_zh.md')
@@ -112,7 +115,7 @@ describe('ProblemImportView', () => {
       testcaseCount: 10,
       overwritten: false,
     }
-    problemsApi.importHydroProblems.mockResolvedValue(result({ imported: [imported] }))
+    problemsApi.importProblemPackage.mockResolvedValue(result({ imported: [imported] }))
 
     let view = await mountView()
     await setFile(view.wrapper, fileLike('problems.zip', 1024))
@@ -133,8 +136,30 @@ describe('ProblemImportView', () => {
     view.wrapper.unmount()
   })
 
+  it('offers publish-after-import only with problem.publish', async () => {
+    problemsApi.importProblemPackage.mockResolvedValue(result())
+    let view = await mountView()
+    expect(view.wrapper.findComponent(Checkbox).exists()).toBe(false)
+    view.wrapper.unmount()
+
+    auth.can.mockImplementation((code) => code === 'problem.publish')
+    view = await mountView()
+    expect(view.wrapper.findComponent(Checkbox).exists()).toBe(true)
+    view.wrapper.findComponent(Checkbox).vm.$emit('update:modelValue', true)
+    await nextTick()
+    await setFile(view.wrapper, fileLike('problems.zip', 1024))
+    await button(view.wrapper, '开始导入').trigger('click')
+    await flushPromises()
+
+    expect(problemsApi.importProblemPackage).toHaveBeenCalledWith(expect.any(File), {
+      conflictPolicy: 'ask',
+      publish: true,
+    })
+    view.wrapper.unmount()
+  })
+
   it('asks before overwriting existing problems', async () => {
-    problemsApi.importHydroProblems
+    problemsApi.importProblemPackage
       .mockResolvedValueOnce(
         result({
           conflicts: [
@@ -175,16 +200,17 @@ describe('ProblemImportView', () => {
     apply.click()
     await flushPromises()
 
-    expect(problemsApi.importHydroProblems).toHaveBeenLastCalledWith(expect.any(File), {
+    expect(problemsApi.importProblemPackage).toHaveBeenLastCalledWith(expect.any(File), {
       conflictPolicy: 'overwrite',
       overwriteSlugs: ['hydro-6760'],
       skipSlugs: [],
+      publish: false,
     })
     expect(wrapper.text()).toContain('已覆盖')
   })
 
   it('shows upload/API errors in Chinese', async () => {
-    problemsApi.importHydroProblems.mockRejectedValue(
+    problemsApi.importProblemPackage.mockRejectedValue(
       new ApiError(400, 40001, '题包文件不能超过 200 MB'),
     )
     const { wrapper } = await mountView()
@@ -197,7 +223,7 @@ describe('ProblemImportView', () => {
   })
 
   it('falls back to a Chinese message for unexpected upload failures', async () => {
-    problemsApi.importHydroProblems.mockRejectedValue(new Error('boom'))
+    problemsApi.importProblemPackage.mockRejectedValue(new Error('boom'))
     const { wrapper } = await mountView()
 
     await setFile(wrapper, fileLike('problems.zip', 1024))
@@ -212,10 +238,10 @@ describe('ProblemImportView', () => {
 
     await setFile(wrapper, fileLike('notes.txt', 1024))
     expect(wrapper.text()).toContain('请选择 .zip 格式的题包文件')
-    expect(problemsApi.importHydroProblems).not.toHaveBeenCalled()
+    expect(problemsApi.importProblemPackage).not.toHaveBeenCalled()
 
     await setFile(wrapper, fileLike('big.zip', 200 * 1024 * 1024 + 1))
     expect(wrapper.text()).toContain('题包文件不能超过 200 MB')
-    expect(problemsApi.importHydroProblems).not.toHaveBeenCalled()
+    expect(problemsApi.importProblemPackage).not.toHaveBeenCalled()
   })
 })

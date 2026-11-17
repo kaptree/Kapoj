@@ -38,6 +38,8 @@ export interface Http {
    * `{code,message,data}` envelope. The caller owns the returned Blob's lifetime.
    */
   getBlob(url: string, config?: AxiosRequestConfig): Promise<Blob>
+  /** Posts JSON and returns a raw binary response. */
+  postBlob(url: string, body?: unknown, config?: AxiosRequestConfig): Promise<Blob>
 }
 
 interface Envelope<T> {
@@ -130,5 +132,6 @@ export function createHttp(hooks: AuthHooks, options: { adapter?: AxiosAdapter }
     delete: (url, config) => send({ ...config, method: 'DELETE', url }),
     postForm: (url, form, config) => send({ ...config, method: 'POST', url, data: form }),
     getBlob: (url, config) => sendBlob({ ...config, method: 'GET', url }),
+    postBlob: (url, body, config) => sendBlob({ ...config, method: 'POST', url, data: body }),
   }
 }

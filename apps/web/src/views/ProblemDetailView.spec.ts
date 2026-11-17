@@ -8,7 +8,7 @@ import { reactive } from 'vue'
 import { getAIHint } from '@/api/ai'
 import { getContest } from '@/api/contests'
 import { ApiError } from '@/api/http'
-import { getProblem, getStatistics } from '@/api/problems'
+import { exportProblemPackage, getProblem, getStatistics } from '@/api/problems'
 import type { ContestDetail, ProblemDetail, ProblemStats } from '@/api/types'
 import { useCompanionStore } from '@/stores/companion'
 import ProblemDetailView from './ProblemDetailView.vue'
@@ -36,6 +36,7 @@ vi.mock('@/api/ai', () => ({
 vi.mock('@/api/problems', () => ({
   getProblem: vi.fn(),
   getStatistics: vi.fn(),
+  exportProblemPackage: vi.fn(),
 }))
 vi.mock('@/api/contests', () => ({
   getContest: vi.fn(),
@@ -163,6 +164,7 @@ beforeEach(() => {
   routerPush.mockReset()
   vi.mocked(getAIHint).mockReset()
   vi.mocked(getContest).mockReset()
+  vi.mocked(exportProblemPackage).mockReset()
   route.params.id = '1'
   route.query = {}
   route.fullPath = '/problems/1'
@@ -707,6 +709,48 @@ describe('ProblemDetailView', () => {
     await flushPromises()
 
     expect(getAIHint).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('shows the package card only when the problem is editable', async () => {
+    vi.mocked(getProblem).mockResolvedValue(detail(1, { canEdit: false }))
+    vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
+    let wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('题目题包')
+    wrapper.unmount()
+
+    vi.mocked(getProblem).mockResolvedValue(detail(1, { canEdit: true }))
+    wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.text()).toContain('题目题包')
+    expect(wrapper.text()).toContain('kapOJ 题包 v1')
+    expect(wrapper.text()).toContain('包含测试数据、checker、附件和题解')
+    wrapper.unmount()
+  })
+
+  it('downloads the problem package as a ZIP', async () => {
+    vi.mocked(getProblem).mockResolvedValue(detail(1, { canEdit: true, slug: 'two-sum' }))
+    vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
+    const blob = new Blob(['zip'], { type: 'application/zip' })
+    vi.mocked(exportProblemPackage).mockResolvedValue(blob)
+    const createObjectURL = vi.fn(() => 'blob:mock')
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      writable: true,
+      value: createObjectURL,
+    })
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.find('[data-test="problem-package-download"]').trigger('click')
+    await flushPromises()
+
+    expect(exportProblemPackage).toHaveBeenCalledWith(1)
+    expect(createObjectURL).toHaveBeenCalledWith(blob)
+    expect(click).toHaveBeenCalled()
+    click.mockRestore()
     wrapper.unmount()
   })
 })
