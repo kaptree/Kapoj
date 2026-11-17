@@ -29,6 +29,7 @@ var (
 	ErrUsernameTaken           = newErr(http.StatusConflict, 40901, "用户名已被占用")
 	ErrEmailTaken              = newErr(http.StatusConflict, 40902, "邮箱已被注册")
 	ErrSlugTaken               = newErr(http.StatusConflict, 40903, "题目标识已存在")
+	ErrJobRunning              = newErr(http.StatusConflict, 40904, "任务正在执行")
 	ErrPayloadTooLarge         = newErr(http.StatusRequestEntityTooLarge, 41300, "请求体过大")
 	ErrTooManyAttempts         = newErr(http.StatusTooManyRequests, 42901, "登录失败次数过多，请 5 分钟后再试")
 	ErrTooManySubmissions      = newErr(http.StatusTooManyRequests, 42902, "提交过于频繁，请稍后再试")

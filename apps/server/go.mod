@@ -10,6 +10,7 @@ require (
 	github.com/jackc/pgx/v5 v5.12.0
 	github.com/minio/minio-go/v7 v7.4.1
 	github.com/redis/go-redis/v9 v9.23.0
+	github.com/robfig/cron/v3 v3.0.1
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.12.1
 	github.com/subosito/gotenv v1.6.0
@@ -55,7 +56,6 @@ require (
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.59.0 // indirect
-	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/sagikazarmark/locafero v0.11.0 // indirect
 	github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8 // indirect

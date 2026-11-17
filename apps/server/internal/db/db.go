@@ -18,6 +18,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/difficulty"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
+	"github.com/kaptree/kapoj/apps/server/internal/jobs"
 	"github.com/kaptree/kapoj/apps/server/internal/learning"
 	"github.com/kaptree/kapoj/apps/server/internal/mail"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
@@ -102,7 +103,23 @@ func Migrate(g *gorm.DB) error {
 			&mail.Settings{}, &Migration{},
 			&backup.BackupPackage{}, &backup.BackupSchedule{}, &backup.BackupRestoreJob{},
 			&companion.State{}, &companion.Event{},
+			&jobs.Job{}, &jobs.Run{},
 		); err != nil {
+			return err
+		}
+		// A job may have at most one queued/running run. The partial index is
+		// the cross-instance guard against concurrent manual runs.
+		if err := tx.Exec(`
+			CREATE UNIQUE INDEX IF NOT EXISTS uniq_scheduled_job_runs_active
+			ON scheduled_job_runs (job_key)
+			WHERE status IN ('queued', 'running')`).Error; err != nil {
+			return err
+		}
+		// The model uses a JSON serializer, so the column default is managed
+		// here instead of through a GORM default tag.
+		if err := tx.Exec(
+			"ALTER TABLE scheduled_job_runs ALTER COLUMN stats_json SET DEFAULT '{}'::jsonb",
+		).Error; err != nil {
 			return err
 		}
 		if err := backfillEmailVerified(tx); err != nil {
