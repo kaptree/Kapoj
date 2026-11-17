@@ -17,13 +17,13 @@ import (
 // middleware.Authenticate。所有管理接口都通过 RequirePermission 授权，
 // super_admin 由中间件直接放行。opts.Game 非空时额外挂载金币调整接口；
 // opts.Rating 非空时额外挂载 Rating 设置接口；opts.AI 非空时额外挂载
-// AI 设置接口。
+// AI 设置接口；opts.AIPlatform 非空时额外挂载平台模型接口。
 func RegisterRoutes(api gin.IRouter, s *rbac.Service, opts ...Options) {
 	var o Options
 	if len(opts) > 0 {
 		o = opts[0]
 	}
-	h := &handler{svc: s, game: o.Game, rating: o.Rating, ai: o.AI}
+	h := &handler{svc: s, game: o.Game, rating: o.Rating, ai: o.AI, aiPlatform: o.AIPlatform}
 
 	api.GET("/admin/stats", append(requirePermission(s, string(rbac.PermAdminDashboardView)), h.stats)...)
 	api.GET("/admin/audit", append(requirePermission(s, string(rbac.PermAdminAuditView)), h.listAudit)...)
@@ -56,13 +56,22 @@ func RegisterRoutes(api gin.IRouter, s *rbac.Service, opts ...Options) {
 		api.POST("/admin/ai/key/reset", append(requirePermission(s, string(rbac.PermAISettingsManage)), h.resetAIKey)...)
 		api.PUT("/admin/ai/key", append(requirePermission(s, string(rbac.PermAISettingsManage)), h.setAIKey)...)
 	}
+	if h.aiPlatform != nil {
+		api.GET("/admin/ai/models", append(requirePermission(s, string(rbac.PermAISettingsManage)), h.listAIPlatformModels)...)
+		api.POST("/admin/ai/models", append(requirePermission(s, string(rbac.PermAISettingsManage)), h.createAIPlatformModel)...)
+		api.PUT("/admin/ai/models/:id", append(requirePermission(s, string(rbac.PermAISettingsManage)), h.updateAIPlatformModel)...)
+		api.DELETE("/admin/ai/models/:id", append(requirePermission(s, string(rbac.PermAISettingsManage)), h.deleteAIPlatformModel)...)
+		api.POST("/admin/ai/models/:id/test", append(requirePermission(s, string(rbac.PermAISettingsManage)), h.testAIPlatformModel)...)
+		api.PUT("/admin/ai/platform-model", append(requirePermission(s, string(rbac.PermAISettingsManage)), h.selectAIPlatformModel)...)
+	}
 }
 
 type handler struct {
-	svc    *rbac.Service
-	game   *gamification.Service
-	rating *rating.Service
-	ai     *ai.SettingsService
+	svc        *rbac.Service
+	game       *gamification.Service
+	rating     *rating.Service
+	ai         *ai.SettingsService
+	aiPlatform *ai.PlatformService
 }
 
 // roleUpdateRequest 是 PUT /admin/roles/:id 的请求体。Code 为可选字段：
