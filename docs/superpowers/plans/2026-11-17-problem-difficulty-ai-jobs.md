@@ -165,6 +165,7 @@ git commit -m "feat(difficulty): add difficulty formula"
 
 **Files:**
 - Create: `apps/server/internal/difficulty/model.go`, `apps/server/internal/difficulty/settings.go`
+- Modify: `apps/server/internal/db/db.go`
 - Test: `apps/server/internal/difficulty/settings_test.go`
 
 **Interfaces:**
@@ -232,7 +233,7 @@ Expected: FAIL，`undefined: difficulty.NewSettingsService`。
 
 - [ ] **Step 3: 实现模型与服务**
 
-`Settings` 表 `difficulty_settings`，固定 `id=1`；`Get` 在事务中 `ensureSettings` 后读取；`Update` 校验范围（`default_score 1..100`、`min_sample 1..1000`、`prior_strength 1..100`、`max_step 1..100`、`window_days 0..3650`、`curve_gamma 1.0..3.0`、`ai_timeout_seconds 5..60`），写 `updated_by/updated_at` 并在同一事务调用审计回调。
+`Settings` 表 `difficulty_settings`，固定 `id=1`；`Get` 在事务中 `ensureSettings` 后读取；`Update` 校验范围（`default_score 1..100`、`min_sample 1..1000`、`prior_strength 1..100`、`max_step 1..100`、`window_days 0..3650`、`curve_gamma 1.0..3.0`、`ai_timeout_seconds 5..60`），写 `updated_by/updated_at` 并在同一事务调用审计回调。把 `&difficulty.Settings{}` 加入 `apps/server/internal/db/db.go` 的 `AutoMigrate` 列表，保证本任务的 `testutil.PG` 能建出表。
 
 - [ ] **Step 4: 运行测试确认通过**
 
@@ -343,7 +344,7 @@ Expected: FAIL，缺少表/列或 `db.Migrate` 未回填。
 
 - [ ] **Step 3: 实现字段、历史模型与回填**
 
-`problem.Problem` 增加设计文档 §4.1 的 7 个字段；`DifficultyHistory` 按 §4.2；`db.Migrate` 的 `AutoMigrate` 加入 `&difficulty.Settings{}`、`&problem.DifficultyHistory{}`；新增 `backfillProblemDifficulty`（键 `problem_difficulty_1_100_v1`），按 §4.7 的 CASE 映射并写迁移标记。`difficulty` 的 GORM default 改为 50。
+`problem.Problem` 增加设计文档 §4.1 的 7 个字段；`DifficultyHistory` 按 §4.2；`db.Migrate` 的 `AutoMigrate` 加入 `&problem.DifficultyHistory{}`（`difficulty.Settings` 已由 Task 2 加入）；新增 `backfillProblemDifficulty`（键 `problem_difficulty_1_100_v1`），按 §4.7 的 CASE 映射并写迁移标记。`difficulty` 的 GORM default 改为 50。
 
 - [ ] **Step 4: 运行测试确认通过**
 
@@ -460,7 +461,7 @@ git commit -m "feat(problem): add difficulty decisions and history"
 ### Task 5: 平台模型服务与密钥轮换
 
 **Files:**
-- Modify: `apps/server/internal/ai/model.go`, `settings.go`, `key_service.go`
+- Modify: `apps/server/internal/ai/model.go`, `settings.go`, `key_service.go`, `apps/server/internal/db/db.go`
 - Create: `apps/server/internal/ai/platform.go`
 - Test: `apps/server/internal/ai/platform_test.go`, `key_service_test.go`, `settings_test.go`
 
@@ -535,7 +536,7 @@ Expected: FAIL，`undefined: ai.NewPlatformService`。
 
 - [ ] **Step 3: 实现平台模型服务**
 
-- `PlatformModel` 表与字段按 §4.4；`name` 唯一；`api_key_encrypted` 用 `text`。
+- `PlatformModel` 表与字段按 §4.4；`name` 唯一；`api_key_encrypted` 用 `text`；把 `&ai.PlatformModel{}` 加入 `db.Migrate` 的 `AutoMigrate` 列表。
 - 校验：名称/模型名 1–100；base URL 仅 http/https、无 userinfo、不能以 `/chat/completions` 结尾；token 创建必填、更新可空保留；`keyConfigured=false` 返回 40002。
 - `Create/Update/Delete/Select` 在事务内写审计回调；`Select` 校验模型存在且 enabled，更新 `ai_settings.platform_model_id`。
 - `Test` 解密 token，调用 `{baseURL}/chat/completions` 的轻量请求；更新 `last_test_*`；返回 `OK/LatencyMS/Message`，不泄露 token/上游 body。
@@ -804,6 +805,7 @@ git commit -m "feat(problem): add AI difficulty assessment endpoints"
 
 **Files:**
 - Create: `apps/server/internal/jobs/model.go`, `service.go`, `scheduler.go`, `queue.go`
+- Modify: `apps/server/internal/db/db.go`
 - Test: `apps/server/internal/jobs/service_test.go`, `scheduler_test.go`
 
 **Interfaces:**
@@ -882,7 +884,7 @@ Expected: FAIL，包/类型不存在。
 
 - [ ] **Step 3: 实现任务核心**
 
-- 模型按设计文档 §4.6；`Job.Key` 唯一；`Run` 索引 `(job_key, created_at desc)`；部分唯一索引在 `db.Migrate` 或 `Ensure` 用原生 SQL 创建（选择其一并写测试）。
+- 模型按设计文档 §4.6；`Job.Key` 唯一；`Run` 索引 `(job_key, created_at desc)`；把 `&jobs.Job{}`、`&jobs.Run{}` 加入 `db.Migrate` 的 `AutoMigrate` 列表；部分唯一索引在 `db.Migrate` 或 `Ensure` 用原生 SQL 创建（选择其一并写测试）。
 - `Ensure`：按注册的 Definition `ON CONFLICT (key) DO NOTHING`；为 `enabled && next_run_at is null` 计算下次。
 - `NextRun`：`cron/v3` 标准 5 段 + `time.LoadLocation`；返回 after 之后的下一次。
 - `ClaimDue`：事务内 `FOR UPDATE SKIP LOCKED` 取到期任务，推进 `next_run_at/last_run_at/last_status`，为每个创建 `Run{status:queued, trigger:schedule}`；提交后由 scheduler 调 `queue.Enqueue`。
