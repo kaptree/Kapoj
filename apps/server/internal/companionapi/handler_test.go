@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -304,6 +305,74 @@ func TestCompanionRoutesRequireAuth(t *testing.T) {
 		w, resp := f.do(tc.method, tc.path, "", tc.body)
 		assert.Equal(t, http.StatusUnauthorized, w.Code, tc.path)
 		assert.EqualValues(t, 40100, resp["code"], tc.path)
+	}
+}
+
+// 6. The public summary is privacy-aware and readable without a token: a
+// private profile is 404 for everyone but its owner, and the route never
+// requires authentication.
+func TestCompanionPublicState(t *testing.T) {
+	f := newFx(t)
+	ownerID, ownerTok := f.register("grace")
+	_, otherTok := f.register("heidi")
+
+	path := fmt.Sprintf("/api/users/%d/companion", ownerID)
+
+	// No state row yet: the lookup neither creates one nor leaks a default.
+	w, resp := f.do(http.MethodGet, path, "", nil)
+	assert.Equal(t, http.StatusNotFound, w.Code, w.Body.String())
+	assert.EqualValues(t, 40400, resp["code"])
+
+	// Petting creates the state row; the profile is private by default.
+	w, _ = f.do(http.MethodPost, "/api/companion/pet", ownerTok, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	w, resp = f.do(http.MethodGet, path, "", nil)
+	assert.Equal(t, http.StatusNotFound, w.Code, "guests cannot see a private profile")
+	assert.EqualValues(t, 40400, resp["code"])
+
+	w, resp = f.do(http.MethodGet, path, otherTok, nil)
+	assert.Equal(t, http.StatusNotFound, w.Code, "another user cannot see a private profile")
+	assert.EqualValues(t, 40400, resp["code"])
+
+	// The owner always sees their own summary.
+	w, resp = f.do(http.MethodGet, path, ownerTok, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data := dataOf(t, resp)
+	assert.EqualValues(t, ownerID, data["userId"])
+	assert.EqualValues(t, 1, data["bond"])
+	assert.EqualValues(t, 0, data["level"])
+	assert.Equal(t, "陌生", data["levelName"])
+	assert.EqualValues(t, 20, data["nextThreshold"])
+	assert.Equal(t, false, data["publicProfile"])
+	assert.Equal(t, "", data["equippedSkin"])
+	assert.NotNil(t, data["unlockedSkins"], "unlockedSkins must serialize as []")
+	assert.GreaterOrEqual(t, data["daysTogether"], float64(1))
+	assert.NotContains(t, data, "activityLevel", "summary must not leak private settings")
+	assert.NotContains(t, data, "dailyGain")
+	assert.NotContains(t, data, "unreadCount")
+
+	// Publishing the profile exposes it to guests and other signed-in users.
+	w, _ = f.do(http.MethodPost, "/api/companion/settings", ownerTok, map[string]any{
+		"publicProfile": true,
+	})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	w, resp = f.do(http.MethodGet, path, "", nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	guest := dataOf(t, resp)
+	assert.EqualValues(t, 1, guest["bond"])
+	assert.Equal(t, true, guest["publicProfile"])
+
+	w, resp = f.do(http.MethodGet, path, otherTok, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.EqualValues(t, 1, dataOf(t, resp)["bond"])
+
+	// Non-numeric and unknown ids are not found.
+	for _, bad := range []string{"/api/users/abc/companion", "/api/users/0/companion", "/api/users/999999/companion"} {
+		w, resp = f.do(http.MethodGet, bad, "", nil)
+		assert.Equal(t, http.StatusNotFound, w.Code, bad)
+		assert.EqualValues(t, 40400, resp["code"], bad)
 	}
 }
 

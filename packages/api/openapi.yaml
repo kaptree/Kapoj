@@ -341,6 +341,23 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ProfileResponse' }
         '404': { $ref: '#/components/responses/Error' }
+  /users/{id}/companion:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    get:
+      summary: 用户伙伴摘要（可选登录）
+      description: |
+        只返回羁绊、等级、皮肤与相伴天数，不包含设置或事件明细。
+        publicProfile=false 时仅本人可见；游客与其他用户返回 40400。
+        从未使用过伙伴的用户同样返回 40400，且不会惰性创建状态行。
+      security: [{}, { bearer: [] }]
+      responses:
+        '200':
+          description: 伙伴公开摘要
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserCompanionResponse' }
+        '404': { $ref: '#/components/responses/Error' }
   /users/{id}/rating-history:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
@@ -6997,6 +7014,29 @@ components:
           required: [data]
           properties:
             data: { $ref: '#/components/schemas/CompanionPetResult' }
+    UserCompanion:
+      type: object
+      description: 用户主页展示的伙伴公开摘要；不包含设置项、今日增益与事件明细。
+      required: [userId, bond, level, levelName, nextThreshold, equippedSkin, unlockedSkins, publicProfile, daysTogether]
+      properties:
+        userId: { type: integer, format: int64 }
+        bond: { type: integer, description: 累计羁绊值 }
+        level: { type: integer, minimum: 0, maximum: 6 }
+        levelName: { type: string, description: 等级称号，例如 陌生、搭档、只对你 }
+        nextThreshold: { type: integer, description: 下一等级所需羁绊；已满级时等于当前等级阈值 }
+        equippedSkin: { type: string, description: 当前装备的皮肤标识；未装备时为空字符串 }
+        unlockedSkins:
+          type: array
+          items: { type: string }
+        publicProfile: { type: boolean, description: 是否公开；false 时仅本人可见 }
+        daysTogether: { type: integer, minimum: 1, description: 相伴天数，创建当天记为第 1 天 }
+    UserCompanionResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/UserCompanion' }
     SiteLink:
       type: object
       description: 首页可编辑的卡片或 CTA；icon 为 PrimeIcons 类名，to 仅允许站内绝对路径。

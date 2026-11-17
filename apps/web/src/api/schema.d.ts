@@ -840,6 +840,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/{id}/companion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * 用户伙伴摘要（可选登录）
+         * @description 只返回羁绊、等级、皮肤与相伴天数，不包含设置或事件明细。
+         *     publicProfile=false 时仅本人可见；游客与其他用户返回 40400。
+         *     从未使用过伙伴的用户同样返回 40400，且不会惰性创建状态行。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 伙伴公开摘要 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UserCompanionResponse"];
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users/{id}/rating-history": {
         parameters: {
             query?: never;
@@ -11790,6 +11836,28 @@ export interface components {
         };
         CompanionPetResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["CompanionPetResult"];
+        };
+        /** @description 用户主页展示的伙伴公开摘要；不包含设置项、今日增益与事件明细。 */
+        UserCompanion: {
+            /** Format: int64 */
+            userId: number;
+            /** @description 累计羁绊值 */
+            bond: number;
+            level: number;
+            /** @description 等级称号，例如 陌生、搭档、只对你 */
+            levelName: string;
+            /** @description 下一等级所需羁绊；已满级时等于当前等级阈值 */
+            nextThreshold: number;
+            /** @description 当前装备的皮肤标识；未装备时为空字符串 */
+            equippedSkin: string;
+            unlockedSkins: string[];
+            /** @description 是否公开；false 时仅本人可见 */
+            publicProfile: boolean;
+            /** @description 相伴天数，创建当天记为第 1 天 */
+            daysTogether: number;
+        };
+        UserCompanionResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["UserCompanion"];
         };
         /** @description 首页可编辑的卡片或 CTA；icon 为 PrimeIcons 类名，to 仅允许站内绝对路径。 */
         SiteLink: {

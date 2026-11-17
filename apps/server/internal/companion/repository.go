@@ -50,6 +50,17 @@ func (r *Repository) EnsureState(ctx context.Context, userID int64) (*State, err
 	return &st, nil
 }
 
+// GetState returns the user's state row without creating it. A missing row is
+// reported as gorm.ErrRecordNotFound so callers can distinguish "never used the
+// companion" from a real failure.
+func (r *Repository) GetState(ctx context.Context, userID int64) (*State, error) {
+	var st State
+	if err := r.db.WithContext(ctx).Where("user_id = ?", userID).First(&st).Error; err != nil {
+		return nil, err
+	}
+	return &st, nil
+}
+
 // UpdateSettings persists the user-editable settings and returns the resulting
 // state. It ensures the state row exists first, so a fresh user can save
 // settings before any event has fired.

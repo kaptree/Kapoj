@@ -407,6 +407,118 @@ func TestServiceHandleGameEvent(t *testing.T) {
 	require.Error(t, err)
 }
 
+// A user without a state row has no public summary and the read does not
+// create one.
+func TestPublicStateMissingStateNotFound(t *testing.T) {
+	fixedLocalZone(t)
+	g := testutil.PG(t)
+	repo := companion.NewGormRepository(g)
+	svc := companion.NewService(repo)
+	ctx := context.Background()
+	uid := newUser(t, g, "public_missing")
+
+	_, err := svc.PublicState(ctx, uid, 0)
+	assert.ErrorIs(t, err, httpx.ErrNotFound)
+	_, err = svc.PublicState(ctx, uid, uid)
+	assert.ErrorIs(t, err, httpx.ErrNotFound)
+
+	var count int64
+	require.NoError(t, g.Model(&companion.State{}).Where("user_id = ?", uid).Count(&count).Error)
+	assert.Zero(t, count, "PublicState must not create the state row")
+}
+
+// A private profile is hidden from guests and other users but always visible to
+// its owner; a public profile is visible to everyone.
+func TestPublicStatePrivacy(t *testing.T) {
+	fixedLocalZone(t)
+	g := testutil.PG(t)
+	repo := companion.NewGormRepository(g)
+	svc := companion.NewService(repo)
+	ctx := context.Background()
+	uid := newUser(t, g, "public_owner")
+	other := newUser(t, g, "public_viewer")
+
+	_, created, err := repo.ApplyEvent(ctx, companion.EventInput{
+		UserID: uid, Key: "seed:public", Type: "boost", Bond: 25,
+		EventDate: "2020-01-01", DailyCapBypass: true, Payload: map[string]any{},
+	})
+	require.NoError(t, err)
+	require.True(t, created)
+	require.NoError(t, g.Exec(
+		`UPDATE companion_states SET equipped_skin = ?, unlocked_skins_json = ?::jsonb WHERE user_id = ?`,
+		"culture-festival", `["culture-festival"]`, uid,
+	).Error)
+
+	// Private by default: only the owner may read it.
+	_, err = svc.PublicState(ctx, uid, 0)
+	assert.ErrorIs(t, err, httpx.ErrNotFound, "guests cannot see a private profile")
+	_, err = svc.PublicState(ctx, uid, other)
+	assert.ErrorIs(t, err, httpx.ErrNotFound, "other users cannot see a private profile")
+
+	view, err := svc.PublicState(ctx, uid, uid)
+	require.NoError(t, err, "the owner always sees their own summary")
+	assert.Equal(t, uid, view.UserID)
+	assert.Equal(t, 25, view.Bond)
+	assert.Equal(t, 1, view.Level)
+	assert.Equal(t, "认识", view.LevelName)
+	assert.Equal(t, 50, view.NextThreshold)
+	assert.Equal(t, "culture-festival", view.EquippedSkin)
+	assert.Equal(t, []string{"culture-festival"}, view.UnlockedSkins)
+	assert.False(t, view.PublicProfile)
+
+	// Publishing the profile exposes the same summary to guests and others.
+	require.NoError(t, g.Model(&companion.State{}).Where("user_id = ?", uid).
+		Update("public_profile", true).Error)
+
+	guestView, err := svc.PublicState(ctx, uid, 0)
+	require.NoError(t, err)
+	assert.Equal(t, view.Bond, guestView.Bond)
+	assert.True(t, guestView.PublicProfile)
+
+	otherView, err := svc.PublicState(ctx, uid, other)
+	require.NoError(t, err)
+	assert.Equal(t, view.Bond, otherView.Bond)
+}
+
+// DaysTogether counts local calendar days since creation, with the creation
+// day itself counting as day 1.
+func TestPublicStateDaysTogether(t *testing.T) {
+	fixedLocalZone(t)
+	g := testutil.PG(t)
+	repo := companion.NewGormRepository(g)
+	svc := companion.NewService(repo)
+	ctx := context.Background()
+	uid := newUser(t, g, "public_days")
+
+	_, err := repo.EnsureState(ctx, uid)
+	require.NoError(t, err)
+
+	setCreated := func(at time.Time) {
+		require.NoError(t, g.Model(&companion.State{}).Where("user_id = ?", uid).
+			Update("created_at", at).Error)
+	}
+	now := time.Now().In(time.Local)
+	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+
+	// Created earlier today: still day 1.
+	setCreated(midnight)
+	view, err := svc.PublicState(ctx, uid, uid)
+	require.NoError(t, err)
+	assert.Equal(t, 1, view.DaysTogether)
+
+	// Three local calendar days ago: day 4.
+	setCreated(midnight.AddDate(0, 0, -3).Add(23 * time.Hour))
+	view, err = svc.PublicState(ctx, uid, uid)
+	require.NoError(t, err)
+	assert.Equal(t, 4, view.DaysTogether)
+
+	// A clock skew into the future never drops below 1.
+	setCreated(midnight.AddDate(0, 0, 1))
+	view, err = svc.PublicState(ctx, uid, uid)
+	require.NoError(t, err)
+	assert.Equal(t, 1, view.DaysTogether, "DaysTogether is at least 1")
+}
+
 func assertSettingsValidation(t *testing.T, err error) {
 	t.Helper()
 	var appErr *httpx.AppError

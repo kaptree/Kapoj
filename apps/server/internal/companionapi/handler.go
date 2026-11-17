@@ -21,9 +21,10 @@ const (
 	markReadMaxIDs = 100
 )
 
-// RegisterRoutes mounts the authenticated companion endpoints. The group must
-// already run middleware.Authenticate so a valid bearer token populates the
-// claims that middleware.RequireAuth checks.
+// RegisterRoutes mounts the companion endpoints. The group must already run
+// middleware.Authenticate so a valid bearer token populates the claims that
+// middleware.RequireAuth checks. The public summary is deliberately mounted
+// without RequireAuth: guests read it with viewerID 0.
 func RegisterRoutes(r gin.IRouter, s *companion.Service) {
 	h := &handler{svc: s}
 	auth := middleware.RequireAuth()
@@ -32,6 +33,7 @@ func RegisterRoutes(r gin.IRouter, s *companion.Service) {
 	r.POST("/companion/events/read", auth, h.markRead)
 	r.POST("/companion/settings", auth, h.updateSettings)
 	r.POST("/companion/pet", auth, h.pet)
+	r.GET("/users/:id/companion", h.publicState)
 }
 
 type handler struct {
@@ -158,4 +160,35 @@ func (h *handler) pet(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, result)
+}
+
+// pathID reads a positive path parameter; malformed ids are 404 so the summary
+// never reveals whether a companion exists behind an invalid key.
+func pathID(c *gin.Context, name string) (int64, bool) {
+	id, err := strconv.ParseInt(c.Param(name), 10, 64)
+	if err != nil || id <= 0 {
+		httpx.Fail(c, httpx.ErrNotFound)
+		return 0, false
+	}
+	return id, true
+}
+
+// publicState serves the privacy-filtered companion summary. A missing bearer
+// token is not an error: the viewer is a guest (id 0) and only public profiles
+// are visible.
+func (h *handler) publicState(c *gin.Context) {
+	userID, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	var viewerID int64
+	if claims, ok := middleware.CurrentClaims(c); ok {
+		viewerID = claims.UserID
+	}
+	view, err := h.svc.PublicState(c.Request.Context(), userID, viewerID)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, view)
 }

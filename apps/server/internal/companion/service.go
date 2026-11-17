@@ -7,6 +7,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"gorm.io/gorm"
+
 	"github.com/kaptree/kapoj/apps/server/internal/gamequeue"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 )
@@ -89,6 +91,55 @@ func (s *Service) State(ctx context.Context, userID int64) (*StateView, error) {
 		UnreadCount:   unread,
 		TodayEvents:   eventViews(todayEvents),
 	}, nil
+}
+
+// PublicState returns the privacy-filtered summary of another user's companion.
+// A private profile is only readable by its owner; everyone else (including
+// guests, whose viewerID is 0) gets httpx.ErrNotFound so the profile cannot tell
+// a hidden companion from a user that never used one.
+func (s *Service) PublicState(ctx context.Context, userID, viewerID int64) (*PublicStateView, error) {
+	st, err := s.repo.GetState(ctx, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, httpx.ErrNotFound
+		}
+		return nil, err
+	}
+	if !st.PublicProfile && viewerID != userID {
+		return nil, httpx.ErrNotFound
+	}
+	lvl := LevelForBond(st.Bond)
+	skins := []string(st.UnlockedSkins)
+	if skins == nil {
+		skins = []string{}
+	}
+	return &PublicStateView{
+		UserID:        st.UserID,
+		Bond:          st.Bond,
+		Level:         lvl.Level,
+		LevelName:     lvl.Name,
+		NextThreshold: lvl.Next,
+		EquippedSkin:  st.EquippedSkin,
+		UnlockedSkins: skins,
+		PublicProfile: st.PublicProfile,
+		DaysTogether:  daysTogether(st.CreatedAt, time.Now()),
+	}, nil
+}
+
+// daysTogether counts local calendar days since createdAt, with the creation
+// day itself counting as day 1. The local civil date is used (not elapsed UTC
+// hours) so a summary read late in the day still reports one day together, and
+// the difference is computed on UTC midnights to stay correct across DST.
+func daysTogether(createdAt, now time.Time) int {
+	cy, cm, cd := createdAt.In(time.Local).Date()
+	ny, nm, nd := now.In(time.Local).Date()
+	created := time.Date(cy, cm, cd, 0, 0, 0, 0, time.UTC)
+	today := time.Date(ny, nm, nd, 0, 0, 0, 0, time.UTC)
+	days := int(today.Sub(created).Hours()/24) + 1
+	if days < 1 {
+		return 1
+	}
+	return days
 }
 
 // equippedSkinMaxRunes matches the varchar(40) equipped_skin column so oversize

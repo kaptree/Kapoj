@@ -515,6 +515,46 @@ func TestUpdateSettingsPatchOnlyWritesProvidedFields(t *testing.T) {
 	assert.Equal(t, "quiet", st.ActivityLevel)
 }
 
+// GetState is a read-only lookup: a missing row is not found and is not
+// created as a side effect.
+func TestGetStateMissingDoesNotCreate(t *testing.T) {
+	g := testutil.PG(t)
+	repo := companion.NewGormRepository(g)
+	ctx := context.Background()
+	uid := newUser(t, g, "get_state_missing")
+
+	st, err := repo.GetState(ctx, uid)
+	assert.Nil(t, st)
+	assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
+
+	var count int64
+	require.NoError(t, g.Model(&companion.State{}).Where("user_id = ?", uid).Count(&count).Error)
+	assert.Zero(t, count, "GetState must not create the state row")
+}
+
+// GetState returns an existing state row unchanged.
+func TestGetStateReturnsExisting(t *testing.T) {
+	g := testutil.PG(t)
+	repo := companion.NewGormRepository(g)
+	ctx := context.Background()
+	uid := newUser(t, g, "get_state_existing")
+
+	_, err := repo.EnsureState(ctx, uid)
+	require.NoError(t, err)
+	require.NoError(t, g.Model(&companion.State{}).Where("user_id = ?", uid).
+		Update("public_profile", true).Error)
+
+	st, err := repo.GetState(ctx, uid)
+	require.NoError(t, err)
+	assert.Equal(t, uid, st.UserID)
+	assert.True(t, st.PublicProfile)
+	assert.Equal(t, "normal", st.ActivityLevel)
+
+	var count int64
+	require.NoError(t, g.Model(&companion.State{}).Where("user_id = ?", uid).Count(&count).Error)
+	assert.Equal(t, int64(1), count)
+}
+
 // Two concurrent patches touching different fields must both persist.
 func TestUpdateSettingsPatchConcurrentFields(t *testing.T) {
 	g := testutil.PG(t)
