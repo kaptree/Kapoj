@@ -997,18 +997,18 @@ git commit -m "feat(difficulty): add scheduled recalculation job"
 
 ---
 
-### Task 11: 定时任务 API、权限与接线
+### Task 11: 定时任务 API、难度设置 API、权限与接线
 
 **Files:**
 - Modify: `apps/server/internal/rbac/catalog.go`, `rbac/audit.go`, `rbac/seed_test.go`
-- Create: `apps/server/internal/jobsapi/handler.go`
+- Create: `apps/server/internal/jobsapi/handler.go`, `apps/server/internal/jobsapi/difficulty_handler.go`
 - Test: `apps/server/internal/jobsapi/handler_test.go`
 - Modify: `apps/server/internal/router/router.go`, `apps/server/cmd/server/main.go`
 
 **Interfaces:**
 - Adds `rbac.PermSystemJobsManage = "system.jobs.manage"` and audit constants.
-- `jobsapi.RegisterRoutes(api gin.IRouter, svc *jobs.Service, rbacSvc *rbac.Service)`.
-- Routes per design §6.3.
+- `jobsapi.RegisterRoutes(api gin.IRouter, svc *jobs.Service, difficultySettings *difficulty.SettingsService, rbacSvc *rbac.Service)`.
+- Routes per design §6.2/§6.3, including `GET/PUT /api/admin/difficulty/settings`.
 
 - [ ] **Step 1: 写失败测试**
 
@@ -1019,6 +1019,10 @@ func TestAdminJobsPermissionAndRun(t *testing.T) {
 
 func TestAdminJobsUpdateCron(t *testing.T) {
     // PUT cron 非法 40001；合法 200 且 nextRunAt 变化。
+}
+
+func TestAdminDifficultySettings(t *testing.T) {
+    // GET 默认值；PUT 合法 200 + 审计；非法 40001；无 system.jobs.manage 403。
 }
 ```
 
@@ -1031,7 +1035,8 @@ Expected: FAIL，路由不存在/权限目录缺少。
 
 - `rbac/catalog.go` 增加权限定义（`PermissionGroupAdmin`），`rbac/audit.go` 增加 `AuditActionSystemJobsManage`、`AuditActionAIPlatformModel*`、target 常量；更新 seed 测试权限数 43→44。
 - `jobsapi`：list/update/run/list runs/get run/all runs；使用 `requirePermission(rbac.PermSystemJobsManage)`；`run` 成功 `202`，冲突 `40904`。
-- `router.Deps` 增加 `Difficulty *difficulty.SettingsService`、`AIPlatform *ai.PlatformService`、`Jobs *jobs.Service`；`problemapi.Options` 注入 Difficulty/AI/AISettings；`adminapi.Options` 注入 AIPlatform；`jobsapi.RegisterRoutes`。
+- `jobsapi/difficulty_handler.go`：`GET/PUT /api/admin/difficulty/settings`，复用 `difficulty.SettingsService.Get/Update`；PUT 审计 action `system.jobs.manage`、target `difficulty_settings`；校验错误 40001。
+- `router.Deps` 增加 `Difficulty *difficulty.SettingsService`、`AIPlatform *ai.PlatformService`、`Jobs *jobs.Service`；`problemapi.Options` 注入 Difficulty/AI/AISettings；`adminapi.Options` 注入 AIPlatform；`jobsapi.RegisterRoutes` 注入 Jobs + Difficulty settings。
 - `main.go`：
   - 抽出 `aiClient := ai.NewOpenAIClient(cfg.AIRequestTimeout)`。
   - `aiSettings := ai.NewSettingsService(...)`；`platformSvc := ai.NewPlatformService(g, keyMgr, aiClient, aiSettings)`。
@@ -1042,14 +1047,14 @@ Expected: FAIL，路由不存在/权限目录缺少。
 
 - [ ] **Step 4: 运行测试确认通过**
 
-Run: `cd apps/server && go test ./internal/jobsapi ./internal/rbac ./internal/router -v`
+Run: `cd apps/server && go test -p 1 ./internal/jobsapi ./internal/rbac ./internal/router -v`
 Expected: PASS（router 可能无测试，至少编译）。
 
 - [ ] **Step 5: 提交**
 
 ```bash
 git add apps/server/internal/rbac apps/server/internal/jobsapi apps/server/internal/router apps/server/cmd/server/main.go
-git commit -m "feat(admin): add scheduled jobs API and wiring"
+git commit -m "feat(admin): add scheduled jobs and difficulty settings API"
 ```
 
 ---
