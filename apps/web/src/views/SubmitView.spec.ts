@@ -784,4 +784,12 @@ describe('SubmitView', () => {
     expect(wrapper.find('a[href="/settings/ai"]').exists()).toBe(false)
     wrapper.unmount()
   })
+
+  it('renders the exact difficulty with its band label', async () => {
+    vi.mocked(getProblem).mockResolvedValue(detail(1, { difficulty: 62 }))
+    const { wrapper } = await mountPage()
+
+    expect(wrapper.find('.app-difficulty-tag').text()).toBe('62 · 省选')
+    wrapper.unmount()
+  })
 })

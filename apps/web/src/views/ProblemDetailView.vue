@@ -310,7 +310,7 @@ async function downloadPackage() {
       </AppPageHeader>
 
       <div class="meta-bar">
-        <AppDifficultyTag :difficulty="problem?.difficulty ?? 0" />
+        <AppDifficultyTag :difficulty="problem?.difficulty ?? 0" show-label />
         <span class="type-chip">{{ typeLabels[problem?.type ?? 'traditional'] }}</span>
         <Tag
           v-if="problem?.type === 'objective'"

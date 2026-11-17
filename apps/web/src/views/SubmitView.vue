@@ -540,7 +540,7 @@ async function submit() {
       <div class="meta-bar">
         <span v-if="contestId > 0" class="contest-chip">比赛提交</span>
         <span class="slug-chip">{{ problem?.slug }}</span>
-        <AppDifficultyTag :difficulty="problem?.difficulty ?? 0" />
+        <AppDifficultyTag :difficulty="problem?.difficulty ?? 0" show-label />
         <span class="type-chip">{{ typeLabels[problem?.type ?? 'traditional'] }}</span>
         <span v-if="problem?.type !== 'objective'" class="meta-item">
           <i class="pi pi-clock" aria-hidden="true" /> {{ problem?.timeLimitMs }} ms

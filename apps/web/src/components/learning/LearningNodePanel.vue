@@ -7,6 +7,7 @@ import Tag from 'primevue/tag'
 import type { LearningPathNodeItem } from '@/api/types'
 import MarkdownView from '@/components/MarkdownView.vue'
 import { useTheme } from '@/theme/theme'
+import { difficultyText } from '@/utils/difficulty'
 import { learningStatusLabel, learningStatusSeverity, nodeProgressPercent } from '@/utils/learning'
 
 const props = withDefaults(
@@ -138,7 +139,9 @@ defineExpose({ scrollToProblems })
               problem.solved ? '✓' : '○'
             }}</span>
             <span class="panel-problem__title">{{ problem.title }}</span>
-            <span class="panel-problem__difficulty">难度 {{ problem.difficulty }}</span>
+            <span class="panel-problem__difficulty"
+              >难度 {{ difficultyText(problem.difficulty) }}</span
+            >
             <span class="panel-problem__status">{{ problem.solved ? '已通过' : '未开始' }}</span>
           </RouterLink>
         </li>

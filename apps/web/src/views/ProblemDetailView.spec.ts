@@ -768,4 +768,14 @@ describe('ProblemDetailView', () => {
     click.mockRestore()
     wrapper.unmount()
   })
+
+  it('renders the exact difficulty with its band label', async () => {
+    vi.mocked(getProblem).mockResolvedValue(detail(1, { difficulty: 62 }))
+    vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('.app-difficulty-tag').text()).toBe('62 · 省选')
+    wrapper.unmount()
+  })
 })

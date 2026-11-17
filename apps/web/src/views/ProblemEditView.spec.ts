@@ -2,15 +2,21 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
 import InputChips from 'primevue/inputchips'
 import InputNumber from 'primevue/inputnumber'
-import Select from 'primevue/select'
 import SelectButton from 'primevue/selectbutton'
 import ToggleSwitch from 'primevue/toggleswitch'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { ApiError } from '@/api/http'
-import { createProblem, deleteProblem, getProblem, updateProblem } from '@/api/problems'
-import type { ProblemDetail } from '@/api/types'
+import {
+  assessProblemDifficulty,
+  createProblem,
+  deleteProblem,
+  getProblem,
+  getProblemDifficultyHistory,
+  updateProblem,
+} from '@/api/problems'
+import type { DifficultyHistoryItem, ProblemDetail } from '@/api/types'
 import ProblemEditView from './ProblemEditView.vue'
 
 const toast = vi.hoisted(() => ({ add: vi.fn() }))
@@ -23,6 +29,8 @@ vi.mock('@/api/problems', () => ({
   createProblem: vi.fn(),
   updateProblem: vi.fn(),
   deleteProblem: vi.fn(),
+  assessProblemDifficulty: vi.fn(),
+  getProblemDifficultyHistory: vi.fn(),
 }))
 vi.mock('@/components/MarkdownEditor.vue', () => ({
   default: {
@@ -55,7 +63,7 @@ function detail(overrides: Partial<ProblemDetail> = {}): ProblemDetail {
     slug: 'a-plus-b',
     type: 'traditional',
     tags: ['math', 'beginner'],
-    difficulty: 2,
+    difficulty: 62,
     timeLimitMs: 2000,
     memoryLimitMb: 512,
     submitCount: 10,
@@ -74,6 +82,26 @@ function detail(overrides: Partial<ProblemDetail> = {}): ProblemDetail {
     solutionPriceCoins: 0,
     checkerUploaded: false,
     canEdit: true,
+    ...overrides,
+  }
+}
+
+function historyItem(overrides: Partial<DifficultyHistoryItem> = {}): DifficultyHistoryItem {
+  return {
+    oldScore: 50,
+    newScore: 72,
+    prior: 50,
+    source: 'ai_reassess',
+    sampleUsers: 10,
+    acceptedUsers: 4,
+    passRate: 0.4,
+    smoothedPassRate: 0.35,
+    targetScore: 68,
+    confidence: 0.8,
+    reason: '题目偏难',
+    runId: null,
+    createdBy: 1,
+    createdAt: '2026-11-10T10:00:00Z',
     ...overrides,
   }
 }
@@ -100,6 +128,20 @@ function button(wrapper: VueWrapper, label: string) {
   return found!
 }
 
+// The form renders difficulty first, then the time/memory limits and the
+// public switch, so component order identifies each control reliably.
+function difficultyInput(wrapper: VueWrapper) {
+  return wrapper.findAllComponents(InputNumber)[0]!
+}
+
+function difficultyAuto(wrapper: VueWrapper) {
+  return wrapper.findAllComponents(ToggleSwitch)[0]!
+}
+
+function publicToggle(wrapper: VueWrapper) {
+  return wrapper.findAllComponents(ToggleSwitch)[1]!
+}
+
 async function openTab(wrapper: VueWrapper, label: string) {
   const tab = wrapper.findAll('[role="tab"]').find((t) => t.text() === label)
   expect(tab, `tab "${label}"`).toBeTruthy()
@@ -108,12 +150,15 @@ async function openTab(wrapper: VueWrapper, label: string) {
 }
 
 beforeEach(() => {
+  document.body.innerHTML = ''
   toast.add.mockReset()
   confirm.require.mockReset()
   vi.mocked(getProblem).mockReset()
   vi.mocked(createProblem).mockReset()
   vi.mocked(updateProblem).mockReset()
   vi.mocked(deleteProblem).mockReset()
+  vi.mocked(assessProblemDifficulty).mockReset()
+  vi.mocked(getProblemDifficultyHistory).mockReset()
   vi.mocked(getProblem).mockResolvedValue(detail())
 })
 
@@ -128,13 +173,13 @@ describe('ProblemEditView', () => {
     expect((wrapper.find('input[name="slug"]').element as HTMLInputElement).value).toBe('a-plus-b')
     expect((wrapper.find('input[name="source"]').element as HTMLInputElement).value).toBe('luogu')
 
-    expect(wrapper.findComponent(Select).props('modelValue')).toBe(2)
     expect(wrapper.findComponent(SelectButton).props('modelValue')).toBe('traditional')
     expect(wrapper.findComponent(InputChips).props('modelValue')).toEqual(['math', 'beginner'])
     expect(wrapper.findAllComponents(InputNumber).map((n) => n.props('modelValue'))).toEqual([
-      2000, 512,
+      62, 2000, 512,
     ])
-    expect(wrapper.findComponent(ToggleSwitch).props('modelValue')).toBe(true)
+    expect(difficultyAuto(wrapper).props('modelValue')).toBe(true)
+    expect(publicToggle(wrapper).props('modelValue')).toBe(true)
 
     await openTab(wrapper, '样例')
     expect(wrapper.find('.sample-stub').text()).toBe('samples 2')
@@ -181,7 +226,7 @@ describe('ProblemEditView', () => {
 
     expect(updateProblem).toHaveBeenCalledWith(
       1,
-      expect.objectContaining({ title: 'A+B', slug: 'a-plus-b', difficulty: 2 }),
+      expect.objectContaining({ title: 'A+B', slug: 'a-plus-b', difficulty: 62 }),
     )
     expect(toast.add).toHaveBeenCalledWith(
       expect.objectContaining({ severity: 'success', summary: '已保存' }),
@@ -281,7 +326,7 @@ describe('ProblemEditView', () => {
     vi.mocked(updateProblem).mockRejectedValue(new ApiError(500, 50000, '保存失败'))
     const { wrapper } = await mountView('/problems/1/edit')
 
-    const toggle = wrapper.findComponent(ToggleSwitch)
+    const toggle = publicToggle(wrapper)
     expect(toggle.props('modelValue')).toBe(false)
 
     toggle.vm.$emit('update:modelValue', true)
@@ -342,7 +387,7 @@ describe('ProblemEditView', () => {
     expect(answers.exists()).toBe(true)
     expect((answers.element as HTMLTextAreaElement).value).toBe('A\nB')
     expect(wrapper.find('.testcases').exists()).toBe(false)
-    expect(wrapper.findAllComponents(InputNumber)).toHaveLength(0)
+    expect(wrapper.findAllComponents(InputNumber)).toHaveLength(1)
     expect(wrapper.text()).toContain('客观题无需测试点；发布前请确认至少 1 个正确答案。')
     wrapper.unmount()
   })
@@ -402,6 +447,172 @@ describe('ProblemEditView', () => {
     expect(wrapper.text()).not.toContain('加载题目失败')
     expect(wrapper.text()).not.toContain('题目不存在')
     expect(wrapper.find('.tc-stub').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('disables difficulty input while auto assessment is on', async () => {
+    const { wrapper } = await mountView('/problems/new')
+
+    expect(
+      wrapper.find('[data-test="difficulty-input"] input').attributes('disabled'),
+    ).toBeDefined()
+    expect(difficultyAuto(wrapper).props('modelValue')).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('unlocks difficulty when auto adjustment is turned off and saves the lock', async () => {
+    vi.mocked(updateProblem).mockResolvedValue(detail())
+    const { wrapper } = await mountView('/problems/1/edit')
+
+    const auto = difficultyAuto(wrapper)
+    expect(
+      wrapper.find('[data-test="difficulty-input"] input').attributes('disabled'),
+    ).toBeDefined()
+
+    auto.vm.$emit('update:modelValue', false)
+    await flushPromises()
+
+    expect(auto.props('modelValue')).toBe(false)
+    expect(
+      wrapper.find('[data-test="difficulty-input"] input').attributes('disabled'),
+    ).toBeUndefined()
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(updateProblem).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ difficulty: 62, difficultyAuto: false }),
+    )
+    wrapper.unmount()
+  })
+
+  it('treats a manual score change as a manual lock', async () => {
+    vi.mocked(updateProblem).mockResolvedValue(detail({ difficulty: 72 }))
+    const { wrapper } = await mountView('/problems/1/edit')
+
+    difficultyInput(wrapper).vm.$emit('update:modelValue', 72)
+    await flushPromises()
+
+    expect(difficultyInput(wrapper).props('modelValue')).toBe(72)
+    expect(difficultyAuto(wrapper).props('modelValue')).toBe(false)
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(updateProblem).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ difficulty: 72, difficultyAuto: false }),
+    )
+    wrapper.unmount()
+  })
+
+  it('keeps the current score when auto adjustment is turned back on', async () => {
+    vi.mocked(updateProblem).mockResolvedValue(detail({ difficulty: 72 }))
+    const { wrapper } = await mountView('/problems/1/edit')
+
+    const auto = difficultyAuto(wrapper)
+    auto.vm.$emit('update:modelValue', false)
+    await flushPromises()
+    difficultyInput(wrapper).vm.$emit('update:modelValue', 72)
+    await flushPromises()
+    auto.vm.$emit('update:modelValue', true)
+    await flushPromises()
+
+    expect(auto.props('modelValue')).toBe(true)
+    expect(difficultyInput(wrapper).props('modelValue')).toBe(72)
+    expect(
+      wrapper.find('[data-test="difficulty-input"] input').attributes('disabled'),
+    ).toBeDefined()
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(updateProblem).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ difficulty: 72, difficultyAuto: true }),
+    )
+    wrapper.unmount()
+  })
+
+  it('shows the difficulty source, last update and reason in edit mode', async () => {
+    vi.mocked(getProblem).mockResolvedValue(
+      detail({
+        difficultyAuto: false,
+        difficultySource: 'manual',
+        difficultyUpdatedAt: '2026-11-10T10:00:00Z',
+        difficultyReason: '人工设定',
+      }),
+    )
+    const { wrapper } = await mountView('/problems/1/edit')
+
+    expect(wrapper.find('[data-test="difficulty-source"]').text()).toBe('手动')
+    expect(wrapper.text()).toContain('最近更新')
+    expect(wrapper.text()).toContain('人工设定')
+    wrapper.unmount()
+  })
+
+  it('hides reassessment and history controls on the create page', async () => {
+    const { wrapper } = await mountView('/problems/new')
+
+    expect(wrapper.findAll('button').some((b) => b.text().includes('AI 重新评估'))).toBe(false)
+    expect(wrapper.findAll('button').some((b) => b.text().includes('查看难度历史'))).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('calls AI reassessment, updates the score and warns about the lock', async () => {
+    vi.mocked(assessProblemDifficulty).mockResolvedValue(
+      detail({
+        difficulty: 72,
+        difficultyAuto: false,
+        difficultySource: 'ai',
+        difficultyReason: 'AI 重评',
+      }),
+    )
+    const { wrapper } = await mountView('/problems/1/edit')
+
+    await button(wrapper, 'AI 重新评估').trigger('click')
+    await flushPromises()
+
+    expect(confirm.require).toHaveBeenCalledTimes(1)
+    const options = confirm.require.mock.calls[0]![0] as {
+      header: string
+      message: string
+      acceptLabel: string
+      accept: () => Promise<void>
+    }
+    expect(options.header).toBe('AI 重新评估')
+    expect(options.acceptLabel).toBe('重新评估')
+    expect(assessProblemDifficulty).not.toHaveBeenCalled()
+
+    await options.accept()
+    await flushPromises()
+
+    expect(assessProblemDifficulty).toHaveBeenCalledWith(1)
+    expect(
+      (wrapper.find('[data-test="difficulty-input"] input').element as HTMLInputElement).value,
+    ).toBe('72')
+    expect(difficultyAuto(wrapper).props('modelValue')).toBe(false)
+    expect(wrapper.text()).toContain('AI 评分已更新，自动调整仍关闭')
+    wrapper.unmount()
+  })
+
+  it('shows the difficulty history in a dialog', async () => {
+    vi.mocked(getProblemDifficultyHistory).mockResolvedValue({
+      total: 1,
+      items: [historyItem()],
+    })
+    const { wrapper } = await mountView('/problems/1/edit')
+
+    await button(wrapper, '查看难度历史').trigger('click')
+    await flushPromises()
+
+    expect(getProblemDifficultyHistory).toHaveBeenCalledWith(1, 1, 10)
+    const dialog = document.body.querySelector('.p-dialog')
+    expect(dialog).not.toBeNull()
+    expect(dialog!.textContent).toContain('难度历史')
+    expect(dialog!.textContent).toContain('50 → 72')
+    expect(dialog!.textContent).toContain('题目偏难')
     wrapper.unmount()
   })
 })

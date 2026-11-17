@@ -2,6 +2,7 @@ import { http } from './client'
 import type {
   BulkProblemActionData,
   BulkProblemActionRequest,
+  DifficultyHistoryItem,
   HydroImportResult,
   OfficialSolutionInput,
   OnlineTestcaseInput,
@@ -54,6 +55,14 @@ export const listProblems = (q: ListProblemsQuery = {}) =>
   })
 
 export const getProblem = (id: number | string) => http.get<ProblemDetail>(`/problems/${id}`)
+
+export const assessProblemDifficulty = (id: number | string) =>
+  http.post<ProblemDetail>(`/problems/${id}/difficulty/assess`)
+
+export const getProblemDifficultyHistory = (id: number | string, page = 1, pageSize = 20) =>
+  http.get<Page<DifficultyHistoryItem>>(`/problems/${id}/difficulty/history`, {
+    params: { page, page_size: pageSize },
+  })
 
 export const createProblem = (input: ProblemInput) => http.post<ProblemDetail>('/problems', input)
 

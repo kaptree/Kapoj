@@ -20,9 +20,7 @@ export type MessageView = Schemas['MessageView']
 export type LoginRequest = Schemas['LoginRequest']
 export type UpdateMeRequest = Schemas['UpdateMeRequest']
 export type ProblemType = Schemas['ProblemType']
-// Vue form state currently requires every ProblemInput key; keep difficultyAuto
-// optional for callers so an omitted flag stays valid until the edit form adds it.
-export type ProblemInput = Schemas['ProblemInput'] | Omit<Schemas['ProblemInput'], 'difficultyAuto'>
+export type ProblemInput = Schemas['ProblemInput']
 export type ProblemUpdateInput = Schemas['ProblemUpdateInput']
 export type ProblemListItem = Schemas['ProblemListItem']
 export type ProblemDetail = Schemas['ProblemDetail']

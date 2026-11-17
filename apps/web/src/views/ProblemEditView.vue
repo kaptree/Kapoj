@@ -2,17 +2,21 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Button from 'primevue/button'
+import Column from 'primevue/column'
+import DataTable from 'primevue/datatable'
+import Dialog from 'primevue/dialog'
 import InputChips from 'primevue/inputchips'
 import InputNumber from 'primevue/inputnumber'
 import InputText from 'primevue/inputtext'
 import Message from 'primevue/message'
-import Select from 'primevue/select'
+import Paginator from 'primevue/paginator'
 import SelectButton from 'primevue/selectbutton'
 import Tab from 'primevue/tab'
 import TabList from 'primevue/tablist'
 import TabPanel from 'primevue/tabpanel'
 import TabPanels from 'primevue/tabpanels'
 import Tabs from 'primevue/tabs'
+import Tag from 'primevue/tag'
 import Textarea from 'primevue/textarea'
 import ToggleSwitch from 'primevue/toggleswitch'
 import { useConfirm } from 'primevue/useconfirm'
@@ -20,13 +24,15 @@ import { useToast } from 'primevue/usetoast'
 
 import { ApiError } from '@/api/http'
 import {
+  assessProblemDifficulty,
   createProblem,
   deleteProblem,
   getProblem,
+  getProblemDifficultyHistory,
   updateProblem,
   uploadStatementImage,
 } from '@/api/problems'
-import type { ProblemDetail, ProblemInput, ProblemType } from '@/api/types'
+import type { DifficultyHistoryItem, ProblemDetail, ProblemInput, ProblemType } from '@/api/types'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import ProblemAttachmentManager from '@/components/ProblemAttachmentManager.vue'
 import SampleEditor from '@/components/SampleEditor.vue'
@@ -38,7 +44,7 @@ import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
 import { useTheme } from '@/theme/theme'
-import { DIFFICULTIES } from '@/utils/difficulty'
+import { formatDateTime } from '@/utils/format'
 
 const route = useRoute()
 const router = useRouter()
@@ -52,6 +58,20 @@ const TYPE_OPTIONS: { label: string; value: ProblemType }[] = [
   { label: '交互题（暂不评测）', value: 'interactive' },
   { label: '客观题（直接提交答案）', value: 'objective' },
 ]
+
+const DIFFICULTY_SOURCE_LABELS: Record<string, string> = {
+  ai: 'AI 初评',
+  ai_initial: 'AI 初评',
+  ai_reassess: 'AI 重评',
+  default: '默认',
+  pass_rate: '通过率',
+  manual: '手动',
+  migration: '迁移',
+  migrated: '迁移',
+  import: '导入',
+}
+
+const HISTORY_PAGE_SIZE = 10
 
 const problemId = computed(() =>
   typeof route.params.id === 'string' ? Number(route.params.id) : null,
@@ -81,6 +101,7 @@ function emptyForm(): FormState {
     answers: [],
     tags: [],
     difficulty: 1,
+    difficultyAuto: true,
     timeLimitMs: 1000,
     memoryLimitMb: 256,
     isPublic: false,
@@ -98,6 +119,23 @@ const error = ref('')
 const loadFailed = ref(false)
 const notFound = ref(false)
 
+const difficultySource = ref('')
+const difficultyUpdatedAt = ref('')
+const difficultyReason = ref('')
+const difficultySourceLabel = computed(
+  () => DIFFICULTY_SOURCE_LABELS[difficultySource.value] ?? difficultySource.value,
+)
+
+const reassessing = ref(false)
+const reassessWarning = ref('')
+
+const historyOpen = ref(false)
+const historyLoading = ref(false)
+const historyError = ref('')
+const historyItems = ref<DifficultyHistoryItem[]>([])
+const historyTotal = ref(0)
+const historyPage = ref(1)
+
 function fill(p: ProblemDetail) {
   Object.assign(form, {
     title: p.title,
@@ -111,20 +149,32 @@ function fill(p: ProblemDetail) {
     answers: [...(p.answers ?? [])],
     tags: [...p.tags],
     difficulty: p.difficulty,
+    difficultyAuto: p.difficultyAuto ?? true,
     timeLimitMs: p.timeLimitMs,
     memoryLimitMb: p.memoryLimitMb,
     isPublic: p.isPublic,
     source: p.source,
   })
+  difficultySource.value = p.difficultySource ?? ''
+  difficultyUpdatedAt.value = p.difficultyUpdatedAt ?? ''
+  difficultyReason.value = p.difficultyReason ?? ''
   answersText.value = form.answers.join('\n')
   checkerUploaded.value = p.checkerUploaded ?? false
   published.value = p.isPublic
   canEdit.value = p.canEdit
 }
 
+function resetDifficultyMeta() {
+  difficultySource.value = ''
+  difficultyUpdatedAt.value = ''
+  difficultyReason.value = ''
+  reassessWarning.value = ''
+}
+
 async function load() {
   if (problemId.value === null) {
     Object.assign(form, emptyForm())
+    resetDifficultyMeta()
     answersText.value = ''
     checkerUploaded.value = false
     published.value = false
@@ -177,6 +227,13 @@ async function uploadStatementImageFile(file: File): Promise<string> {
 
 function describe(e: unknown, fallback: string) {
   return e instanceof ApiError ? e.message : fallback
+}
+
+// Editing the score is a manual decision: lock the problem against the
+// scheduled recalculation, but keep the chosen value for later saves.
+function onDifficultyInput(value: number | null | undefined) {
+  if (value == null) return
+  form.difficultyAuto = false
 }
 
 // Spec §4.2: tags are trimmed, empties removed, capped at 10 before submit.
@@ -257,6 +314,73 @@ function remove() {
     },
   })
 }
+
+function reassess() {
+  if (problemId.value === null) return
+  confirm.require({
+    header: 'AI 重新评估',
+    message: '将调用平台 AI 重新评估当前题目的难度并覆盖现有难度分，确定继续吗？',
+    acceptLabel: '重新评估',
+    rejectLabel: '取消',
+    accept: async () => {
+      if (problemId.value === null) return
+      reassessing.value = true
+      error.value = ''
+      try {
+        const updated = await assessProblemDifficulty(problemId.value)
+        fill(updated)
+        if (updated.difficultyAuto ?? true) {
+          reassessWarning.value = ''
+          toast.add({ severity: 'success', summary: 'AI 评分已更新', life: 3000 })
+        } else {
+          reassessWarning.value = 'AI 评分已更新，自动调整仍关闭'
+          toast.add({ severity: 'warn', summary: reassessWarning.value, life: 5000 })
+        }
+      } catch (e) {
+        error.value = describe(e, 'AI 重新评估失败，请稍后再试')
+      } finally {
+        reassessing.value = false
+      }
+    },
+  })
+}
+
+async function loadHistory() {
+  if (problemId.value === null) return
+  historyLoading.value = true
+  historyError.value = ''
+  try {
+    const result = await getProblemDifficultyHistory(
+      problemId.value,
+      historyPage.value,
+      HISTORY_PAGE_SIZE,
+    )
+    historyItems.value = result.items
+    historyTotal.value = result.total
+  } catch (e) {
+    historyError.value = describe(e, '加载难度历史失败，请稍后再试')
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+function openHistory() {
+  if (problemId.value === null) return
+  historyPage.value = 1
+  historyItems.value = []
+  historyTotal.value = 0
+  historyOpen.value = true
+  void loadHistory()
+}
+
+function onHistoryPage(event: { page: number }) {
+  historyPage.value = event.page + 1
+  void loadHistory()
+}
+
+function formatPercent(value: number) {
+  return `${(value * 100).toFixed(1)}%`
+}
 </script>
 
 <template>
@@ -317,6 +441,14 @@ function remove() {
 
     <template v-else>
       <Message v-if="error" severity="error" :closable="false">{{ error }}</Message>
+      <Message
+        v-if="reassessWarning"
+        severity="warn"
+        :closable="false"
+        data-test="difficulty-reassess-warning"
+      >
+        {{ reassessWarning }}
+      </Message>
       <Message v-if="!isEdit" severity="info" :closable="false">
         {{
           form.type === 'objective'
@@ -376,15 +508,68 @@ function remove() {
               </template>
             </AppFormField>
 
-            <AppFormField label="难度">
+            <AppFormField class="grid-full" label="难度">
               <template #default="{ id }">
-                <Select
-                  v-model="form.difficulty"
-                  :input-id="id"
-                  :options="DIFFICULTIES"
-                  option-label="label"
-                  option-value="value"
-                />
+                <div class="difficulty">
+                  <div class="difficulty-row">
+                    <InputNumber
+                      v-model="form.difficulty"
+                      data-test="difficulty-input"
+                      :input-id="id"
+                      :min="1"
+                      :max="100"
+                      :step="1"
+                      :disabled="form.difficultyAuto"
+                      @update:model-value="onDifficultyInput"
+                    />
+                    <Tag
+                      v-if="isEdit && difficultySource"
+                      data-test="difficulty-source"
+                      :value="difficultySourceLabel"
+                      severity="secondary"
+                    />
+                    <div class="difficulty-auto">
+                      <ToggleSwitch
+                        v-model="form.difficultyAuto"
+                        data-test="difficulty-auto"
+                        input-id="difficulty-auto"
+                      />
+                      <label for="difficulty-auto">允许系统自动调整</label>
+                    </div>
+                  </div>
+                  <p class="difficulty-meta">
+                    <span>{{
+                      form.difficultyAuto
+                        ? '每天按全站通过率自动调整难度。'
+                        : '已锁定当前难度，定时任务不会覆盖。'
+                    }}</span>
+                    <span v-if="isEdit && difficultyUpdatedAt" class="difficulty-updated">
+                      最近更新：{{ formatDateTime(difficultyUpdatedAt) }}
+                    </span>
+                    <span v-if="isEdit && difficultyReason" class="difficulty-reason">
+                      理由：{{ difficultyReason }}
+                    </span>
+                  </p>
+                  <div v-if="isEdit" class="difficulty-actions">
+                    <Button
+                      type="button"
+                      label="AI 重新评估"
+                      icon="pi pi-sparkles"
+                      severity="secondary"
+                      outlined
+                      :loading="reassessing"
+                      @click="reassess"
+                    />
+                    <Button
+                      type="button"
+                      label="查看难度历史"
+                      icon="pi pi-history"
+                      severity="secondary"
+                      text
+                      @click="openHistory"
+                    />
+                  </div>
+                </div>
               </template>
             </AppFormField>
 
@@ -491,7 +676,12 @@ function remove() {
           <AppFormField label="公开">
             <template #default="{ id }">
               <div class="public-row">
-                <ToggleSwitch v-model="form.isPublic" :input-id="id" :disabled="!isEdit" />
+                <ToggleSwitch
+                  v-model="form.isPublic"
+                  data-test="public-toggle"
+                  :input-id="id"
+                  :disabled="!isEdit"
+                />
                 <span class="unit">{{
                   form.type === 'objective'
                     ? '客观题无需测试点；发布前请确认至少 1 个正确答案。'
@@ -532,6 +722,66 @@ function remove() {
       <AppSurface v-if="isEdit" padding="lg" class="attachments">
         <ProblemAttachmentManager :problem-id="problemId!" />
       </AppSurface>
+
+      <Dialog
+        v-model:visible="historyOpen"
+        header="难度历史"
+        modal
+        :style="{ width: 'min(60rem, 94vw)' }"
+      >
+        <AppErrorState v-if="historyError" :description="historyError" @retry="loadHistory" />
+        <AppLoadingState
+          v-else-if="historyLoading && historyItems.length === 0"
+          label="正在加载难度历史"
+        />
+        <DataTable
+          v-else
+          :value="historyItems"
+          data-key="createdAt"
+          size="small"
+          responsive-layout="scroll"
+          data-test="difficulty-history-table"
+        >
+          <Column header="时间" style="width: 170px">
+            <template #body="{ data }">
+              <span class="history-muted">{{ formatDateTime(data.createdAt) }}</span>
+            </template>
+          </Column>
+          <Column header="变化" style="width: 110px">
+            <template #body="{ data }">
+              <span class="history-score">{{ data.oldScore }} → {{ data.newScore }}</span>
+            </template>
+          </Column>
+          <Column header="来源" style="width: 110px">
+            <template #body="{ data }">
+              {{ DIFFICULTY_SOURCE_LABELS[data.source] ?? data.source }}
+            </template>
+          </Column>
+          <Column header="平滑通过率" style="width: 120px">
+            <template #body="{ data }">{{ formatPercent(data.smoothedPassRate) }}</template>
+          </Column>
+          <Column header="理由" style="min-width: 180px">
+            <template #body="{ data }">{{ data.reason || '—' }}</template>
+          </Column>
+          <template #empty>
+            <AppEmptyState
+              icon="pi pi-history"
+              title="暂无难度历史"
+              description="难度变更后会在这里显示。"
+            />
+          </template>
+        </DataTable>
+        <Paginator
+          v-if="historyTotal > HISTORY_PAGE_SIZE"
+          :rows="HISTORY_PAGE_SIZE"
+          :total-records="historyTotal"
+          :first="(historyPage - 1) * HISTORY_PAGE_SIZE"
+          :page-link-size="5"
+          template="PrevPageLink PageLinks NextPageLink"
+          class="history-pager"
+          @page="onHistoryPage"
+        />
+      </Dialog>
     </template>
   </div>
 </template>
@@ -570,6 +820,67 @@ function remove() {
 .unit {
   color: var(--kapoj-text-secondary);
   font-size: 0.875rem;
+}
+
+.difficulty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kapoj-space-2);
+}
+
+.difficulty-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--kapoj-space-3);
+}
+
+.difficulty-auto {
+  display: flex;
+  align-items: center;
+  gap: var(--kapoj-space-2);
+  color: var(--kapoj-text-secondary);
+  font-size: 0.875rem;
+}
+
+.difficulty-auto label {
+  cursor: pointer;
+  user-select: none;
+}
+
+.difficulty-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kapoj-space-2);
+  margin: 0;
+  color: var(--kapoj-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.difficulty-meta .difficulty-updated,
+.difficulty-meta .difficulty-reason {
+  padding-left: var(--kapoj-space-2);
+  border-left: 1px solid var(--kapoj-border);
+}
+
+.difficulty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kapoj-space-2);
+}
+
+.history-muted {
+  color: var(--kapoj-text-secondary);
+}
+
+.history-score {
+  font-family: var(--kapoj-font-mono);
+  font-weight: 600;
+}
+
+.history-pager {
+  margin-top: var(--kapoj-space-3);
 }
 
 .actions {
