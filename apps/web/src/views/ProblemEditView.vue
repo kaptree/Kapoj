@@ -158,6 +158,7 @@ function fill(p: ProblemDetail) {
   difficultySource.value = p.difficultySource ?? ''
   difficultyUpdatedAt.value = p.difficultyUpdatedAt ?? ''
   difficultyReason.value = p.difficultyReason ?? ''
+  reassessWarning.value = ''
   answersText.value = form.answers.join('\n')
   checkerUploaded.value = p.checkerUploaded ?? false
   published.value = p.isPublic
@@ -172,6 +173,9 @@ function resetDifficultyMeta() {
 }
 
 async function load() {
+  // The warning belongs to one problem and one reassessment; a reload may show
+  // another problem, so never carry it across.
+  reassessWarning.value = ''
   if (problemId.value === null) {
     Object.assign(form, emptyForm())
     resetDifficultyMeta()
@@ -233,7 +237,13 @@ function describe(e: unknown, fallback: string) {
 // scheduled recalculation, but keep the chosen value for later saves.
 function onDifficultyInput(value: number | null | undefined) {
   if (value == null) return
+  reassessWarning.value = ''
   form.difficultyAuto = false
+}
+
+// Toggling the switch changes the lock state that the warning describes.
+function onDifficultyAutoChange() {
+  reassessWarning.value = ''
 }
 
 // Spec §4.2: tags are trimmed, empties removed, capped at 10 before submit.
@@ -260,9 +270,11 @@ async function save() {
   try {
     if (problemId.value !== null) {
       fill(await updateProblem(problemId.value, normalizedForm()))
+      reassessWarning.value = ''
       toast.add({ severity: 'success', summary: '已保存', life: 3000 })
     } else {
       const created = await createProblem(normalizedForm())
+      reassessWarning.value = ''
       toast.add({
         severity: 'success',
         summary:
@@ -533,6 +545,7 @@ function formatPercent(value: number) {
                         v-model="form.difficultyAuto"
                         data-test="difficulty-auto"
                         input-id="difficulty-auto"
+                        @update:model-value="onDifficultyAutoChange"
                       />
                       <label for="difficulty-auto">允许系统自动调整</label>
                     </div>

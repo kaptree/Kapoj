@@ -142,6 +142,23 @@ function publicToggle(wrapper: VueWrapper) {
   return wrapper.findAllComponents(ToggleSwitch)[1]!
 }
 
+/** Runs a reassessment that leaves the manual lock on and raises the warning. */
+async function reassessLocked(wrapper: VueWrapper) {
+  vi.mocked(assessProblemDifficulty).mockResolvedValue(
+    detail({
+      difficulty: 72,
+      difficultyAuto: false,
+      difficultySource: 'ai',
+      difficultyReason: 'AI 重评',
+    }),
+  )
+  await button(wrapper, 'AI 重新评估').trigger('click')
+  await flushPromises()
+  const options = confirm.require.mock.calls[0]![0] as { accept: () => Promise<void> }
+  await options.accept()
+  await flushPromises()
+}
+
 async function openTab(wrapper: VueWrapper, label: string) {
   const tab = wrapper.findAll('[role="tab"]').find((t) => t.text() === label)
   expect(tab, `tab "${label}"`).toBeTruthy()
@@ -594,6 +611,32 @@ describe('ProblemEditView', () => {
     ).toBe('72')
     expect(difficultyAuto(wrapper).props('modelValue')).toBe(false)
     expect(wrapper.text()).toContain('AI 评分已更新，自动调整仍关闭')
+    wrapper.unmount()
+  })
+
+  it('clears the locked reassessment warning when auto adjustment is turned back on', async () => {
+    const { wrapper } = await mountView('/problems/1/edit')
+    await reassessLocked(wrapper)
+    expect(wrapper.text()).toContain('AI 评分已更新，自动调整仍关闭')
+
+    difficultyAuto(wrapper).vm.$emit('update:modelValue', true)
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('AI 评分已更新，自动调整仍关闭')
+    wrapper.unmount()
+  })
+
+  it('clears the locked reassessment warning when another problem loads', async () => {
+    const { wrapper, router } = await mountView('/problems/1/edit')
+    await reassessLocked(wrapper)
+    expect(wrapper.text()).toContain('AI 评分已更新，自动调整仍关闭')
+
+    vi.mocked(getProblem).mockResolvedValue(detail({ id: 2, title: 'C+D' }))
+    await router.push('/problems/2/edit')
+    await flushPromises()
+
+    expect(getProblem).toHaveBeenCalledWith(2)
+    expect(wrapper.text()).not.toContain('AI 评分已更新，自动调整仍关闭')
     wrapper.unmount()
   })
 
