@@ -114,6 +114,27 @@ describe('ProblemListView', () => {
     expect(wrapper.find('a[href="/problems/1"]').exists()).toBe(true)
   })
 
+  it('keeps legacy exact difficulty links filtering a single score', async () => {
+    problemsApi.listProblems.mockResolvedValue({
+      total: 1,
+      items: [problem({ difficulty: 3 })],
+    })
+    const { wrapper } = await mountPage('/problems?difficulty=3')
+
+    expect(problemsApi.listProblems).toHaveBeenCalledWith({
+      keyword: '',
+      tag: '',
+      difficultyMin: 3,
+      difficultyMax: 3,
+      scope: 'public',
+      page: 1,
+      includeHidden: false,
+      pageSize: 20,
+    })
+    expect(wrapper.text()).toContain('两数之和')
+    expect(wrapper.find('.app-difficulty-tag').text()).toBe('3')
+  })
+
   it('trims filters and resets the page when searching', async () => {
     problemsApi.listProblems.mockResolvedValue({ total: 0, items: [] })
     const { wrapper, router } = await mountPage()

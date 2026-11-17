@@ -59,6 +59,39 @@ describe('parseProblemQuery', () => {
     })
   })
 
+  it('maps a legacy exact difficulty to a single-value range', () => {
+    expect(parseProblemQuery({ difficulty: '3' })).toMatchObject({
+      difficultyMin: 3,
+      difficultyMax: 3,
+    })
+  })
+
+  it('lets an explicit range win over a legacy exact difficulty', () => {
+    expect(parseProblemQuery({ difficulty: '3', difficultyMin: '40' })).toMatchObject({
+      difficultyMin: 40,
+      difficultyMax: null,
+    })
+    expect(parseProblemQuery({ difficulty: '3', difficultyMax: '80' })).toMatchObject({
+      difficultyMin: null,
+      difficultyMax: 80,
+    })
+    expect(
+      parseProblemQuery({ difficulty: '3', difficultyMin: '40', difficultyMax: '80' }),
+    ).toMatchObject({
+      difficultyMin: 40,
+      difficultyMax: 80,
+    })
+  })
+
+  it('ignores an invalid legacy exact difficulty', () => {
+    for (const difficulty of ['0', '101', 'abc', '2.5', '']) {
+      expect(parseProblemQuery({ difficulty })).toMatchObject({
+        difficultyMin: null,
+        difficultyMax: null,
+      })
+    }
+  })
+
   it('falls back on invalid numbers', () => {
     for (const page of ['abc', '0', '-3', '1.5', '']) {
       expect(parseProblemQuery({ page }).page).toBe(1)

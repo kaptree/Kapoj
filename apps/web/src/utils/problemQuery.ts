@@ -37,9 +37,14 @@ function ascendingRange(min: number | null, max: number | null): [number | null,
 /** Reads the problem list filters from a route query, falling back to defaults. */
 export function parseProblemQuery(q: Record<string, unknown>): ProblemQuery {
   const page = integer(q.page)
+  const rangeMin = difficulty(q.difficultyMin)
+  const rangeMax = difficulty(q.difficultyMax)
+  // Old links used the exact `difficulty` parameter. It now means the same
+  // exact score on the 1-100 scale, so turn it into a single-value range.
+  const legacyExact = rangeMin === null && rangeMax === null ? difficulty(q.difficulty) : null
   const [difficultyMin, difficultyMax] = ascendingRange(
-    difficulty(q.difficultyMin),
-    difficulty(q.difficultyMax),
+    rangeMin ?? legacyExact,
+    rangeMax ?? legacyExact,
   )
   const rawScope = first(q.scope)
   const scope: ProblemQuery['scope'] =
