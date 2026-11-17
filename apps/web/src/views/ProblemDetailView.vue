@@ -12,6 +12,7 @@ import { ApiError } from '@/api/http'
 import { getProblem, getStatistics } from '@/api/problems'
 import type { ContestDetail, ProblemDetail, ProblemStats } from '@/api/types'
 import MarkdownView from '@/components/MarkdownView.vue'
+import CompanionAvatar from '@/components/companion/CompanionAvatar.vue'
 import ProblemAttachmentsCard from '@/components/ProblemAttachmentsCard.vue'
 import AppDifficultyTag from '@/components/ui/AppDifficultyTag.vue'
 import AppEmptyState from '@/components/ui/AppEmptyState.vue'
@@ -21,6 +22,7 @@ import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
 import { PERM } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
+import { useCompanionStore } from '@/stores/companion'
 import { useTheme } from '@/theme/theme'
 import { copyText } from '@/utils/clipboard'
 import { formatCoins } from '@/utils/gamification'
@@ -28,8 +30,13 @@ import { formatCoins } from '@/utils/gamification'
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const companion = useCompanionStore()
 const toast = useToast()
 const { isDark } = useTheme()
+
+// App.vue loads the store at startup; calling again keeps standalone mounts
+// (tests, embeds) in sync without touching the stored preferences.
+companion.load()
 
 const contestId = computed(() => {
   const n = Number(route.query?.contestId)
@@ -177,6 +184,14 @@ const contestProblems = computed(() => contest.value?.problems ?? [])
 
 const aiHintVisible = computed(
   () => !(contestMode.value && contest.value?.disableAi && !auth.can(PERM.contest.update)),
+)
+
+const aiHintTitle = computed(() =>
+  companion.effectiveEnabled ? `${companion.name} 的提示` : 'AI 提示',
+)
+
+const aiHintLoadingLabel = computed(() =>
+  companion.effectiveEnabled ? `${companion.name} 正在生成提示…` : 'AI 正在生成提示…',
 )
 
 const showSolutionResources = computed(
@@ -365,10 +380,16 @@ const authorName = computed(() => {
             />
             <AppEmptyState v-else icon="pi pi-lightbulb" title="暂无提示" />
 
-            <div v-if="aiHintLoading" class="ai-hint-loading">AI 正在生成提示…</div>
+            <div v-if="aiHintLoading" class="ai-hint-loading">{{ aiHintLoadingLabel }}</div>
             <div v-else-if="aiHint" class="ai-hint">
               <div class="ai-hint__head">
-                <span class="ai-hint__title">AI 提示</span>
+                <CompanionAvatar
+                  v-if="companion.effectiveEnabled"
+                  class="ai-hint__avatar"
+                  pose="chibi"
+                  size="xs"
+                />
+                <span class="ai-hint__title">{{ aiHintTitle }}</span>
                 <span v-if="aiHintCached" class="ai-hint__cached">来自缓存</span>
               </div>
               <MarkdownView :source="aiHint" :theme="isDark ? 'dark' : 'light'" />
@@ -626,6 +647,13 @@ const authorName = computed(() => {
 .ai-hint__title {
   color: var(--kapoj-text);
   font-weight: 600;
+}
+
+.ai-hint__avatar {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
 }
 
 .ai-hint__cached {

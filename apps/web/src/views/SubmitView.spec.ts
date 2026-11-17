@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
 import Select from 'primevue/select'
+import { createPinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
@@ -11,6 +12,7 @@ import { ApiError } from '@/api/http'
 import { getProblem } from '@/api/problems'
 import { createSubmission } from '@/api/submissions'
 import type { AIConfigView, ContestDetail, ProblemDetail } from '@/api/types'
+import { useCompanionStore } from '@/stores/companion'
 import SubmitView from './SubmitView.vue'
 
 const toast = vi.hoisted(() => ({ add: vi.fn() }))
@@ -172,13 +174,24 @@ const routes = [
   { path: '/settings/ai', name: 'ai-settings', component: { template: '<div />' } },
 ]
 
-async function mountPage(path = '/problems/1/submit') {
+async function mountPage(path = '/problems/1/submit', pinia = createPinia()) {
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push(path)
   await router.isReady()
-  const wrapper = mount(SubmitView, { global: { plugins: [router, PrimeVue] } })
+  const wrapper = mount(SubmitView, { global: { plugins: [router, PrimeVue, pinia] } })
   await flushPromises()
   return { wrapper, router }
+}
+
+/** Mounts the submit page with a companion store configured before setup runs. */
+async function mountWithCompanion(enabled = true, path = '/problems/1/submit') {
+  const pinia = createPinia()
+  const store = useCompanionStore(pinia)
+  store.load()
+  store.name = 'Kapo'
+  store.enabled = enabled
+  store.globalEnabled = true
+  return { ...(await mountPage(path, pinia)), store }
 }
 
 function editor(wrapper: Awaited<ReturnType<typeof mountPage>>['wrapper']) {
@@ -456,6 +469,66 @@ describe('SubmitView', () => {
     wrapper.unmount()
 
     expect(localStorage.getItem('kapoj:code:practice:1:cpp')).toBe('draft on unmount')
+  })
+
+  it('shows a 24px chibi before the AI buttons when the companion is enabled', async () => {
+    const { wrapper } = await mountWithCompanion()
+
+    const toolbar = wrapper.find('.ai-toolbar')
+    expect(toolbar.exists()).toBe(true)
+    const avatar = toolbar.find('.companion-avatar')
+    expect(avatar.exists()).toBe(true)
+    expect(avatar.classes()).toContain('companion-avatar--chibi')
+    expect(avatar.classes()).toContain('companion-avatar--xs')
+    expect(toolbar.element.firstElementChild).toBe(avatar.element)
+    expect(avatar.attributes('style')).toContain('aspect-ratio: 1 / 1')
+    expect(aiButton(wrapper, 'AI 补全')).toBeTruthy()
+    expect(aiButton(wrapper, 'AI 格式化')).toBeTruthy()
+    expect(aiButton(wrapper, 'AI 优化')).toBeTruthy()
+    wrapper.unmount()
+  })
+
+  it('hides the chibi when the companion is disabled', async () => {
+    const { wrapper } = await mountWithCompanion(false)
+
+    expect(wrapper.find('.ai-toolbar').exists()).toBe(true)
+    expect(wrapper.find('.ai-toolbar .companion-avatar').exists()).toBe(false)
+    expect(aiButton(wrapper, 'AI 补全')).toBeTruthy()
+    wrapper.unmount()
+  })
+
+  it('hides the chibi when the site-wide companion switch is off', async () => {
+    const { wrapper, store } = await mountWithCompanion()
+    store.globalEnabled = false
+    await nextTick()
+
+    expect(wrapper.find('.ai-toolbar .companion-avatar').exists()).toBe(false)
+    expect(aiButton(wrapper, 'AI 补全')).toBeTruthy()
+    wrapper.unmount()
+  })
+
+  it('keeps the three AI buttons wired while the companion is enabled', async () => {
+    localStorage.setItem('kapoj:code:practice:1:cpp', 'int main() {}')
+    vi.mocked(completeCode).mockResolvedValue({ completion: ' return 0;' })
+    vi.mocked(formatCode).mockResolvedValue({ code: 'int main() {}\n' })
+    vi.mocked(optimizeCode).mockResolvedValue({
+      suggestions: 'ok',
+      code: 'int main() { return 0; }',
+    })
+    const { wrapper } = await mountWithCompanion()
+
+    expect(wrapper.find('.ai-toolbar .companion-avatar').exists()).toBe(true)
+    await aiButton(wrapper, 'AI 补全')!.trigger('click')
+    await flushPromises()
+    await aiButton(wrapper, 'AI 格式化')!.trigger('click')
+    await flushPromises()
+    await aiButton(wrapper, 'AI 优化')!.trigger('click')
+    await flushPromises()
+
+    expect(completeCode).toHaveBeenCalledWith(expect.objectContaining({ problemId: 1 }))
+    expect(formatCode).toHaveBeenCalledWith(expect.objectContaining({ problemId: 1 }))
+    expect(optimizeCode).toHaveBeenCalledWith(expect.objectContaining({ problemId: 1 }))
+    wrapper.unmount()
   })
 
   it('shows config banner and disables AI buttons when not configured', async () => {

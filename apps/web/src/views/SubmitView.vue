@@ -24,6 +24,7 @@ import { createSubmission } from '@/api/submissions'
 import type { AIConfigView, ContestDetail, ProblemDetail } from '@/api/types'
 import CodeEditorSkeleton from '@/components/CodeEditorSkeleton.vue'
 import MarkdownView from '@/components/MarkdownView.vue'
+import CompanionAvatar from '@/components/companion/CompanionAvatar.vue'
 import AppDifficultyTag from '@/components/ui/AppDifficultyTag.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
@@ -31,6 +32,7 @@ import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
 import { PERM } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
+import { useCompanionStore } from '@/stores/companion'
 import { useTheme } from '@/theme/theme'
 import {
   editorLanguage,
@@ -51,7 +53,11 @@ const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 const auth = useAuthStore()
+const companion = useCompanionStore()
 const { isDark } = useTheme()
+
+// App.vue loads the store at startup; standalone mounts need their own load.
+companion.load()
 
 const problemId = computed(() => Number(route.params.id))
 const contestId = computed(() => {
@@ -595,6 +601,12 @@ async function submit() {
               />
             </div>
             <div class="ai-toolbar">
+              <CompanionAvatar
+                v-if="companion.effectiveEnabled"
+                class="ai-toolbar__avatar"
+                pose="chibi"
+                size="xs"
+              />
               <Button
                 type="button"
                 label="AI 补全"
@@ -834,6 +846,13 @@ async function submit() {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--kapoj-space-2);
+}
+
+.ai-toolbar__avatar {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
 }
 
 .ai-config-link {

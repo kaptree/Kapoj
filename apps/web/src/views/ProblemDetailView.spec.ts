@@ -10,6 +10,7 @@ import { getContest } from '@/api/contests'
 import { ApiError } from '@/api/http'
 import { getProblem, getStatistics } from '@/api/problems'
 import type { ContestDetail, ProblemDetail, ProblemStats } from '@/api/types'
+import { useCompanionStore } from '@/stores/companion'
 import ProblemDetailView from './ProblemDetailView.vue'
 
 const route = reactive({ params: { id: '1' }, query: {}, fullPath: '/problems/1' })
@@ -129,10 +130,10 @@ function contest(overrides: Partial<ContestDetail> = {}): ContestDetail {
 
 const RouterLinkStub = { props: ['to'], template: '<a :href="to"><slot /></a>' }
 
-function mountView() {
+function mountView(pinia = createPinia()) {
   return mount(ProblemDetailView, {
     global: {
-      plugins: [PrimeVue, ToastService, createPinia()],
+      plugins: [PrimeVue, ToastService, pinia],
       stubs: {
         RouterLink: RouterLinkStub,
       },
@@ -140,7 +141,21 @@ function mountView() {
   })
 }
 
+function enableCompanion(pinia: ReturnType<typeof createPinia>, enabled = true) {
+  const store = useCompanionStore(pinia)
+  store.load()
+  store.name = 'Kapo'
+  store.enabled = enabled
+  store.globalEnabled = true
+  return store
+}
+
+function aiHintButton(wrapper: ReturnType<typeof mountView>) {
+  return wrapper.findAllComponents({ name: 'Button' }).find((b) => b.text().includes('AI 提示'))
+}
+
 beforeEach(() => {
+  localStorage.clear()
   auth.can.mockReset()
   auth.can.mockReturnValue(false)
   auth.isLoggedIn = false
@@ -443,6 +458,120 @@ describe('ProblemDetailView', () => {
     expect(getAIHint).toHaveBeenCalledWith(1)
     expect(wrapper.text()).toContain('AI hint text')
     expect(wrapper.text()).toContain('来自缓存')
+    wrapper.unmount()
+  })
+
+  it('shows the companion chibi and name in the AI hint header when enabled', async () => {
+    const pinia = createPinia()
+    enableCompanion(pinia)
+    auth.isLoggedIn = true
+    vi.mocked(getProblem).mockResolvedValue(detail(1))
+    vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
+    vi.mocked(getAIHint).mockResolvedValue({ hint: 'AI hint text', cached: false })
+    const wrapper = mountView(pinia)
+    await flushPromises()
+
+    await aiHintButton(wrapper)!.trigger('click')
+    await flushPromises()
+
+    const head = wrapper.find('.ai-hint__head')
+    expect(head.exists()).toBe(true)
+    expect(head.find('.companion-avatar').exists()).toBe(true)
+    expect(head.find('.companion-avatar').classes()).toContain('companion-avatar--chibi')
+    expect(head.find('.companion-avatar').classes()).toContain('companion-avatar--xs')
+    expect(head.text()).toContain('Kapo 的提示')
+    expect(head.text()).not.toContain('AI 提示')
+    wrapper.unmount()
+  })
+
+  it('keeps the neutral AI hint header when the companion is disabled', async () => {
+    const pinia = createPinia()
+    enableCompanion(pinia, false)
+    auth.isLoggedIn = true
+    vi.mocked(getProblem).mockResolvedValue(detail(1))
+    vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
+    vi.mocked(getAIHint).mockResolvedValue({ hint: 'AI hint text', cached: false })
+    const wrapper = mountView(pinia)
+    await flushPromises()
+
+    await aiHintButton(wrapper)!.trigger('click')
+    await flushPromises()
+
+    const head = wrapper.find('.ai-hint__head')
+    expect(head.exists()).toBe(true)
+    expect(head.find('.companion-avatar').exists()).toBe(false)
+    expect(head.text()).toContain('AI 提示')
+    expect(head.text()).not.toContain('Kapo 的提示')
+    wrapper.unmount()
+  })
+
+  it('hides the companion presentation when the site-wide switch is off', async () => {
+    const pinia = createPinia()
+    const store = enableCompanion(pinia)
+    store.globalEnabled = false
+    auth.isLoggedIn = true
+    vi.mocked(getProblem).mockResolvedValue(detail(1))
+    vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
+    vi.mocked(getAIHint).mockResolvedValue({ hint: 'AI hint text', cached: false })
+    const wrapper = mountView(pinia)
+    await flushPromises()
+
+    await aiHintButton(wrapper)!.trigger('click')
+    await flushPromises()
+
+    const head = wrapper.find('.ai-hint__head')
+    expect(head.find('.companion-avatar').exists()).toBe(false)
+    expect(head.text()).toContain('AI 提示')
+    wrapper.unmount()
+  })
+
+  it('uses the companion name while generating a hint when enabled', async () => {
+    const pinia = createPinia()
+    enableCompanion(pinia)
+    auth.isLoggedIn = true
+    vi.mocked(getProblem).mockResolvedValue(detail(1))
+    vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
+    let resolveHint!: (value: { hint: string; cached: boolean }) => void
+    vi.mocked(getAIHint).mockReturnValue(
+      new Promise((resolve) => {
+        resolveHint = resolve
+      }),
+    )
+    const wrapper = mountView(pinia)
+    await flushPromises()
+
+    await aiHintButton(wrapper)!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.ai-hint-loading').text()).toBe('Kapo 正在生成提示…')
+
+    resolveHint({ hint: 'done', cached: false })
+    await flushPromises()
+    wrapper.unmount()
+  })
+
+  it('keeps the neutral loading copy when the companion is disabled', async () => {
+    const pinia = createPinia()
+    enableCompanion(pinia, false)
+    auth.isLoggedIn = true
+    vi.mocked(getProblem).mockResolvedValue(detail(1))
+    vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
+    let resolveHint!: (value: { hint: string; cached: boolean }) => void
+    vi.mocked(getAIHint).mockReturnValue(
+      new Promise((resolve) => {
+        resolveHint = resolve
+      }),
+    )
+    const wrapper = mountView(pinia)
+    await flushPromises()
+
+    await aiHintButton(wrapper)!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.ai-hint-loading').text()).toBe('AI 正在生成提示…')
+
+    resolveHint({ hint: 'done', cached: false })
+    await flushPromises()
     wrapper.unmount()
   })
 
