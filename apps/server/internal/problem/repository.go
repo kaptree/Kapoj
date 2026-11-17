@@ -51,6 +51,7 @@ type Repository interface {
 	// counters or creator.
 	Update(ctx context.Context, p *Problem) error
 	SetCheckerPath(ctx context.Context, id int64, path string) error
+	UpdateSolution(ctx context.Context, id int64, solutionMD, solutionCode string, price int64) error
 	Delete(ctx context.Context, id int64) (DeleteResult, error)
 
 	// FindAuthor returns the public summary of a user (id/username/nickname),
@@ -214,6 +215,20 @@ func (r *gormRepository) Update(ctx context.Context, p *Problem) error {
 
 func (r *gormRepository) SetCheckerPath(ctx context.Context, id int64, path string) error {
 	res := r.db.WithContext(ctx).Model(&Problem{}).Where("id = ?", id).Update("checker_path", path)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *gormRepository) UpdateSolution(ctx context.Context, id int64, solutionMD, solutionCode string, price int64) error {
+	res := r.db.WithContext(ctx).Model(&Problem{}).Where("id = ?", id).Updates(map[string]any{
+		"solution_md": solutionMD, "solution_code": solutionCode,
+		"solution_price_coins": price, "updated_at": time.Now(),
+	})
 	if res.Error != nil {
 		return res.Error
 	}

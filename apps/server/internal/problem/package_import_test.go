@@ -1,0 +1,378 @@
+package problem_test
+
+import (
+	"archive/zip"
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/kaptree/kapoj/apps/server/internal/problem"
+)
+
+func readZipEntry(t *testing.T, f *zip.File) []byte {
+	t.Helper()
+	rc, err := f.Open()
+	require.NoError(t, err)
+	body, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	require.NoError(t, rc.Close())
+	return body
+}
+
+// rewritePackage runs rewrite over every entry and rebuilds the ZIP.
+func rewritePackage(t *testing.T, data []byte, rewrite func(name string, body []byte) (string, []byte)) []byte {
+	t.Helper()
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	require.NoError(t, err)
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, f := range zr.File {
+		name, body := rewrite(f.Name, readZipEntry(t, f))
+		w, err := zw.Create(name)
+		require.NoError(t, err)
+		_, err = w.Write(body)
+		require.NoError(t, err)
+	}
+	require.NoError(t, zw.Close())
+	return buf.Bytes()
+}
+
+func renamePackageSlug(t *testing.T, data []byte, slug string) []byte {
+	t.Helper()
+	return rewritePackage(t, data, func(name string, body []byte) (string, []byte) {
+		if name != "manifest.json" {
+			return name, body
+		}
+		var manifest problem.PackageManifest
+		require.NoError(t, json.Unmarshal(body, &manifest))
+		manifest.Problem.Slug = slug
+		updated, err := json.Marshal(manifest)
+		require.NoError(t, err)
+		return name, updated
+	})
+}
+
+func replacePackageFile(t *testing.T, data []byte, file, content string) []byte {
+	t.Helper()
+	return rewritePackage(t, data, func(name string, body []byte) (string, []byte) {
+		if name == file {
+			return name, []byte(content)
+		}
+		return name, body
+	})
+}
+
+func TestImportKapOJPackageRoundTrip(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+
+	in := input("import-source")
+	in.Type = problem.TypeSpecial
+	in.StatementMD = "初始题面"
+	in.InputFormatMD = "两个整数"
+	in.OutputFormatMD = "一个整数"
+	in.HintMD = "注意范围"
+	in.Samples = []problem.Sample{{Input: "1 2", Output: "3"}}
+	in.Tags = []string{"数组"}
+	in.Difficulty = 4
+	in.TimeLimitMS = 1500
+	in.MemoryLimitMB = 512
+	in.Source = "自编"
+	p := e.create(t, in)
+	require.NoError(t, e.db.Model(&problem.Problem{}).Where("id = ?", p.ID).Updates(map[string]any{
+		"solution_md":          "官方题解正文",
+		"solution_code":        "int main() { return 0; }",
+		"solution_price_coins": 25,
+	}).Error)
+	img, err := e.svc.AddStatementImage(ctx, p.ID, 1, problem.AttachmentUpload{
+		Filename: "示意图.png", Reader: strings.NewReader("\x89PNG\r\n\x1a\nimage"),
+	})
+	require.NoError(t, err)
+	statement := fmt.Sprintf("题面 ![示意](/api/problems/%d/assets/%d)", p.ID, img.ID)
+	require.NoError(t, e.db.Model(&problem.Problem{}).Where("id = ?", p.ID).
+		Update("statement_md", statement).Error)
+	_, err = e.svc.AddAttachment(ctx, p.ID, 1, problem.AttachmentUpload{
+		Filename: "说明.txt", ContentType: "text/plain", Reader: strings.NewReader("附件内容"),
+	})
+	require.NoError(t, err)
+	require.NoError(t, e.svc.UploadChecker(ctx, p.ID, strings.NewReader("int main() {}")))
+	_, err = e.svc.AddTestcase(ctx, p.ID, problem.TestcaseUpload{
+		Input: strings.NewReader("1 2"), Output: strings.NewReader("3"), Score: 30, IsSample: true,
+	})
+	require.NoError(t, err)
+	_, err = e.svc.AddTestcase(ctx, p.ID, problem.TestcaseUpload{
+		Input: strings.NewReader("4 5"), Output: strings.NewReader("9"), Score: 70,
+	})
+	require.NoError(t, err)
+
+	var exported bytes.Buffer
+	_, err = e.svc.ExportProblem(ctx, p.ID, &exported)
+	require.NoError(t, err)
+	data := renamePackageSlug(t, exported.Bytes(), "imported-copy")
+
+	result, err := e.svc.ImportPackage(ctx, 1, bytes.NewReader(data), int64(len(data)), problem.PackageImportOptions{
+		ConflictPolicy: "skip",
+	})
+	require.NoError(t, err)
+	require.Len(t, result.Imported, 1)
+	imported := result.Imported[0]
+	assert.Equal(t, "imported-copy", imported.Slug)
+	assert.False(t, imported.Overwritten)
+	assert.False(t, imported.Published)
+	assert.Empty(t, imported.PublishError)
+
+	copied, err := e.repo.FindBySlug(ctx, "imported-copy")
+	require.NoError(t, err)
+	require.NotNil(t, copied)
+	assert.NotEqual(t, p.ID, copied.ID)
+	assert.Equal(t, int64(1), copied.CreatedBy)
+	assert.False(t, copied.IsPublic)
+	assert.Equal(t, "Problem import-source", copied.Title)
+	assert.Equal(t, problem.TypeSpecial, copied.Type)
+	assert.Equal(t, 4, copied.Difficulty)
+	assert.Equal(t, 1500, copied.TimeLimitMS)
+	assert.Equal(t, 512, copied.MemoryLimitMB)
+	assert.Equal(t, "自编", copied.Source)
+	assert.Equal(t, []string{"数组"}, []string(copied.Tags))
+	assert.Equal(t, []problem.Sample{{Input: "1 2", Output: "3"}}, []problem.Sample(copied.Samples))
+	assert.Equal(t, "官方题解正文", copied.SolutionMD)
+	assert.Equal(t, "int main() { return 0; }", copied.SolutionCode)
+	assert.EqualValues(t, 25, copied.SolutionPriceCoins)
+	assert.Contains(t, copied.StatementMD, fmt.Sprintf("/api/problems/%d/assets/", copied.ID))
+	assert.NotContains(t, copied.StatementMD, "kapoj-package://")
+
+	cases, err := e.svc.ListTestcases(ctx, copied.ID)
+	require.NoError(t, err)
+	require.Len(t, cases, 2)
+	assert.Equal(t, 30, cases[0].Score)
+	assert.True(t, cases[0].IsSample)
+	assert.Equal(t, 1, cases[0].SortOrder)
+	assert.Equal(t, 70, cases[1].Score)
+	assert.False(t, cases[1].IsSample)
+	assert.Equal(t, 2, cases[1].SortOrder)
+	content, err := e.svc.GetTestcaseContent(ctx, copied.ID, cases[1].ID)
+	require.NoError(t, err)
+	assert.Equal(t, "4 5", content.Input)
+	assert.Equal(t, "9", content.Output)
+
+	attachments, err := e.repo.ListAttachments(ctx, copied.ID, problem.AttachmentKindFile)
+	require.NoError(t, err)
+	require.Len(t, attachments, 1)
+	assert.Equal(t, "说明.txt", attachments[0].Filename)
+	images, err := e.repo.ListAttachments(ctx, copied.ID, problem.AttachmentKindStatementImage)
+	require.NoError(t, err)
+	require.Len(t, images, 1)
+
+	require.NotEmpty(t, copied.CheckerPath)
+	checker, err := e.store.Open(ctx, copied.CheckerPath)
+	require.NoError(t, err)
+	checkerBody, err := io.ReadAll(checker)
+	require.NoError(t, err)
+	require.NoError(t, checker.Close())
+	assert.Equal(t, "int main() {}", string(checkerBody))
+}
+
+func TestImportKapOJObjectiveAnswers(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	in := input("objective-source")
+	in.Type = problem.TypeObjective
+	in.Answers = []string{"A", "B"}
+	p := e.create(t, in)
+
+	var exported bytes.Buffer
+	_, err := e.svc.ExportProblem(ctx, p.ID, &exported)
+	require.NoError(t, err)
+	data := renamePackageSlug(t, exported.Bytes(), "objective-copy")
+
+	result, err := e.svc.ImportPackage(ctx, 1, bytes.NewReader(data), int64(len(data)),
+		problem.PackageImportOptions{ConflictPolicy: "skip"})
+	require.NoError(t, err)
+	require.Len(t, result.Imported, 1)
+
+	copied, err := e.repo.FindBySlug(ctx, "objective-copy")
+	require.NoError(t, err)
+	require.NotNil(t, copied)
+	assert.Equal(t, problem.TypeObjective, copied.Type)
+	assert.Equal(t, []string{"A", "B"}, []string(copied.Answers))
+}
+
+func TestImportKapOJOverwritePreservesIdentity(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	p := e.create(t, input("overwrite-source"))
+	e.addCase(t, p.ID)
+	require.NoError(t, e.db.Model(&problem.Problem{}).Where("id = ?", p.ID).Updates(map[string]any{
+		"is_public": true, "submit_count": 7, "accept_count": 3,
+	}).Error)
+
+	var exported bytes.Buffer
+	_, err := e.svc.ExportProblem(ctx, p.ID, &exported)
+	require.NoError(t, err)
+	data := replacePackageFile(t, exported.Bytes(), "testdata/001.out", "99")
+
+	result, err := e.svc.ImportPackage(ctx, 1, bytes.NewReader(data), int64(len(data)),
+		problem.PackageImportOptions{ConflictPolicy: "overwrite"})
+	require.NoError(t, err)
+	require.Len(t, result.Imported, 1)
+	imported := result.Imported[0]
+	assert.True(t, imported.Overwritten)
+	assert.Equal(t, p.ID, imported.ID)
+
+	updated, err := e.repo.FindByID(ctx, p.ID)
+	require.NoError(t, err)
+	assert.Equal(t, p.ID, updated.ID)
+	assert.Equal(t, int64(1), updated.CreatedBy)
+	assert.Equal(t, 7, updated.SubmitCount)
+	assert.Equal(t, 3, updated.AcceptCount)
+	assert.False(t, updated.IsPublic, "overwrite import must force the problem offline")
+
+	cases, err := e.svc.ListTestcases(ctx, p.ID)
+	require.NoError(t, err)
+	require.Len(t, cases, 1)
+	content, err := e.svc.GetTestcaseContent(ctx, p.ID, cases[0].ID)
+	require.NoError(t, err)
+	assert.Equal(t, "99", content.Output, "old testdata must be replaced")
+}
+
+func TestImportKapOJPublishFailureIsPerProblem(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	p := e.create(t, input("publish-empty"))
+
+	var exported bytes.Buffer
+	_, err := e.svc.ExportProblem(ctx, p.ID, &exported)
+	require.NoError(t, err)
+	data := renamePackageSlug(t, exported.Bytes(), "publish-empty-copy")
+
+	result, err := e.svc.ImportPackage(ctx, 1, bytes.NewReader(data), int64(len(data)),
+		problem.PackageImportOptions{ConflictPolicy: "skip", Publish: true, CanPublish: true})
+	require.NoError(t, err)
+	require.Len(t, result.Imported, 1)
+	assert.False(t, result.Imported[0].Published)
+	assert.Contains(t, result.Imported[0].PublishError, "测试点")
+
+	created, err := e.repo.FindBySlug(ctx, "publish-empty-copy")
+	require.NoError(t, err)
+	require.NotNil(t, created, "a publish failure must keep the imported problem")
+	assert.False(t, created.IsPublic)
+
+	denied := renamePackageSlug(t, exported.Bytes(), "publish-denied")
+	_, err = e.svc.ImportPackage(ctx, 1, bytes.NewReader(denied), int64(len(denied)),
+		problem.PackageImportOptions{ConflictPolicy: "skip", Publish: true})
+	assertCode(t, err, 40300)
+	missing, err := e.repo.FindBySlug(ctx, "publish-denied")
+	require.NoError(t, err)
+	assert.Nil(t, missing, "publishing without permission must not import anything")
+}
+
+func renameBatchSlugs(t *testing.T, data []byte, mapping map[string]string) []byte {
+	t.Helper()
+	return rewritePackage(t, data, func(name string, body []byte) (string, []byte) {
+		newName := name
+		for oldSlug, newSlug := range mapping {
+			oldDir := "problems/" + oldSlug
+			if name == oldDir || strings.HasPrefix(name, oldDir+"/") {
+				newName = "problems/" + newSlug + strings.TrimPrefix(name, oldDir)
+			}
+		}
+		if name == "manifest.json" {
+			var root problem.ProblemsManifest
+			require.NoError(t, json.Unmarshal(body, &root))
+			for i := range root.Problems {
+				if newSlug, ok := mapping[root.Problems[i].Slug]; ok {
+					root.Problems[i].Slug = newSlug
+					root.Problems[i].Directory = "problems/" + newSlug
+				}
+			}
+			updated, err := json.Marshal(root)
+			require.NoError(t, err)
+			return newName, updated
+		}
+		if strings.HasSuffix(name, "/manifest.json") {
+			var manifest problem.PackageManifest
+			require.NoError(t, json.Unmarshal(body, &manifest))
+			if newSlug, ok := mapping[manifest.Problem.Slug]; ok {
+				manifest.Problem.Slug = newSlug
+				updated, err := json.Marshal(manifest)
+				require.NoError(t, err)
+				return newName, updated
+			}
+		}
+		return newName, body
+	})
+}
+
+func TestImportKapOJBatchPackage(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	first := e.create(t, input("batch-source-one"))
+	e.addCase(t, first.ID)
+	second := e.create(t, input("batch-source-two"))
+	e.addCase(t, second.ID)
+
+	var exported bytes.Buffer
+	_, err := e.svc.ExportProblems(ctx, []int64{first.ID, second.ID}, &exported)
+	require.NoError(t, err)
+
+	conflicts, err := e.svc.ImportPackage(ctx, 1, bytes.NewReader(exported.Bytes()),
+		int64(exported.Len()), problem.PackageImportOptions{ConflictPolicy: "ask"})
+	require.NoError(t, err)
+	assert.Empty(t, conflicts.Imported)
+	assert.Len(t, conflicts.Conflicts, 2)
+
+	data := renameBatchSlugs(t, exported.Bytes(), map[string]string{
+		"batch-source-one": "batch-copy-one",
+		"batch-source-two": "batch-copy-two",
+	})
+	result, err := e.svc.ImportPackage(ctx, 1, bytes.NewReader(data), int64(len(data)),
+		problem.PackageImportOptions{ConflictPolicy: "skip"})
+	require.NoError(t, err)
+	require.Len(t, result.Imported, 2)
+	assert.Equal(t, "batch-copy-one", result.Imported[0].Slug)
+	assert.Equal(t, "batch-copy-two", result.Imported[1].Slug)
+
+	for _, slug := range []string{"batch-copy-one", "batch-copy-two"} {
+		copied, err := e.repo.FindBySlug(ctx, slug)
+		require.NoError(t, err)
+		require.NotNil(t, copied)
+		cases, err := e.svc.ListTestcases(ctx, copied.ID)
+		require.NoError(t, err)
+		assert.Len(t, cases, 1)
+	}
+}
+
+func prefixPackageDir(t *testing.T, data []byte, dir string) []byte {
+	t.Helper()
+	return rewritePackage(t, data, func(name string, body []byte) (string, []byte) {
+		return dir + "/" + name, body
+	})
+}
+
+func TestImportKapOJNestedPackage(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	p := e.create(t, input("nested-source"))
+	e.addCase(t, p.ID)
+
+	var exported bytes.Buffer
+	_, err := e.svc.ExportProblem(ctx, p.ID, &exported)
+	require.NoError(t, err)
+	data := prefixPackageDir(t, renamePackageSlug(t, exported.Bytes(), "nested-copy"), "wrapped")
+
+	result, err := e.svc.ImportPackage(ctx, 1, bytes.NewReader(data), int64(len(data)),
+		problem.PackageImportOptions{ConflictPolicy: "skip"})
+	require.NoError(t, err)
+	require.Len(t, result.Imported, 1)
+	assert.Equal(t, "nested-copy", result.Imported[0].Slug)
+	copied, err := e.repo.FindBySlug(ctx, "nested-copy")
+	require.NoError(t, err)
+	require.NotNil(t, copied)
+}

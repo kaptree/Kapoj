@@ -153,6 +153,7 @@ func RegisterRoutes(
 	}
 
 	imports.POST("/problems/import/hydro", require(string(rbac.PermProblemCreate)), h.importHydro)
+	imports.POST("/problems/import/package", require(string(rbac.PermProblemCreate)), h.importPackage)
 	imports.POST("/problems/:id/testcases/batch", require(string(rbac.PermProblemTestcaseManage)), audit(string(rbac.PermProblemTestcaseManage)), h.addTestcasesBatch)
 }
 

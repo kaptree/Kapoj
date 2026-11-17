@@ -56,6 +56,8 @@ type HydroImportOptions struct {
 	OverwriteSlugs []string
 	SkipSlugs      []string
 	CanManageAll   bool
+	Publish        bool
+	CanPublish     bool
 }
 
 // HydroImportConflict describes an existing slug that blocks an ask-mode import.
@@ -89,6 +91,8 @@ type HydroImportedProblem struct {
 	Slug          string `json:"slug"`
 	TestcaseCount int    `json:"testcaseCount"`
 	Overwritten   bool   `json:"overwritten"`
+	Published     bool   `json:"published"`
+	PublishError  string `json:"publishError,omitempty"`
 }
 
 // HydroImportFailure records a problem that could not be imported.
@@ -147,6 +151,9 @@ func (s *Service) ImportHydro(ctx context.Context, createdBy int64, r io.ReaderA
 	}
 	if opt.ConflictPolicy != "ask" && opt.ConflictPolicy != "skip" && opt.ConflictPolicy != "overwrite" {
 		return nil, httpx.ErrValidation("conflictPolicy 必须是 ask、skip 或 overwrite")
+	}
+	if opt.Publish && !opt.CanPublish {
+		return nil, httpx.ErrForbidden
 	}
 	if size > maxHydroZipBytes {
 		return nil, httpx.ErrValidation(fmt.Sprintf("题包文件不能超过 %d MiB", maxHydroZipBytes>>20))
@@ -306,6 +313,13 @@ func (s *Service) ImportHydro(ctx context.Context, createdBy int64, r io.ReaderA
 		if fail != nil {
 			result.Failed = append(result.Failed, *fail)
 			continue
+		}
+		if opt.Publish {
+			if err := s.Publish(ctx, imp.ID); err != nil {
+				imp.PublishError = packageErrorText(err)
+			} else {
+				imp.Published = true
+			}
 		}
 		importedIDs = append(importedIDs, imp.ID)
 		result.Imported = append(result.Imported, imp)

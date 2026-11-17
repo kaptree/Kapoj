@@ -46,6 +46,10 @@ func (h *handler) importHydro(c *gin.Context) {
 		return
 	}
 
+	publish, canPublish, ok := h.publishOption(c)
+	if !ok {
+		return
+	}
 	access, _ := middleware.CurrentAccess(c)
 	canManageAll := access != nil && (access.IsSuper || access.Has(string(rbac.PermProblemManageAll)))
 	result, err := h.svc.ImportHydro(c.Request.Context(), claims.UserID, f, fh.Size, problem.HydroImportOptions{
@@ -53,6 +57,8 @@ func (h *handler) importHydro(c *gin.Context) {
 		OverwriteSlugs: parseHydroSlugList(c.PostForm("overwriteSlugs")),
 		SkipSlugs:      parseHydroSlugList(c.PostForm("skipSlugs")),
 		CanManageAll:   canManageAll,
+		Publish:        publish,
+		CanPublish:     canPublish,
 	})
 	if err != nil {
 		httpx.Fail(c, err)
@@ -100,6 +106,10 @@ func cleanHydroSlugList(values []string) []string {
 // recordImportAudit writes a best-effort problem.create audit entry for one
 // imported problem. Failures are logged and never affect the response.
 func (h *handler) recordImportAudit(c *gin.Context, action string, id int64, slug string) {
+	h.recordImportAuditPath(c, "/api/problems/import/hydro", action, id, slug)
+}
+
+func (h *handler) recordImportAuditPath(c *gin.Context, path, action string, id int64, slug string) {
 	if h.rbac == nil {
 		return
 	}
@@ -112,7 +122,7 @@ func (h *handler) recordImportAudit(c *gin.Context, action string, id int64, slu
 		IP:        c.ClientIP(),
 		UserAgent: c.Request.UserAgent(),
 	}
-	summary := "POST /api/problems/import/hydro -> " + slug
+	summary := "POST " + path + " -> " + slug
 	if err := h.rbac.RecordAudit(c.Request.Context(), actor, action, auditTargetProblem, id, summary); err != nil {
 		slog.Warn("rbac: import audit write failed",
 			"actorId", actor.ActorID, "action", action, "problemId", id, "err", err)

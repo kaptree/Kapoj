@@ -498,3 +498,26 @@ func TestImportHydroEmptyTestcaseFilesAllowed(t *testing.T) {
 	assert.Equal(t, int64(0), cases[0].InputSize)
 	assert.Equal(t, int64(0), cases[0].OutputSize)
 }
+
+func TestImportHydroPublishOption(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	data := buildZip(t, hydroProblem("7001", "发布题", 1)...)
+	res, err := importZipOpts(t, e.svc, 1, data, problem.HydroImportOptions{
+		Publish: true, CanPublish: true,
+	})
+	require.NoError(t, err)
+	require.Len(t, res.Imported, 1)
+	assert.True(t, res.Imported[0].Published)
+	assert.Empty(t, res.Imported[0].PublishError)
+	published, err := e.repo.FindByID(ctx, res.Imported[0].ID)
+	require.NoError(t, err)
+	assert.True(t, published.IsPublic)
+
+	denied := buildZip(t, hydroProblem("7002", "无权限发布", 1)...)
+	_, err = importZipOpts(t, e.svc, 1, denied, problem.HydroImportOptions{Publish: true})
+	assertCode(t, err, 40300)
+	missing, err := e.repo.FindBySlug(ctx, "hydro-7002")
+	require.NoError(t, err)
+	assert.Nil(t, missing)
+}
