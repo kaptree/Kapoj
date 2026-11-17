@@ -30,6 +30,8 @@ export interface ListProblemsQuery {
   keyword?: string
   tag?: string
   difficulty?: number | null
+  difficultyMin?: number | null
+  difficultyMax?: number | null
   scope?: 'public' | 'mine' | 'all'
   includeHidden?: boolean
   page?: number
@@ -42,6 +44,8 @@ export const listProblems = (q: ListProblemsQuery = {}) =>
       keyword: q.keyword || undefined,
       tag: q.tag || undefined,
       difficulty: q.difficulty ?? undefined,
+      difficultyMin: q.difficultyMin ?? undefined,
+      difficultyMax: q.difficultyMax ?? undefined,
       scope: q.scope,
       includeHidden: q.includeHidden ? 'true' : undefined,
       page: q.page,

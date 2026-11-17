@@ -5,6 +5,7 @@ import Button from 'primevue/button'
 import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
 import Dialog from 'primevue/dialog'
+import InputNumber from 'primevue/inputnumber'
 import InputText from 'primevue/inputtext'
 import Message from 'primevue/message'
 import Paginator from 'primevue/paginator'
@@ -22,7 +23,6 @@ import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
 import { PERM } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
-import { DIFFICULTIES } from '@/utils/difficulty'
 import { parseProblemQuery, toRouteQuery, type ProblemScope } from '@/utils/problemQuery'
 
 const PAGE_SIZE = 20
@@ -57,7 +57,12 @@ const scopeOptions = computed(() => {
   return options
 })
 
-const filters = ref({ keyword: '', tag: '', difficulty: null as number | null })
+const filters = ref({
+  keyword: '',
+  tag: '',
+  difficultyMin: null as number | null,
+  difficultyMax: null as number | null,
+})
 const showHidden = ref(true)
 const items = ref<ProblemListItem[]>([])
 const total = ref(0)
@@ -158,7 +163,8 @@ watch(
     const q = query.value
     filters.value.keyword = q.keyword
     filters.value.tag = q.tag
-    filters.value.difficulty = q.difficulty
+    filters.value.difficultyMin = q.difficultyMin
+    filters.value.difficultyMax = q.difficultyMax
     void load()
   },
   { immediate: true },
@@ -170,16 +176,24 @@ function go(next: Partial<ReturnType<typeof parseProblemQuery>>) {
 }
 
 function search() {
+  let difficultyMin =
+    typeof filters.value.difficultyMin === 'number' ? filters.value.difficultyMin : null
+  let difficultyMax =
+    typeof filters.value.difficultyMax === 'number' ? filters.value.difficultyMax : null
+  if (difficultyMin !== null && difficultyMax !== null && difficultyMin > difficultyMax) {
+    ;[difficultyMin, difficultyMax] = [difficultyMax, difficultyMin]
+  }
   go({
     keyword: filters.value.keyword.trim(),
     tag: filters.value.tag.trim(),
-    difficulty: typeof filters.value.difficulty === 'number' ? filters.value.difficulty : null,
+    difficultyMin,
+    difficultyMax,
     page: 1,
   })
 }
 
 function reset() {
-  go({ keyword: '', tag: '', difficulty: null, page: 1 })
+  go({ keyword: '', tag: '', difficultyMin: null, difficultyMax: null, page: 1 })
 }
 
 function onPage(event: { page: number }) {
@@ -338,20 +352,39 @@ async function downloadSelected() {
           />
           <InputText
             v-model="filters.keyword"
+            class="filter-keyword"
             fluid
             placeholder="搜索标题或标识"
             aria-label="搜索标题或标识"
           />
-          <InputText v-model="filters.tag" fluid placeholder="标签" aria-label="按标签筛选" />
-          <Select
-            v-model="filters.difficulty"
+          <InputText
+            v-model="filters.tag"
+            class="filter-tag"
             fluid
-            :options="DIFFICULTIES"
-            option-label="label"
-            option-value="value"
-            placeholder="难度"
-            show-clear
-            aria-label="按难度筛选"
+            placeholder="标签"
+            aria-label="按标签筛选"
+          />
+          <InputNumber
+            v-model="filters.difficultyMin"
+            class="filter-difficulty"
+            fluid
+            :min="1"
+            :max="100"
+            :use-grouping="false"
+            placeholder="最低难度"
+            aria-label="最低难度"
+            data-test="difficulty-min"
+          />
+          <InputNumber
+            v-model="filters.difficultyMax"
+            class="filter-difficulty"
+            fluid
+            :min="1"
+            :max="100"
+            :use-grouping="false"
+            placeholder="最高难度"
+            aria-label="最高难度"
+            data-test="difficulty-max"
           />
         </div>
         <div class="filter-actions">
@@ -569,10 +602,27 @@ async function downloadSelected() {
 }
 
 .filter-fields {
-  display: grid;
-  flex: 1 1 520px;
-  grid-template-columns: minmax(180px, 1.4fr) minmax(140px, 0.8fr) minmax(140px, 0.6fr);
+  display: flex;
+  flex: 1 1 640px;
+  flex-wrap: wrap;
   gap: var(--kapoj-space-2);
+}
+
+.filter-fields > * {
+  flex: 1 1 120px;
+  min-width: 0;
+}
+
+.filter-keyword {
+  flex: 1.6 1 180px;
+}
+
+.filter-tag {
+  flex: 1 1 140px;
+}
+
+.filter-difficulty {
+  flex: 0 1 110px;
 }
 
 .filter-actions {
@@ -728,11 +778,10 @@ async function downloadSelected() {
 @media (max-width: 900px) {
   .filter-fields {
     flex-basis: 100%;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .filter-fields > :nth-child(3) {
-    grid-column: span 2;
+  .filter-keyword {
+    flex-basis: 220px;
   }
 
   .filter-admin {
@@ -746,11 +795,13 @@ async function downloadSelected() {
   }
 
   .filter-fields {
-    grid-template-columns: minmax(0, 1fr);
+    flex-direction: column;
+    align-items: stretch;
   }
 
-  .filter-fields > :nth-child(3) {
-    grid-column: auto;
+  .filter-fields > * {
+    flex-basis: auto;
+    width: 100%;
   }
 
   .filter-actions {

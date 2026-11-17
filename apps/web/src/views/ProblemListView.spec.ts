@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
 import DataTable from 'primevue/datatable'
+import InputNumber from 'primevue/inputnumber'
 import InputText from 'primevue/inputtext'
 import Paginator from 'primevue/paginator'
 import Select from 'primevue/select'
@@ -40,7 +41,7 @@ function problem(overrides: Partial<ProblemListItem> = {}): ProblemListItem {
     slug: 'two-sum',
     type: 'traditional',
     tags: ['math'],
-    difficulty: 3,
+    difficulty: 62,
     timeLimitMs: 1000,
     memoryLimitMb: 128,
     submitCount: 20,
@@ -91,19 +92,23 @@ function button(wrapper: ReturnType<typeof mount>, label: string) {
 describe('ProblemListView', () => {
   it('loads from the route query and renders a problem row', async () => {
     problemsApi.listProblems.mockResolvedValue({ total: 1, items: [problem()] })
-    const { wrapper } = await mountPage('/problems?keyword=sum&tag=math&difficulty=3&page=2')
+    const { wrapper } = await mountPage(
+      '/problems?keyword=sum&tag=math&difficultyMin=40&difficultyMax=80&page=2',
+    )
 
     expect(problemsApi.listProblems).toHaveBeenCalledWith({
       keyword: 'sum',
       tag: 'math',
-      difficulty: 3,
+      difficultyMin: 40,
+      difficultyMax: 80,
       scope: 'public',
       page: 2,
       includeHidden: false,
       pageSize: 20,
     })
     expect(wrapper.text()).toContain('两数之和')
-    expect(wrapper.text()).toContain('提高')
+    expect(wrapper.text()).toContain('62')
+    expect(wrapper.find('.app-difficulty-tag--4').exists()).toBe(true)
     expect(wrapper.text()).toContain('10 / 20')
     expect(wrapper.text()).toContain('50%')
     expect(wrapper.find('a[href="/problems/1"]').exists()).toBe(true)
@@ -113,22 +118,77 @@ describe('ProblemListView', () => {
     problemsApi.listProblems.mockResolvedValue({ total: 0, items: [] })
     const { wrapper, router } = await mountPage()
     const inputs = wrapper.findAllComponents(InputText)
+    const numbers = wrapper.findAllComponents(InputNumber)
+    expect(numbers).toHaveLength(2)
 
     await inputs[0]!.setValue('  sum  ')
     await inputs[1]!.setValue(' math ')
-    wrapper.findComponent(Select).vm.$emit('update:modelValue', 3)
+    numbers[0]!.vm.$emit('update:modelValue', 40)
+    numbers[1]!.vm.$emit('update:modelValue', 80)
+    await nextTick()
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
     expect(router.currentRoute.value.query).toEqual({
       keyword: 'sum',
       tag: 'math',
-      difficulty: '3',
+      difficultyMin: '40',
+      difficultyMax: '80',
     })
     expect(problemsApi.listProblems).toHaveBeenLastCalledWith({
       keyword: 'sum',
       tag: 'math',
-      difficulty: 3,
+      difficultyMin: 40,
+      difficultyMax: 80,
+      scope: 'public',
+      page: 1,
+      includeHidden: false,
+      pageSize: 20,
+    })
+  })
+
+  it('swaps a reversed difficulty range before searching', async () => {
+    problemsApi.listProblems.mockResolvedValue({ total: 0, items: [] })
+    const { wrapper, router } = await mountPage()
+    const numbers = wrapper.findAllComponents(InputNumber)
+
+    numbers[0]!.vm.$emit('update:modelValue', 80)
+    numbers[1]!.vm.$emit('update:modelValue', 40)
+    await nextTick()
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(router.currentRoute.value.query).toEqual({
+      difficultyMin: '40',
+      difficultyMax: '80',
+    })
+    expect(problemsApi.listProblems).toHaveBeenLastCalledWith({
+      keyword: '',
+      tag: '',
+      difficultyMin: 40,
+      difficultyMax: 80,
+      scope: 'public',
+      page: 1,
+      includeHidden: false,
+      pageSize: 20,
+    })
+  })
+
+  it('resets filters through the URL', async () => {
+    problemsApi.listProblems.mockResolvedValue({ total: 0, items: [] })
+    const { wrapper, router } = await mountPage(
+      '/problems?keyword=sum&tag=math&difficultyMin=40&difficultyMax=80',
+    )
+
+    await button(wrapper, '重置').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.query).toEqual({})
+    expect(problemsApi.listProblems).toHaveBeenLastCalledWith({
+      keyword: '',
+      tag: '',
+      difficultyMin: null,
+      difficultyMax: null,
       scope: 'public',
       page: 1,
       includeHidden: false,
@@ -151,7 +211,8 @@ describe('ProblemListView', () => {
     expect(problemsApi.listProblems).toHaveBeenLastCalledWith({
       keyword: '',
       tag: 'math',
-      difficulty: null,
+      difficultyMin: null,
+      difficultyMax: null,
       scope: 'public',
       page: 2,
       includeHidden: false,
@@ -168,6 +229,7 @@ describe('ProblemListView', () => {
 
     expect(wrapper.find('a[href="/problems/new"]').exists()).toBe(true)
     expect(wrapper.find('a[href="/problems/import"]').exists()).toBe(true)
+    expect(wrapper.findComponent(Select).exists()).toBe(true)
     expect(wrapper.find('#show-hidden').exists()).toBe(true)
 
     wrapper.findComponent(ToggleSwitch).vm.$emit('update:modelValue', true)
@@ -176,7 +238,8 @@ describe('ProblemListView', () => {
     expect(problemsApi.listProblems).toHaveBeenLastCalledWith({
       keyword: '',
       tag: '',
-      difficulty: null,
+      difficultyMin: null,
+      difficultyMax: null,
       scope: 'mine',
       page: 1,
       includeHidden: true,

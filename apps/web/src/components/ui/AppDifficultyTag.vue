@@ -1,22 +1,20 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import { difficultyLabel } from '@/utils/difficulty'
+import { difficultyBand, difficultyText } from '@/utils/difficulty'
 
-const props = defineProps<{ difficulty: number }>()
+const props = defineProps<{ difficulty: number; showLabel?: boolean }>()
 
-const level = computed(() => {
-  const value = props.difficulty
-  return Number.isInteger(value) && value >= 1 && value <= 5 ? value : 0
+const band = computed(() => difficultyBand(props.difficulty))
+const text = computed(() => {
+  if (props.showLabel) return difficultyText(props.difficulty)
+  return band.value === 0 ? '未知' : String(props.difficulty)
 })
 </script>
 
 <template>
-  <span
-    class="app-difficulty-tag"
-    :class="`app-difficulty-tag--${level === 0 ? 'unknown' : level}`"
-  >
-    {{ difficultyLabel(difficulty) }}
+  <span class="app-difficulty-tag" :class="`app-difficulty-tag--${band === 0 ? 'unknown' : band}`">
+    {{ text }}
   </span>
 </template>
 
