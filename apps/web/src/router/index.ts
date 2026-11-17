@@ -381,6 +381,16 @@ export const router = createRouter({
           },
         },
         {
+          path: 'jobs',
+          name: 'admin-jobs',
+          component: () => import('@/views/AdminJobsView.vue'),
+          meta: {
+            requiresAuth: true,
+            permission: PERM.system.jobs.manage,
+            title: '定时任务',
+          },
+        },
+        {
           path: 'backups',
           name: 'admin-backups',
           component: () => import('@/views/AdminBackupView.vue'),

@@ -33,6 +33,7 @@ const routes = [
   { path: '/admin/learning-paths', component: { template: '<div />' } },
   { path: '/admin/certificates', component: { template: '<div />' } },
   { path: '/admin/site', component: { template: '<div />' } },
+  { path: '/admin/jobs', component: { template: '<div />' } },
 ]
 
 async function mountNav(path = '/admin') {
@@ -213,6 +214,19 @@ describe('AdminNav', () => {
     expect(auth.can).toHaveBeenCalledWith(PERM.system.backup.manage)
     expect(wrapper.find('a[href="/admin/backups"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('数据备份')
+    wrapper.unmount()
+  })
+
+  it('shows the scheduled jobs entry only with system.jobs.manage', async () => {
+    let wrapper = await mountNav()
+    expect(wrapper.text()).not.toContain('定时任务')
+
+    auth.can.mockImplementation((code) => code === PERM.system.jobs.manage)
+    wrapper = await mountNav()
+    expect(auth.can).toHaveBeenCalledWith(PERM.system.jobs.manage)
+    expect(wrapper.find('a[href="/admin/jobs"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('定时任务')
+    expect(wrapper.find('a[href="/admin/jobs"] i').classes()).toContain('pi-clock')
     wrapper.unmount()
   })
 })

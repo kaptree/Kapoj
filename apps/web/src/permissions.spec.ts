@@ -48,6 +48,7 @@ describe('permission catalog', () => {
       'admin.audit.view',
       'system.settings.manage',
       'system.backup.manage',
+      'system.jobs.manage',
       'user.read',
       'user.update',
       'user.ban',
@@ -85,6 +86,7 @@ describe('permission catalog', () => {
     expect(PERM.problem.manageAll).toBe('problem.manage_all')
     expect(PERM.submission.rejudge).toBe('submission.rejudge')
     expect(PERM.system.backup.manage).toBe('system.backup.manage')
+    expect(PERM.system.jobs.manage).toBe('system.jobs.manage')
     expect(PERM.contest.viewHidden).toBe('contest.view_hidden')
     expect(PERM.contest.create).toBe('contest.create')
     expect(PERM.contest.update).toBe('contest.update')

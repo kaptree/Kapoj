@@ -24,6 +24,11 @@ import type {
   CertificateTypeInput,
   CertificateTypeView,
   CertificateView,
+  DifficultySettingsInput,
+  DifficultySettingsView,
+  JobInput,
+  JobRunView,
+  JobView,
   Page,
   PlatformModelInput,
   PlatformModelTestResult,
@@ -84,6 +89,46 @@ export const testAdminAIPlatformModel = (id: number | string) =>
 /** Select the current platform model; null clears the selection (ai.settings.manage). */
 export const selectAdminAIPlatformModel = (modelId: number | null) =>
   http.put<AdminAISettingsView>('/admin/ai/platform-model', { modelId })
+
+/** Scheduled jobs with their latest state and active run (system.jobs.manage). */
+export const listAdminJobs = () => http.get<JobView[]>('/admin/jobs')
+
+/** Replace a job's enabled flag, cron expression and timezone (system.jobs.manage). */
+export const updateAdminJob = (key: string, input: JobInput) =>
+  http.put<JobView>(`/admin/jobs/${encodeURIComponent(key)}`, input)
+
+/** Enqueue a manual run; responds 202 with the queued run (system.jobs.manage). */
+export const runAdminJob = (key: string) =>
+  http.post<JobRunView>(`/admin/jobs/${encodeURIComponent(key)}/run`)
+
+export interface ListAdminJobRunsQuery {
+  jobKey?: string
+  status?: string
+  page?: number
+  pageSize?: number
+}
+
+/** All job runs, newest first, optionally filtered by job and status (system.jobs.manage). */
+export const listAdminJobRuns = (q: ListAdminJobRunsQuery = {}) =>
+  http.get<Page<JobRunView>>('/admin/job-runs', {
+    params: {
+      jobKey: q.jobKey || undefined,
+      status: q.status || undefined,
+      page: q.page,
+      page_size: q.pageSize,
+    },
+  })
+
+/** One run's detail and live progress (system.jobs.manage). */
+export const getAdminJobRun = (id: number | string) => http.get<JobRunView>(`/admin/job-runs/${id}`)
+
+/** Difficulty formula settings (system.jobs.manage). */
+export const getAdminDifficultySettings = () =>
+  http.get<DifficultySettingsView>('/admin/difficulty/settings')
+
+/** Replace all difficulty formula settings (system.jobs.manage). */
+export const updateAdminDifficultySettings = (input: DifficultySettingsInput) =>
+  http.put<DifficultySettingsView>('/admin/difficulty/settings', input)
 
 export interface ListAdminUsersQuery {
   keyword?: string

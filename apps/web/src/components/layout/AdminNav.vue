@@ -104,6 +104,13 @@ const backupItem: AdminNavItem = {
   icon: 'pi pi-database',
 }
 
+const jobsItem: AdminNavItem = {
+  key: 'jobs',
+  path: '/admin/jobs',
+  label: '定时任务',
+  icon: 'pi pi-clock',
+}
+
 const groups = computed<AdminNavGroup[]>(() => {
   const contentItems: AdminNavItem[] = []
   if (auth.canAny(PROBLEM_MANAGE_PERMISSIONS)) {
@@ -155,6 +162,7 @@ const groups = computed<AdminNavGroup[]>(() => {
     items.push({ key: 'site', label: '站点', items: [siteItem] })
   }
   const systemItems: AdminNavItem[] = []
+  if (auth.can(PERM.system.jobs.manage)) systemItems.push(jobsItem)
   if (auth.can(PERM.mail.settings.manage)) systemItems.push(mailItem)
   if (auth.can(PERM.system.backup.manage)) systemItems.push(backupItem)
   if (systemItems.length > 0) {
