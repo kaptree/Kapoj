@@ -483,6 +483,128 @@ func TestKeyResetEnvReadOnly(t *testing.T) {
 	assert.Equal(t, before, svc.KeyView())
 }
 
+func TestRotateReencryptsPlatformModels(t *testing.T) {
+	g := testutil.PG(t)
+	ctx := context.Background()
+	file := filepath.Join(t.TempDir(), "ai.key")
+
+	oldKey := b64Key(strings.Repeat("o", 32))
+	require.NoError(t, os.WriteFile(file, []byte(oldKey+"\n"), 0o600))
+	km, err := ai.NewKeyManager("", file)
+	require.NoError(t, err)
+	settingsSvc := ai.NewSettingsService(g, km, file)
+	client := &fakeChatClient{fn: func(req ai.ChatRequest) (string, error) {
+		assert.Equal(t, "sk-platform-secret", req.APIKey)
+		return "pong", nil
+	}}
+	platformSvc := ai.NewPlatformService(g, km, client, settingsSvc)
+
+	created, err := platformSvc.Create(ctx, 7, ai.PlatformModelInput{
+		Name: "Platform", BaseURL: "https://example.com/v1", ModelName: "m",
+		APIKey: "sk-platform-secret", Enabled: true,
+	}, nil)
+	require.NoError(t, err)
+
+	var before ai.PlatformModel
+	require.NoError(t, g.First(&before, created.ID).Error)
+
+	res, err := settingsSvc.GenerateKey(ctx, 42, nil)
+	require.NoError(t, err)
+	newKey := res.Key
+
+	// 密文已变化，且可用新密钥解密、旧密钥无法解密。
+	var after ai.PlatformModel
+	require.NoError(t, g.First(&after, created.ID).Error)
+	assert.NotEqual(t, before.APIKeyEncrypted, after.APIKeyEncrypted)
+	newEnc, err := ai.NewEncryptor(newKey)
+	require.NoError(t, err)
+	plain, err := newEnc.Decrypt(after.APIKeyEncrypted)
+	require.NoError(t, err)
+	assert.Equal(t, "sk-platform-secret", plain)
+	oldEnc, err := ai.NewEncryptor(oldKey)
+	require.NoError(t, err)
+	_, err = oldEnc.Decrypt(after.APIKeyEncrypted)
+	assert.Error(t, err)
+
+	// 平台模型 Test/List 仍使用轮换后的内存密钥。
+	testRes, err := platformSvc.Test(ctx, created.ID)
+	require.NoError(t, err)
+	assert.True(t, testRes.OK)
+	list, err := platformSvc.List(ctx)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.Equal(t, "sk-…cret", list[0].APIKeyMasked)
+}
+
+func TestRotateRejectsPlatformCiphertextWithoutOldKey(t *testing.T) {
+	g := testutil.PG(t)
+	ctx := context.Background()
+	file := filepath.Join(t.TempDir(), "ai.key")
+	svc := newKeySettingsService(t, g, "", file)
+	assert.Equal(t, "none", svc.KeyView().Source)
+
+	// 无旧密钥但存在平台模型密文：保留模式必须拒绝覆盖。
+	require.NoError(t, g.Create(&ai.PlatformModel{
+		Name: "Platform", BaseURL: "https://example.com/v1", ModelName: "m",
+		APIKeyEncrypted: "v1:AAAA", Enabled: true,
+	}).Error)
+
+	_, err := svc.SetKey(ctx, 42, b64Key(strings.Repeat("n", 32)), nil)
+	assertValidationCode(t, err, 40001)
+
+	assert.NoFileExists(t, file)
+	assert.Equal(t, "none", svc.KeyView().Source)
+}
+
+func TestResetClearsPlatformTokensAndSelection(t *testing.T) {
+	g := testutil.PG(t)
+	ctx := context.Background()
+	file := filepath.Join(t.TempDir(), "ai.key")
+
+	oldKey := b64Key(strings.Repeat("o", 32))
+	require.NoError(t, os.WriteFile(file, []byte(oldKey+"\n"), 0o600))
+	km, err := ai.NewKeyManager("", file)
+	require.NoError(t, err)
+	settingsSvc := ai.NewSettingsService(g, km, file)
+	platformSvc := ai.NewPlatformService(g, km, &fakeChatClient{}, settingsSvc)
+
+	created, err := platformSvc.Create(ctx, 7, ai.PlatformModelInput{
+		Name: "Platform", BaseURL: "https://example.com/v1", ModelName: "m",
+		APIKey: "sk-platform-secret", Enabled: true,
+	}, nil)
+	require.NoError(t, err)
+	_, err = platformSvc.Select(ctx, 7, &created.ID, nil)
+	require.NoError(t, err)
+
+	_, err = settingsSvc.ResetKey(ctx, 7, nil)
+	require.NoError(t, err)
+
+	// token 清空、停用，但模型元数据保留。
+	var model ai.PlatformModel
+	require.NoError(t, g.First(&model, created.ID).Error)
+	assert.Empty(t, model.APIKeyEncrypted)
+	assert.False(t, model.Enabled)
+	assert.Equal(t, "Platform", model.Name)
+	assert.Equal(t, "https://example.com/v1", model.BaseURL)
+	assert.Equal(t, "m", model.ModelName)
+
+	// 选择被清空。
+	var settings ai.Settings
+	require.NoError(t, g.First(&settings, 1).Error)
+	assert.Nil(t, settings.PlatformModelID)
+
+	view, err := settingsSvc.Get(ctx)
+	require.NoError(t, err)
+	assert.Nil(t, view.PlatformModelID)
+	assert.Empty(t, view.PlatformModelName)
+
+	list, err := platformSvc.List(ctx)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.Empty(t, list[0].APIKeyMasked)
+	assert.False(t, list[0].Enabled)
+}
+
 func TestKeyResetAuditFailureRestores(t *testing.T) {
 	g := testutil.PG(t)
 	ctx := context.Background()

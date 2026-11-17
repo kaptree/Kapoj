@@ -97,6 +97,28 @@ func TestSettingsUpdateAndKeyMissing(t *testing.T) {
 	})
 }
 
+func TestSettingsPlatformModelSelection(t *testing.T) {
+	g := testutil.PG(t)
+	ctx := context.Background()
+	svc := ai.NewSettingsService(g, newKeyManager(t), "")
+
+	model := ai.PlatformModel{
+		Name: "Platform A", BaseURL: "https://example.com/v1", ModelName: "m", Enabled: true,
+	}
+	require.NoError(t, g.Create(&model).Error)
+
+	_, err := svc.Update(ctx, 42, true, nil)
+	require.NoError(t, err)
+	require.NoError(t, g.Model(&ai.Settings{}).Where("id = ?", 1).
+		Update("platform_model_id", model.ID).Error)
+
+	view, err := svc.Get(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, view.PlatformModelID)
+	assert.Equal(t, model.ID, *view.PlatformModelID)
+	assert.Equal(t, "Platform A", view.PlatformModelName)
+}
+
 func TestSettingsEnabled(t *testing.T) {
 	t.Run("默认 true", func(t *testing.T) {
 		g := testutil.PG(t)

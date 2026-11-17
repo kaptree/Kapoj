@@ -93,8 +93,8 @@ const (
 //
 //  1. env 来源只读；
 //  2. 校验新密钥（base64/32 字节）；
-//  3. 仅保留模式：无旧密钥且存在用户配置 → 拒绝破坏性覆盖；
-//  4. 写密钥文件（备份旧文件）→ DB 事务（重加密或清除配置 + 指纹 + 审计）→
+//  3. 仅保留模式：无旧密钥且存在用户配置或平台模型密文 → 拒绝破坏性覆盖；
+//  4. 写密钥文件（备份旧文件）→ DB 事务（重加密或清除两类配置 + 指纹 + 审计）→
 //     成功删除备份并切换内存密钥，失败恢复备份/回滚。
 func (s *SettingsService) rotate(ctx context.Context, actorID int64, raw string, audit func(*gorm.DB) error, mode keyRotationMode) (*KeyView, error) {
 	s.keyMu.Lock()
@@ -117,9 +117,14 @@ func (s *SettingsService) rotate(ctx context.Context, actorID int64, raw string,
 	if err := s.db.WithContext(ctx).Model(&UserConfig{}).Count(&cfgCount).Error; err != nil {
 		return nil, err
 	}
+	var platformCipherCount int64
+	if err := s.db.WithContext(ctx).Model(&PlatformModel{}).
+		Where("api_key_encrypted <> ''").Count(&platformCipherCount).Error; err != nil {
+		return nil, err
+	}
 	hasOld := s.keys.Configured()
-	if mode == keepUserConfigs && cfgCount > 0 && !hasOld {
-		return nil, httpx.ErrValidation("存在无法解密的用户 AI 配置，请先恢复旧密钥")
+	if mode == keepUserConfigs && (cfgCount > 0 || platformCipherCount > 0) && !hasOld {
+		return nil, httpx.ErrValidation("存在无法解密的 AI 配置，请先恢复旧密钥")
 	}
 
 	fingerprint := fingerprintOf(raw)
@@ -138,8 +143,16 @@ func (s *SettingsService) rotate(ctx context.Context, actorID int64, raw string,
 			if err := s.reencryptConfigs(tx, newEnc); err != nil {
 				return err
 			}
-		} else if err := tx.Where("1 = 1").Delete(&UserConfig{}).Error; err != nil {
-			return fmt.Errorf("ai: purge user configs: %w", err)
+			if err := s.reencryptPlatformModels(tx, newEnc); err != nil {
+				return err
+			}
+		} else {
+			if err := tx.Where("1 = 1").Delete(&UserConfig{}).Error; err != nil {
+				return fmt.Errorf("ai: purge user configs: %w", err)
+			}
+			if err := s.clearPlatformTokens(tx); err != nil {
+				return err
+			}
 		}
 		if err := tx.Model(&Settings{}).Where("id = ?", settingsID).Updates(map[string]any{
 			"key_fingerprint": fingerprint,
@@ -188,6 +201,48 @@ func (s *SettingsService) reencryptConfigs(tx *gorm.DB, newEnc *Encryptor) error
 			Update("api_key_encrypted", ciphertext).Error; err != nil {
 			return fmt.Errorf("ai: update user config %d: %w", cfgs[i].UserID, err)
 		}
+	}
+	return nil
+}
+
+// reencryptPlatformModels 在事务内以 SELECT FOR UPDATE 锁定有密文的平台模型，
+// 用旧密钥解密、新密钥加密；任一失败使事务回滚。
+func (s *SettingsService) reencryptPlatformModels(tx *gorm.DB, newEnc *Encryptor) error {
+	var models []PlatformModel
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("api_key_encrypted <> ''").Find(&models).Error; err != nil {
+		return fmt.Errorf("ai: load platform models for rotation: %w", err)
+	}
+	for i := range models {
+		plain, err := s.keys.Decrypt(models[i].APIKeyEncrypted)
+		if err != nil {
+			return fmt.Errorf("ai: decrypt platform model %d: %w", models[i].ID, err)
+		}
+		ciphertext, err := newEnc.Encrypt(plain)
+		if err != nil {
+			return fmt.Errorf("ai: re-encrypt platform model %d: %w", models[i].ID, err)
+		}
+		if err := tx.Model(&PlatformModel{}).Where("id = ?", models[i].ID).
+			Update("api_key_encrypted", ciphertext).Error; err != nil {
+			return fmt.Errorf("ai: update platform model %d: %w", models[i].ID, err)
+		}
+	}
+	return nil
+}
+
+// clearPlatformTokens 在重置密钥时清空平台 token 并停用模型，同时清空当前
+// 选择；名称/base URL/模型名等元数据保留，方便管理员重填 token。
+func (s *SettingsService) clearPlatformTokens(tx *gorm.DB) error {
+	if err := tx.Model(&PlatformModel{}).Where("1 = 1").Updates(map[string]any{
+		"api_key_encrypted": "",
+		"enabled":           false,
+		"updated_at":        time.Now().UTC(),
+	}).Error; err != nil {
+		return fmt.Errorf("ai: clear platform model tokens: %w", err)
+	}
+	if err := tx.Model(&Settings{}).Where("id = ?", settingsID).
+		Update("platform_model_id", nil).Error; err != nil {
+		return fmt.Errorf("ai: clear platform model selection: %w", err)
 	}
 	return nil
 }

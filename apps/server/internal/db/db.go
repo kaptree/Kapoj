@@ -95,7 +95,7 @@ func Migrate(g *gorm.DB) error {
 			&learning.LearningPathPurchase{}, &learning.LearningPathRecommendation{},
 			&rbac.Role{}, &rbac.Permission{}, &rbac.RolePermission{},
 			&rbac.UserRole{}, &rbac.AdminAuditLog{}, &rbac.Meta{},
-			&ai.Provider{}, &ai.UserConfig{}, &ai.Hint{}, &ai.Settings{},
+			&ai.Provider{}, &ai.UserConfig{}, &ai.Hint{}, &ai.Settings{}, &ai.PlatformModel{},
 			&testcasegen.Generation{}, &testcasegen.GenerationCase{},
 			&certificate.CertificateType{}, &certificate.Certificate{},
 			&site.Settings{}, &site.VisitCounter{},

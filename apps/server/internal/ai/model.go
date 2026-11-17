@@ -19,17 +19,38 @@ type Provider struct {
 func (Provider) TableName() string { return "ai_providers" }
 
 // Settings 是 ai_settings 单例行；KeyFingerprint 记录当前密钥文件的 SHA-256
-// 指纹（仅诊断/一致性，不存密钥本身）。
+// 指纹（仅诊断/一致性，不存密钥本身）。PlatformModelID 指向当前选中的平台模型。
 type Settings struct {
-	ID             int16     `gorm:"primaryKey"`
-	Enabled        bool      `gorm:"not null;default:true"`
-	KeyFingerprint string    `gorm:"column:key_fingerprint;size:64;not null;default:''"`
-	UpdatedBy      int64     `gorm:"not null;default:0"`
-	UpdatedAt      time.Time `gorm:"type:timestamptz;not null"`
+	ID              int16     `gorm:"primaryKey"`
+	Enabled         bool      `gorm:"not null;default:true"`
+	KeyFingerprint  string    `gorm:"column:key_fingerprint;size:64;not null;default:''"`
+	PlatformModelID *int64    `gorm:"column:platform_model_id"`
+	UpdatedBy       int64     `gorm:"not null;default:0"`
+	UpdatedAt       time.Time `gorm:"type:timestamptz;not null"`
 }
 
 // TableName keeps the table name from the design document.
 func (Settings) TableName() string { return "ai_settings" }
+
+// PlatformModel 是平台级 OpenAI 兼容模型（系统任务使用），token 加密存储。
+// 与用户级 ai_providers / user_ai_configs 语义独立。
+type PlatformModel struct {
+	ID                int64      `gorm:"primaryKey"`
+	Name              string     `gorm:"size:100;not null;uniqueIndex:uniq_ai_platform_models_name"`
+	BaseURL           string     `gorm:"column:base_url;size:512;not null"`
+	ModelName         string     `gorm:"column:model_name;size:100;not null"`
+	APIKeyEncrypted   string     `gorm:"column:api_key_encrypted;type:text;not null;default:''"`
+	Enabled           bool       `gorm:"not null;default:true"`
+	LastTestAt        *time.Time `gorm:"column:last_test_at;type:timestamptz"`
+	LastTestOK        bool       `gorm:"column:last_test_ok;not null;default:false"`
+	LastTestError     string     `gorm:"column:last_test_error;size:500;not null;default:''"`
+	LastTestLatencyMS int        `gorm:"column:last_test_latency_ms;not null;default:0"`
+	CreatedBy         int64      `gorm:"not null;default:0"`
+	CreatedAt         time.Time  `gorm:"type:timestamptz;not null"`
+	UpdatedAt         time.Time  `gorm:"type:timestamptz;not null"`
+}
+
+func (PlatformModel) TableName() string { return "ai_platform_models" }
 
 // UserConfig 是用户自行填写的 AI 配置，每个用户唯一一条；Provider 为 provider code。
 type UserConfig struct {

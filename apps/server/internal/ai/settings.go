@@ -18,9 +18,11 @@ const settingsID int16 = 1
 
 // SettingsView is the read model returned by the admin AI settings API.
 type SettingsView struct {
-	Enabled       bool      `json:"enabled"`
-	KeyConfigured bool      `json:"keyConfigured"`
-	UpdatedAt     time.Time `json:"updatedAt"`
+	Enabled           bool      `json:"enabled"`
+	KeyConfigured     bool      `json:"keyConfigured"`
+	PlatformModelID   *int64    `json:"platformModelId"`
+	PlatformModelName string    `json:"platformModelName"`
+	UpdatedAt         time.Time `json:"updatedAt"`
 }
 
 // SettingsInput is the admin request body for updating the AI switch.
@@ -52,16 +54,22 @@ func NewSettingsService(db *gorm.DB, keys *KeyManager, keyFile string) *Settings
 // table is empty.
 func (s *SettingsService) Get(ctx context.Context) (*SettingsView, error) {
 	var settings Settings
+	var view *SettingsView
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := ensureSettings(tx); err != nil {
 			return err
 		}
-		return tx.First(&settings, settingsID).Error
+		if err := tx.First(&settings, settingsID).Error; err != nil {
+			return err
+		}
+		var err error
+		view, err = s.view(tx, settings)
+		return err
 	})
 	if err != nil {
 		return nil, err
 	}
-	return s.view(settings), nil
+	return view, nil
 }
 
 // Update sets the AI switch and audits the change in the same transaction.
@@ -103,8 +111,9 @@ func (s *SettingsService) Update(ctx context.Context, actorID int64, enabled boo
 		if err := tx.First(&updated, settingsID).Error; err != nil {
 			return err
 		}
-		view = s.view(updated)
-		return nil
+		var buildErr error
+		view, buildErr = s.view(tx, updated)
+		return buildErr
 	})
 	if err != nil {
 		return nil, err
@@ -126,12 +135,24 @@ func (s *SettingsService) Enabled(ctx context.Context) (bool, error) {
 	return settings.Enabled, nil
 }
 
-func (s *SettingsService) view(settings Settings) *SettingsView {
-	return &SettingsView{
-		Enabled:       settings.Enabled,
-		KeyConfigured: s.keys.Configured(),
-		UpdatedAt:     settings.UpdatedAt.UTC(),
+// view builds the admin read model. The platform model name is looked up with
+// db so callers inside a transaction see uncommitted selection changes.
+func (s *SettingsService) view(db *gorm.DB, settings Settings) (*SettingsView, error) {
+	view := &SettingsView{
+		Enabled:         settings.Enabled,
+		KeyConfigured:   s.keys.Configured(),
+		PlatformModelID: settings.PlatformModelID,
+		UpdatedAt:       settings.UpdatedAt.UTC(),
 	}
+	if settings.PlatformModelID != nil {
+		var name string
+		if err := db.Model(&PlatformModel{}).Where("id = ?", *settings.PlatformModelID).
+			Pluck("name", &name).Error; err != nil {
+			return nil, fmt.Errorf("ai: load platform model name: %w", err)
+		}
+		view.PlatformModelName = name
+	}
+	return view, nil
 }
 
 // ensureSettings inserts the default settings row when absent.
