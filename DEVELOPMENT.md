@@ -177,7 +177,7 @@ kapoj/
 - 数据库连接串为空时由 `POSTGRES_*` + `KAPOJ_DB_HOST/PORT` 构造，`KAPOJ_DATABASE_URL` 可显式覆盖；MinIO 访问密钥为空时回退 `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`。
 - `KAPOJ_AI_ENCRYPTION_KEY`/`KAPOJ_MAIL_ENCRYPTION_KEY` 在 `.env` 中配置；旧 `KAPOJ_AI_KEY_FILE`/`KAPOJ_MAIL_KEY_FILE` 仅作为直接运行时的兼容回退（Compose 不再挂载密钥目录）。
 - 后台可编辑的站点品牌、SMTP 服务器、AI Provider 等仍保存在数据库，不属于 `.env`。
-- 修改 `.env` 中的 AI 加密密钥会使既有 `user_ai_configs` 密文无法解密；必须先备份并按维护流程处理（后台自动重加密仅在兼容密钥文件模式可用）。修改邮件加密密钥后需在后台重新填写 SMTP 密码。
+- 修改 `.env` 中的 AI 加密密钥会使既有 `user_ai_configs`/`user_ai_models`/`ai_platform_models` 密文无法解密；必须先备份并按维护流程处理（后台自动重加密仅在兼容密钥文件模式可用）。修改邮件加密密钥后需在后台重新填写 SMTP 密码。
 
 ---
 
@@ -581,16 +581,25 @@ ai_hints (
 -- 唯一约束：problem_id（每题只缓存一份提示）
 user_ai_configs (
   id, user_id, provider, model_name,
-  api_key_encrypted                      -- 用户自行填写的 key，AES 加密后存储
+  api_key_encrypted                      -- 旧版单配置，保留用于回滚
 )
+user_ai_models (
+  id, user_id, name, protocol,           -- openai / anthropic
+  base_url, model_name,
+  api_key_encrypted, is_active,          -- 每用户最多一条 is_active
+  last_test_at, last_test_ok, last_test_error, last_test_latency_ms,
+  created_at, updated_at
+)
+-- 唯一约束：(user_id, name)、(user_id) WHERE is_active
 ```
 
-**实现状态（M5-A ✅，M5-1～M5-3 已完成）**
+**实现状态（M5-A ✅，M5-1～M5-3 已完成；用户多模型/Anthropic 协议见 §6.9）**
 
-- 已建表：`ai_providers`（code 唯一 `uniq_ai_providers_code`）、`user_ai_configs`（user_id 唯一 `uniq_user_ai_configs_user`）、`ai_hints`（problem_id 唯一 `uniq_ai_hints_problem`）。
+- 已建表：`ai_providers`（code 唯一 `uniq_ai_providers_code`）、`user_ai_configs`（user_id 唯一 `uniq_user_ai_configs_user`，仅兼容旧接口/回滚）、`user_ai_models`（`(user_id, name)` 唯一 `uniq_user_ai_models_user_name`，部分唯一索引 `uniq_user_ai_models_active` 保证每用户最多一个当前模型）、`ai_hints`（problem_id 唯一 `uniq_ai_hints_problem`）。
 - 平台级 provider 的密钥不写入数据库；`ai_providers.api_key_ref` 保留为环境变量名或密钥服务 ID 引用，当前固定为空字符串，M5-A 不实现平台代付 key。
 - 内置 provider seed（幂等，`ON CONFLICT DO NOTHING`，不覆盖已有行）：`deepseek` / DeepSeek / `https://api.deepseek.com/v1` / `deepseek-chat`、`openai` / OpenAI / `https://api.openai.com/v1` / `gpt-4o-mini`、`qwen` / 通义千问 / `https://dashscope.aliyuncs.com/compatible-mode/v1` / `qwen-plus`、`glm` / 智谱 GLM / `https://open.bigmodel.cn/api/paas/v4` / `glm-4-flash`。
-- `user_ai_configs.api_key_encrypted` 使用 AES-256-GCM（随机 12 字节 nonce，输出 `v1:`+base64(nonce+ciphertext)），密钥为 base64 编码的 32 字节（来自根目录 `.env` 的 `KAPOJ_AI_ENCRYPTION_KEY`；旧 `KAPOJ_AI_KEY_FILE` 仅兼容回退，见 §6.7）；接口只返回脱敏值（长度 >8 显示前 3 字符 + … + 后 4 字符，否则 `****`），不写日志、不写审计摘要。
+- `user_ai_configs.api_key_encrypted` 使用 AES-256-GCM（随机 12 字节 nonce，输出 `v1:`+base64(nonce+ciphertext)），密钥为 base64 编码的 32 字节（来自根目录 `.env` 的 `KAPOJ_AI_ENCRYPTION_KEY`；旧 `KAPOJ_AI_KEY_FILE` 仅兼容回退，见 §6.7）；接口只返回脱敏值（长度 >8 显示前 3 字符 + … + 后 4 字符，否则 `****`），不写日志、不写审计摘要。`user_ai_models` 使用同一套加密与脱敏规则。
+- 旧数据迁移：`db_migrations` 标记 `user_ai_models_backfill_v1` 一次性把每个用户的 `user_ai_configs` 复制为一条 `protocol=openai、is_active=true` 的 `user_ai_models`（名称 `provider.name / model_name`，无 provider 时用 code）；已有模型的用户跳过，回填幂等。旧表不删除，新代码只写新表，`chatRequest` 仅在用户没有 active 模型时回退读取旧表。
 - 提示缓存：`ai_hints` 每题唯一；首个用户触发后生成，后续用户直接读取缓存，不要求用户 AI 配置、不消耗限流；非公开题对无 `problem.view_hidden` 的用户与不存在一致返回 40400，不泄露存在性。
 
 ### 3.10 比赛代码查重
@@ -1701,11 +1710,13 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 
 **实现状态（M5-A ✅；M5-1～M5-3、M5-4、M5-5 已完成；M5-7 证书认证已完成；M5-8 头像上传已完成，见 4.1）**
 
-- **路由挂载**：AI 路由（`/api/ai/configs` GET/POST、`/api/ai/complete`、`/api/ai/format`、`/api/ai/optimize`、`/api/ai/hint`）**始终挂载**（`ai.Service` 恒非 nil）；管理员在 `/admin/ai` 关闭 AI 后，`RequireAIEnabled` 中间件让所有 `/api/ai/*` 统一返回 404（见 §6.6）。未配置密钥时后端也正常启动，AI 路由仍可访问（`GET /api/ai/configs` 返回 200 + `keyConfigured=false`），保存配置/AI 调用返回 40001（见 §6.7 无密钥语义）。
+- **路由挂载**：AI 路由（用户模型 `/api/ai/models` CRUD/切换/测试、兼容旧 `/api/ai/configs` GET/POST、`/api/ai/complete`、`/api/ai/format`、`/api/ai/optimize`、`/api/ai/hint`）**始终挂载**（`ai.Service` 恒非 nil）；管理员在 `/admin/ai` 关闭 AI 后，`RequireAIEnabled` 中间件让所有 `/api/ai/*` 统一返回 404（见 §6.6）。未配置密钥时后端也正常启动，AI 路由仍可访问（`GET /api/ai/models` 返回 200 + `keyConfigured=false`），新增模型/AI 调用返回 40001/40002（见 §6.7 无密钥语义）。
 - **密钥来源**：加密密钥来自根目录 `.env` 的 `KAPOJ_AI_ENCRYPTION_KEY`；旧 `KAPOJ_AI_KEY_FILE`（默认 `data/ai.key`）仅兼容回退。密钥非法 base64/长度在启动时报错；未配置时后台可生成/覆盖（仅兼容密钥文件模式）。详见 §6.7。
-- **provider**：启动时幂等 seed 四个内置 provider（`deepseek`/`openai`/`qwen`/`glm`，见 3.9）；只有 `is_active=true` 的 provider 可用，未知/停用 provider 被拒绝。
+- **provider**：启动时幂等 seed 四个内置 provider（`deepseek`/`openai`/`qwen`/`glm`，见 3.9）；它们只是用户新增模型时的预填模板，用户也可自定义任意 http/https 接口地址。`AIProviderOption` 同时返回 `baseUrl`/`protocol`（均为 openai）供前端预填。
 - **加密**：用户 API key 使用 AES-256-GCM 加密存储（随机 nonce，`v1:` 前缀），接口只返回脱敏值，不写日志/审计；平台 provider 的密钥不写入数据库。
-- **OpenAI 客户端**：`POST {base_url}/chat/completions`，Bearer key，解析 `choices[0].message.content`；非 2xx / 空 choices / 畸形 JSON / 超时统一映射为 `50200 AI 服务调用失败`（`KAPOJ_AI_REQUEST_TIMEOUT` 控制超时，默认 45s），不泄露 key 与上游响应体敏感内容。
+- **协议分发**：`ChatRequest` 增加 `Protocol`（`openai`/`anthropic`，空值按 openai），`ProtocolClient` 按协议分发到 `OpenAIClient` 或 `AnthropicClient`；`main.go` 使用 `ai.NewProtocolClient`，用户补全/优化/提示/造数据与平台模型测试/难度初评共用同一个 `ChatClient`。
+- **OpenAI 客户端**：`POST {base_url}/chat/completions`，Bearer key，解析 `choices[0].message.content`；非 2xx / 空 choices / 畸形 JSON / 超时统一映射为 `50200 AI 服务调用失败`（`KAPOJ_AI_REQUEST_TIMEOUT` 控制超时，默认 45s），不泄露 key 与上游响应体敏感内容。base URL 拒绝以 `/chat/completions` 结尾。
+- **Anthropic 客户端**：`POST {base}/v1/messages`（base 以 `/v1` 结尾时用 `{base}/messages`），请求头 `x-api-key` + `anthropic-version: 2023-06-01`；system 消息抽出后以 `\n\n` 拼接，其余消息保持 user/assistant；`max_tokens` 取请求值（用户对话 4096、平台测试 16、难度初评 512），未设置默认 4096；响应拼接 `content[].type=="text"` 的文本。base URL 只填域名或 `/v1`，拒绝已带 `/messages` 的地址。详见 §6.9。
 - **限流**：补全/格式化/优化/首次生成提示按用户 Redis 冷却（`kapoj:ai:cool:<userID>`，`SetNX`，`KAPOJ_AI_COOLDOWN` 默认 2s），超限返回 `42903`；Redis 故障返回 `50300`；缓存命中的提示不消耗冷却。
 - **提示缓存**：`POST /api/ai/hint` 登录 + `LoadAccess`；缓存命中直接返回 `cached=true`，未命中要求用户配置并调用模型后 `INSERT ... ON CONFLICT (problem_id) DO NOTHING` 写入缓存；非公开题对无 `problem.view_hidden` 的用户返回 40400。
 - **范围外**：M5-A 不新增管理员权限码（M5-4 出题造数据见 §6.4，M5-5 AI 前端见 §6.5，M5-6 HydroOJ 导入见 §7，M5-7 证书认证见 §5.6，M5-8 头像上传见 §4.1）。
@@ -1717,13 +1728,13 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 3. **代码自动优化**：AI 分析并给出优化建议/优化后代码。
 4. **出题造数据**：创建题目时读取标程，AI 生成纯 Python 3 标准库造数据脚本（stdin 读 seed、stdout 输出输入），judge 在 Docker 沙盒运行脚本生成 input、运行标程生成 output，管理员预览确认后写入题目测试数据（见 §6.4）。
 5. **AI 辅助解题**：题目右侧「AI 提示」按钮，点击查看 AI 提示；首个用户点击后提示缓存到题目，其他用户也可查看。
-6. **多模型接入**：用户需自行填写 API key，支持 DeepSeek、OpenAI、Qwen、GLM 等模型（OpenAI 兼容协议）。
+6. **多模型接入**：用户需自行填写 API key，可保存多套模型配置（每套独立的名称、协议、接口地址、模型名与 token），并选择一个“当前使用”的模型；协议支持 OpenAI 兼容与 Anthropic，内置 DeepSeek/OpenAI/Qwen/GLM 仅作为预填模板。
 
 ### 6.2 架构设计
 
 - 后端提供统一 `AIService`，抽象 `chat()` / `complete()` / `optimize()` 等接口。
-- 通过 OpenAI 兼容协议接入多模型（`base_url` + `api_key` + `model_name`）。
-- 用户 API key 存 `user_ai_configs`（加密存储），请求时按用户选择的路由到对应模型。
+- 通过协议客户端接入多模型：OpenAI 兼容（`{base_url}/chat/completions`）与 Anthropic（`/v1/messages`），均由 `base_url` + `api_key` + `model_name` 配置。
+- 用户 API key 存 `user_ai_models`（每用户多行，加密存储），请求时读取 `is_active=true` 的当前模型；没有当前模型时回退旧 `user_ai_configs`。
 - 平台级 provider 的密钥不写入数据库，通过环境变量或密钥服务引用（`ai_providers.api_key_ref`）。
 - 提示缓存：`ai_hints` 表，首个用户触发后写入，后续用户直接读取缓存，降低 AI 调用成本。
 
@@ -1785,9 +1796,9 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 
 - **提交页 AI 工具栏**（`SubmitView.vue`）：在语言 Select 与提交按钮之间新增「AI 补全 / AI 格式化 / AI 优化」三个小尺寸按钮。页面加载时调用 `GET /api/ai/configs`：未配置（`configured=false`）时显示「尚未配置 AI 模型」提示与 `/settings/ai` 链接并禁用按钮；路由 404（未启用）时显示「AI 功能未启用」；其他加载失败静默禁用按钮（不阻塞提交）。三个按钮互斥禁用；补全按当前光标 UTF-8 字节偏移调用 `POST /api/ai/complete` 并把返回片段插入光标处（空片段提示「没有可插入的补全」）；格式化返回代码与当前不同才弹预览 Dialog（「应用格式化/取消」），相同提示「代码已是格式化状态」；优化 Dialog 展示 Markdown 建议与优化代码（「应用优化代码」）；只有确认应用才替换当前语言草稿。代码按 UTF-8 字节 ≤64 KiB 前置拦截（超限提示「代码超过 64 KiB，无法使用 AI」，不发请求）。
 - **题目详情 AI 提示**（`ProblemDetailView.vue`）：提示卡片标题右侧新增「AI 提示」按钮；游客跳登录（redirect 当前路径），登录调用 `POST /api/ai/hint`；成功在官方提示下方新增「AI 提示」区块（MarkdownView，缓存命中显示「来自缓存」标签）；40001 且无缓存显示「尚未配置 AI 模型」+ 去配置链接，42903 Toast「操作过于频繁，请稍后再试」，50200/50300 Toast「AI 服务暂时不可用」，404 Toast「题目不存在」；不自动请求，切换题目/重新加载清空本地 AI 状态。
-- **AI 配置页 `/settings/ai`**（`AiSettingsView.vue`，路由 `ai-settings`、`requiresAuth`）：加载 `GET /api/ai/configs`；404 显示「AI 功能未启用，请联系管理员」并禁用表单；成功展示 provider Select（`providers`，切换时按 provider 默认模型填充）、模型 InputText（占位默认模型）、API Key `Password`（已配置时留空保留现有密钥、显示脱敏 key）；首次配置 key 必填，保存调用 `POST /api/ai/configs`，成功 Toast 并刷新视图；provider 必选、首次 key 非空校验中文。说明文案：密钥仅加密存储、不会回显明文，AI 调用使用用户自己的 key。移动端表单单列。
+- **AI 配置页 `/settings/ai`**（`AiSettingsView.vue`，路由 `ai-settings`、`requiresAuth`）：加载 `GET /api/ai/models`；404 显示「AI 功能未启用，请联系管理员」并禁用操作；成功展示「已保存模型」列表（名称、协议 Tag、接口地址、模型名、脱敏 token、当前使用标记、最近测试）与新增/编辑/测试/删除/设为当前操作。新增/编辑 Dialog 含名称、协议 Select（OpenAI/Anthropic）、接口地址、模型名、API Key `Password`；选择内置 provider 会预填 openai/地址/默认模型，也可完全自定义。编辑时留空 token 保留原密文；首个模型自动成为当前；当前模型删除被禁用并提示先切换；测试结果 Toast/Tag，失败信息脱敏。无模型时显示空状态与新增引导。说明文案：密钥仅加密存储、不会回显明文，AI 调用使用当前使用模型；自定义地址请确认可信。移动端表单单列。详见 §6.9。
 - **用户菜单**：`UserMenu.vue` 登录用户新增「AI 设置」菜单项（`pi pi-sparkles`）跳转 `/settings/ai`。
-- **API 客户端**：`apps/web/src/api/ai.ts` 提供 `getAIConfig`/`saveAIConfig`/`completeCode`/`formatCode`/`optimizeCode`/`getAIHint`；类型别名在 `api/types.ts`（复用 `schema.d.ts` 的 AI schema，不新增 OpenAPI 改动）。
+- **API 客户端**：`apps/web/src/api/ai.ts` 提供 `listAIUserModels`/`createAIUserModel`/`updateAIUserModel`/`deleteAIUserModel`/`setActiveAIUserModel`/`testAIUserModel` 以及旧 `getAIConfig`/`saveAIConfig`，补全/格式化/优化/提示沿用原函数；类型别名在 `api/types.ts`（复用 `schema.d.ts` 的 AI schema）。
 - **CodeEditor**：`CodeEditor.vue` 暴露 `getCursorByteOffset()`（Monaco UTF-16 offset → UTF-8 字节）与 `insertAtCursor(text)`。
 - **错误映射**：40001「尚未配置 AI 模型」、42903「操作过于频繁，请稍后再试」、50200/50300「AI 服务暂时不可用」、404「AI 功能未启用/题目不存在」、代码 >64KiB「代码超过 64 KiB，无法使用 AI」、空补全「没有可插入的补全」、格式化无变化「代码已是格式化状态」。
 
@@ -1796,7 +1807,7 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 管理员可在管理后台 `/admin/ai`（路由 `admin-ai`，`requiresAuth` + `ai.settings.manage` 权限，super 绕过）查看并切换 AI 功能开关：
 
 - **设置 API**：`GET/PUT /api/admin/ai/settings`（需 `ai.settings.manage`）返回/更新 `{enabled, keyConfigured, updatedAt}`。设置存单例 `ai_settings`（`id=1`，首次读取懒创建、默认 `enabled=true`，`ON CONFLICT DO NOTHING`），更新与审计在同一事务内（action=`ai.settings.manage`、target=`ai_settings`、summary「启用/关闭 AI 功能」），审计失败回滚。
-- **关闭语义**：关闭后所有 `/api/ai/*` 接口立即返回 404（与未配置密钥一致，不暴露「AI 已关闭」），用户侧 AI 设置/提交页工具栏/题目提示自动降级为「AI 功能未启用」；重新开启立即恢复，无需重启。关闭**不删除**用户的 `user_ai_configs`/`ai_hints`，重新开启后用户配置与提示缓存仍在。
+- **关闭语义**：关闭后所有 `/api/ai/*` 接口立即返回 404（与未配置密钥一致，不暴露「AI 已关闭」），用户侧 AI 设置/提交页工具栏/题目提示自动降级为「AI 功能未启用」；重新开启立即恢复，无需重启。关闭**不删除**用户的 `user_ai_models`/`user_ai_configs`/`ai_hints`，重新开启后用户配置与提示缓存仍在。
 - **密钥缺失语义**：`keyConfigured` 为只读，动态取自 `KeyManager.Configured()`（部署配置或兼容密钥文件，见 §6.7）；未配置时管理页显示「未配置 AI 加密密钥，无法启用」，开关禁用，启用请求返回 40001，关闭仍可保存（此时 AI 路由仍挂载，`GET /api/ai/configs` 返回 `keyConfigured=false`、保存/调用返回 40001）。
 - **管理页**：`AdminAiView` 展示当前状态 Tag（已启用/已关闭/不可用）、`ToggleSwitch`、密钥缺失 `Message` 警告、保存按钮与 Toast；下方「加密密钥」板块展示密钥状态 Tag（未配置/已配置（文件）/由部署配置管理）、脱敏值与指纹；兼容密钥文件模式下提供自动生成（一次性显示完整密钥 + 复制 + 备份警告）、手动填写、重新生成/手动替换（二次确认），部署配置来源只读（见 §6.7）。仅 `ai.settings.manage` 可见保存按钮，`AdminNav`「AI 设置」入口按权限显隐。管理 API 不受 AI 开关影响，始终可访问（有权限时）。
 - **权限**：`ai.settings.manage` 默认只授予 `super_admin`，不自动授予 `content_admin`；需要时用 RBAC-B 给自定义角色分配该权限。普通用户/无权限账号访问管理接口返回 403，不影响其正常 AI 使用。
@@ -1832,11 +1843,11 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 - **无密钥语义**：AI 路由始终挂载；未配置密钥时 `GET /api/ai/configs` 返回 200 + `keyConfigured=false`（含启用的 provider 列表），用户保存配置、补全/格式化/优化、无缓存的提示返回 40001「AI 加密密钥未配置」，提示缓存命中仍可返回。`ai_settings.keyConfigured` 改为 `KeyManager.Configured()` 动态判断（不再用 `d.AI==nil`）。
 - **管理 API**（均需 `ai.settings.manage`，复用第 36 权限，不新增）：
   - `GET /api/admin/ai/key` → `KeyView{configured,source,masked,fingerprint}`（不含完整密钥）。
-  - 兼容密钥文件模式下，`POST /api/admin/ai/key/generate` 用 `crypto/rand` 生成 32 字节 base64 并保存，返回 `{...KeyView,key}`（完整密钥仅此一次，供备份）；`PUT /api/admin/ai/key` body `{key}` 校验 base64/32 字节并保存；`POST /api/admin/ai/key/reset` 删除全部用户 AI 配置并生成新密钥。
+  - 兼容密钥文件模式下，`POST /api/admin/ai/key/generate` 用 `crypto/rand` 生成 32 字节 base64 并保存，返回 `{...KeyView,key}`（完整密钥仅此一次，供备份）；`PUT /api/admin/ai/key` body `{key}` 校验 base64/32 字节并保存；`POST /api/admin/ai/key/reset` 删除全部 `user_ai_configs`/`user_ai_models`、清空平台 token 与选择并生成新密钥。
   - 部署配置来源（`source=env`）时 POST/PUT/reset 返回 40001「由部署配置管理，只读」；审计 action=`ai.settings.manage`、target=`ai_key`、summary「生成/更新 AI 加密密钥」（不含密钥/指纹）。
-- **轮换与重加密**（`ai.SettingsService.GenerateKey/SetKey/rotate`）：兼容密钥文件模式下，已有密钥时重新生成/替换会在事务内 `SELECT ... FOR UPDATE` 全部 `user_ai_configs`，逐行旧密钥解密、新密钥重新加密；任一失败回滚。写密钥文件采用临时文件 + `os.Rename` 原子替换（0600），旧文件备份为 `ai.key.bak`，DB 事务成功后删除备份、失败恢复备份（文件写失败则回滚 DB）；`ai_settings.key_fingerprint` 更新为 SHA-256 指纹（仅诊断/一致性，不存密钥）。统一配置模式没有自动重加密入口：直接修改 `.env` 中的密钥会使既有密文无法解密，必须先备份并按维护流程处理。
-- **保护规则**：无旧密钥但存在 `user_ai_configs` 时返回 40001「存在无法解密的用户 AI 配置，请先恢复旧密钥」，不破坏数据；无旧密钥且无配置时直接保存。管理开关关闭不删除密钥/用户配置，重新开启恢复；启用要求当前 `keyConfigured=true`。
-- **用户侧状态**：`AIConfigView.keyConfigured` 区分「AI 功能未启用」（404/开关关闭）与「管理员尚未配置 AI 密钥」（keyConfigured=false）与「尚未配置 AI 模型」（用户未配置 key）；提交页工具栏、题目提示、AI 设置页据此分别降级，缓存命中的提示仍展示。
+- **轮换与重加密**（`ai.SettingsService.GenerateKey/SetKey/rotate`）：兼容密钥文件模式下，已有密钥时重新生成/替换会在事务内 `SELECT ... FOR UPDATE` 全部 `user_ai_configs`、`user_ai_models` 与 `ai_platform_models` 的非空密文，逐行旧密钥解密、新密钥重新加密；任一失败回滚。重置（`/key/reset`）删除 `user_ai_configs` 与 `user_ai_models`、清空平台 token 并取消当前平台模型选择，保留平台模型元数据。写密钥文件采用临时文件 + `os.Rename` 原子替换（0600），旧文件备份为 `ai.key.bak`，DB 事务成功后删除备份、失败恢复备份（文件写失败则回滚 DB）；`ai_settings.key_fingerprint` 更新为 SHA-256 指纹（仅诊断/一致性，不存密钥）。统一配置模式没有自动重加密入口：直接修改 `.env` 中的密钥会使既有密文无法解密，必须先备份并按维护流程处理；账号备份包含 `user_ai_models`。
+- **保护规则**：无旧密钥但存在 `user_ai_configs`、`user_ai_models` 或 `ai_platform_models` 密文时返回 40001「存在无法解密的 AI 配置，请先恢复旧密钥」，不破坏数据；无旧密钥且无密文时直接保存。管理开关关闭不删除密钥/用户配置，重新开启恢复；启用要求当前 `keyConfigured=true`。
+- **用户侧状态**：`keyConfigured` 区分「AI 功能未启用」（404/开关关闭）与「管理员尚未配置 AI 密钥」（keyConfigured=false）与「尚未配置 AI 模型」（用户没有当前模型）；提交页工具栏、题目提示、AI 设置页据此分别降级，缓存命中的提示仍展示。
 
 ---
 
@@ -1844,8 +1855,8 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 
 **平台 AI 模型**（`/admin/ai/models`，需 `ai.settings.manage`）
 
-- `GET/POST /api/admin/ai/models`、`PUT/DELETE /api/admin/ai/models/:id`、`POST /api/admin/ai/models/:id/test`、`PUT /api/admin/ai/platform-model`。字段：`name`（唯一显示名）、`baseUrl`（OpenAI 兼容接口，到 `/v1` 为止）、`modelName`、`apiKey`、`enabled`。列表/详情只返回 `apiKeyMasked`，不返回明文或密文。
-- 首次新增必须提供 token；更新时 `apiKey` 为空表示保留原密文。连通性测试向 `{baseUrl}/chat/completions` 发一次轻量请求，记录 `lastTestAt/lastTestOk/lastTestError/lastTestLatencyMs`；上游失败仍返回 200 + `{ok:false}`，只有缺密钥（40002）或模型不存在（40400）返回错误。当前选中的模型不能删除；`modelId=null` 取消选择（响应/设置视图字段为 `platformModelId`）；未启用模型不能选择。
+- `GET/POST /api/admin/ai/models`、`PUT/DELETE /api/admin/ai/models/:id`、`POST /api/admin/ai/models/:id/test`、`PUT /api/admin/ai/platform-model`。字段：`name`（唯一显示名）、`protocol`（`openai`/`anthropic`，默认 openai）、`baseUrl`、`modelName`、`apiKey`、`enabled`。OpenAI 兼容地址填到 `/v1`，不能以 `/chat/completions` 结尾；Anthropic 地址填域名或 `/v1`，不能带 `/messages`。列表/详情只返回 `apiKeyMasked`，不返回明文或密文。
+- 首次新增必须提供 token；更新时 `apiKey` 为空表示保留原密文。连通性测试按协议请求 OpenAI `{baseUrl}/chat/completions` 或 Anthropic `{baseUrl}/v1/messages`，记录 `lastTestAt/lastTestOk/lastTestError/lastTestLatencyMs`；上游失败仍返回 200 + `{ok:false}`，只有缺密钥（40002）或模型不存在（40400）返回错误。当前选中的模型不能删除；`modelId=null` 取消选择（响应/设置视图字段为 `platformModelId`）；未启用模型不能选择。
 - AI 初评只在平台 AI 已启用、密钥已配置、已选择启用模型且 `difficulty_settings.ai_assess_enabled=true` 时调用；失败/超时回退 `default_score`，不阻塞创建。显式重评失败不改题目，成功也不改变 `difficultyAuto`。
 - 密钥轮换会同步重加密 `ai_platform_models` 的 token；`POST /api/admin/ai/key/reset` 清空平台 token 并取消选择，保留模型元数据。未配置密钥时平台模型接口返回 40002。
 
@@ -1859,6 +1870,31 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 - 调度器按 `next_run_at` 到期认领并发到 Asynq `jobs` 队列；启动时执行 `Ensure`、`RunScheduler` 和 `ReconcileStale(2h)` 清理陈旧 run。handler 在 Go 代码中注册，本期只有 `problem.difficulty.recalculate`；后续 `user.rating.recalculate` 可复用同一套表、调度与页面。
 - 接口：`GET /api/admin/jobs`、`PUT /api/admin/jobs/:key`、`POST /api/admin/jobs/:key/run`（202 + run；已有活跃 run 或难度重算被关闭返回 40001/409）、`GET /api/admin/jobs/:key/runs`、`GET /api/admin/job-runs`、`GET /api/admin/job-runs/:id`。前端 `/admin/jobs` 展示任务卡片、开关、cron/时区编辑、立即执行、运行历史与进度轮询；非 `system.jobs.manage` 不可见。
 - 难度重算任务只扫描 `difficulty_auto=true` 的题目；`difficulty_settings.enabled=false` 时拒绝执行。每日按 `max_step` 逼近目标分，失败可重试；历史 `source=pass_rate`、`run_id` 指向当次 run，只有分数实际变化才写。
+
+### 6.9 用户 AI 多模型与 Anthropic 协议（2026-11-18）
+
+> 设计：[`docs/superpowers/specs/2026-11-18-user-ai-multi-model-anthropic-design.md`](superpowers/specs/2026-11-18-user-ai-multi-model-anthropic-design.md)；实施计划：[`docs/superpowers/plans/2026-11-18-user-ai-multi-model-anthropic.md`](superpowers/plans/2026-11-18-user-ai-multi-model-anthropic.md)。
+
+- **数据模型**：新增 `user_ai_models`（见 §3.9），一个用户可保存多条“名称 + 协议 + 接口地址 + 模型名 + token”，`(user_id, name)` 唯一，部分唯一索引保证每用户最多一条 `is_active=true`。`ai_platform_models` 增加 `protocol`（默认 `openai`）。旧 `user_ai_configs` 保留并由 `user_ai_models_backfill_v1` 一次性回填为 active 行；新写入只走新表，旧表仅用于回滚和旧接口回退。
+- **用户接口**（登录；AI 开关关闭时统一 404）：
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/ai/models` | `{keyConfigured, activeModelId, models[], providers[]}`；`apiKeyMasked` 脱敏 |
+| POST | `/api/ai/models` | 新增；token 必填；首个模型或 `isActive=true` 设为当前；201 |
+| PUT | `/api/ai/models/:id` | 更新元数据；`apiKey` 为空保留原密文，非空重置 `last_test_*` |
+| DELETE | `/api/ai/models/:id` | 删除；当前模型返回 40001「该模型正在使用，请先切换」 |
+| PUT | `/api/ai/models/:id/active` | 设为当前；事务内清空该用户其他 active |
+| POST | `/api/ai/models/:id/test` | 轻量请求（10s、`max_tokens=16`），更新 `last_test_*`，返回 `{ok,latencyMs,message}` |
+
+- **校验**：名称/模型名 1–100 字符；base URL 1–512、http/https、无 userinfo/查询/片段；`protocol` 只接受 `openai`/`anthropic`（用户模型必须显式填写）；token ≤4096。OpenAI 地址不能以 `/chat/completions` 结尾，Anthropic 地址不能以 `/messages` 或 `/v1/messages` 结尾（只填域名或 `/v1`）。名称重复/参数非法 40001，模型不存在或不属于当前用户 40400；创建模型需要平台密钥，缺失返回 40002；更新时空 token 表示保留原密文，不要求密钥。
+- **当前模型解析**：`ai.Service.chatRequest` 先读 active `user_ai_models`，解密 token 并返回 `ChatRequest{Protocol,BaseURL,APIKey,Model,MaxTokens:4096}`；没有 active 行时回退旧 `user_ai_configs` + `ai_providers`（视为 openai）；仍无配置返回 40001「尚未配置 AI 模型」。协议未知/base URL 非法/空 token 均 40001；密钥解密失败脱敏为 50200。
+- **旧接口兼容**：`GET /api/ai/configs` 返回当前 active 模型的 provider（能按 base URL 匹配内置目录时）、模型名、脱敏 token、`configured`/`keyConfigured`；`POST /api/ai/configs` 有 active 行时更新该行为 openai + provider 目录地址，无 active 行时创建 `provider / model` 模型并设为当前。旧客户端无需改动；新设置页使用 `/ai/models`，提交页工具栏仍用旧 GET 判断是否已配置。
+- **协议与 Anthropic**：`ChatRequest.Protocol` 为空按 openai；`ProtocolClient` 分发到 `OpenAIClient`/`AnthropicClient`，未知协议在发请求前返回 40001。Anthropic 使用 `x-api-key`、`anthropic-version: 2023-06-01`、`/v1/messages`；system 消息抽出拼接；`max_tokens` 必填（未设置默认 4096）；响应拼接 text block；非 2xx/空 content/非法 JSON/超时统一脱敏为上游失败。
+- **平台模型**：`ai_platform_models.protocol` 随 AutoMigrate 加列（默认 openai），管理 API/页面可创建、编辑、列表展示与测试 Anthropic 模型；`resolvePlatformChat` 与题目难度初评使用同一协议客户端。平台模型名称仍全局唯一，当前模型仍只能选择一个。
+- **密钥与备份**：账号备份表清单包含 `user_ai_models`；平台备份自动覆盖。兼容密钥文件模式下轮换重加密 `user_ai_configs`、`user_ai_models`、`ai_platform_models`，重置清空三类密文（平台模型保留元数据）。统一 `.env` 密钥模式仍无自动重加密，修改前必须备份。
+- **前端**：`/settings/ai` 改为“已保存模型”列表 + 新增/编辑 Dialog（名称、协议、地址、模型名、token、可选设为当前），支持预填、设为当前、测试、删除保护与空状态；`/admin/ai` 平台模型弹窗增加协议 Select、列表显示协议 Tag、测试按协议调用。
+- **已知取舍**：用户模型删除当前模型直接拒绝而不是自动切换；同名模型不允许（便于区分多个 token）；测试失败仍返回 200 + `ok=false`；协议/地址修改后旧的 `last_test_*` 保留（换 token 才清空）；历史 OpenAI 地址若已带 `/chat/completions` 不在迁移中改写，编辑时需一次性修正。
 
 ---
 
