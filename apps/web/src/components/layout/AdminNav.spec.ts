@@ -28,6 +28,7 @@ const routes = [
   { path: '/admin/audit', component: { template: '<div />' } },
   { path: '/admin/rating', component: { template: '<div />' } },
   { path: '/admin/ai', component: { template: '<div />' } },
+  { path: '/admin/agents', component: { template: '<div />' } },
   { path: '/problems', component: { template: '<div />' } },
   { path: '/contests', component: { template: '<div />' } },
   { path: '/admin/learning-paths', component: { template: '<div />' } },
@@ -124,6 +125,18 @@ describe('AdminNav', () => {
     expect(auth.can).toHaveBeenCalledWith(PERM.ai.settings.manage)
     expect(wrapper.find('a[href="/admin/ai"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('AI 设置')
+  })
+
+  it('shows the agent management entry only with agent.manage', async () => {
+    let wrapper = await mountNav()
+    expect(wrapper.text()).not.toContain('Agent 管理')
+
+    auth.can.mockImplementation((code) => code === PERM.agent.manage)
+    wrapper = await mountNav()
+    expect(auth.can).toHaveBeenCalledWith(PERM.agent.manage)
+    expect(wrapper.find('a[href="/admin/agents"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Agent 管理')
+    wrapper.unmount()
   })
 
   it('shows the content links by problem/contest permission', async () => {

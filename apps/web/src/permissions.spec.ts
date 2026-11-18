@@ -62,6 +62,7 @@ describe('permission catalog', () => {
       'submission.view_live_contest',
       'submission.rejudge',
       'gamification.config.manage',
+      'agent.manage',
       'learning_path.official.manage',
       'learning_path.admin.read',
       'site.settings.manage',
@@ -96,5 +97,6 @@ describe('permission catalog', () => {
     expect(PERM.gamification.achievement.manage).toBe('gamification.achievement.manage')
     expect(PERM.site.settings.manage).toBe('site.settings.manage')
     expect(PERM.mail.settings.manage).toBe('mail.settings.manage')
+    expect(PERM.agent.manage).toBe('agent.manage')
   })
 })

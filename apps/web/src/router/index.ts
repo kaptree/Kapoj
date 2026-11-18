@@ -359,6 +359,16 @@ export const router = createRouter({
           },
         },
         {
+          path: 'agents',
+          name: 'admin-agents',
+          component: () => import('@/views/AdminAgentsView.vue'),
+          meta: {
+            requiresAuth: true,
+            permission: PERM.agent.manage,
+            title: 'Agent 管理',
+          },
+        },
+        {
           path: 'gamification',
           name: 'gamification-admin',
           component: () => import('@/views/GamificationAdminView.vue'),

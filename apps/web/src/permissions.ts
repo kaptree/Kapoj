@@ -69,6 +69,9 @@ export const PERM = {
   ai: {
     settings: { manage: 'ai.settings.manage' },
   },
+  agent: {
+    manage: 'agent.manage',
+  },
   certificate: {
     manage: 'certificate.manage',
   },
@@ -146,6 +149,7 @@ export const ADMIN_ACCESS_PERMISSIONS: string[] = [
   PERM.learningPath.admin.read,
   PERM.rating.settings.manage,
   PERM.ai.settings.manage,
+  PERM.agent.manage,
   PERM.certificate.manage,
   PERM.site.settings.manage,
   PERM.mail.settings.manage,

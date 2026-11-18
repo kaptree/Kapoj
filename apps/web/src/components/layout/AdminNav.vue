@@ -83,6 +83,13 @@ const aiItem: AdminNavItem = {
   icon: 'pi pi-sparkles',
 }
 
+const agentsItem: AdminNavItem = {
+  key: 'agents',
+  path: '/admin/agents',
+  label: 'Agent 管理',
+  icon: 'pi pi-microchip-ai',
+}
+
 const siteItem: AdminNavItem = {
   key: 'site',
   path: '/admin/site',
@@ -151,6 +158,9 @@ const groups = computed<AdminNavGroup[]>(() => {
   }
   if (auth.can(PERM.ai.settings.manage)) {
     items.push({ key: 'ai', label: 'AI', items: [aiItem] })
+  }
+  if (auth.can(PERM.agent.manage)) {
+    items.push({ key: 'agents', label: 'Agent', items: [agentsItem] })
   }
   if (auth.canAny(GAMIFICATION_MANAGE_PERMISSIONS)) {
     items.push({ key: 'gamification', label: '游戏化', items: [gamificationItem] })
