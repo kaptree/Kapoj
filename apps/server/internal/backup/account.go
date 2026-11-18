@@ -456,8 +456,11 @@ func restoreUserRow(ctx context.Context, reader *Reader, tx pgx.Tx, entry string
 func recalculateAfterAccountRestore(ctx context.Context, tx pgx.Tx) error {
 	if _, err := tx.Exec(ctx, `
 		UPDATE problems AS p
-		SET submit_count = (SELECT COUNT(*) FROM submissions AS s WHERE s.problem_id = p.id),
-		    accept_count = (SELECT COUNT(*) FROM submissions AS s WHERE s.problem_id = p.id AND s.status = 'accepted')`); err != nil {
+		SET submit_count = (SELECT COUNT(*) FROM submissions AS s
+		                    WHERE s.problem_id = p.id AND s.agent_id IS NULL),
+		    accept_count = (SELECT COUNT(*) FROM submissions AS s
+		                    WHERE s.problem_id = p.id AND s.status = 'accepted'
+		                      AND s.agent_id IS NULL)`); err != nil {
 		return err
 	}
 	_, err := tx.Exec(ctx, `

@@ -77,6 +77,18 @@ func insertSubmission(t *testing.T, env *eventsEnv, status string, createdAt tim
 	return id
 }
 
+func insertAgentSubmission(t *testing.T, env *eventsEnv, agentID int64, status string, createdAt time.Time) int64 {
+	t.Helper()
+	var id int64
+	require.NoError(t, env.db.Raw(
+		`INSERT INTO submissions (user_id, problem_id, agent_id, language, code, status, created_at)
+		 VALUES (?, ?, ?, 'cpp', 'int main(){}', ?, ?) RETURNING id`,
+		env.user.ID, env.problem, agentID, status, createdAt,
+	).Scan(&id).Error)
+	require.NotZero(t, id)
+	return id
+}
+
 func coinBalance(t *testing.T, env *eventsEnv) int64 {
 	t.Helper()
 	var coins int64
@@ -362,4 +374,35 @@ func TestFindAcceptedSubmission(t *testing.T) {
 
 	_, err = env.repo.FindAcceptedSubmission(ctx, 999999)
 	assert.ErrorIs(t, err, gamification.ErrSubmissionNotFound)
+}
+
+// TestProblemAndGamificationStatsExcludeAgentSubmissions checks every
+// gamification query that uses submissions as human facts: deduplicated AC
+// count, accepted-submission lookup, and the first-AC gate for coin rewards.
+func TestProblemAndGamificationStatsExcludeAgentSubmissions(t *testing.T) {
+	env := newEventsEnv(t, &fakeEventPublisher{})
+	ctx := context.Background()
+
+	base := time.Now().Add(-2 * time.Hour).UTC().Truncate(time.Microsecond)
+	agentAC := insertAgentSubmission(t, env, 5, "accepted", base)
+	insertSubmission(t, env, "wrong_answer", base.Add(time.Minute))
+
+	count, err := env.repo.CountAcceptedProblems(ctx, env.user.ID)
+	require.NoError(t, err)
+	assert.Zero(t, count, "an Agent AC must not count as a human AC")
+
+	_, err = env.repo.FindAcceptedSubmission(ctx, agentAC)
+	assert.ErrorIs(t, err, gamification.ErrSubmissionNotFound,
+		"Agent submissions must not feed the game event handler")
+
+	humanAC := insertSubmission(t, env, "accepted", base.Add(time.Hour))
+	count, err = env.repo.CountAcceptedProblems(ctx, env.user.ID)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, count)
+
+	earlier, err := env.repo.HasEarlierAccepted(
+		ctx, env.user.ID, env.problem, base.Add(time.Hour), humanAC,
+	)
+	require.NoError(t, err)
+	assert.False(t, earlier, "an earlier Agent AC must not suppress the human first-AC reward")
 }

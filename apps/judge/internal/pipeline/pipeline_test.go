@@ -187,6 +187,36 @@ func TestPipelinePublishesAcceptedGameEvent(t *testing.T) {
 	assert.False(t, ev.OccurredAt.IsZero())
 }
 
+// TestJudgeAgentSubmissionSkipsAcceptCountAndGameEvent proves the pipeline still
+// judges Agent submissions but skips both the problem accept counter and the
+// gamification event. A human submission on the same problem is unaffected.
+func TestJudgeAgentSubmissionSkipsAcceptCountAndGameEvent(t *testing.T) {
+	e := newEnv(t, "traditional", caseSpec{"3\n", 10})
+	e.sb.runFn = func(sandbox.RunRequest) (sandbox.RunResult, error) {
+		return sandbox.RunResult{Output: []byte("3\n")}, nil
+	}
+	agentSub := testutil.InsertAgentSubmission(
+		t, e.pool, e.userID, e.problem, 77, "cpp", "int main(){}", "pending",
+	)
+
+	require.NoError(t, e.pipe.Run(context.Background(), agentSub))
+	got, err := e.repo.FindByID(context.Background(), agentSub)
+	require.NoError(t, err)
+	assert.Equal(t, model.StatusAccepted, got.Status, "Agent submissions still receive a verdict")
+	status, score := submissionResult(t, e.pool, agentSub)
+	assert.Equal(t, model.StatusAccepted, status)
+	assert.Equal(t, 10, score)
+	assert.Zero(t, acceptCount(t, e.pool, e.problem), "an Agent AC must not increment accept_count")
+	assert.Empty(t, e.game.events, "an Agent AC must not publish a game event")
+
+	humanSub := e.submit(t, model.LanguageCPP, "int main(){}")
+	require.NoError(t, e.pipe.Run(context.Background(), humanSub))
+	assert.Equal(t, 1, acceptCount(t, e.pool, e.problem))
+	require.Len(t, e.game.events, 1)
+	assert.Equal(t, humanSub, e.game.events[0].SubmissionID)
+	assert.Equal(t, e.userID, e.game.events[0].UserID)
+}
+
 func TestPipelineDoesNotPublishGameEventForWrongAnswer(t *testing.T) {
 	e := newEnv(t, "traditional", caseSpec{"3\n", 10})
 	sub := e.submit(t, model.LanguageCPP, "int main(){}")

@@ -200,7 +200,8 @@ SELECT t.problem_id AS problem_id,
 FROM (
     SELECT problem_id, user_id, bool_or(status = 'accepted') AS solved
     FROM submissions
-    WHERE problem_id IN ? AND status IN ?`
+    WHERE problem_id IN ? AND status IN ?
+      AND agent_id IS NULL`
 	args := []any{ids, statuses}
 	if !settings.IncludeContest {
 		query += " AND contest_id IS NULL"

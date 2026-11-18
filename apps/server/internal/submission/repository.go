@@ -69,13 +69,25 @@ func (r *gormRepository) Create(ctx context.Context, sub *Submission) error {
 				return err
 			}
 		}
-		res := tx.Model(&problem.Problem{}).Where("id = ?", sub.ProblemID).
-			UpdateColumn("submit_count", gorm.Expr("submit_count + 1"))
-		if res.Error != nil {
-			return res.Error
-		}
-		if res.RowsAffected == 0 {
-			return problem.ErrNotFound
+		if sub.AgentID == nil {
+			res := tx.Model(&problem.Problem{}).Where("id = ?", sub.ProblemID).
+				UpdateColumn("submit_count", gorm.Expr("submit_count + 1"))
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.RowsAffected == 0 {
+				return problem.ErrNotFound
+			}
+		} else {
+			// Agent submissions still require the problem to exist, but they are
+			// not part of the public submit counter.
+			var p problem.Problem
+			if err := tx.Select("id").First(&p, sub.ProblemID).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return problem.ErrNotFound
+				}
+				return err
+			}
 		}
 		return tx.Create(sub).Error
 	})
@@ -118,6 +130,11 @@ func (r *gormRepository) ResetForRejudge(ctx context.Context, id int64, now time
 			}
 			return err
 		}
+		// An Agent submission has no human accept_count to roll back. Refusing
+		// it here keeps an admin retry by ID from corrupting human statistics.
+		if sub.AgentID != nil {
+			return ErrNotRejudgeable
+		}
 		if !sub.Status.Terminal() {
 			return ErrNotRejudgeable
 		}
@@ -158,7 +175,8 @@ func (r *gormRepository) List(ctx context.Context, f ListFilter, offset, limit i
 	q := r.db.WithContext(ctx).Table("submissions AS s").
 		Joins("JOIN users AS u ON u.id = s.user_id").
 		Joins("JOIN problems AS p ON p.id = s.problem_id").
-		Joins("LEFT JOIN contests AS c ON c.id = s.contest_id")
+		Joins("LEFT JOIN contests AS c ON c.id = s.contest_id").
+		Where("s.agent_id IS NULL")
 	if f.ProblemID != 0 {
 		q = q.Where("s.problem_id = ?", f.ProblemID)
 	}
@@ -212,7 +230,7 @@ func (r *gormRepository) FindDetail(ctx context.Context, id int64) (*DetailRow, 
 		Joins("JOIN users AS u ON u.id = s.user_id").
 		Joins("JOIN problems AS p ON p.id = s.problem_id").
 		Joins("LEFT JOIN contests AS c ON c.id = s.contest_id").
-		Where("s.id = ?", id).Scan(&row).Error
+		Where("s.id = ? AND s.agent_id IS NULL", id).Scan(&row).Error
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +243,8 @@ func (r *gormRepository) FindDetail(ctx context.Context, id int64) (*DetailRow, 
 func (r *gormRepository) HasAccepted(ctx context.Context, userID, problemID int64) (bool, error) {
 	var ok bool
 	err := r.db.WithContext(ctx).Raw(
-		`SELECT EXISTS(SELECT 1 FROM submissions WHERE user_id = ? AND problem_id = ? AND status = 'accepted')`,
+		`SELECT EXISTS(SELECT 1 FROM submissions
+		 WHERE user_id = ? AND problem_id = ? AND status = 'accepted' AND agent_id IS NULL)`,
 		userID, problemID,
 	).Scan(&ok).Error
 	return ok, err
@@ -243,7 +262,7 @@ func (r *gormRepository) CountUserActivity(ctx context.Context, userID int64) (t
 		`SELECT COUNT(*) AS total,
 		        COUNT(DISTINCT problem_id) FILTER (WHERE status = 'accepted') AS accepted
 		   FROM submissions
-		  WHERE user_id = ?`, userID,
+		  WHERE user_id = ? AND agent_id IS NULL`, userID,
 	).Scan(&row).Error
 	return row.Total, row.Accepted, err
 }
@@ -253,7 +272,8 @@ func (r *gormRepository) CountUserActivity(ctx context.Context, userID int64) (t
 func (r *gormRepository) ListCodeSubmissionTimes(ctx context.Context, userID int64, since time.Time) ([]time.Time, error) {
 	times := make([]time.Time, 0)
 	err := r.db.WithContext(ctx).Model(&Submission{}).
-		Where("user_id = ? AND language <> ? AND created_at >= ?", userID, LanguageAnswer, since).
+		Where("user_id = ? AND agent_id IS NULL AND language <> ? AND created_at >= ?",
+			userID, LanguageAnswer, since).
 		Order("created_at").
 		Pluck("created_at", &times).Error
 	return times, err

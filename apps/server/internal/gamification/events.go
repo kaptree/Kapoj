@@ -91,7 +91,7 @@ func (r *Repository) FindAcceptedSubmission(ctx context.Context, submissionID in
 	var sub AcceptedSubmission
 	err := r.db.WithContext(ctx).Raw(
 		`SELECT id, user_id, problem_id, created_at
-		 FROM submissions WHERE id = ? AND status = 'accepted'`,
+		 FROM submissions WHERE id = ? AND status = 'accepted' AND agent_id IS NULL`,
 		submissionID,
 	).Scan(&sub).Error
 	if err != nil {
@@ -113,6 +113,7 @@ func (r *Repository) HasEarlierAccepted(
 		`SELECT EXISTS(
 			SELECT 1 FROM submissions
 			WHERE user_id = ? AND problem_id = ? AND status = 'accepted'
+			  AND agent_id IS NULL
 			  AND (created_at < ? OR (created_at = ? AND id < ?))
 		)`, userID, problemID, createdAt, createdAt, submissionID,
 	).Scan(&exists).Error

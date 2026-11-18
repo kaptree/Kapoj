@@ -544,3 +544,42 @@ func TestRecalculateJobRegistrationAndHandler(t *testing.T) {
 	assert.Equal(t, 17, e.reloadProblem(t, p.ID).Difficulty,
 		"a manual run must jump straight to the target score")
 }
+
+// TestDifficultyAggregateExcludesAgentSubmissions proves Agent solves do not
+// enter the human pass-rate sample: 100 Agent ACs plus one human WA leave the
+// problem below the minimum sample, and adding nine human ACs yields exactly
+// ten human users.
+func TestDifficultyAggregateExcludesAgentSubmissions(t *testing.T) {
+	e := newRecalcEnv(t)
+	p := e.problem(t, "recalc-agent-isolation", 50, 50, true)
+	now := time.Now().UTC()
+	agentID := int64(9)
+	for _, u := range e.users(t, 100) {
+		require.NoError(t, e.db.Create(&submission.Submission{
+			UserID: u.ID, ProblemID: p.ID, AgentID: &agentID,
+			Language: submission.LanguageGo, Code: "package main",
+			Status: submission.StatusAccepted, CreatedAt: now, JudgedAt: &now,
+		}).Error)
+	}
+	humanWA := e.user(t)
+	e.submission(t, humanWA.ID, p.ID, submission.StatusWrongAnswer, nil, now)
+
+	stats, err := e.svc.RecalculateAll(context.Background(), difficulty.RecalculateOptions{FullStep: true}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, difficulty.Stats{Total: 1, Processed: 1, SkippedNoSample: 1}, stats,
+		"only the single human user is sampled")
+	assert.Equal(t, 50, e.reloadProblem(t, p.ID).Difficulty)
+	assert.Empty(t, e.history(t, p.ID))
+
+	for _, u := range e.users(t, 9) {
+		e.submission(t, u.ID, p.ID, submission.StatusAccepted, nil, now)
+	}
+
+	stats, err = e.svc.RecalculateAll(context.Background(), difficulty.RecalculateOptions{FullStep: true}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, difficulty.Stats{Total: 1, Processed: 1, Changed: 1}, stats)
+	rows := e.history(t, p.ID)
+	require.Len(t, rows, 1)
+	assert.Equal(t, 10, rows[0].SampleUsers, "Agent submissions must not add users to the sample")
+	assert.Equal(t, 9, rows[0].AcceptedUsers, "Agent accepts must not add accepted users")
+}

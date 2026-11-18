@@ -59,8 +59,8 @@ func (r *Repository) Claim(ctx context.Context, id int64) (*model.Submission, *m
 	err := r.pool.QueryRow(ctx, `
 		UPDATE submissions SET status = 'judging'
 		WHERE id = $1 AND status IN ('pending', 'judging')
-		RETURNING id, user_id, problem_id, language, code, answer, status`, id,
-	).Scan(&sub.ID, &sub.UserID, &sub.ProblemID, &language, &sub.Code, &sub.Answer, &status)
+		RETURNING id, user_id, problem_id, language, code, answer, status, agent_id`, id,
+	).Scan(&sub.ID, &sub.UserID, &sub.ProblemID, &language, &sub.Code, &sub.Answer, &status, &sub.AgentID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil, nil, ErrSkip
 	}
@@ -110,7 +110,8 @@ func (r *Repository) Claim(ctx context.Context, id int64) (*model.Submission, *m
 }
 
 // Finish writes a terminal result. It is idempotent: only a submission still
-// in judging is updated, and accept_count is incremented at most once.
+// in judging is updated, and accept_count is incremented at most once for a
+// human submission. Agent submissions are recorded but never counted.
 func (r *Repository) Finish(ctx context.Context, id int64, in FinishInput) error {
 	cases := in.Cases
 	if cases == nil {
@@ -128,10 +129,11 @@ func (r *Repository) Finish(ctx context.Context, id int64, in FinishInput) error
 
 	var problemID int64
 	var wasCounted bool
+	var agentID *int64
 	err = tx.QueryRow(ctx, `
-		SELECT accepted_counted FROM submissions
+		SELECT accepted_counted, agent_id FROM submissions
 		WHERE id = $1 AND status = 'judging'
-		FOR UPDATE`, id).Scan(&wasCounted)
+		FOR UPDATE`, id).Scan(&wasCounted, &agentID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return tx.Commit(ctx)
 	}
@@ -146,7 +148,10 @@ func (r *Repository) Finish(ctx context.Context, id int64, in FinishInput) error
 			score = $5,
 			error_message = $6,
 			judge_result_json = $7::jsonb,
-			accepted_counted = CASE WHEN $2::varchar = 'accepted' THEN true ELSE accepted_counted END,
+			accepted_counted = CASE
+				WHEN $2::varchar = 'accepted' AND agent_id IS NULL THEN true
+				ELSE accepted_counted
+			END,
 			judged_at = now()
 		WHERE id = $1 AND status = 'judging'
 		RETURNING problem_id`,
@@ -158,7 +163,7 @@ func (r *Repository) Finish(ctx context.Context, id int64, in FinishInput) error
 	if err != nil {
 		return err
 	}
-	if in.Status == model.StatusAccepted && !wasCounted {
+	if in.Status == model.StatusAccepted && !wasCounted && agentID == nil {
 		if _, err := tx.Exec(ctx,
 			`UPDATE problems SET accept_count = accept_count + 1 WHERE id = $1`, problemID); err != nil {
 			return err

@@ -403,6 +403,42 @@ func TestHasEarlierAccepted(t *testing.T) {
 	assert.True(t, ok)
 }
 
+// TestProblemAndGamificationStatsExcludeAgentSubmissions covers the companion's
+// first-AC check: an earlier Agent AC must not suppress the human AC reaction.
+func TestProblemAndGamificationStatsExcludeAgentSubmissions(t *testing.T) {
+	g := testutil.PG(t)
+	repo := companion.NewGormRepository(g)
+	ctx := context.Background()
+	uid := newUser(t, g, "agent_first_ac")
+	pid := newProblem(t, g, "agent-first-ac-problem")
+
+	base := time.Date(2026, 11, 17, 10, 0, 0, 0, time.UTC)
+	insertSub := func(status string, agentID *int64, createdAt time.Time) int64 {
+		var id int64
+		require.NoError(t, g.Raw(
+			`INSERT INTO submissions (user_id, problem_id, agent_id, language, code, status, created_at, judged_at)
+			 VALUES (?, ?, ?, 'cpp', '', ?, ?, ?) RETURNING id`,
+			uid, pid, agentID, status, createdAt, createdAt,
+		).Scan(&id).Error)
+		return id
+	}
+
+	insertSub("wrong_answer", nil, base)
+	insertSub("accepted", ptrInt64(6), base.Add(time.Hour))
+	humanAC := insertSub("accepted", nil, base.Add(2*time.Hour))
+
+	earlier, err := repo.HasEarlierAccepted(ctx, uid, pid, base.Add(2*time.Hour), humanAC)
+	require.NoError(t, err)
+	assert.False(t, earlier, "an earlier Agent AC must not hide the human first AC")
+
+	insertSub("accepted", nil, base.Add(3*time.Hour))
+	earlier, err = repo.HasEarlierAccepted(ctx, uid, pid, base.Add(4*time.Hour), humanAC)
+	require.NoError(t, err)
+	assert.True(t, earlier, "human AC rows still count as earlier")
+}
+
+func ptrInt64(v int64) *int64 { return &v }
+
 func TestSubmissionInfoMissing(t *testing.T) {
 	g := testutil.PG(t)
 	repo := companion.NewGormRepository(g)

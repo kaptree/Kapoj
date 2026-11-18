@@ -392,6 +392,7 @@ func (r *gormRepository) ProblemStats(ctx context.Context, contestID int64) (map
 		  ON p.contest_id = s.contest_id AND p.user_id = s.user_id
 		JOIN contests c ON c.id = s.contest_id
 		WHERE s.contest_id = ?
+		  AND s.agent_id IS NULL
 		  AND s.status NOT IN ('pending', 'judging')
 		  AND s.created_at >= c.start_time
 		  AND s.created_at < c.end_time
@@ -424,6 +425,7 @@ func (r *gormRepository) UserProblemStats(ctx context.Context, contestID, userID
 		JOIN contests c ON c.id = s.contest_id
 		WHERE s.contest_id = ?
 		  AND s.user_id = ?
+		  AND s.agent_id IS NULL
 		  AND s.status NOT IN ('pending', 'judging')
 		  AND s.created_at >= c.start_time
 		  AND s.created_at < c.end_time

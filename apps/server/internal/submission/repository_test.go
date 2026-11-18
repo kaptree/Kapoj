@@ -3,6 +3,7 @@ package submission_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -73,4 +74,147 @@ func TestRepositoryMarkSystemErrorOnlyMovesOpenSubmissions(t *testing.T) {
 	gotDone, _ := repo.FindByID(context.Background(), done.ID)
 	assert.Equal(t, submission.StatusAccepted, gotDone.Status)
 	assert.Empty(t, gotDone.ErrorMessage)
+}
+
+// TestHumanSubmissionQueriesExcludeAgent pins the boundary between human and
+// Agent submissions: one user submits a wrong answer while their Agent solves
+// the same problem. The human views, AC lookup, activity counters and problem
+// counters must all ignore the Agent row, while human rows keep behaving as
+// before.
+func TestHumanSubmissionQueriesExcludeAgent(t *testing.T) {
+	g := testutil.PG(t)
+	ctx := context.Background()
+	repo := submission.NewGormRepository(g)
+	problems := problem.NewGormRepository(g)
+	p := publicProblem("agent-isolation")
+	require.NoError(t, problems.Create(ctx, p))
+	createUser(t, g, 7)
+
+	human := &submission.Submission{
+		UserID: 7, ProblemID: p.ID, Language: submission.LanguageGo,
+		Code: "package main", Status: submission.StatusWrongAnswer,
+	}
+	require.NoError(t, repo.Create(ctx, human))
+
+	agentID := int64(11)
+	agent := &submission.Submission{
+		UserID: 7, ProblemID: p.ID, AgentID: &agentID, Language: submission.LanguageGo,
+		Code: "package main", Status: submission.StatusAccepted,
+	}
+	require.NoError(t, repo.Create(ctx, agent))
+
+	// An Agent submission must still validate the problem but must not inflate
+	// the public submit counter.
+	missingAgent := &submission.Submission{
+		UserID: 7, ProblemID: 999999, AgentID: &agentID, Language: submission.LanguageGo,
+		Code: "package main", Status: submission.StatusPending,
+	}
+	assert.ErrorIs(t, repo.Create(ctx, missingAgent), problem.ErrNotFound)
+	var submitCount int
+	require.NoError(t, g.Model(&problem.Problem{}).Where("id = ?", p.ID).
+		Select("submit_count").Scan(&submitCount).Error)
+	assert.Equal(t, 1, submitCount, "only the human submission increments submit_count")
+
+	rows, total, err := repo.List(ctx, submission.ListFilter{
+		ProblemID: p.ID, ViewerID: 7, CanSeeHidden: true,
+	}, 0, 20)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, total, "the public list hides Agent submissions")
+	require.Len(t, rows, 1)
+	assert.Equal(t, human.ID, rows[0].ID)
+
+	_, err = repo.FindDetail(ctx, agent.ID)
+	assert.ErrorIs(t, err, submission.ErrNotFound)
+	detail, err := repo.FindDetail(ctx, human.ID)
+	require.NoError(t, err)
+	assert.Equal(t, human.ID, detail.ID)
+
+	accepted, err := repo.HasAccepted(ctx, 7, p.ID)
+	require.NoError(t, err)
+	assert.False(t, accepted, "an Agent AC is not the user's AC")
+
+	totalSubs, acceptedSubs, err := repo.CountUserActivity(ctx, 7)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), totalSubs)
+	assert.Equal(t, int64(0), acceptedSubs)
+
+	times, err := repo.ListCodeSubmissionTimes(ctx, 7, time.Now().Add(-time.Hour))
+	require.NoError(t, err)
+	assert.Len(t, times, 1)
+
+	// Human submissions still count exactly as before.
+	humanAC := &submission.Submission{
+		UserID: 7, ProblemID: p.ID, Language: submission.LanguageGo,
+		Code: "package main", Status: submission.StatusAccepted,
+	}
+	require.NoError(t, repo.Create(ctx, humanAC))
+
+	accepted, err = repo.HasAccepted(ctx, 7, p.ID)
+	require.NoError(t, err)
+	assert.True(t, accepted)
+
+	totalSubs, acceptedSubs, err = repo.CountUserActivity(ctx, 7)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), totalSubs)
+	assert.Equal(t, int64(1), acceptedSubs)
+
+	times, err = repo.ListCodeSubmissionTimes(ctx, 7, time.Now().Add(-time.Hour))
+	require.NoError(t, err)
+	assert.Len(t, times, 2)
+
+	require.NoError(t, g.Model(&problem.Problem{}).Where("id = ?", p.ID).
+		Select("submit_count").Scan(&submitCount).Error)
+	assert.Equal(t, 2, submitCount)
+}
+
+// TestAgentSubmissionCannotBeRejudged ensures an admin retry by ID cannot roll
+// back a human accept_count through an Agent row, while human rows remain
+// rejudgeable.
+func TestAgentSubmissionCannotBeRejudged(t *testing.T) {
+	g := testutil.PG(t)
+	ctx := context.Background()
+	repo := submission.NewGormRepository(g)
+	problems := problem.NewGormRepository(g)
+	p := publicProblem("agent-rejudge")
+	require.NoError(t, problems.Create(ctx, p))
+	createUser(t, g, 8)
+
+	agentID := int64(3)
+	agent := &submission.Submission{
+		UserID: 8, ProblemID: p.ID, AgentID: &agentID, Language: submission.LanguageGo,
+		Code: "package main", Status: submission.StatusAccepted, AcceptedCounted: true,
+	}
+	require.NoError(t, repo.Create(ctx, agent))
+	require.NoError(t, g.Model(&problem.Problem{}).Where("id = ?", p.ID).
+		Update("accept_count", 1).Error)
+
+	_, err := repo.ResetForRejudge(ctx, agent.ID, time.Now())
+	assert.ErrorIs(t, err, submission.ErrNotRejudgeable)
+
+	got, err := repo.FindByID(ctx, agent.ID)
+	require.NoError(t, err)
+	assert.Equal(t, submission.StatusAccepted, got.Status, "a rejected rejudge leaves the row untouched")
+	var acceptCount int
+	require.NoError(t, g.Model(&problem.Problem{}).Where("id = ?", p.ID).
+		Select("accept_count").Scan(&acceptCount).Error)
+	assert.Equal(t, 1, acceptCount, "an Agent rejudge must not roll back accept_count")
+
+	human := &submission.Submission{
+		UserID: 8, ProblemID: p.ID, Language: submission.LanguageGo,
+		Code: "package main", Status: submission.StatusAccepted, AcceptedCounted: true,
+	}
+	require.NoError(t, repo.Create(ctx, human))
+
+	reset, err := repo.ResetForRejudge(ctx, human.ID, time.Now())
+	require.NoError(t, err)
+	assert.Equal(t, human.ID, reset.ID)
+	assert.Equal(t, int64(8), reset.UserID)
+	assert.Equal(t, p.ID, reset.ProblemID)
+	var status submission.Status
+	require.NoError(t, g.Model(&submission.Submission{}).Where("id = ?", human.ID).
+		Select("status").Scan(&status).Error)
+	assert.Equal(t, submission.StatusPending, status)
+	require.NoError(t, g.Model(&problem.Problem{}).Where("id = ?", p.ID).
+		Select("accept_count").Scan(&acceptCount).Error)
+	assert.Zero(t, acceptCount, "human rejudge still rolls back accept_count")
 }

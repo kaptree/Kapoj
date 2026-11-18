@@ -182,7 +182,7 @@ func (r *gormRepository) StatusCounts(
 		SELECT s.status AS status, COUNT(*) AS count
 		FROM submissions s
 		LEFT JOIN contests c ON c.id = s.contest_id
-		WHERE s.problem_id = ? AND `+visibleSubmissionClause+`
+		WHERE s.problem_id = ? AND s.agent_id IS NULL AND `+visibleSubmissionClause+`
 		GROUP BY s.status`,
 		problemID, f.ViewerID, f.CanViewLiveContest, now, now,
 	).Scan(&rows).Error
@@ -203,7 +203,7 @@ func (r *gormRepository) ListSubmissionMetrics(
 		FROM submissions s
 		LEFT JOIN contests c ON c.id = s.contest_id
 		JOIN users u ON u.id = s.user_id
-		WHERE s.problem_id = ? AND ` + visibleSubmissionClause
+		WHERE s.problem_id = ? AND s.agent_id IS NULL AND ` + visibleSubmissionClause
 	args := []any{problemID, f.ViewerID, f.CanViewLiveContest, now, now}
 
 	var total int64

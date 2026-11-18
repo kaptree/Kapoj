@@ -82,6 +82,9 @@ CREATE TABLE IF NOT EXISTS submissions (
   score int NOT NULL DEFAULT 0,
   code_length int NOT NULL DEFAULT 0,
   accepted_counted boolean NOT NULL DEFAULT false,
+  agent_id bigint,
+  agent_attempt_id bigint,
+  agent_settled boolean NOT NULL DEFAULT false,
   error_message text NOT NULL DEFAULT '',
   judge_result_json jsonb NOT NULL DEFAULT '[]',
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -89,6 +92,9 @@ CREATE TABLE IF NOT EXISTS submissions (
 )`)
 	mustExec(t, pool, `ALTER TABLE submissions ADD COLUMN IF NOT EXISTS code_length int NOT NULL DEFAULT 0`)
 	mustExec(t, pool, `ALTER TABLE submissions ADD COLUMN IF NOT EXISTS accepted_counted boolean NOT NULL DEFAULT false`)
+	mustExec(t, pool, `ALTER TABLE submissions ADD COLUMN IF NOT EXISTS agent_id bigint`)
+	mustExec(t, pool, `ALTER TABLE submissions ADD COLUMN IF NOT EXISTS agent_attempt_id bigint`)
+	mustExec(t, pool, `ALTER TABLE submissions ADD COLUMN IF NOT EXISTS agent_settled boolean NOT NULL DEFAULT false`)
 	mustExec(t, pool, `
 CREATE TABLE IF NOT EXISTS testcase_generations (
   id bigserial PRIMARY KEY,
@@ -195,6 +201,19 @@ func InsertSubmissionAt(t *testing.T, pool *pgxpool.Pool, userID, problemID int6
 		`INSERT INTO submissions (user_id, problem_id, language, code, status, created_at)
 		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
 		userID, problemID, language, code, status, created,
+	).Scan(&id)
+	require.NoError(t, err)
+	return id
+}
+
+// InsertAgentSubmission creates a pending Agent submission owned by agentID.
+func InsertAgentSubmission(t *testing.T, pool *pgxpool.Pool, userID, problemID, agentID int64, language, code, status string) int64 {
+	t.Helper()
+	var id int64
+	err := pool.QueryRow(context.Background(),
+		`INSERT INTO submissions (user_id, problem_id, agent_id, language, code, status, created_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, now()) RETURNING id`,
+		userID, problemID, agentID, language, code, status,
 	).Scan(&id)
 	require.NoError(t, err)
 	return id

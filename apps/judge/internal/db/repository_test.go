@@ -123,6 +123,54 @@ func TestFinishWrongAnswerDoesNotCountAccept(t *testing.T) {
 	assert.Equal(t, model.StatusWrongAnswer, got.Status)
 }
 
+// TestJudgeAgentSubmissionDoesNotCountAccept verifies the judge-side boundary:
+// Agent submissions are claimed and finished normally, but they never increment
+// problems.accept_count and never flip accepted_counted.
+func TestJudgeAgentSubmissionDoesNotCountAccept(t *testing.T) {
+	pool := testutil.PG(t)
+	repo := db.New(pool)
+	user := testutil.InsertUser(t, pool)
+	problem := testutil.InsertProblem(t, pool, "traditional", 1000, 256, "")
+	sub := testutil.InsertAgentSubmission(t, pool, user, problem, 42, "cpp", "x", "pending")
+
+	claimed, _, _, err := repo.Claim(context.Background(), sub)
+	require.NoError(t, err)
+	require.NotNil(t, claimed.AgentID, "Claim must load agent_id")
+	assert.Equal(t, int64(42), *claimed.AgentID)
+
+	require.NoError(t, repo.Finish(context.Background(), sub, db.FinishInput{
+		Status: model.StatusAccepted, TimeUsedMS: 7, MemoryUsedKB: 64, Score: 100,
+		Cases: []model.JudgeCaseResult{{TestcaseID: 1, Status: model.StatusAccepted, Score: 100}},
+	}))
+	assert.Zero(t, acceptCount(t, repo, problem), "an Agent AC must not increment accept_count")
+
+	var counted bool
+	require.NoError(t, pool.QueryRow(context.Background(),
+		`SELECT accepted_counted FROM submissions WHERE id = $1`, sub).Scan(&counted))
+	assert.False(t, counted, "an Agent submission must never be marked accepted_counted")
+
+	got, err := repo.FindByID(context.Background(), sub)
+	require.NoError(t, err)
+	assert.Equal(t, model.StatusAccepted, got.Status, "Agent submissions are still judged normally")
+	assert.NotNil(t, got.JudgedAt)
+
+	var timeMS, score int
+	require.NoError(t, pool.QueryRow(context.Background(),
+		`SELECT time_used_ms, score FROM submissions WHERE id = $1`, sub).Scan(&timeMS, &score))
+	assert.Equal(t, 7, timeMS)
+	assert.Equal(t, 100, score)
+
+	// A human submission on the same problem still counts as before.
+	human := testutil.InsertSubmission(t, pool, user, problem, "cpp", "x", "pending")
+	claimed, _, _, err = repo.Claim(context.Background(), human)
+	require.NoError(t, err)
+	assert.Nil(t, claimed.AgentID)
+	require.NoError(t, repo.Finish(context.Background(), human, db.FinishInput{
+		Status: model.StatusAccepted,
+	}))
+	assert.Equal(t, 1, acceptCount(t, repo, problem))
+}
+
 func TestFinishUnknownSubmissionIsNoop(t *testing.T) {
 	pool := testutil.PG(t)
 	repo := db.New(pool)

@@ -369,6 +369,7 @@ func (r *Repository) HasEarlierAccepted(ctx context.Context, userID, problemID i
 		`SELECT EXISTS(
 			SELECT 1 FROM submissions
 			WHERE user_id = ? AND problem_id = ? AND status = 'accepted'
+			  AND agent_id IS NULL
 			  AND id <> ?
 			  AND (created_at < ? OR (created_at = ? AND id < ?))
 		)`, userID, problemID, submissionID, createdAt, createdAt, submissionID,

@@ -42,6 +42,7 @@ type statSubmission struct {
 	codeLength int
 	createdAt  time.Time
 	contestID  *int64
+	agentID    *int64
 }
 
 func seedStatsSubmission(t *testing.T, g *gorm.DB, problemID int64, s statSubmission) int64 {
@@ -53,10 +54,10 @@ func seedStatsSubmission(t *testing.T, g *gorm.DB, problemID int64, s statSubmis
 	var id int64
 	require.NoError(t, g.Raw(
 		`INSERT INTO submissions
-		   (user_id, problem_id, contest_id, language, code, status,
+		   (user_id, problem_id, contest_id, agent_id, language, code, status,
 		    time_used_ms, memory_used_kb, code_length, created_at)
-		 VALUES (?, ?, ?, ?, 'code', ?, ?, ?, ?, ?) RETURNING id`,
-		s.userID, problemID, s.contestID, language, s.status,
+		 VALUES (?, ?, ?, ?, ?, 'code', ?, ?, ?, ?, ?) RETURNING id`,
+		s.userID, problemID, s.contestID, s.agentID, language, s.status,
 		s.timeMS, s.memoryKB, s.codeLength, s.createdAt,
 	).Scan(&id).Error)
 	return id
@@ -223,4 +224,38 @@ func TestSubmissionStatsHiddenProblemNeedsPermission(t *testing.T) {
 
 	_, err = e.svc.SubmissionStats(context.Background(), manager, p.ID, problem.SubmissionStatsQuery{})
 	assert.NoError(t, err)
+}
+
+// TestProblemAndGamificationStatsExcludeAgentSubmissions covers the problem
+// package's human statistics: neither status distribution nor the public
+// submission table may expose an Agent submission.
+func TestProblemAndGamificationStatsExcludeAgentSubmissions(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	p := e.createPublic(t, "stats-agent-isolation")
+	seedStatsUser(t, e.db, 1, "stats-human", "Human")
+	seedStatsUser(t, e.db, 2, "stats-agent-owner", "Owner")
+	now := time.Now()
+
+	seedStatsSubmission(t, e.db, p.ID, statSubmission{
+		userID: 1, status: "wrong_answer", timeMS: 10, createdAt: now.Add(-2 * time.Minute),
+	})
+	seedStatsSubmission(t, e.db, p.ID, statSubmission{
+		userID: 2, status: "accepted", agentID: ptrID(21),
+		timeMS: 5, createdAt: now.Add(-time.Minute),
+	})
+
+	stats, err := e.svc.Statistics(ctx, guest, p.ID)
+	require.NoError(t, err)
+	counts := statusCountsByStatus(stats.StatusCounts)
+	assert.EqualValues(t, 1, counts["wrong_answer"].Count)
+	assert.NotContains(t, counts, "accepted", "Agent AC must not appear in status counts")
+	assert.Len(t, stats.StatusCounts, 1)
+
+	page, err := e.svc.SubmissionStats(ctx, guest, p.ID, problem.SubmissionStatsQuery{})
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, page.Total, "Agent submissions are hidden from the metrics table")
+	require.Len(t, page.Items, 1)
+	assert.Equal(t, int64(1), page.Items[0].UserID)
+	assert.Equal(t, "wrong_answer", page.Items[0].Status)
 }

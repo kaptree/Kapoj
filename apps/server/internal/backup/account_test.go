@@ -298,3 +298,57 @@ func TestAccountRestoreRejectsIdentityConflict(t *testing.T) {
 	require.Equal(t, backup.RestoreFailed, job.Status)
 	assert.Contains(t, job.Error, "占用")
 }
+
+// TestAccountRestoreRecomputeExcludesAgentSubmissions checks the post-restore
+// counter rebuild: submit_count and accept_count must be derived from human
+// submissions only, even when another user's Agent solved the same problem.
+func TestAccountRestoreRecomputeExcludesAgentSubmissions(t *testing.T) {
+	e := newBackupEnv(t)
+	ctx := context.Background()
+	a := &user.User{Username: "recount-a", Nickname: "A", Email: "recount-a@example.com", PasswordHash: "a"}
+	b := &user.User{Username: "recount-b", Nickname: "B", Email: "recount-b@example.com", PasswordHash: "b"}
+	require.NoError(t, e.db.Create(a).Error)
+	require.NoError(t, e.db.Create(b).Error)
+
+	p := &problem.Problem{
+		Title: "重算题", Slug: "recount-problem", StatementMD: "题干",
+		Type: problem.TypeTraditional, Difficulty: 1, TimeLimitMS: 1000,
+		MemoryLimitMB: 256, IsPublic: true, CreatedBy: a.ID, Answers: dbtypes.List[string]{},
+	}
+	require.NoError(t, e.db.Create(p).Error)
+
+	require.NoError(t, e.db.Create(&submission.Submission{
+		UserID: a.ID, ProblemID: p.ID, Language: submission.LanguageCPP,
+		Code: "int main(){}", Status: submission.StatusWrongAnswer,
+	}).Error)
+	require.NoError(t, e.db.Create(&submission.Submission{
+		UserID: b.ID, ProblemID: p.ID, Language: submission.LanguageCPP,
+		Code: "int main(){}", Status: submission.StatusAccepted,
+	}).Error)
+	agentID := int64(17)
+	require.NoError(t, e.db.Create(&submission.Submission{
+		UserID: b.ID, ProblemID: p.ID, AgentID: &agentID,
+		Language: submission.LanguageCPP, Code: "int main(){}", Status: submission.StatusAccepted,
+	}).Error)
+
+	pkg, err := e.svc.StartCreate(ctx, backup.KindAccount, &a.ID, 1)
+	require.NoError(t, err)
+	require.Equal(t, backup.PackageReady, pkg.Status)
+
+	require.NoError(t, e.db.Model(&problem.Problem{}).Where("id = ?", p.ID).
+		Updates(map[string]any{"submit_count": 99, "accept_count": 99}).Error)
+
+	job, err := e.svc.StartRestore(ctx, backup.KindAccount, 1, &pkg.ID, "", &a.ID)
+	require.NoError(t, err)
+	require.Equal(t, backup.RestoreSuccess, job.Status, job.Error)
+
+	var got problem.Problem
+	require.NoError(t, e.db.First(&got, p.ID).Error)
+	assert.Equal(t, 2, got.SubmitCount, "human submissions only: a WA + b AC")
+	assert.Equal(t, 1, got.AcceptCount, "b's Agent AC must not count as a human accept")
+
+	var agentRows int64
+	require.NoError(t, e.db.Model(&submission.Submission{}).
+		Where("agent_id = ?", agentID).Count(&agentRows).Error)
+	assert.EqualValues(t, 1, agentRows, "the Agent submission itself must survive the restore")
+}

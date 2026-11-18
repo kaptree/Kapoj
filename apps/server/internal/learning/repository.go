@@ -402,7 +402,7 @@ func (r *Repository) AcceptedProblemIDs(ctx context.Context, userID int64) (map[
 	out := make(map[int64]struct{})
 	var ids []int64
 	if err := r.db.WithContext(ctx).Table("submissions").
-		Where("user_id = ? AND status = ?", userID, "accepted").
+		Where("user_id = ? AND status = ? AND agent_id IS NULL", userID, "accepted").
 		Distinct("problem_id").
 		Pluck("problem_id", &ids).Error; err != nil {
 		return nil, err

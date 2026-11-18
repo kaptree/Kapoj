@@ -164,7 +164,7 @@ func (p *Pipeline) finish(ctx context.Context, sub *model.Submission, in db.Fini
 		return err
 	}
 	p.publish(ctx, sub.ID)
-	if in.Status == model.StatusAccepted {
+	if in.Status == model.StatusAccepted && sub.AgentID == nil {
 		p.publishGameAccepted(ctx, sub)
 	}
 	return nil

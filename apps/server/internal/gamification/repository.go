@@ -20,7 +20,7 @@ func (r *Repository) CountAcceptedProblems(ctx context.Context, userID int64) (i
 	var count int64
 	err := r.db.WithContext(ctx).Raw(
 		`SELECT COUNT(DISTINCT problem_id) FROM submissions
-		 WHERE user_id = ? AND status = 'accepted'`,
+		 WHERE user_id = ? AND status = 'accepted' AND agent_id IS NULL`,
 		userID,
 	).Scan(&count).Error
 	return count, err
