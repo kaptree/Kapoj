@@ -56,6 +56,15 @@ func (e *taskEnv) addAC(t *testing.T, problemID int64, judgedAt time.Time) {
 	).Error)
 }
 
+func (e *taskEnv) addAgentAC(t *testing.T, agentID, problemID int64, judgedAt time.Time) {
+	t.Helper()
+	require.NoError(t, e.db.Exec(
+		`INSERT INTO submissions (user_id, problem_id, agent_id, language, code, status, created_at, judged_at)
+		 VALUES (?, ?, ?, 'cpp', 'int main() {}', ?, now(), ?)`,
+		e.user.ID, problemID, agentID, submission.StatusAccepted, judgedAt,
+	).Error)
+}
+
 func taskInput(title string, problemIDs []int64, reward int64, start, end time.Time) gamification.TaskInput {
 	return gamification.TaskInput{
 		Title:         title,
@@ -165,6 +174,68 @@ func TestTaskClaimAndAutoComplete(t *testing.T) {
 	// 已完成任务不能再次领取。
 	_, err = e.svc.ClaimTask(ctx, e.user.ID, task.ID)
 	assertCode(t, err, 40001)
+}
+
+// TestTaskProgressExcludesAgentAcceptedSubmissions ensures Agent ACs cannot
+// advance a human task, complete it, or release its coin reward. Human ACs in
+// the same claimed window still work.
+func TestTaskProgressExcludesAgentAcceptedSubmissions(t *testing.T) {
+	ctx := context.Background()
+	e := newTaskEnv(t)
+	p1 := e.addProblem(t, "task-agent-p1", true)
+	p2 := e.addProblem(t, "task-agent-p2", true)
+	now := time.Now()
+	task := e.createTask(t, taskInput("Agent 不计任务", []int64{p1.ID, p2.ID}, 90,
+		now.Add(-time.Hour), now.Add(time.Hour)))
+	item := e.claim(t, task.ID)
+
+	// Both problems have an in-window Agent AC. Neither progress nor reward may
+	// move; before the fix these two rows completed the task.
+	e.addAgentAC(t, 77, p1.ID, item.ClaimedAt.Add(time.Second))
+	e.addAgentAC(t, 77, p2.ID, item.ClaimedAt.Add(2*time.Second))
+	require.NoError(t, e.svc.EvaluateUser(ctx, e.user.ID))
+
+	items, err := e.svc.ListTasks(ctx, gamification.Viewer{UserID: e.user.ID}, false)
+	require.NoError(t, err)
+	claimed := findTask(t, items, task.ID)
+	assert.Equal(t, gamification.TaskStatusClaimed, claimed.Status)
+	assert.EqualValues(t, 0, claimed.Progress, "Agent ACs must not advance task progress")
+	assert.Nil(t, claimed.CompletedAt)
+	balance, err := e.repo.Balance(ctx, e.user.ID)
+	require.NoError(t, err)
+	assert.Zero(t, balance, "Agent ACs must not pay a task reward")
+	var record gamification.UserTaskRecord
+	require.NoError(t, e.db.Where("user_id = ? AND task_id = ?", e.user.ID, task.ID).
+		First(&record).Error)
+	assert.Equal(t, gamification.TaskRecordClaimed, record.Status)
+
+	// One human AC advances progress by one; the Agent AC on the same problem
+	// does not double-count it.
+	e.addAC(t, p1.ID, item.ClaimedAt.Add(3*time.Second))
+	require.NoError(t, e.svc.EvaluateUser(ctx, e.user.ID))
+	items, err = e.svc.ListTasks(ctx, gamification.Viewer{UserID: e.user.ID}, false)
+	require.NoError(t, err)
+	partial := findTask(t, items, task.ID)
+	assert.Equal(t, gamification.TaskStatusClaimed, partial.Status)
+	assert.EqualValues(t, 1, partial.Progress)
+
+	// The second human AC completes the task and pays exactly once.
+	e.addAC(t, p2.ID, item.ClaimedAt.Add(4*time.Second))
+	require.NoError(t, e.svc.EvaluateUser(ctx, e.user.ID))
+	items, err = e.svc.ListTasks(ctx, gamification.Viewer{UserID: e.user.ID}, false)
+	require.NoError(t, err)
+	done := findTask(t, items, task.ID)
+	assert.Equal(t, gamification.TaskStatusCompleted, done.Status)
+	assert.EqualValues(t, 2, done.Progress)
+	assert.NotNil(t, done.CompletedAt)
+	balance, err = e.repo.Balance(ctx, e.user.ID)
+	require.NoError(t, err)
+	assert.EqualValues(t, 90, balance)
+	var txCount int64
+	require.NoError(t, e.db.Model(&gamification.CoinTransaction{}).
+		Where("user_id = ? AND reason = ? AND ref_type = ? AND ref_id = ?",
+			e.user.ID, "task", "task", task.ID).Count(&txCount).Error)
+	assert.EqualValues(t, 1, txCount)
 }
 
 func TestTaskDeadlineAndPreClaimAC(t *testing.T) {

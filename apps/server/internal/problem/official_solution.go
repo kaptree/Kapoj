@@ -136,7 +136,8 @@ func (s *OfficialSolutionService) Purchase(ctx context.Context, userID, problemI
 		}
 		var acceptedCount int64
 		if err := tx.WithContext(ctx).Table("submissions").
-			Where("user_id = ? AND problem_id = ? AND status = ?", userID, problemID, "accepted").
+			Where("user_id = ? AND problem_id = ? AND status = ? AND agent_id IS NULL",
+				userID, problemID, "accepted").
 			Count(&acceptedCount).Error; err != nil {
 			return err
 		}
@@ -223,11 +224,12 @@ func (s *OfficialSolutionService) view(ctx context.Context, userID, problemID in
 	return v, nil
 }
 
-// hasAccepted 报告用户是否已通过该题。
+// hasAccepted 报告用户是否已通过该题；Agent 提交不算用户的 AC。
 func (s *OfficialSolutionService) hasAccepted(ctx context.Context, userID, problemID int64) (bool, error) {
 	var n int64
 	err := s.db.WithContext(ctx).Table("submissions").
-		Where("user_id = ? AND problem_id = ? AND status = ?", userID, problemID, "accepted").
+		Where("user_id = ? AND problem_id = ? AND status = ? AND agent_id IS NULL",
+			userID, problemID, "accepted").
 		Count(&n).Error
 	return n > 0, err
 }

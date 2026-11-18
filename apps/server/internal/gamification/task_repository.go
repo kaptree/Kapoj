@@ -243,7 +243,7 @@ func countTaskProgress(
 	}
 	var count int64
 	err := db.Table("submissions").
-		Where("user_id = ? AND status = ?", userID, "accepted").
+		Where("user_id = ? AND status = ? AND agent_id IS NULL", userID, "accepted").
 		Where("judged_at >= ? AND judged_at < ?", claimedAt, endTime).
 		Where("problem_id IN ?", problemIDs).
 		Distinct("problem_id").

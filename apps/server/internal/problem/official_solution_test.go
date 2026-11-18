@@ -62,6 +62,16 @@ func (e *osEnv) addAccepted(t *testing.T, userID, problemID int64) {
 	).Error)
 }
 
+// addAgentAccepted marks the user's Agent as having accepted the problem.
+func (e *osEnv) addAgentAccepted(t *testing.T, userID, problemID, agentID int64) {
+	t.Helper()
+	require.NoError(t, e.db.Exec(
+		`INSERT INTO submissions (user_id, problem_id, agent_id, language, code, status, created_at)
+		 VALUES (?, ?, ?, 'cpp', 'int main(){}', 'accepted', now())`,
+		userID, problemID, agentID,
+	).Error)
+}
+
 // addUnlock records a direct unlock row for the user/problem.
 func (e *osEnv) addUnlock(t *testing.T, userID, problemID int64) {
 	t.Helper()
@@ -295,6 +305,49 @@ func TestOfficialSolutionPurchase(t *testing.T) {
 	assert.Equal(t, "purchased", v.Access)
 	assert.Equal(t, int64(0), e.coins(t, buyer))
 	assert.Equal(t, int64(1), e.unlockCount(t, buyer, p.ID))
+}
+
+// TestOfficialSolutionIgnoresAgentAcceptedSubmissions proves an Agent AC is not
+// the user's AC: the solution stays locked and a purchase is still charged.
+// A human AC on a control user still grants free access.
+func TestOfficialSolutionIgnoresAgentAcceptedSubmissions(t *testing.T) {
+	e := newOSEnv(t)
+	ctx := context.Background()
+	creator := int64(80)
+	agentOwner := int64(81)
+	human := int64(82)
+	e.addUser(t, creator, 0)
+	e.addUser(t, agentOwner, 200)
+	e.addUser(t, human, 200)
+
+	p := e.addProblem(t, "agent-solution", creator, true, 100, "AGENT_MD", "AGENT_CODE")
+	e.addAgentAccepted(t, agentOwner, p.ID, 44)
+
+	// The Agent AC grants neither access nor a free purchase.
+	v, err := e.svc.Get(ctx, agentOwner, p.ID, problem.Viewer{}, false)
+	require.NoError(t, err)
+	assert.Equal(t, "locked", v.Access, "an Agent AC must not unlock the official solution")
+	assert.True(t, v.CanPurchase)
+	assert.Nil(t, v.SolutionMD)
+
+	v, err = e.svc.Purchase(ctx, agentOwner, p.ID, problem.Viewer{}, false)
+	require.NoError(t, err)
+	assert.Equal(t, "purchased", v.Access)
+	assert.Equal(t, int64(100), e.coins(t, agentOwner), "an Agent AC must not make the purchase free")
+	assert.Equal(t, int64(1), e.unlockCount(t, agentOwner, p.ID))
+
+	// Control: a human AC still reports accepted and purchases for free.
+	e.addAccepted(t, human, p.ID)
+	v, err = e.svc.Get(ctx, human, p.ID, problem.Viewer{}, false)
+	require.NoError(t, err)
+	assert.Equal(t, "accepted", v.Access)
+	assert.Equal(t, "AGENT_MD", *v.SolutionMD)
+
+	v, err = e.svc.Purchase(ctx, human, p.ID, problem.Viewer{}, false)
+	require.NoError(t, err)
+	assert.Equal(t, "accepted", v.Access)
+	assert.Equal(t, int64(200), e.coins(t, human))
+	assert.Zero(t, e.unlockCount(t, human, p.ID))
 }
 
 func TestOfficialSolutionPurchaseConcurrentSingleCharge(t *testing.T) {
