@@ -12,6 +12,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/agent"
 	"github.com/kaptree/kapoj/apps/server/internal/dbtypes"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
+	"github.com/kaptree/kapoj/apps/server/internal/submission"
 )
 
 func (f *apiFixture) createAgentWithToken(t *testing.T, username string) (int64, string, string) {
@@ -154,6 +155,105 @@ func TestAgentTokenRoutes(t *testing.T) {
 	w, resp = f.do(http.MethodDelete, "/api/agents/me/token", jwt, "")
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	w, resp = f.do(http.MethodGet, "/api/agent/me", token, "")
+	require.Equal(t, http.StatusUnauthorized, w.Code, w.Body.String())
+	assert.EqualValues(t, 40102, resp["code"])
+}
+
+func TestAgentSubmitQueryAndAbandonRoutes(t *testing.T) {
+	f := newAPIFixture(t)
+	_, token, _ := f.createAgentWithToken(t, "api-submit-owner")
+	p := f.seedAPIProblem("api-submit-problem")
+
+	w, resp := f.do(http.MethodPost, "/api/agent/problems/random", token, "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	attemptID := int64(dataObject(t, resp)["attempt"].(map[string]any)["id"].(float64))
+
+	w, resp = f.do(http.MethodPost,
+		fmt.Sprintf("/api/agent/attempts/%d/submissions", attemptID), token,
+		`{"language":"cpp","code":"int main(){return 0;"}`)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	submitted := dataObject(t, resp)
+	submissionID := int64(submitted["submissionId"].(float64))
+	assert.NotZero(t, submissionID)
+	assert.Equal(t, "pending", submitted["status"])
+	assert.EqualValues(t, 1, submitted["attemptsUsed"])
+	assert.EqualValues(t, agent.MaxAttempts-1, submitted["attemptsRemaining"])
+	assert.Equal(t, false, submitted["exhausted"])
+
+	w, resp = f.do(http.MethodGet,
+		fmt.Sprintf("/api/agent/submissions/%d", submissionID), token, "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	view := dataObject(t, resp)
+	assert.EqualValues(t, submissionID, view["id"])
+	assert.EqualValues(t, p.ID, view["problemId"])
+	assert.Equal(t, "pending", view["status"])
+	assert.EqualValues(t, 1, view["attemptsUsed"])
+	assert.EqualValues(t, agent.MaxAttempts-1, view["attemptsRemaining"])
+	assert.Equal(t, false, view["exhausted"])
+	assert.Nil(t, view["ratingDelta"])
+	assert.EqualValues(t, 0, view["timeUsedMs"])
+	assert.EqualValues(t, 0, view["memoryUsedKb"])
+	assert.EqualValues(t, 0, view["score"])
+	assert.Equal(t, "", view["errorMessage"])
+	assert.Nil(t, view["judgedAt"])
+
+	// A second submission is refused while the first one is unsettled.
+	w, resp = f.do(http.MethodPost,
+		fmt.Sprintf("/api/agent/attempts/%d/submissions", attemptID), token,
+		`{"language":"cpp","code":"int main(){}"}`)
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	assert.EqualValues(t, 40001, resp["code"])
+	assert.Equal(t, "当前提交正在评测，请等待结果", resp["message"])
+
+	// The Task 6 worker is simulated by settling the terminal row directly.
+	require.NoError(t, f.db.Model(&submission.Submission{}).Where("id = ?", submissionID).
+		Updates(map[string]any{
+			"status":        submission.StatusWrongAnswer,
+			"agent_settled": true,
+			"judged_at":     time.Now(),
+		}).Error)
+
+	_, otherToken, _ := f.createAgentWithToken(t, "api-submit-other")
+
+	w, resp = f.do(http.MethodGet,
+		fmt.Sprintf("/api/agent/submissions/%d", submissionID), otherToken, "")
+	require.Equal(t, http.StatusNotFound, w.Code, w.Body.String())
+	assert.EqualValues(t, 40400, resp["code"])
+
+	w, resp = f.do(http.MethodPost,
+		fmt.Sprintf("/api/agent/attempts/%d/submissions", attemptID), otherToken,
+		`{"language":"cpp","code":"int main(){}"}`)
+	require.Equal(t, http.StatusNotFound, w.Code, w.Body.String())
+	assert.EqualValues(t, 40400, resp["code"])
+
+	w, resp = f.do(http.MethodPost,
+		fmt.Sprintf("/api/agent/attempts/%d/abandon", attemptID), token, "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	abandoned := dataObject(t, resp)
+	assert.Equal(t, "abandoned", abandoned["status"])
+	assert.EqualValues(t, 1, abandoned["attemptsUsed"])
+	assert.EqualValues(t, agent.MaxAttempts-1, abandoned["attemptsRemaining"])
+	require.NotNil(t, abandoned["ratingDelta"])
+	assert.EqualValues(t, agent.FailureDelta(1500, p.Difficulty), abandoned["ratingDelta"])
+
+	w, resp = f.do(http.MethodPost,
+		fmt.Sprintf("/api/agent/attempts/%d/abandon", attemptID), token, "")
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	assert.EqualValues(t, 40001, resp["code"])
+	assert.Contains(t, resp["message"], "不可放弃")
+
+	w, resp = f.do(http.MethodPost,
+		fmt.Sprintf("/api/agent/attempts/%d/submissions", attemptID), token,
+		`{"language":"cpp","code":"int main(){}"}`)
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	assert.EqualValues(t, 40001, resp["code"])
+
+	w, resp = f.do(http.MethodGet, "/api/agent/submissions/not-a-number", token, "")
+	require.Equal(t, http.StatusNotFound, w.Code, w.Body.String())
+	assert.EqualValues(t, 40400, resp["code"])
+
+	w, resp = f.do(http.MethodPost,
+		fmt.Sprintf("/api/agent/attempts/%d/submissions", attemptID), "", "")
 	require.Equal(t, http.StatusUnauthorized, w.Code, w.Body.String())
 	assert.EqualValues(t, 40102, resp["code"])
 }

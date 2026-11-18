@@ -11,6 +11,7 @@ import (
 const (
 	agentRateLimitPerMinute = 10
 	limiterActionClaim      = "claim"
+	limiterActionSubmit     = "submit"
 )
 
 // RedisLimiter implements a fixed-window per-Agent action limiter. Each window

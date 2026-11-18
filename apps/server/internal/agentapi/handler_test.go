@@ -19,6 +19,8 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/agent"
 	"github.com/kaptree/kapoj/apps/server/internal/auth"
 	"github.com/kaptree/kapoj/apps/server/internal/config"
+	"github.com/kaptree/kapoj/apps/server/internal/contest"
+	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/router"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
@@ -45,7 +47,8 @@ func newAPIFixture(t *testing.T) *apiFixture {
 	t.Cleanup(func() { _ = rdb.Close() })
 	store, err := storage.NewLocal(t.TempDir())
 	require.NoError(t, err)
-	svc := agent.NewService(g, nil, nil, nil, nil)
+	svc := agent.NewService(g,
+		problem.NewGormRepository(g), contest.NewGormRepository(g), nil, nil)
 	h := router.New(router.Deps{
 		DB: g, Redis: rdb, Storage: store, Enqueuer: noopQueue{}, Agent: svc,
 		Config: &config.Config{

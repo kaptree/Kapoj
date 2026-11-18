@@ -11,7 +11,10 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/kaptree/kapoj/apps/server/internal/agent"
+	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
+	"github.com/kaptree/kapoj/apps/server/internal/problem"
+	"github.com/kaptree/kapoj/apps/server/internal/submission"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
 )
 
@@ -30,9 +33,18 @@ type agentFixture struct {
 
 func newAgentFixture(t *testing.T) *agentFixture {
 	t.Helper()
+	return newAgentFixtureWithDeps(t, nil, nil)
+}
+
+func newAgentFixtureWithDeps(
+	t *testing.T, queue submission.Enqueuer, limiter agent.Limiter,
+) *agentFixture {
+	t.Helper()
 	g := testutil.PG(t)
 	clock := &testClock{now: time.Date(2026, 5, 6, 7, 8, 9, 0, time.UTC)}
-	svc := agent.NewService(g, nil, nil, nil, nil,
+	svc := agent.NewService(g,
+		problem.NewGormRepository(g), contest.NewGormRepository(g),
+		queue, limiter,
 		agent.WithClock(clock.time), agent.WithClaimTimeout(5*time.Minute))
 	return &agentFixture{t: t, db: g, svc: svc, clock: clock}
 }

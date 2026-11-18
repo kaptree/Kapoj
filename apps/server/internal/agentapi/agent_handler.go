@@ -1,6 +1,7 @@
 package agentapi
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -19,6 +20,9 @@ func RegisterAgentRoutes(public gin.IRouter, svc *agent.Service) {
 	group := public.Group("/agent", requireAgentToken(svc))
 	group.GET("/me", h.me)
 	group.POST("/problems/random", h.claim)
+	group.POST("/attempts/:id/submissions", h.submit)
+	group.GET("/submissions/:id", h.submission)
+	group.POST("/attempts/:id/abandon", h.abandon)
 }
 
 type agentHandler struct {
@@ -77,6 +81,70 @@ func (h *agentHandler) claim(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, result)
+}
+
+func (h *agentHandler) submit(c *gin.Context) {
+	auth, ok := h.currentAgent(c)
+	if !ok {
+		return
+	}
+	attemptID, ok := agentPathID(c, "id")
+	if !ok {
+		return
+	}
+	in, ok := httpx.BindJSON[agent.SubmissionInput](c)
+	if !ok {
+		return
+	}
+	result, err := h.svc.Submit(c.Request.Context(), auth.Agent.ID, attemptID, in)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.Created(c, result)
+}
+
+func (h *agentHandler) submission(c *gin.Context) {
+	auth, ok := h.currentAgent(c)
+	if !ok {
+		return
+	}
+	submissionID, ok := agentPathID(c, "id")
+	if !ok {
+		return
+	}
+	view, err := h.svc.Submission(c.Request.Context(), auth.Agent.ID, submissionID)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, view)
+}
+
+func (h *agentHandler) abandon(c *gin.Context) {
+	auth, ok := h.currentAgent(c)
+	if !ok {
+		return
+	}
+	attemptID, ok := agentPathID(c, "id")
+	if !ok {
+		return
+	}
+	result, err := h.svc.Abandon(c.Request.Context(), auth.Agent.ID, attemptID)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, result)
+}
+
+func agentPathID(c *gin.Context, name string) (int64, bool) {
+	id, err := strconv.ParseInt(c.Param(name), 10, 64)
+	if err != nil || id <= 0 {
+		httpx.Fail(c, httpx.ErrNotFound)
+		return 0, false
+	}
+	return id, true
 }
 
 func (h *agentHandler) currentAgent(c *gin.Context) (*agent.AuthAgent, bool) {
