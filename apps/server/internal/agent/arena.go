@@ -335,6 +335,17 @@ func (s *Service) Abandon(
 		if attempt.Status != AttemptActive {
 			return httpx.ErrValidation("当前题目不可放弃")
 		}
+		// Any unsettled submission is still in flight, including a terminal
+		// verdict the settlement worker has not consumed yet. Check this before
+		// the deadline branch so a late accepted verdict cannot be expired and
+		// timeout-penalized before settlement solves the problem.
+		inflight, err := hasUnsettledSubmissionTx(tx, agentID, attempt.ID)
+		if err != nil {
+			return err
+		}
+		if inflight {
+			return httpx.ErrValidation("当前题目正在评测，请等待结果")
+		}
 		if !attempt.DeadlineAt.After(now) {
 			if _, err := s.expireAttemptTx(tx, &a, &attempt, now); err != nil {
 				return err
@@ -342,13 +353,6 @@ func (s *Service) Abandon(
 			// Commit the expiry and penalty before reporting the timeout.
 			expiredErr = httpx.ErrValidation("题目已超时，请重新领取")
 			return nil
-		}
-		inflight, err := hasUnsettledSubmissionTx(tx, agentID, attempt.ID)
-		if err != nil {
-			return err
-		}
-		if inflight {
-			return httpx.ErrValidation("当前题目正在评测，请等待结果")
 		}
 
 		res := tx.Model(&AgentProblemAttempt{}).

@@ -446,6 +446,44 @@ func TestAgentRunWorkersRespondToContext(t *testing.T) {
 	}
 }
 
+func TestAgentAbandonUnsettledAcceptedSkipsExpiry(t *testing.T) {
+	f := newAgentFixture(t)
+	ctx := context.Background()
+	owner := f.user("abandon-unsettled-ac", "active")
+	view := f.create(owner, "Abandon Unsettled AC Agent")
+	p := f.seedProblem(seedProblemOpts{Slug: "abandon-unsettled-ac-problem", Difficulty: 50, Testcases: 1})
+	attempt := f.seedAttempt(view.ID, p.ID, agent.AttemptActive)
+	subID := f.seedJudgedSubmission(view.ID, attempt.ID, p.ID, submission.StatusAccepted,
+		f.clock.now.Add(-30*time.Second), false)
+
+	_, err := f.svc.Abandon(ctx, view.ID, attempt.ID)
+	appErr := requireAppError(t, err, 400, 40001)
+	assert.Equal(t, "当前题目正在评测，请等待结果", appErr.Message)
+
+	var stored agent.AgentProblemAttempt
+	require.NoError(t, f.db.First(&stored, attempt.ID).Error)
+	assert.Equal(t, agent.AttemptActive, stored.Status, "an in-flight AC blocks expiry")
+	assert.True(t, stored.DeadlineAt.Equal(attempt.DeadlineAt))
+	assert.Empty(t, failureHistory(t, f, view.ID))
+	assert.Equal(t, 1500, f.loadAgent(view.ID).Rating)
+
+	// The worker later consumes the accepted submission: the attempt becomes
+	// solved with a solve history only, never a timeout plus a solve.
+	n, err := f.svc.SettleOnce(ctx, 10)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
+
+	require.NoError(t, f.db.First(&stored, attempt.ID).Error)
+	assert.Equal(t, agent.AttemptSolved, stored.Status)
+	assert.Empty(t, failureHistory(t, f, view.ID))
+
+	history := f.solveHistory(view.ID)
+	require.Len(t, history, 1)
+	require.NotNil(t, history[0].SubmissionID)
+	assert.Equal(t, subID, *history[0].SubmissionID)
+	assert.Equal(t, 1500+agent.SolveDelta(1500, p.Difficulty), f.loadAgent(view.ID).Rating)
+}
+
 func TestAgentSettlementRatingFloor(t *testing.T) {
 	f := newAgentFixture(t)
 	ctx := context.Background()
