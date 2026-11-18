@@ -4,6 +4,7 @@ package aiapi
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -65,6 +66,12 @@ func RegisterRoutes(r gin.IRouter, s *ai.Service, opts ...Options) {
 
 	group.GET("/configs", h.getConfig)
 	group.POST("/configs", h.saveConfig)
+	group.GET("/models", h.listUserModels)
+	group.POST("/models", h.createUserModel)
+	group.PUT("/models/:id", h.updateUserModel)
+	group.DELETE("/models/:id", h.deleteUserModel)
+	group.PUT("/models/:id/active", h.setActiveUserModel)
+	group.POST("/models/:id/test", h.testUserModel)
 	group.POST("/complete", h.complete)
 	group.POST("/format", h.format)
 	group.POST("/optimize", h.optimize)
@@ -176,34 +183,127 @@ func currentIsSuper(c *gin.Context) bool {
 	return access != nil && access.IsSuper
 }
 
+// getConfig 保留旧 GET /ai/configs 兼容：读取当前 active 用户模型的 provider
+// （能按 base URL 映射到内置 provider 时）、模型名与脱敏 token。
 func (h *handler) getConfig(c *gin.Context) {
-	claims, ok := middleware.CurrentClaims(c)
+	userID, ok := currentUserID(c)
 	if !ok {
-		httpx.Fail(c, httpx.ErrUnauthorized)
 		return
 	}
-	view, err := h.svc.GetConfig(c.Request.Context(), claims.UserID)
+	list, err := h.svc.ListUserModels(c.Request.Context(), userID)
 	if err != nil {
 		httpx.Fail(c, err)
 		return
 	}
+	view := &ai.ConfigView{
+		KeyConfigured: list.KeyConfigured,
+		Providers:     list.Providers,
+	}
+	if model := activeUserModel(list); model != nil {
+		view.Configured = true
+		view.Provider = providerCodeForModel(list.Providers, *model)
+		view.ModelName = model.ModelName
+		view.APIKeyMasked = model.APIKeyMasked
+	}
 	httpx.OK(c, view)
 }
 
+// saveConfig 保留旧 POST /ai/configs 语义：provider + modelName + apiKey。
+// 已有 active 模型时更新该行（协议固定 openai、base URL 取 provider 目录）；
+// 否则创建一条 openai 模型并设为 active。旧客户端的空 key 仍表示保留原密文。
 func (h *handler) saveConfig(c *gin.Context) {
-	claims, ok := middleware.CurrentClaims(c)
+	userID, ok := currentUserID(c)
 	if !ok {
-		httpx.Fail(c, httpx.ErrUnauthorized)
 		return
 	}
 	in, ok := httpx.BindJSON[ai.SaveConfigInput](c)
 	if !ok {
 		return
 	}
-	view, err := h.svc.SaveConfig(c.Request.Context(), claims.UserID, in)
+
+	list, err := h.svc.ListUserModels(c.Request.Context(), userID)
 	if err != nil {
 		httpx.Fail(c, err)
 		return
 	}
-	httpx.OK(c, view)
+
+	code := strings.TrimSpace(in.Provider)
+	if code == "" {
+		httpx.Fail(c, httpx.ErrValidation("服务商不能为空"))
+		return
+	}
+	provider, found := providerByCode(list.Providers, code)
+	if !found {
+		httpx.Fail(c, httpx.ErrValidation("未知的服务商"))
+		return
+	}
+
+	modelName := strings.TrimSpace(in.ModelName)
+	if modelName == "" {
+		modelName = provider.DefaultModel
+	}
+	if modelName == "" {
+		httpx.Fail(c, httpx.ErrValidation("模型名不能为空"))
+		return
+	}
+
+	apiKey := strings.TrimSpace(in.APIKey)
+	if active := activeUserModel(list); active != nil {
+		view, err := h.svc.UpdateUserModel(c.Request.Context(), userID, active.ID, ai.UserModelInput{
+			Name:      active.Name,
+			Protocol:  protocolOpenAI,
+			BaseURL:   provider.BaseURL,
+			ModelName: modelName,
+			APIKey:    apiKey,
+		})
+		if err != nil {
+			httpx.Fail(c, err)
+			return
+		}
+		httpx.OK(c, legacyConfigView(list, view, code))
+		return
+	}
+
+	if apiKey == "" {
+		httpx.Fail(c, httpx.ErrValidation("API Key 不能为空"))
+		return
+	}
+	view, err := h.svc.CreateUserModel(c.Request.Context(), userID, ai.UserModelInput{
+		Name:      legacyUserModelName(provider, modelName),
+		Protocol:  protocolOpenAI,
+		BaseURL:   provider.BaseURL,
+		ModelName: modelName,
+		APIKey:    apiKey,
+		IsActive:  true,
+	})
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, legacyConfigView(list, view, code))
+}
+
+// protocolOpenAI 与 ai 包协议常量一致；旧配置接口只写入 OpenAI 兼容模型。
+const protocolOpenAI = "openai"
+
+// providerByCode 在内置 provider 目录中按 code 查找可用项。
+func providerByCode(providers []ai.ProviderOption, code string) (ai.ProviderOption, bool) {
+	for _, provider := range providers {
+		if provider.Code == code {
+			return provider, true
+		}
+	}
+	return ai.ProviderOption{}, false
+}
+
+// legacyConfigView 由模型视图构造旧接口响应。
+func legacyConfigView(list *ai.UserModelsView, model *ai.UserModelView, providerCode string) *ai.ConfigView {
+	return &ai.ConfigView{
+		Configured:    true,
+		KeyConfigured: list.KeyConfigured,
+		Provider:      providerCode,
+		ModelName:     model.ModelName,
+		APIKeyMasked:  model.APIKeyMasked,
+		Providers:     list.Providers,
+	}
 }

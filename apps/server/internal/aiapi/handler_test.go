@@ -30,11 +30,18 @@ const testJWTSecret = "0123456789abcdef0123456789abcdef"
 
 func newAIHandler(t *testing.T) (http.Handler, *gorm.DB) {
 	t.Helper()
+	return newAIHandlerWithClient(t, nil)
+}
+
+// newAIHandlerWithClient 构造带指定 ChatClient 的测试引擎；测试用户模型的
+// 连通性接口需要非 nil client。
+func newAIHandlerWithClient(t *testing.T, client ai.ChatClient) (http.Handler, *gorm.DB) {
+	t.Helper()
 	g := testutil.PG(t)
 	require.NoError(t, ai.SeedProviders(context.Background(), g))
 	km, err := ai.NewKeyManager(base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")), "")
 	require.NoError(t, err)
-	svc := ai.NewService(g, km, nil, nil)
+	svc := ai.NewService(g, km, nil, client)
 
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
@@ -149,6 +156,12 @@ func TestAIRoutesDisabledReturn404(t *testing.T) {
 	routes := []struct{ method, path, body string }{
 		{http.MethodGet, "/api/ai/configs", ""},
 		{http.MethodPost, "/api/ai/configs", `{"provider":"deepseek","apiKey":"x"}`},
+		{http.MethodGet, "/api/ai/models", ""},
+		{http.MethodPost, "/api/ai/models", `{"name":"x"}`},
+		{http.MethodPut, "/api/ai/models/1", `{"name":"x"}`},
+		{http.MethodDelete, "/api/ai/models/1", ""},
+		{http.MethodPut, "/api/ai/models/1/active", ""},
+		{http.MethodPost, "/api/ai/models/1/test", ""},
 		{http.MethodPost, "/api/ai/complete", `{}`},
 		{http.MethodPost, "/api/ai/format", `{}`},
 		{http.MethodPost, "/api/ai/optimize", `{}`},
