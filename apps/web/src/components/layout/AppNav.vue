@@ -32,6 +32,7 @@ const primaryItems: NavItem[] = [
   { key: 'contests', path: '/contests', label: '比赛', icon: 'pi pi-trophy' },
   { key: 'learning-paths', path: '/learning-paths', label: '学习路线', icon: 'pi pi-sitemap' },
   { key: 'leaderboard', path: '/leaderboard', label: '排行榜', icon: 'pi pi-chart-line' },
+  { key: 'agents', path: '/agents', label: 'Agents', icon: 'pi pi-microchip-ai' },
 ]
 
 const growthItems: NavItem[] = [

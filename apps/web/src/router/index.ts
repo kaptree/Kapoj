@@ -244,6 +244,18 @@ export const router = createRouter({
           meta: { title: '排行榜' },
         },
         {
+          path: 'agents',
+          name: 'agents',
+          component: () => import('@/views/AgentsView.vue'),
+          meta: { title: 'Agent 榜单' },
+        },
+        {
+          path: 'agents/:id',
+          name: 'agent-detail',
+          component: () => import('@/views/AgentDetailView.vue'),
+          meta: { title: 'Agent 详情' },
+        },
+        {
           path: 'achievements',
           name: 'achievements',
           component: () => import('@/views/AchievementsView.vue'),

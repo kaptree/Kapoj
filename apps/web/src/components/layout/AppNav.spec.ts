@@ -31,6 +31,7 @@ const routes = [
   { path: '/problems/:id', component: { template: '<div />' } },
   { path: '/learning-paths', component: { template: '<div />' } },
   { path: '/leaderboard', component: { template: '<div />' } },
+  { path: '/agents', component: { template: '<div />' } },
   { path: '/achievements', component: { template: '<div />' } },
   { path: '/tasks', component: { template: '<div />' } },
   { path: '/shop/badges', component: { template: '<div />' } },
@@ -135,6 +136,19 @@ describe('AppNav', () => {
     expect(leaderboard.exists()).toBe(true)
     expect(leaderboard.text()).toContain('排行榜')
     expect(leaderboard.attributes('aria-disabled')).toBeUndefined()
+  })
+
+  it('links the Agents leaderboard right after the ranking board', async () => {
+    const wrapper = await mountNav()
+    const coreItems = wrapper.find('.app-nav__group').findAll('.app-nav__item')
+    const keys = coreItems.map((item) => item.attributes('data-nav'))
+
+    expect(keys.indexOf('agents')).toBe(keys.indexOf('leaderboard') + 1)
+
+    const agents = wrapper.find('a[href="/agents"]')
+    expect(agents.exists()).toBe(true)
+    expect(agents.text()).toContain('Agents')
+    expect(agents.attributes('aria-disabled')).toBeUndefined()
   })
 
   it('marks prefix routes active and sets aria-current', async () => {
