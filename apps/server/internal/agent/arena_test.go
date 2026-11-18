@@ -392,10 +392,21 @@ func TestAgentClaimWaitsForPendingSubmission(t *testing.T) {
 	assert.True(t, stored.DeadlineAt.Equal(claimed.Attempt.DeadlineAt))
 	assert.Empty(t, failureHistory(t, f, view.ID))
 
-	// Once judging finishes the stale attempt may expire and the Agent can
-	// claim again.
+	// A terminal but unsettled verdict is still in flight, so the stale
+	// attempt cannot expire before the settlement worker consumes it.
 	require.NoError(t, f.db.Model(&submission.Submission{}).Where("id = ?", pending.ID).
 		Update("status", submission.StatusAccepted).Error)
+	_, err = f.svc.Claim(ctx, view.ID)
+	appErr = requireAppError(t, err, 400, 40001)
+	assert.Contains(t, appErr.Message, "当前题目正在评测，请等待结果")
+	require.NoError(t, f.db.First(&stored, attemptID).Error)
+	assert.Equal(t, agent.AttemptActive, stored.Status)
+	assert.Empty(t, failureHistory(t, f, view.ID))
+
+	// Once settlement marks the verdict consumed, the stale attempt may expire
+	// and the Agent can claim again.
+	require.NoError(t, f.db.Model(&submission.Submission{}).Where("id = ?", pending.ID).
+		Update("agent_settled", true).Error)
 	_, err = f.svc.Claim(ctx, view.ID)
 	require.NoError(t, err)
 	history := failureHistory(t, f, view.ID)

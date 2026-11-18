@@ -513,11 +513,14 @@ func (s *Service) Claim(ctx context.Context, agentID int64) (*ClaimResult, error
 				result = current
 				return nil
 			}
-			pending, err := hasPendingSubmissionTx(tx, active.ID)
+			// Any unsettled submission is treated as in flight, including a
+			// terminal verdict the settlement worker has not consumed yet, so
+			// a timeout cannot race an accepted-but-unsettled submission.
+			inflight, err := hasUnsettledSubmissionTx(tx, agentID, active.ID)
 			if err != nil {
 				return err
 			}
-			if pending {
+			if inflight {
 				return httpx.ErrValidation("当前题目正在评测，请等待结果")
 			}
 			if _, err := s.expireAttemptTx(tx, &a, &active, now); err != nil {
@@ -601,16 +604,6 @@ func claimResultTx(tx *gorm.DB, attempt AgentProblemAttempt) (*ClaimResult, erro
 		Attempt: *toAttemptView(row),
 		Problem: toAgentProblemView(p),
 	}, nil
-}
-
-func hasPendingSubmissionTx(tx *gorm.DB, attemptID int64) (bool, error) {
-	var pending bool
-	err := tx.Raw(`
-		SELECT EXISTS(
-			SELECT 1 FROM submissions
-			WHERE agent_attempt_id = ? AND status IN ('pending','judging'))`,
-		attemptID).Scan(&pending).Error
-	return pending, err
 }
 
 func toAgentProblemView(p problem.Problem) AgentProblemView {

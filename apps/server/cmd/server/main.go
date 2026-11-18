@@ -16,6 +16,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/kaptree/kapoj/apps/server/internal/activity"
+	"github.com/kaptree/kapoj/apps/server/internal/agent"
 	"github.com/kaptree/kapoj/apps/server/internal/ai"
 	"github.com/kaptree/kapoj/apps/server/internal/backup"
 	"github.com/kaptree/kapoj/apps/server/internal/certificate"
@@ -144,6 +145,9 @@ func run() error {
 	}
 	queue := judgequeue.NewClient(cfg.RedisAddr)
 	defer func() { _ = queue.Close() }()
+	agentSvc := agent.NewService(g,
+		problem.NewGormRepository(g), contest.NewGormRepository(g),
+		queue, agent.NewRedisLimiter(rdb))
 	gamePublisher := gamequeue.NewPublisher(cfg.RedisAddr)
 	defer func() { _ = gamePublisher.Close() }()
 	companionSvc := companion.NewService(companion.NewGormRepository(g))
@@ -330,7 +334,8 @@ func run() error {
 			Mail: mailSvc, Backup: backupSvc, Similarity: similaritySvc,
 			Companion:  companionSvc,
 			Difficulty: difficultySettings, DifficultyAI: aiSvc, DifficultyAISettings: aiSettings,
-			Jobs: jobsSvc,
+			Jobs:  jobsSvc,
+			Agent: agentSvc,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -347,6 +352,8 @@ func run() error {
 	go backupSvc.RunScheduler(workCtx, 30*time.Second)
 	go jobsSvc.RunScheduler(workCtx, 30*time.Second)
 	go runSimilaritySweeper(workCtx, similarityRepo)
+	go agentSvc.RunSettler(workCtx, 30*time.Second)
+	go agentSvc.RunSweeper(workCtx, time.Minute)
 
 	errCh := make(chan error, 1)
 	go func() {
