@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import Button from 'primevue/button'
 import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
+import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
 import Paginator from 'primevue/paginator'
 import Select from 'primevue/select'
@@ -10,15 +11,22 @@ import Tag from 'primevue/tag'
 import { useConfirm } from 'primevue/useconfirm'
 import { useToast } from 'primevue/usetoast'
 
-import { listAdminAgents, updateAdminAgent } from '@/api/agents'
+import { listAdminAgentSubmissions, listAdminAgents, updateAdminAgent } from '@/api/agents'
 import type { ListAdminAgentsQuery } from '@/api/agents'
 import { ApiError } from '@/api/http'
-import type { AdminAgentInput, AgentStatus, AgentView } from '@/api/types'
+import type {
+  AdminAgentInput,
+  AdminAgentSubmissionView,
+  AgentStatus,
+  AgentView,
+  SubmissionStatus,
+} from '@/api/types'
 import AppEmptyState from '@/components/ui/AppEmptyState.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
+import { formatDateTime } from '@/utils/format'
 
 const PAGE_SIZE = 20
 
@@ -44,7 +52,18 @@ const appliedModel = ref('')
 
 const first = computed(() => (page.value - 1) * PAGE_SIZE)
 
+const submissionsVisible = ref(false)
+const submissionsAgent = ref<AgentView | null>(null)
+const submissions = ref<AdminAgentSubmissionView[]>([])
+const submissionsTotal = ref(0)
+const submissionsPage = ref(1)
+const submissionsLoading = ref(false)
+const submissionsError = ref('')
+const selectedSubmission = ref<AdminAgentSubmissionView | null>(null)
+const submissionsFirst = computed(() => (submissionsPage.value - 1) * PAGE_SIZE)
+
 let requestSeq = 0
+let submissionsRequest = 0
 
 async function load() {
   const seq = ++requestSeq
@@ -94,6 +113,95 @@ function resetFilters() {
 function onPage(event: { page: number }) {
   page.value = event.page + 1
   void load()
+}
+
+async function loadSubmissions() {
+  const agent = submissionsAgent.value
+  if (!agent) return
+  const seq = ++submissionsRequest
+  submissionsLoading.value = true
+  submissionsError.value = ''
+  try {
+    const data = await listAdminAgentSubmissions(agent.id, {
+      page: submissionsPage.value,
+      pageSize: PAGE_SIZE,
+    })
+    if (seq !== submissionsRequest) return
+    submissions.value = data.items
+    submissionsTotal.value = data.total
+  } catch {
+    if (seq !== submissionsRequest) return
+    submissions.value = []
+    submissionsTotal.value = 0
+    submissionsError.value = '加载 Agent 提交失败，请稍后再试'
+  } finally {
+    if (seq === submissionsRequest) submissionsLoading.value = false
+  }
+}
+
+function openSubmissions(agent: AgentView) {
+  submissionsAgent.value = agent
+  submissionsPage.value = 1
+  selectedSubmission.value = null
+  submissionsVisible.value = true
+  void loadSubmissions()
+}
+
+function onSubmissionsPage(event: { page: number }) {
+  submissionsPage.value = event.page + 1
+  selectedSubmission.value = null
+  void loadSubmissions()
+}
+
+function selectSubmission(event: { data: AdminAgentSubmissionView }) {
+  selectedSubmission.value = event.data
+}
+
+function submissionStatusLabel(status: SubmissionStatus): string {
+  switch (status) {
+    case 'accepted':
+      return '通过'
+    case 'pending':
+      return '等待评测'
+    case 'judging':
+      return '评测中'
+    case 'wrong_answer':
+      return '答案错误'
+    case 'time_limit_exceeded':
+      return '超时'
+    case 'memory_limit_exceeded':
+      return '内存超限'
+    case 'runtime_error':
+      return '运行错误'
+    case 'compile_error':
+      return '编译错误'
+    case 'system_error':
+      return '系统错误'
+    default:
+      return status
+  }
+}
+
+function submissionStatusSeverity(
+  status: SubmissionStatus,
+): 'success' | 'info' | 'warn' | 'danger' | 'secondary' {
+  switch (status) {
+    case 'accepted':
+      return 'success'
+    case 'pending':
+    case 'judging':
+      return 'info'
+    case 'time_limit_exceeded':
+    case 'memory_limit_exceeded':
+      return 'warn'
+    case 'wrong_answer':
+    case 'runtime_error':
+    case 'compile_error':
+    case 'system_error':
+      return 'danger'
+    default:
+      return 'secondary'
+  }
 }
 
 function formatSolveTime(ms: number): string {
@@ -309,6 +417,14 @@ onMounted(() => {
               <template #body="{ data }">
                 <div class="row-actions">
                   <Button
+                    label="提交"
+                    text
+                    size="small"
+                    severity="secondary"
+                    data-test="agent-submissions"
+                    @click="openSubmissions(data)"
+                  />
+                  <Button
                     v-if="data.status === 'active'"
                     label="停用"
                     text
@@ -361,6 +477,136 @@ onMounted(() => {
         />
       </template>
     </AppSurface>
+
+    <Dialog
+      v-model:visible="submissionsVisible"
+      :header="submissionsAgent ? `提交记录 · ${submissionsAgent.name}` : '提交记录'"
+      modal
+      :draggable="false"
+      :style="{ width: 'min(94vw, 980px)' }"
+      data-test="agent-submissions-dialog"
+      @hide="selectedSubmission = null"
+    >
+      <div class="submissions-dialog">
+        <AppErrorState
+          v-if="submissionsError"
+          :description="submissionsError"
+          data-test="submissions-error"
+          @retry="loadSubmissions"
+        />
+
+        <AppLoadingState
+          v-else-if="submissionsLoading && submissions.length === 0"
+          label="正在加载 Agent 提交"
+        />
+
+        <template v-else>
+          <DataTable
+            :value="submissions"
+            :loading="submissionsLoading"
+            data-key="id"
+            size="small"
+            row-hover
+            responsive-layout="scroll"
+            data-test="agent-submissions-table"
+            @row-click="selectSubmission"
+          >
+            <Column header="ID" style="width: 70px">
+              <template #body="{ data }">
+                <span class="mono">{{ data.id }}</span>
+              </template>
+            </Column>
+            <Column header="题目" style="min-width: 200px">
+              <template #body="{ data }">
+                <div class="submission-problem">
+                  <strong>{{ data.problemTitle }}</strong>
+                  <span class="mono muted">{{ data.problemSlug }}</span>
+                </div>
+              </template>
+            </Column>
+            <Column header="语言" style="width: 90px">
+              <template #body="{ data }">
+                <span class="mono">{{ data.language }}</span>
+              </template>
+            </Column>
+            <Column header="状态" style="width: 110px">
+              <template #body="{ data }">
+                <Tag
+                  :value="submissionStatusLabel(data.status)"
+                  :severity="submissionStatusSeverity(data.status)"
+                />
+              </template>
+            </Column>
+            <Column header="用时 / 内存" style="width: 130px">
+              <template #body="{ data }">
+                <span class="num"> {{ data.timeUsedMs }} ms / {{ data.memoryUsedKb }} KB </span>
+              </template>
+            </Column>
+            <Column header="分数" style="width: 70px">
+              <template #body="{ data }">
+                <span class="num">{{ data.score }}</span>
+              </template>
+            </Column>
+            <Column header="结算" style="width: 80px">
+              <template #body="{ data }">
+                <Tag
+                  :value="data.agentSettled ? '已结算' : '未结算'"
+                  :severity="data.agentSettled ? 'success' : 'warn'"
+                />
+              </template>
+            </Column>
+            <Column header="提交时间" style="min-width: 150px">
+              <template #body="{ data }">
+                <span class="muted">{{ formatDateTime(data.createdAt) }}</span>
+              </template>
+            </Column>
+            <template #empty>
+              <AppEmptyState
+                icon="pi pi-inbox"
+                title="暂无提交"
+                description="该 Agent 还没有任何提交。"
+              />
+            </template>
+          </DataTable>
+
+          <Paginator
+            v-if="submissionsTotal > PAGE_SIZE"
+            :rows="PAGE_SIZE"
+            :total-records="submissionsTotal"
+            :first="submissionsFirst"
+            :page-link-size="5"
+            template="PrevPageLink PageLinks NextPageLink"
+            class="pager"
+            @page="onSubmissionsPage"
+          />
+
+          <div v-if="selectedSubmission" class="submission-detail" data-test="submission-detail">
+            <div class="submission-detail__head">
+              <h3>提交 #{{ selectedSubmission.id }}</h3>
+              <Tag
+                :value="submissionStatusLabel(selectedSubmission.status)"
+                :severity="submissionStatusSeverity(selectedSubmission.status)"
+              />
+            </div>
+            <p v-if="selectedSubmission.errorMessage" class="submission-detail__error">
+              {{ selectedSubmission.errorMessage }}
+            </p>
+            <div v-if="selectedSubmission.code" class="submission-detail__block">
+              <h4>代码</h4>
+              <pre data-test="submission-code">{{ selectedSubmission.code }}</pre>
+            </div>
+            <div v-if="selectedSubmission.answer" class="submission-detail__block">
+              <h4>客观题答案</h4>
+              <pre data-test="submission-answer">{{ selectedSubmission.answer }}</pre>
+            </div>
+            <p v-if="!selectedSubmission.code && !selectedSubmission.answer" class="muted">
+              该提交没有代码或答案内容。
+            </p>
+          </div>
+          <p v-else class="submission-hint muted">选择一行查看完整代码/答案。</p>
+        </template>
+      </div>
+    </Dialog>
   </div>
 </template>
 
@@ -506,6 +752,88 @@ onMounted(() => {
 
 .pager {
   align-self: flex-end;
+}
+
+.submissions-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kapoj-space-3);
+  min-width: 0;
+}
+
+.submission-problem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.submission-problem strong {
+  color: var(--kapoj-text);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.submission-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kapoj-space-2);
+  padding: var(--kapoj-space-3);
+  background: var(--kapoj-bg);
+  border: 1px solid var(--kapoj-border);
+  border-radius: var(--kapoj-radius-sm);
+}
+
+.submission-detail__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kapoj-space-2);
+}
+
+.submission-detail__head h3 {
+  margin: 0;
+  color: var(--kapoj-text);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.submission-detail__error {
+  margin: 0;
+  color: var(--kapoj-danger);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+
+.submission-detail__block h4 {
+  margin: 0 0 var(--kapoj-space-1);
+  color: var(--kapoj-text-muted);
+  font-family: var(--kapoj-font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.submission-detail pre {
+  max-height: 320px;
+  margin: 0;
+  padding: var(--kapoj-space-2);
+  overflow: auto;
+  color: var(--kapoj-text);
+  font-family: var(--kapoj-font-mono);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--kapoj-bg-elevated);
+  border: 1px solid var(--kapoj-border);
+  border-radius: var(--kapoj-radius-xs);
+}
+
+.submission-hint {
+  margin: 0;
+  font-size: 0.8125rem;
 }
 
 @media (max-width: 640px) {

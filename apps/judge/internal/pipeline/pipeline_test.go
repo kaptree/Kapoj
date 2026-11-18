@@ -208,6 +208,7 @@ func TestJudgeAgentSubmissionSkipsAcceptCountAndGameEvent(t *testing.T) {
 	assert.Equal(t, 10, score)
 	assert.Zero(t, acceptCount(t, e.pool, e.problem), "an Agent AC must not increment accept_count")
 	assert.Empty(t, e.game.events, "an Agent AC must not publish a game event")
+	assert.Empty(t, e.pub.ids, "Agent submissions must not reach the human SSE stream")
 
 	humanSub := e.submit(t, model.LanguageCPP, "int main(){}")
 	require.NoError(t, e.pipe.Run(context.Background(), humanSub))
@@ -215,6 +216,47 @@ func TestJudgeAgentSubmissionSkipsAcceptCountAndGameEvent(t *testing.T) {
 	require.Len(t, e.game.events, 1)
 	assert.Equal(t, humanSub, e.game.events[0].SubmissionID)
 	assert.Equal(t, e.userID, e.game.events[0].UserID)
+	assert.Equal(t, []int64{humanSub, humanSub}, e.pub.ids,
+		"human submissions still publish judging and terminal events")
+}
+
+func TestAgentObjectiveSubmissionDoesNotPublish(t *testing.T) {
+	e := newEnv(t, "objective")
+	problem := testutil.InsertObjectiveProblem(t, e.pool, []string{"A"})
+	sub := testutil.InsertAgentObjectiveSubmission(
+		t, e.pool, e.userID, problem, 77, "A", "pending",
+	)
+
+	require.NoError(t, e.pipe.Run(context.Background(), sub))
+	status, score := submissionResult(t, e.pool, sub)
+	assert.Equal(t, model.StatusAccepted, status)
+	assert.Equal(t, 100, score)
+	assert.Empty(t, e.pub.ids, "Agent objective submissions must not reach the human SSE stream")
+}
+
+func TestMarkSystemErrorPublishesOnlyForHumans(t *testing.T) {
+	t.Run("agent submission", func(t *testing.T) {
+		e := newEnv(t, "traditional", caseSpec{"3\n", 10})
+		sub := testutil.InsertAgentSubmission(
+			t, e.pool, e.userID, e.problem, 77, "cpp", "int main(){}", "pending",
+		)
+
+		e.pipe.MarkSystemError(context.Background(), sub, errors.New("judge crashed"))
+		status, _ := submissionResult(t, e.pool, sub)
+		assert.Equal(t, model.StatusSystemError, status)
+		assert.Empty(t, e.pub.ids, "an Agent system error must not reach the human SSE stream")
+	})
+
+	t.Run("human submission", func(t *testing.T) {
+		e := newEnv(t, "traditional", caseSpec{"3\n", 10})
+		sub := e.submit(t, model.LanguageCPP, "int main(){}")
+
+		e.pipe.MarkSystemError(context.Background(), sub, errors.New("judge crashed"))
+		status, _ := submissionResult(t, e.pool, sub)
+		assert.Equal(t, model.StatusSystemError, status)
+		assert.Equal(t, []int64{sub}, e.pub.ids,
+			"a human system error still notifies the human SSE stream")
+	})
 }
 
 func TestPipelineDoesNotPublishGameEventForWrongAnswer(t *testing.T) {

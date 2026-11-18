@@ -153,6 +153,27 @@ type AdminAgentInput struct {
 	ResetRating bool   `json:"resetRating"`
 }
 
+// AdminAgentSubmissionView is the admin-only investigation projection of one
+// Agent submission. It includes code and objective answers and must never be
+// exposed on public endpoints.
+type AdminAgentSubmissionView struct {
+	ID           int64               `json:"id"`
+	ProblemID    int64               `json:"problemId"`
+	ProblemTitle string              `json:"problemTitle"`
+	ProblemSlug  string              `json:"problemSlug"`
+	Language     submission.Language `json:"language"`
+	Status       submission.Status   `json:"status"`
+	TimeUsedMS   int                 `json:"timeUsedMs"`
+	MemoryUsedKB int                 `json:"memoryUsedKb"`
+	Score        int                 `json:"score"`
+	Code         string              `json:"code"`
+	Answer       string              `json:"answer"`
+	ErrorMessage string              `json:"errorMessage"`
+	CreatedAt    time.Time           `json:"createdAt"`
+	JudgedAt     *time.Time          `json:"judgedAt"`
+	AgentSettled bool                `json:"agentSettled"`
+}
+
 // AgentTokenView is token metadata; the plaintext is never returned here.
 type AgentTokenView struct {
 	ID          int64      `json:"id"`
@@ -388,6 +409,9 @@ func (s *Service) AdminUpdate(
 	if in.Status != "" && in.Status != StatusActive && in.Status != StatusDisabled {
 		return nil, httpx.ErrValidation("Agent 状态无效")
 	}
+	if in.Status == "" && !in.ResetRating {
+		return nil, httpx.ErrValidation("没有需要更新的字段")
+	}
 
 	var view *AgentView
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -450,6 +474,93 @@ func (s *Service) AdminUpdate(
 		return nil, err
 	}
 	return view, nil
+}
+
+// AdminSubmissions returns one page of an Agent's submissions, newest first.
+// This is an admin-only investigation view: unlike the public/user
+// projections it includes code and objective answers. Human submission lists
+// and counters are untouched.
+func (s *Service) AdminSubmissions(
+	ctx context.Context, agentID int64, page, size int,
+) (httpx.Page[AdminAgentSubmissionView], error) {
+	var a Agent
+	err := s.db.WithContext(ctx).Select("id").First(&a, agentID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return httpx.Page[AdminAgentSubmissionView]{}, httpx.ErrNotFound
+	}
+	if err != nil {
+		return httpx.Page[AdminAgentSubmissionView]{}, err
+	}
+
+	page, size = normalizePage(page, size)
+
+	var total int64
+	err = s.db.WithContext(ctx).Model(&submission.Submission{}).
+		Where("agent_id = ?", agentID).Count(&total).Error
+	if err != nil {
+		return httpx.Page[AdminAgentSubmissionView]{}, err
+	}
+
+	var rows []adminSubmissionRow
+	err = s.db.WithContext(ctx).Table("submissions AS s").
+		Select(`
+			s.id, s.problem_id, p.title AS problem_title, p.slug AS problem_slug,
+			s.language, s.status, s.time_used_ms, s.memory_used_kb, s.score,
+			s.code, s.answer, s.error_message, s.created_at, s.judged_at,
+			s.agent_settled`).
+		Joins("JOIN problems AS p ON p.id = s.problem_id").
+		Where("s.agent_id = ?", agentID).
+		Order("s.id DESC").
+		Limit(size).
+		Offset((page - 1) * size).
+		Scan(&rows).Error
+	if err != nil {
+		return httpx.Page[AdminAgentSubmissionView]{}, err
+	}
+
+	items := make([]AdminAgentSubmissionView, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, row.view())
+	}
+	return httpx.Page[AdminAgentSubmissionView]{Total: total, Items: items}, nil
+}
+
+type adminSubmissionRow struct {
+	ID           int64               `gorm:"column:id"`
+	ProblemID    int64               `gorm:"column:problem_id"`
+	ProblemTitle string              `gorm:"column:problem_title"`
+	ProblemSlug  string              `gorm:"column:problem_slug"`
+	Language     submission.Language `gorm:"column:language"`
+	Status       submission.Status   `gorm:"column:status"`
+	TimeUsedMS   int                 `gorm:"column:time_used_ms"`
+	MemoryUsedKB int                 `gorm:"column:memory_used_kb"`
+	Score        int                 `gorm:"column:score"`
+	Code         string              `gorm:"column:code"`
+	Answer       string              `gorm:"column:answer"`
+	ErrorMessage string              `gorm:"column:error_message"`
+	CreatedAt    time.Time           `gorm:"column:created_at"`
+	JudgedAt     *time.Time          `gorm:"column:judged_at"`
+	AgentSettled bool                `gorm:"column:agent_settled"`
+}
+
+func (r adminSubmissionRow) view() AdminAgentSubmissionView {
+	return AdminAgentSubmissionView{
+		ID:           r.ID,
+		ProblemID:    r.ProblemID,
+		ProblemTitle: r.ProblemTitle,
+		ProblemSlug:  r.ProblemSlug,
+		Language:     r.Language,
+		Status:       r.Status,
+		TimeUsedMS:   r.TimeUsedMS,
+		MemoryUsedKB: r.MemoryUsedKB,
+		Score:        r.Score,
+		Code:         r.Code,
+		Answer:       r.Answer,
+		ErrorMessage: r.ErrorMessage,
+		CreatedAt:    r.CreatedAt,
+		JudgedAt:     r.JudgedAt,
+		AgentSettled: r.AgentSettled,
+	}
 }
 
 // listAgentPage is shared by the public leaderboard and the admin list. Both
@@ -587,18 +698,29 @@ func (s *Service) ratingHistoryPage(
 	}
 
 	var rows []ratingHistoryRow
+	now := s.now()
 	err = s.db.WithContext(ctx).Raw(`
 		SELECT h.id, COALESCE(h.problem_id, 0) AS problem_id,
-		       COALESCE(p.title, '') AS problem_title,
-		       COALESCE(p.slug, '') AS problem_slug,
+		       CASE WHEN p.id IS NOT NULL AND p.is_public
+		                  AND NOT EXISTS (
+		                      SELECT 1 FROM contest_problems cp
+		                      JOIN contests c ON c.id = cp.contest_id
+		                      WHERE cp.problem_id = p.id AND c.end_time > $2)
+		            THEN p.title ELSE '' END AS problem_title,
+		       CASE WHEN p.id IS NOT NULL AND p.is_public
+		                  AND NOT EXISTS (
+		                      SELECT 1 FROM contest_problems cp
+		                      JOIN contests c ON c.id = cp.contest_id
+		                      WHERE cp.problem_id = p.id AND c.end_time > $2)
+		            THEN p.slug ELSE '' END AS problem_slug,
 		       h.kind, h.difficulty, h.rating_before, h.rating_after,
 		       h.delta, h.solve_time_ms, h.created_at
 		FROM agent_rating_history h
 		LEFT JOIN problems p ON p.id = h.problem_id
-		WHERE h.agent_id = ?
+		WHERE h.agent_id = $1
 		ORDER BY h.created_at DESC, h.id DESC
-		LIMIT ? OFFSET ?`,
-		agentID, size, (page-1)*size).Scan(&rows).Error
+		LIMIT $3 OFFSET $4`,
+		agentID, now, size, (page-1)*size).Scan(&rows).Error
 	if err != nil {
 		return httpx.Page[AgentRatingRow]{}, err
 	}

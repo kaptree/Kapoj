@@ -651,7 +651,7 @@ func TestAgentSubmitRequiresActiveAttemptAndNoPending(t *testing.T) {
 
 		_, err := f.svc.Submit(ctx, a, attempt.ID, code)
 		appErr := requireAppError(t, err, 400, 40001)
-		assert.Equal(t, "当前提交正在评测，请等待结果", appErr.Message)
+		assert.Equal(t, "当前题目正在评测，请等待结果", appErr.Message)
 
 		// A terminal verdict that the worker has not settled yet is still
 		// treated as in flight so it cannot be followed by another submit.
@@ -659,7 +659,7 @@ func TestAgentSubmitRequiresActiveAttemptAndNoPending(t *testing.T) {
 			Update("status", submission.StatusAccepted).Error)
 		_, err = f.svc.Submit(ctx, a, attempt.ID, code)
 		appErr = requireAppError(t, err, 400, 40001)
-		assert.Equal(t, "当前提交正在评测，请等待结果", appErr.Message)
+		assert.Equal(t, "当前题目正在评测，请等待结果", appErr.Message)
 		assert.EqualValues(t, 1, f.submissionCount(attempt.ID))
 
 		require.NoError(t, f.db.Model(&submission.Submission{}).Where("id = ?", row.ID).
@@ -723,6 +723,26 @@ type failingQueue struct {
 func (q *failingQueue) Enqueue(context.Context, int64) error {
 	q.calls++
 	return errors.New("judge queue unavailable")
+}
+
+func TestAgentSubmitWithoutQueueDoesNotConsumeAttempt(t *testing.T) {
+	f := newAgentFixtureWithDeps(t, nil, nil)
+	ctx := context.Background()
+	owner := f.user("submit-no-queue", "active")
+	view := f.create(owner, "No Queue Agent")
+	p := f.seedProblem(seedProblemOpts{Slug: "submit-no-queue-problem", Testcases: 1})
+	attempt := f.seedLiveAttempt(view.ID, p.ID, 2)
+
+	_, err := f.svc.Submit(ctx, view.ID, attempt.ID, agent.SubmissionInput{
+		Language: submission.LanguageCPP, Code: "int main(){}",
+	})
+	appErr := requireAppError(t, err, 503, 50300)
+	assert.NotEmpty(t, appErr.Message)
+
+	var stored agent.AgentProblemAttempt
+	require.NoError(t, f.db.First(&stored, attempt.ID).Error)
+	assert.Equal(t, 2, stored.AttemptsUsed, "a missing queue must not consume an attempt")
+	assert.Zero(t, f.submissionCount(attempt.ID), "a missing queue must not create a submission")
 }
 
 func TestAgentSubmitEnqueueFailureMarksSystemError(t *testing.T) {
@@ -863,6 +883,21 @@ func TestAgentAbandonPenaltyAndPendingGuard(t *testing.T) {
 		assert.Equal(t, agent.AttemptAbandoned, result.Status)
 		require.NotNil(t, result.RatingDelta)
 		require.Len(t, failureHistory(t, f, a), 1)
+	})
+
+	t.Run("disabled agent cannot abandon", func(t *testing.T) {
+		a := newAgent("abandon-disabled", "Abandon Disabled Agent")
+		attempt := f.seedLiveAttempt(a, p.ID, 1)
+		require.NoError(t, f.db.Model(&agent.Agent{}).Where("id = ?", a).
+			Update("status", agent.StatusDisabled).Error)
+
+		_, err := f.svc.Abandon(ctx, a, attempt.ID)
+		requireAppError(t, err, 403, 40304)
+
+		var stored agent.AgentProblemAttempt
+		require.NoError(t, f.db.First(&stored, attempt.ID).Error)
+		assert.Equal(t, agent.AttemptActive, stored.Status)
+		assert.Empty(t, failureHistory(t, f, a))
 	})
 
 	t.Run("expired attempt expires with the timeout penalty", func(t *testing.T) {

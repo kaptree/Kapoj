@@ -219,6 +219,19 @@ func InsertAgentSubmission(t *testing.T, pool *pgxpool.Pool, userID, problemID, 
 	return id
 }
 
+// InsertAgentObjectiveSubmission creates a pending Agent objective submission.
+func InsertAgentObjectiveSubmission(t *testing.T, pool *pgxpool.Pool, userID, problemID, agentID int64, answer, status string) int64 {
+	t.Helper()
+	var id int64
+	err := pool.QueryRow(context.Background(),
+		`INSERT INTO submissions (user_id, problem_id, agent_id, language, code, answer, status, created_at)
+		 VALUES ($1, $2, $3, 'answer', '', $4, $5, now()) RETURNING id`,
+		userID, problemID, agentID, answer, status,
+	).Scan(&id)
+	require.NoError(t, err)
+	return id
+}
+
 // InsertObjectiveSubmission creates an objective submission carrying an answer.
 func InsertObjectiveSubmission(t *testing.T, pool *pgxpool.Pool, userID, problemID int64, answer, status string) int64 {
 	t.Helper()

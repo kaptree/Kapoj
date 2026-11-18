@@ -79,6 +79,7 @@ const historyLoading = ref(false)
 const historyError = ref('')
 
 const editing = computed(() => agent.value !== null)
+const agentDisabled = computed(() => agent.value?.status === 'disabled')
 const historyFirst = computed(() => (historyPage.value - 1) * HISTORY_PAGE_SIZE)
 const statusLabel = computed(() => (agent.value?.status === 'disabled' ? '已停用' : '正常'))
 const statusSeverity = computed(() => (agent.value?.status === 'disabled' ? 'danger' : 'success'))
@@ -148,6 +149,8 @@ async function loadHistory() {
     historyTotal.value = page.total
   } catch (e) {
     if (seq !== historyRequest) return
+    history.value = []
+    historyTotal.value = 0
     historyError.value = errorMessage(e, '加载 Rating 历史失败，请稍后再试')
   } finally {
     if (seq === historyRequest) historyLoading.value = false
@@ -612,6 +615,16 @@ onMounted(() => {
           <p>Token 用于外部 Agent 调用平台 API。平台只保存哈希，明文仅在本页显示一次。</p>
         </div>
 
+        <Message
+          v-if="agentDisabled"
+          severity="warn"
+          :closable="false"
+          role="alert"
+          data-test="agent-disabled-token-notice"
+        >
+          Agent 已停用，请联系管理员；恢复后需重新生成 Token
+        </Message>
+
         <template v-if="issuedToken">
           <Message severity="warn" :closable="false" role="alert" data-test="token-once-warning">
             只显示一次：请立即复制并妥善保存。刷新或离开页面后将无法再次查看明文。
@@ -659,7 +672,7 @@ onMounted(() => {
             </div>
           </dl>
 
-          <div class="form-actions">
+          <div v-if="!agentDisabled" class="form-actions">
             <Button
               type="button"
               label="轮换 Token"
@@ -683,7 +696,7 @@ onMounted(() => {
           </div>
         </template>
 
-        <div v-else-if="!issuedToken" class="token-empty">
+        <div v-else-if="!issuedToken && !agentDisabled" class="token-empty">
           <p>尚未生成 Token。生成后请立即复制；明文只显示一次。</p>
           <Button
             type="button"

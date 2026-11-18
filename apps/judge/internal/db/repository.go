@@ -210,10 +210,10 @@ func (r *Repository) FindByID(ctx context.Context, id int64) (*model.Submission,
 		status   string
 	)
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, user_id, problem_id, language, code, status, error_message, created_at, judged_at
+		SELECT id, user_id, problem_id, language, code, status, error_message, created_at, judged_at, agent_id
 		FROM submissions WHERE id = $1`, id,
 	).Scan(&sub.ID, &sub.UserID, &sub.ProblemID, &language, &sub.Code, &status,
-		&sub.ErrorMessage, &sub.CreatedAt, &sub.JudgedAt)
+		&sub.ErrorMessage, &sub.CreatedAt, &sub.JudgedAt, &sub.AgentID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}

@@ -19,6 +19,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
+	"github.com/kaptree/kapoj/apps/server/internal/submission"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
 )
 
@@ -54,6 +55,7 @@ func TestAdminAgentRoutesRequirePermission(t *testing.T) {
 
 	endpoints := []struct{ method, path, body string }{
 		{http.MethodGet, "/api/admin/agents", ""},
+		{http.MethodGet, "/api/admin/agents/1/submissions", ""},
 		{http.MethodPut, "/api/admin/agents/1", `{"status":"disabled"}`},
 	}
 	for _, endpoint := range endpoints {
@@ -133,6 +135,54 @@ func TestAdminAgentListFiltersViaAPI(t *testing.T) {
 	assert.EqualValues(t, 0, dataMap(t, resp)["total"])
 }
 
+func TestAdminAgentSubmissionsViaAPI(t *testing.T) {
+	f, agentSvc := newAgentAdminFixture(t)
+	_, superToken := f.user(t, "agent_submissions_super", rbac.RoleCodeSuperAdmin)
+	ownerID, _ := f.user(t, "agent_submissions_owner")
+	created := createAgentForAdminTest(t, agentSvc, ownerID, "Submissions Agent", "gpt-5")
+
+	p := &problem.Problem{
+		Title: "Admin Submission Problem", Slug: "admin-submission-problem",
+		Type: problem.TypeTraditional, TimeLimitMS: 1000, MemoryLimitMB: 256,
+		IsPublic: true, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	require.NoError(t, f.db.Create(p).Error)
+	judgedAt := time.Now().Add(time.Minute)
+	row := &submission.Submission{
+		UserID: ownerID, ProblemID: p.ID, AgentID: &created.ID,
+		Language: submission.LanguageCPP, Code: "int main() { return 0; }",
+		Status: submission.StatusAccepted, TimeUsedMS: 42, MemoryUsedKB: 512,
+		Score: 100, AgentSettled: true, CreatedAt: time.Now(), JudgedAt: &judgedAt,
+	}
+	require.NoError(t, f.db.Create(row).Error)
+
+	w, resp := f.do(http.MethodGet,
+		fmt.Sprintf("/api/admin/agents/%d/submissions", created.ID), superToken, "")
+	requireStatus(t, w, resp, http.StatusOK)
+	data := dataMap(t, resp)
+	assert.EqualValues(t, 1, data["total"])
+	items := data["items"].([]any)
+	require.Len(t, items, 1)
+	item := items[0].(map[string]any)
+	assert.EqualValues(t, row.ID, item["id"])
+	assert.EqualValues(t, p.ID, item["problemId"])
+	assert.Equal(t, "Admin Submission Problem", item["problemTitle"])
+	assert.Equal(t, "admin-submission-problem", item["problemSlug"])
+	assert.Equal(t, "cpp", item["language"])
+	assert.Equal(t, "accepted", item["status"])
+	assert.EqualValues(t, 42, item["timeUsedMs"])
+	assert.EqualValues(t, 512, item["memoryUsedKb"])
+	assert.EqualValues(t, 100, item["score"])
+	assert.Equal(t, "int main() { return 0; }", item["code"])
+	assert.Equal(t, "", item["answer"])
+	assert.True(t, item["agentSettled"].(bool))
+	require.NotNil(t, item["judgedAt"])
+
+	w, resp = f.do(http.MethodGet, "/api/admin/agents/999999/submissions", superToken, "")
+	requireStatus(t, w, resp, http.StatusNotFound)
+	assert.EqualValues(t, 40400, resp["code"])
+}
+
 func TestAdminAgentUpdateDisablesEnablesAndResets(t *testing.T) {
 	f, agentSvc := newAgentAdminFixture(t)
 	ctx := context.Background()
@@ -189,14 +239,26 @@ func TestAdminAgentUpdateDisablesEnablesAndResets(t *testing.T) {
 	_, err = agentSvc.AuthenticateToken(ctx, fresh.Token)
 	require.NoError(t, err)
 
-	// resetRating is explicit: absent/false leaves the rating untouched.
+	// resetRating is explicit; an empty update returns 400 without touching the
+	// Agent or writing an audit row.
 	require.NoError(t, f.db.Model(&agent.Agent{}).Where("id = ?", created.ID).
 		Update("rating", 1700).Error)
+	var auditsBefore int64
+	require.NoError(t, f.db.Model(&rbac.AdminAuditLog{}).
+		Where("action = ? AND target_id = ?", rbac.AuditActionAgentManage, created.ID).
+		Count(&auditsBefore).Error)
 	w, resp = f.do(http.MethodPut, fmt.Sprintf("/api/admin/agents/%d", created.ID), superToken, `{}`)
-	requireStatus(t, w, resp, http.StatusOK)
-	updated = dataMap(t, resp)
-	assert.Equal(t, "active", updated["status"])
-	assert.EqualValues(t, 1700, updated["rating"])
+	requireStatus(t, w, resp, http.StatusBadRequest)
+	assert.EqualValues(t, 40001, resp["code"])
+	var afterEmpty agent.Agent
+	require.NoError(t, f.db.First(&afterEmpty, created.ID).Error)
+	assert.Equal(t, agent.StatusActive, afterEmpty.Status)
+	assert.Equal(t, 1700, afterEmpty.Rating)
+	var auditsAfter int64
+	require.NoError(t, f.db.Model(&rbac.AdminAuditLog{}).
+		Where("action = ? AND target_id = ?", rbac.AuditActionAgentManage, created.ID).
+		Count(&auditsAfter).Error)
+	assert.Equal(t, auditsBefore, auditsAfter, "a rejected empty update must not write an audit row")
 
 	var resets int64
 	require.NoError(t, f.db.Model(&agent.AgentRatingHistory{}).

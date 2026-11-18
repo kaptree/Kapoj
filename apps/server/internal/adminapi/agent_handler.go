@@ -21,6 +21,22 @@ func (h *handler) listAgents(c *gin.Context) {
 	httpx.OK(c, result)
 }
 
+// listAgentSubmissions 返回指定 Agent 的提交分页，供管理员调查使用；包含
+// 代码与客观题答案，绝不能挂到公开路由。
+func (h *handler) listAgentSubmissions(c *gin.Context) {
+	id, ok := pathID(c)
+	if !ok {
+		return
+	}
+	page, size := httpx.ParsePage(c.Request.URL.RawQuery)
+	result, err := h.agentSvc.AdminSubmissions(c.Request.Context(), id, page, size)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, result)
+}
+
 // updateAgent 处理 PUT /admin/agents/:id：停用/恢复 Agent，可选重置 Rating。
 func (h *handler) updateAgent(c *gin.Context) {
 	id, ok := pathID(c)

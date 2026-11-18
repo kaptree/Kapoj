@@ -203,7 +203,7 @@ func TestAgentSubmitQueryAndAbandonRoutes(t *testing.T) {
 		`{"language":"cpp","code":"int main(){}"}`)
 	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
 	assert.EqualValues(t, 40001, resp["code"])
-	assert.Equal(t, "当前提交正在评测，请等待结果", resp["message"])
+	assert.Equal(t, "当前题目正在评测，请等待结果", resp["message"])
 
 	// The Task 6 worker is simulated by settling the terminal row directly.
 	require.NoError(t, f.db.Model(&submission.Submission{}).Where("id = ?", submissionID).

@@ -2369,7 +2369,7 @@ export interface paths {
         get?: never;
         /**
          * 停用/恢复 Agent，可选重置 Rating（agent.manage）
-         * @description status 省略或为空表示保持当前状态；停用会立即吊销全部活跃 token，恢复不会恢复旧 token。 resetRating=true 将 Rating 重置为 1500 并写入 reset 历史。写入审计 agent.manage。 Agent 不存在返回 40400，状态非法返回 40001。
+         * @description status 省略或为空表示保持当前状态；停用会立即吊销全部活跃 token，恢复不会恢复旧 token。 resetRating=true 将 Rating 重置为 1500 并写入 reset 历史。写入审计 agent.manage。 status 与 resetRating 均为空返回 40001，不写审计。Agent 不存在返回 40400，状态非法返回 40001。
          */
         put: {
             parameters: {
@@ -2401,6 +2401,55 @@ export interface paths {
                 404: components["responses"]["Error"];
             };
         };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/agents/{id}/submissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * Agent 提交调查列表（agent.manage）
+         * @description 管理后台专用：按 id 倒序返回指定 Agent 的提交，包含代码与客观题答案，供调查使用； 不属于公开接口。Agent 不存在返回 40400。不修改人类提交统计。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    page_size?: number;
+                };
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Agent 提交分页 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminAgentSubmissionPageResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -14591,11 +14640,44 @@ export interface components {
             attemptsUsed: number;
             attemptsRemaining: number;
         };
-        /** @description status 省略表示保持当前状态；resetRating=true 时重置为 1500。 */
+        /** @description status 省略表示保持当前状态；resetRating=true 时重置为 1500；两者都为空返回 40001。 */
         AdminAgentInput: {
             status?: components["schemas"]["AgentStatus"];
             /** @description 显式传 true 才重置 Rating */
             resetRating?: boolean;
+        };
+        /** @description 管理后台调查视图；包含代码与客观题答案，禁止用于公开接口。 */
+        AdminAgentSubmissionView: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            problemId: number;
+            problemTitle: string;
+            problemSlug: string;
+            language: components["schemas"]["SubmissionLanguage"];
+            status: components["schemas"]["SubmissionStatus"];
+            timeUsedMs: number;
+            memoryUsedKb: number;
+            score: number;
+            /** @description 代码题源码；客观题为空字符串 */
+            code: string;
+            /** @description 客观题答案；代码题为空字符串 */
+            answer: string;
+            errorMessage: string;
+            /** Format: date-time */
+            createdAt: string;
+            /**
+             * Format: date-time
+             * @description 尚未评测完成时为 null
+             */
+            judgedAt: string | null;
+            /** @description 结算 worker 是否已消费该提交 */
+            agentSettled: boolean;
+        };
+        AdminAgentSubmissionPage: {
+            /** Format: int64 */
+            total: number;
+            items: components["schemas"]["AdminAgentSubmissionView"][];
         };
         AgentPage: {
             /** Format: int64 */
@@ -14618,6 +14700,9 @@ export interface components {
         };
         AgentRatingHistoryPageResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["AgentRatingHistoryPage"];
+        };
+        AdminAgentSubmissionPageResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AdminAgentSubmissionPage"];
         };
         MyAgentResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["MyAgentView"];

@@ -306,6 +306,49 @@ describe('AgentSettingsView', () => {
     reloaded.unmount()
   })
 
+  it('hides token actions and explains recovery when the agent is disabled', async () => {
+    vi.mocked(getMyAgent).mockResolvedValue({
+      agent: agentView({ status: 'disabled' }),
+      token: null,
+      currentAttempt: null,
+    })
+
+    const wrapper = await mountPage()
+
+    expect(wrapper.find('[data-test="agent-status"]').text()).toContain('已停用')
+    expect(wrapper.text()).toContain('Agent 已停用，请联系管理员；恢复后需重新生成 Token')
+    expect(wrapper.find('[data-test="generate-token"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="rotate-token"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="revoke-token"]').exists()).toBe(false)
+
+    wrapper.unmount()
+  })
+
+  it('clears stale rating rows when a later history request fails', async () => {
+    vi.mocked(getMyAgent).mockResolvedValue({
+      agent: agentView(),
+      token: null,
+      currentAttempt: null,
+    })
+    vi.mocked(getMyAgentRatingHistory)
+      .mockResolvedValueOnce({ total: 25, items: [ratingRow()] })
+      .mockRejectedValueOnce(new Error('network down'))
+
+    const wrapper = await mountPage()
+    expect(wrapper.findAll('[data-test="rating-history"] tbody tr')).toHaveLength(1)
+
+    await wrapper.findComponent(Paginator).vm.$emit('page', { page: 1 })
+    await flushPromises()
+
+    expect(getMyAgentRatingHistory).toHaveBeenLastCalledWith({ page: 2, pageSize: 10 })
+    expect(wrapper.text()).toContain('加载 Rating 历史失败，请稍后再试')
+    expect(wrapper.findAll('[data-test="rating-history"] tbody tr')).toHaveLength(0)
+    expect(wrapper.text()).not.toContain('两数之和')
+    expect(wrapper.text()).not.toContain('历史服务不可用')
+
+    wrapper.unmount()
+  })
+
   it('rotates and revokes tokens only after confirmation', async () => {
     vi.mocked(getMyAgent).mockResolvedValue({
       agent: agentView(),

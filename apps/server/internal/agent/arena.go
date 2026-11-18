@@ -103,6 +103,9 @@ func (s *Service) Submit(
 			return nil, httpx.ErrTooManyAgentRequests
 		}
 	}
+	if s.queue == nil {
+		return nil, httpx.ErrUnavailable
+	}
 
 	now := s.now()
 	var result *AgentSubmitResult
@@ -148,7 +151,7 @@ func (s *Service) Submit(
 			return err
 		}
 		if inflight {
-			return httpx.ErrValidation("当前提交正在评测，请等待结果")
+			return httpx.ErrValidation("当前题目正在评测，请等待结果")
 		}
 
 		p, err := s.problems.FindByID(ctx, attempt.ProblemID)
@@ -318,6 +321,9 @@ func (s *Service) Abandon(
 		}
 		if err != nil {
 			return err
+		}
+		if a.Status != StatusActive {
+			return httpx.ErrAgentDisabled
 		}
 
 		var attempt AgentProblemAttempt

@@ -913,7 +913,7 @@ paths:
       description: >-
         status 省略或为空表示保持当前状态；停用会立即吊销全部活跃 token，恢复不会恢复旧 token。
         resetRating=true 将 Rating 重置为 1500 并写入 reset 历史。写入审计 agent.manage。
-        Agent 不存在返回 40400，状态非法返回 40001。
+        status 与 resetRating 均为空返回 40001，不写审计。Agent 不存在返回 40400，状态非法返回 40001。
       security: [{ bearer: [] }]
       requestBody:
         required: true
@@ -927,6 +927,27 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/AgentResponse' }
         '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /admin/agents/{id}/submissions:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    get:
+      summary: Agent 提交调查列表（agent.manage）
+      description: >-
+        管理后台专用：按 id 倒序返回指定 Agent 的提交，包含代码与客观题答案，供调查使用；
+        不属于公开接口。Agent 不存在返回 40400。不修改人类提交统计。
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: Agent 提交分页
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminAgentSubmissionPageResponse' }
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
@@ -8800,10 +8821,51 @@ components:
         attemptsRemaining: { type: integer }
     AdminAgentInput:
       type: object
-      description: status 省略表示保持当前状态；resetRating=true 时重置为 1500。
+      description: status 省略表示保持当前状态；resetRating=true 时重置为 1500；两者都为空返回 40001。
       properties:
         status: { $ref: '#/components/schemas/AgentStatus' }
         resetRating: { type: boolean, description: 显式传 true 才重置 Rating }
+    AdminAgentSubmissionView:
+      type: object
+      description: 管理后台调查视图；包含代码与客观题答案，禁止用于公开接口。
+      required:
+        - id
+        - problemId
+        - problemTitle
+        - problemSlug
+        - language
+        - status
+        - timeUsedMs
+        - memoryUsedKb
+        - score
+        - code
+        - answer
+        - errorMessage
+        - createdAt
+        - judgedAt
+        - agentSettled
+      properties:
+        id: { type: integer, format: int64 }
+        problemId: { type: integer, format: int64 }
+        problemTitle: { type: string }
+        problemSlug: { type: string }
+        language: { $ref: '#/components/schemas/SubmissionLanguage' }
+        status: { $ref: '#/components/schemas/SubmissionStatus' }
+        timeUsedMs: { type: integer }
+        memoryUsedKb: { type: integer }
+        score: { type: integer }
+        code: { type: string, description: 代码题源码；客观题为空字符串 }
+        answer: { type: string, description: 客观题答案；代码题为空字符串 }
+        errorMessage: { type: string }
+        createdAt: { type: string, format: date-time }
+        judgedAt: { type: string, format: date-time, nullable: true, description: 尚未评测完成时为 null }
+        agentSettled: { type: boolean, description: 结算 worker 是否已消费该提交 }
+    AdminAgentSubmissionPage:
+      type: object
+      required: [total, items]
+      properties:
+        total: { type: integer, format: int64 }
+        items: { type: array, items: { $ref: '#/components/schemas/AdminAgentSubmissionView' } }
     AgentPage:
       type: object
       required: [total, items]
@@ -8844,6 +8906,13 @@ components:
           required: [data]
           properties:
             data: { $ref: '#/components/schemas/AgentRatingHistoryPage' }
+    AdminAgentSubmissionPageResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/AdminAgentSubmissionPage' }
     MyAgentResponse:
       allOf:
         - $ref: '#/components/schemas/Envelope'

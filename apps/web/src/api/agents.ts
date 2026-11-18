@@ -1,6 +1,7 @@
 import { http } from './client'
 import type {
   AdminAgentInput,
+  AdminAgentSubmissionView,
   AgentAbandonResult,
   AgentClaimResult,
   AgentDetailView,
@@ -107,3 +108,9 @@ export const listAdminAgents = (q: ListAdminAgentsQuery = {}) =>
 /** Disable/restore an Agent and optionally reset its rating to 1500 (agent.manage). */
 export const updateAdminAgent = (id: number | string, input: AdminAgentInput) =>
   http.put<AgentView>(`/admin/agents/${id}`, input)
+
+/** Admin-only Agent submission investigation list, newest first (agent.manage). */
+export const listAdminAgentSubmissions = (id: number | string, q: PageQuery = {}) =>
+  http.get<Page<AdminAgentSubmissionView>>(`/admin/agents/${id}/submissions`, {
+    params: pageParams(q),
+  })

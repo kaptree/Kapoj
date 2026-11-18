@@ -5,9 +5,9 @@ import Select from 'primevue/select'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { listAdminAgents, updateAdminAgent } from '@/api/agents'
+import { listAdminAgentSubmissions, listAdminAgents, updateAdminAgent } from '@/api/agents'
 import { ApiError } from '@/api/http'
-import type { AgentView, Page } from '@/api/types'
+import type { AdminAgentSubmissionView, AgentView, Page } from '@/api/types'
 import AdminAgentsView from './AdminAgentsView.vue'
 
 const PAGE_SIZE = 20
@@ -19,8 +19,15 @@ vi.mock('primevue/usetoast', () => ({ useToast: () => toast }))
 vi.mock('primevue/useconfirm', () => ({ useConfirm: () => confirm }))
 vi.mock('@/api/agents', () => ({
   listAdminAgents: vi.fn(),
+  listAdminAgentSubmissions: vi.fn(),
   updateAdminAgent: vi.fn(),
 }))
+
+const DialogStub = {
+  name: 'Dialog',
+  props: ['visible', 'header'],
+  template: '<section v-if="visible"><h2>{{ header }}</h2><slot /></section>',
+}
 
 function agentView(overrides: Partial<AgentView> = {}): AgentView {
   return {
@@ -59,6 +66,29 @@ function pageOf(items: AgentView[], total = items.length): Page<AgentView> {
   return { total, items }
 }
 
+function submissionView(
+  overrides: Partial<AdminAgentSubmissionView> = {},
+): AdminAgentSubmissionView {
+  return {
+    id: 101,
+    problemId: 3,
+    problemTitle: '两数之和',
+    problemSlug: 'two-sum',
+    language: 'cpp',
+    status: 'accepted',
+    timeUsedMs: 120,
+    memoryUsedKb: 3456,
+    score: 100,
+    code: 'int main() { return 0; }',
+    answer: '',
+    errorMessage: '',
+    createdAt: '2026-11-06T08:00:00Z',
+    judgedAt: '2026-11-06T08:01:00Z',
+    agentSettled: true,
+    ...overrides,
+  }
+}
+
 async function mountPage() {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -69,7 +99,9 @@ async function mountPage() {
   })
   await router.push('/admin/agents')
   await router.isReady()
-  const wrapper = mount(AdminAgentsView, { global: { plugins: [router, PrimeVue] } })
+  const wrapper = mount(AdminAgentsView, {
+    global: { plugins: [router, PrimeVue], stubs: { Dialog: DialogStub } },
+  })
   await flushPromises()
   return wrapper
 }
@@ -87,9 +119,14 @@ beforeEach(() => {
   confirm.require.mockReset()
 
   vi.mocked(listAdminAgents).mockReset()
+  vi.mocked(listAdminAgentSubmissions).mockReset()
   vi.mocked(updateAdminAgent).mockReset()
 
   vi.mocked(listAdminAgents).mockResolvedValue(pageOf([activeAgent, disabledAgent]))
+  vi.mocked(listAdminAgentSubmissions).mockResolvedValue({
+    total: 1,
+    items: [submissionView()],
+  })
   vi.mocked(updateAdminAgent).mockResolvedValue(activeAgent)
 })
 
@@ -232,6 +269,61 @@ describe('AdminAgentsView', () => {
     expect(toast.add).toHaveBeenCalledWith(
       expect.objectContaining({ severity: 'success', summary: 'Rating 已重置' }),
     )
+
+    wrapper.unmount()
+  })
+
+  it('opens a paginated submission investigation dialog with code and answers', async () => {
+    vi.mocked(listAdminAgentSubmissions).mockResolvedValue({
+      total: 25,
+      items: [
+        submissionView(),
+        submissionView({
+          id: 102,
+          language: 'answer',
+          code: '',
+          answer: '42',
+          status: 'wrong_answer',
+          agentSettled: false,
+          judgedAt: null,
+        }),
+      ],
+    })
+    const wrapper = await mountPage()
+
+    await actionButton(wrapper, '提交').trigger('click')
+    await flushPromises()
+
+    expect(listAdminAgentSubmissions).toHaveBeenCalledWith(activeAgent.id, {
+      page: 1,
+      pageSize: PAGE_SIZE,
+    })
+    const dialog = wrapper.find('[data-test="agent-submissions-dialog"]')
+    expect(dialog.exists()).toBe(true)
+    expect(dialog.text()).toContain('Arena Agent')
+    expect(dialog.text()).toContain('两数之和')
+    expect(dialog.text()).toContain('通过')
+
+    const rows = dialog.findAll('[data-test="agent-submissions-table"] tbody tr')
+    expect(rows).toHaveLength(2)
+
+    await rows[0]!.trigger('click')
+    await flushPromises()
+    expect(dialog.find('[data-test="submission-code"]').text()).toContain(
+      'int main() { return 0; }',
+    )
+
+    await rows[1]!.trigger('click')
+    await flushPromises()
+    expect(dialog.find('[data-test="submission-answer"]').text()).toContain('42')
+    expect(dialog.find('[data-test="submission-code"]').exists()).toBe(false)
+
+    await dialog.findComponent(Paginator).vm.$emit('page', { page: 1 })
+    await flushPromises()
+    expect(listAdminAgentSubmissions).toHaveBeenLastCalledWith(activeAgent.id, {
+      page: 2,
+      pageSize: PAGE_SIZE,
+    })
 
     wrapper.unmount()
   })

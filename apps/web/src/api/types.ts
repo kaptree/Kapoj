@@ -252,6 +252,8 @@ export type AgentAbandonResult = Schemas['AgentAbandonResult']
 export type AdminAgentInput = Schemas['AdminAgentInput']
 export type AgentPage = Schemas['AgentPage']
 export type AgentRatingHistoryPage = Schemas['AgentRatingHistoryPage']
+export type AdminAgentSubmissionView = Schemas['AdminAgentSubmissionView']
+export type AdminAgentSubmissionPage = Schemas['AdminAgentSubmissionPage']
 
 export interface Page<T> {
   total: number

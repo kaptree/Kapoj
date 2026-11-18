@@ -87,6 +87,8 @@ async function loadHistory() {
     historyTotal.value = data.total
   } catch {
     if (seq !== historyRequest) return
+    history.value = []
+    historyTotal.value = 0
     historyError.value = '加载 Rating 历史失败，请稍后再试'
   } finally {
     if (seq === historyRequest) historyLoading.value = false

@@ -71,7 +71,7 @@ func (p *Pipeline) Run(ctx context.Context, submissionID int64) error {
 	}
 
 	if prob.Type == "objective" {
-		p.publish(ctx, sub.ID)
+		p.publish(ctx, sub)
 		accepted := false
 		user := strings.TrimSpace(sub.Answer)
 		for _, answer := range prob.Answers {
@@ -96,7 +96,7 @@ func (p *Pipeline) Run(ctx context.Context, submissionID int64) error {
 	if !sub.Language.Valid() {
 		return fmt.Errorf("unsupported language %q", sub.Language)
 	}
-	p.publish(ctx, sub.ID)
+	p.publish(ctx, sub)
 
 	work, err := os.MkdirTemp("", "kapoj-judge-*")
 	if err != nil {
@@ -163,7 +163,7 @@ func (p *Pipeline) finish(ctx context.Context, sub *model.Submission, in db.Fini
 	if err := p.repo.Finish(ctx, sub.ID, in); err != nil {
 		return err
 	}
-	p.publish(ctx, sub.ID)
+	p.publish(ctx, sub)
 	if in.Status == model.StatusAccepted && sub.AgentID == nil {
 		p.publishGameAccepted(ctx, sub)
 	}
@@ -186,9 +186,14 @@ func (p *Pipeline) publishGameAccepted(ctx context.Context, sub *model.Submissio
 	}
 }
 
-func (p *Pipeline) publish(ctx context.Context, submissionID int64) {
+func (p *Pipeline) publish(ctx context.Context, sub *model.Submission) {
+	if sub.AgentID != nil {
+		// Agent submissions are private to their owner; the human submission
+		// SSE stream must never observe them.
+		return
+	}
 	if p.publisher != nil {
-		p.publisher.Publish(ctx, submissionID)
+		p.publisher.Publish(ctx, sub.ID)
 	}
 }
 
@@ -341,7 +346,13 @@ func (p *Pipeline) MarkSystemError(ctx context.Context, submissionID int64, caus
 		slog.Error("mark submission system error failed", "submission_id", submissionID, "err", err)
 		return
 	}
-	p.publish(ctx, submissionID)
+	sub, err := p.repo.FindByID(ctx, submissionID)
+	if err != nil {
+		slog.Error("load submission after system error failed",
+			"submission_id", submissionID, "err", err)
+		return
+	}
+	p.publish(ctx, sub)
 }
 
 func truncate(s string, max int) string {

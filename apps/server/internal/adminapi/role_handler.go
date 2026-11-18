@@ -63,6 +63,8 @@ func RegisterRoutes(api gin.IRouter, s *rbac.Service, opts ...Options) {
 	}
 	if h.agentSvc != nil {
 		api.GET("/admin/agents", append(requirePermission(s, string(rbac.PermAgentManage)), h.listAgents)...)
+		api.GET("/admin/agents/:id/submissions", append(
+			requirePermission(s, string(rbac.PermAgentManage)), h.listAgentSubmissions)...)
 		api.PUT("/admin/agents/:id", append(
 			requirePermission(s, string(rbac.PermAgentManage)),
 			middleware.AuditAdminAction(s, string(rbac.PermAgentManage), rbac.AuditTargetAgent),

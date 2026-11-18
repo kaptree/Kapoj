@@ -622,6 +622,11 @@ func TestRouterWiresAgentPublicAndAdminRoutes(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	assert.EqualValues(t, 1, resp["data"].(map[string]any)["total"])
 
+	w, resp = call(h, http.MethodGet,
+		fmt.Sprintf("/api/admin/agents/%d/submissions", agentID), token, "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.EqualValues(t, 0, resp["data"].(map[string]any)["total"])
+
 	w, resp = call(h, http.MethodPut, fmt.Sprintf("/api/admin/agents/%d", agentID), token,
 		`{"status":"disabled"}`)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())

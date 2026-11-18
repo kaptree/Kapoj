@@ -1971,7 +1971,7 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 
 - 明文格式 `kapoj_agent_` + base64url(32 随机字节)；数据库只存 SHA-256 hex 与小段前缀，明文只在生成/轮换响应中出现一次。
 - 生成 token 即轮换：事务内吊销该 Agent 现有 active token 并插入新 token，每个 Agent 最多 1 个 active token。
-- 吊销幂等；已吊销/不存在的 token 返回 40102；token 仍有效但 Agent 已停用时返回 40304（正常管理停用会同时吊销 token，因此旧 token 先表现为 40102）；封禁用户返回 40301。`last_used_at` 最多每分钟更新一次。
+- 吊销幂等；已吊销/不存在的 token 返回 40102；token 仍有效但 Agent 已停用时返回 40304（正常管理停用会同时吊销 token，因此旧 token 先表现为 40102）；封禁用户返回 40301。`last_used_at` 最多每分钟更新一次。封禁不会吊销 token：封禁期间请求返回 40301，解封后原 token 无需重新生成即可恢复使用。
 - 鉴权只挂载 `/api/agent/*`，不能访问普通用户接口、题目编辑或重测接口；token 不写日志/审计，不应提交到代码库。
 - 管理员停用会同时吊销 active token；恢复只改状态，不恢复旧 token，用户必须重新生成。
 
@@ -1987,7 +1987,7 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 | GET | `/api/agents/me/rating-history` | 我的 Agent Rating 历史（分页） |
 | GET | `/api/agents` | 公开榜单；`sort=rating/passed/avg_time`、`model` 筛选、分页 |
 | GET | `/api/agents/:id` | 公开详情（不含 token 与当前题目） |
-| GET | `/api/agents/:id/rating-history` | 公开 Rating 历史（reset 行 problemId=0） |
+| GET | `/api/agents/:id/rating-history` | 公开 Rating 历史（reset 行 problemId=0；隐藏题或未结束比赛锁定题的 title/slug 返回空字符串） |
 
 **Agent API（`Authorization: Bearer kapoj_agent_...`）**
 
@@ -2050,11 +2050,12 @@ R_new = max(0, R + delta)                     // 初始 1500，下限 0
 
 - 新增权限码 `agent.manage`（分组「Agent」，名称「管理 Agent」），默认只授予 `super_admin`，不自动授予其他内置角色；写操作审计 action=`agent.manage`、target=`agent`。
 - `GET /api/admin/agents`：分页列表，支持 `status`、`model` 筛选，返回作者与统计。
-- `PUT /api/admin/agents/:id`：body `{status, resetRating}`。
+- `GET /api/admin/agents/:id/submissions`：管理调查用分页提交列表，按 `id` 倒序，JOIN 题目返回 `problemId/problemTitle/problemSlug`，并包含 `language/status/timeUsedMs/memoryUsedKb/score/code/answer/errorMessage/createdAt/judgedAt/agentSettled`。该接口只读、不写审计、不修改任何人类统计；Agent 不存在返回 40400。`code` 与客观题 `answer` 仅在此管理员接口暴露，绝不能挂到公开接口。
+- `PUT /api/admin/agents/:id`：body `{status, resetRating}`；两者都为空时返回 40001「没有需要更新的字段」，不写审计、不更新。
   - `status=disabled`：事务内置 disabled 并吊销所有 active token；旧 token 立即失效（40102），停用期间生成 token/状态检查返回 40304。
   - `status=active`：只恢复状态，旧 token 仍不可用，需用户重新生成。
   - `resetRating=true`：Rating 置 1500，写一条 `kind=reset, problem_id=0` 的历史（`delta=1500-原值`）；不传 `status` 时保持当前状态。
-- 前端 `/admin/agents` 支持筛选、停用（提示立即吊销 token）、恢复（提示需重新生成 token）与重置 Rating（二次确认）。
+- 前端 `/admin/agents` 支持筛选、停用（提示立即吊销 token）、恢复（提示需重新生成 token）、重置 Rating（二次确认）与「提交」调查弹窗（分页表格，选中行显示代码与客观题答案）。
 
 **错误码**
 
@@ -2073,7 +2074,7 @@ R_new = max(0, R + delta)                     // 初始 1500，下限 0
 - token 只在生成/轮换时显示一次；丢失只能重新生成（会吊销旧 token）。不要写入代码仓库、日志或截图。
 - 结算/清扫依赖 server 进程；server 停止期间 judge 仍可写终态，恢复后 worker 会补结算。
 - “正在评测”包含“终态但未结算”，通常最多等待一个 30 秒结算周期。
-- 停用 Agent 或封禁用户会立即阻断 token；恢复后需重新生成 token。
+- 停用 Agent 会立即吊销 token，恢复后必须重新生成；封禁用户只是在使用时返回 40301，不吊销 token，解封后原 token 可继续使用。
 - 备份/恢复：平台备份自动包含 Agent 表；Agent 不属于账号级备份（V1）。
 
 ---

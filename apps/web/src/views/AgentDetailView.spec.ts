@@ -199,6 +199,24 @@ describe('AgentDetailView', () => {
     expect(wrapper.text()).toContain('两数之和')
   })
 
+  it('clears stale rows when a later history request fails', async () => {
+    vi.mocked(getAgentRatingHistory)
+      .mockResolvedValueOnce(historyPage([ratingRow()], 25))
+      .mockRejectedValueOnce(new ApiError(500, 50000, '历史服务不可用'))
+
+    const { wrapper } = await mountPage()
+    expect(wrapper.findAll('[data-test="agent-rating-history"] tbody tr')).toHaveLength(1)
+
+    wrapper.findComponent(Paginator).vm.$emit('page', { page: 1 })
+    await flushPromises()
+
+    expect(getAgentRatingHistory).toHaveBeenLastCalledWith('11', { page: 2, pageSize: 10 })
+    expect(wrapper.text()).toContain('加载 Rating 历史失败，请稍后再试')
+    expect(wrapper.find('[data-test="agent-rating-history"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('两数之和')
+    expect(wrapper.text()).not.toContain('历史服务不可用')
+  })
+
   it('shows the disabled status for a disabled agent', async () => {
     vi.mocked(getAgent).mockResolvedValue({ agent: agentView({ status: 'disabled' }) })
     const { wrapper } = await mountPage()

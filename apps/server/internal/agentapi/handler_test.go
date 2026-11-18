@@ -50,7 +50,7 @@ func newAPIFixture(t *testing.T) *apiFixture {
 	store, err := storage.NewLocal(t.TempDir())
 	require.NoError(t, err)
 	svc := agent.NewService(g,
-		problem.NewGormRepository(g), contest.NewGormRepository(g), nil, nil)
+		problem.NewGormRepository(g), contest.NewGormRepository(g), noopQueue{}, nil)
 	h := router.New(router.Deps{
 		DB: g, Redis: rdb, Storage: store, Enqueuer: noopQueue{}, Agent: svc,
 		Config: &config.Config{

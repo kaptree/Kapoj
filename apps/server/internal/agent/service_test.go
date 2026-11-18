@@ -34,8 +34,12 @@ type agentFixture struct {
 
 func newAgentFixture(t *testing.T) *agentFixture {
 	t.Helper()
-	return newAgentFixtureWithDeps(t, nil, nil)
+	return newAgentFixtureWithDeps(t, noopQueue{}, nil)
 }
+
+type noopQueue struct{}
+
+func (noopQueue) Enqueue(context.Context, int64) error { return nil }
 
 func newAgentFixtureWithDeps(
 	t *testing.T, queue submission.Enqueuer, limiter agent.Limiter,
@@ -315,6 +319,13 @@ func TestAgentTokenRejectsDisabledOrBanned(t *testing.T) {
 	_, err = f.svc.AuthenticateToken(ctx, issue.Token)
 	appErr = requireAppError(t, err, 403, 40301)
 	assert.Equal(t, "账号已被封禁", appErr.Message)
+
+	// Banning does not revoke the token; unbanning makes it usable again.
+	require.NoError(t, f.db.Exec(
+		`UPDATE users SET status = 'active' WHERE id = ?`, userID,
+	).Error)
+	_, err = f.svc.AuthenticateToken(ctx, issue.Token)
+	require.NoError(t, err)
 }
 
 func TestAgentLeaderboardFiltersAndSorts(t *testing.T) {
@@ -503,6 +514,46 @@ func TestAgentPublicDetailAndHistory(t *testing.T) {
 	requireAppError(t, err, 404, 40400)
 }
 
+func TestAgentRatingHistoryHidesNonPublicProblems(t *testing.T) {
+	f := newAgentFixture(t)
+	ctx := context.Background()
+
+	owner := f.user("history-privacy", "active")
+	created := f.create(owner, "History Privacy Agent")
+	hidden := f.seedProblem(seedProblemOpts{Slug: "history-hidden", Title: "Hidden Title", Hidden: true})
+	locked := f.seedProblem(seedProblemOpts{Slug: "history-locked", Title: "Locked Title"})
+	f.lockProblem(locked, f.clock.now.Add(time.Hour))
+	ended := f.seedProblem(seedProblemOpts{Slug: "history-ended", Title: "Ended Title"})
+	f.lockProblem(ended, f.clock.now.Add(-time.Hour))
+
+	for i, problemID := range []int64{hidden.ID, locked.ID, ended.ID} {
+		require.NoError(t, f.db.Create(&agent.AgentRatingHistory{
+			AgentID: created.ID, ProblemID: problemID, Kind: agent.RatingSolve,
+			RatingBefore: 1500, RatingAfter: 1510, Delta: 10,
+			CreatedAt: f.clock.now.Add(time.Duration(i) * time.Minute),
+		}).Error)
+	}
+
+	page, err := f.svc.RatingHistory(ctx, created.ID, 1, 20)
+	require.NoError(t, err)
+	require.Len(t, page.Items, 3)
+
+	byID := make(map[int64]agent.AgentRatingRow, len(page.Items))
+	for _, row := range page.Items {
+		byID[row.ProblemID] = row
+	}
+
+	for _, problemID := range []int64{hidden.ID, locked.ID} {
+		row := byID[problemID]
+		assert.Equal(t, problemID, row.ProblemID, "problem id stays visible for context")
+		assert.Empty(t, row.ProblemTitle, "hidden/locked problem title must not leak")
+		assert.Empty(t, row.ProblemSlug, "hidden/locked problem slug must not leak")
+	}
+	endedRow := byID[ended.ID]
+	assert.Equal(t, "Ended Title", endedRow.ProblemTitle, "ended contests no longer lock the title")
+	assert.Equal(t, "history-ended", endedRow.ProblemSlug)
+}
+
 func TestAdminAgentUpdateDisablesAndResets(t *testing.T) {
 	f := newAgentFixture(t)
 	ctx := context.Background()
@@ -572,13 +623,17 @@ func TestAdminAgentUpdateDisablesAndResets(t *testing.T) {
 	_, err = f.svc.AuthenticateToken(ctx, fresh.Token)
 	require.NoError(t, err)
 
-	// An empty status keeps the current one and resetRating is opt-in.
+	// An empty update is rejected before any write or audit, and resetRating is
+	// opt-in.
 	require.NoError(t, f.db.Model(&agent.Agent{}).Where("id = ?", created.ID).
 		Update("rating", 1650).Error)
-	view, err = f.svc.AdminUpdate(ctx, created.ID, agent.AdminAgentInput{})
-	require.NoError(t, err)
-	assert.Equal(t, agent.StatusActive, view.Status)
-	assert.Equal(t, 1650, view.Rating)
+	_, err = f.svc.AdminUpdate(ctx, created.ID, agent.AdminAgentInput{})
+	appErr := requireAppError(t, err, 400, 40001)
+	assert.Contains(t, appErr.Message, "没有需要更新的字段")
+	var afterEmpty agent.Agent
+	require.NoError(t, f.db.First(&afterEmpty, created.ID).Error)
+	assert.Equal(t, 1650, afterEmpty.Rating)
+	assert.Equal(t, agent.StatusActive, afterEmpty.Status)
 
 	var resets int64
 	require.NoError(t, f.db.Model(&agent.AgentRatingHistory{}).
@@ -615,5 +670,74 @@ func TestAdminAgentUpdateDisablesAndResets(t *testing.T) {
 	_, err = f.svc.AdminUpdate(ctx, created.ID, agent.AdminAgentInput{Status: agent.Status("banned")})
 	requireAppError(t, err, 400, 40001)
 	_, err = f.svc.AdminUpdate(ctx, 999999, agent.AdminAgentInput{Status: agent.StatusDisabled})
+	requireAppError(t, err, 404, 40400)
+}
+
+func TestAdminAgentSubmissions(t *testing.T) {
+	f := newAgentFixture(t)
+	ctx := context.Background()
+
+	owner := f.user("admin-submissions-owner", "active")
+	other := f.user("admin-submissions-other", "active")
+	created := f.create(owner, "Admin Submissions Agent")
+	otherAgent := f.create(other, "Other Submissions Agent")
+	problemID := f.problem("admin-submissions-problem", "Admin Submissions Problem", 60)
+
+	judgedAt := f.clock.now.Add(2 * time.Minute)
+	first := &submission.Submission{
+		UserID: owner, ProblemID: problemID, AgentID: &created.ID,
+		Language: submission.LanguageCPP, Code: "int main(){}", Status: submission.StatusAccepted,
+		TimeUsedMS: 120, MemoryUsedKB: 345, Score: 100, AgentSettled: true,
+		CreatedAt: f.clock.now, JudgedAt: &judgedAt,
+	}
+	require.NoError(t, f.db.Create(first).Error)
+	second := &submission.Submission{
+		UserID: owner, ProblemID: problemID, AgentID: &created.ID,
+		Language: submission.LanguageAnswer, Answer: "42", Status: submission.StatusWrongAnswer,
+		Score: 0, ErrorMessage: "答案错误", AgentSettled: false, CreatedAt: f.clock.now,
+	}
+	require.NoError(t, f.db.Create(second).Error)
+	require.NoError(t, f.db.Create(&submission.Submission{
+		UserID: other, ProblemID: problemID, AgentID: &otherAgent.ID,
+		Language: submission.LanguageCPP, Code: "other", Status: submission.StatusPending,
+		CreatedAt: f.clock.now,
+	}).Error)
+
+	page, err := f.svc.AdminSubmissions(ctx, created.ID, 1, 20)
+	require.NoError(t, err)
+	assert.EqualValues(t, 2, page.Total)
+	require.Len(t, page.Items, 2)
+	newest := page.Items[0]
+	assert.Equal(t, second.ID, newest.ID, "newest submissions come first")
+	assert.Equal(t, problemID, newest.ProblemID)
+	assert.Equal(t, "Admin Submissions Problem", newest.ProblemTitle)
+	assert.Equal(t, "admin-submissions-problem", newest.ProblemSlug)
+	assert.Equal(t, submission.LanguageAnswer, newest.Language)
+	assert.Equal(t, submission.StatusWrongAnswer, newest.Status)
+	assert.Equal(t, "42", newest.Answer)
+	assert.Empty(t, newest.Code)
+	assert.Equal(t, "答案错误", newest.ErrorMessage)
+	assert.False(t, newest.AgentSettled)
+	assert.Nil(t, newest.JudgedAt)
+
+	oldest := page.Items[1]
+	assert.Equal(t, first.ID, oldest.ID)
+	assert.Equal(t, "int main(){}", oldest.Code)
+	assert.Equal(t, submission.StatusAccepted, oldest.Status)
+	assert.Equal(t, 120, oldest.TimeUsedMS)
+	assert.Equal(t, 345, oldest.MemoryUsedKB)
+	assert.Equal(t, 100, oldest.Score)
+	assert.True(t, oldest.AgentSettled)
+	require.NotNil(t, oldest.JudgedAt)
+	assert.True(t, oldest.JudgedAt.Equal(judgedAt))
+
+	// Paging is stable and filtered to this Agent.
+	page, err = f.svc.AdminSubmissions(ctx, created.ID, 2, 1)
+	require.NoError(t, err)
+	assert.EqualValues(t, 2, page.Total)
+	require.Len(t, page.Items, 1)
+	assert.Equal(t, first.ID, page.Items[0].ID)
+
+	_, err = f.svc.AdminSubmissions(ctx, 999999, 1, 20)
 	requireAppError(t, err, 404, 40400)
 }
