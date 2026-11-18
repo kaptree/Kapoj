@@ -37,6 +37,7 @@ func (Settings) TableName() string { return "ai_settings" }
 type PlatformModel struct {
 	ID                int64      `gorm:"primaryKey"`
 	Name              string     `gorm:"size:100;not null;uniqueIndex:uniq_ai_platform_models_name"`
+	Protocol          string     `gorm:"size:20;not null;default:openai"`
 	BaseURL           string     `gorm:"column:base_url;size:512;not null"`
 	ModelName         string     `gorm:"column:model_name;size:100;not null"`
 	APIKeyEncrypted   string     `gorm:"column:api_key_encrypted;type:text;not null;default:''"`
@@ -64,6 +65,28 @@ type UserConfig struct {
 }
 
 func (UserConfig) TableName() string { return "user_ai_configs" }
+
+// UserModel 是用户保存的一条自定义模型配置；同一用户可保存多条，名称在用户
+// 内唯一，其中最多一条 is_active（由部分唯一索引 uniq_user_ai_models_active
+// 保证）。Protocol 取 openai / anthropic。
+type UserModel struct {
+	ID                int64      `gorm:"primaryKey"`
+	UserID            int64      `gorm:"not null;uniqueIndex:uniq_user_ai_models_user_name,priority:1;index:idx_user_ai_models_user_active,priority:1"`
+	Name              string     `gorm:"size:100;not null;uniqueIndex:uniq_user_ai_models_user_name,priority:2"`
+	Protocol          string     `gorm:"size:20;not null;default:openai"`
+	BaseURL           string     `gorm:"column:base_url;size:512;not null"`
+	ModelName         string     `gorm:"column:model_name;size:100;not null"`
+	APIKeyEncrypted   string     `gorm:"column:api_key_encrypted;type:text;not null;default:''"`
+	IsActive          bool       `gorm:"column:is_active;not null;default:false;index:idx_user_ai_models_user_active,priority:2"`
+	LastTestAt        *time.Time `gorm:"column:last_test_at;type:timestamptz"`
+	LastTestOK        bool       `gorm:"column:last_test_ok;not null;default:false"`
+	LastTestError     string     `gorm:"column:last_test_error;size:500;not null;default:''"`
+	LastTestLatencyMS int        `gorm:"column:last_test_latency_ms;not null;default:0"`
+	CreatedAt         time.Time  `gorm:"type:timestamptz;not null"`
+	UpdatedAt         time.Time  `gorm:"type:timestamptz;not null"`
+}
+
+func (UserModel) TableName() string { return "user_ai_models" }
 
 // Hint 是题目 AI 提示缓存，每题只缓存一份（首个用户点击后生成）。
 type Hint struct {

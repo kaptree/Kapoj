@@ -55,6 +55,7 @@ const (
 	submissionFieldsBackfillKey   = "submission_fields_backfill_v1"
 	learningPathCountsBackfillKey = "learning_path_counts_backfill_v1"
 	problemDifficultyBackfillKey  = "problem_difficulty_1_100_v1"
+	userAIModelsBackfillKey       = "user_ai_models_backfill_v1"
 	migrationAdvisoryLock         = int64(0x6b61706f6a)
 )
 
@@ -97,6 +98,7 @@ func Migrate(g *gorm.DB) error {
 			&rbac.Role{}, &rbac.Permission{}, &rbac.RolePermission{},
 			&rbac.UserRole{}, &rbac.AdminAuditLog{}, &rbac.Meta{},
 			&ai.Provider{}, &ai.UserConfig{}, &ai.Hint{}, &ai.Settings{}, &ai.PlatformModel{},
+			&ai.UserModel{},
 			&testcasegen.Generation{}, &testcasegen.GenerationCase{},
 			&certificate.CertificateType{}, &certificate.Certificate{},
 			&site.Settings{}, &site.VisitCounter{},
@@ -129,6 +131,14 @@ func Migrate(g *gorm.DB) error {
 		).Error; err != nil {
 			return err
 		}
+		// A user may keep many model configurations but at most one active
+		// choice. The partial unique index is the cross-instance guard.
+		if err := tx.Exec(`
+			CREATE UNIQUE INDEX IF NOT EXISTS uniq_user_ai_models_active
+			ON user_ai_models (user_id)
+			WHERE is_active`).Error; err != nil {
+			return err
+		}
 		if err := backfillEmailVerified(tx); err != nil {
 			return err
 		}
@@ -138,8 +148,49 @@ func Migrate(g *gorm.DB) error {
 		if err := backfillLearningPathCounts(tx); err != nil {
 			return err
 		}
-		return backfillProblemDifficulty(tx)
+		if err := backfillProblemDifficulty(tx); err != nil {
+			return err
+		}
+		return backfillUserAIModels(tx)
 	})
+}
+
+// backfillUserAIModels copies each user's single legacy user_ai_configs row into
+// the multi-model table once. Providers may disappear from the catalog, so the
+// join is a LEFT JOIN and the provider code is used as a name fallback. Users
+// that already own a model keep their rows, which makes the backfill idempotent
+// even without the migration marker.
+func backfillUserAIModels(tx *gorm.DB) error {
+	var count int64
+	if err := tx.Model(&Migration{}).Where("key = ?", userAIModelsBackfillKey).Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	if err := tx.Exec(`
+		INSERT INTO user_ai_models (
+			user_id, name, protocol, base_url, model_name,
+			api_key_encrypted, is_active, created_at, updated_at
+		)
+		SELECT
+			c.user_id,
+			LEFT(COALESCE(p.name, c.provider) || ' / ' || c.model_name, 100),
+			'openai',
+			COALESCE(p.base_url, ''),
+			c.model_name,
+			c.api_key_encrypted,
+			true,
+			now(),
+			now()
+		FROM user_ai_configs AS c
+		LEFT JOIN ai_providers AS p ON p.code = c.provider
+		WHERE NOT EXISTS (
+			SELECT 1 FROM user_ai_models AS m WHERE m.user_id = c.user_id
+		)`).Error; err != nil {
+		return err
+	}
+	return tx.Create(&Migration{Key: userAIModelsBackfillKey, AppliedAt: time.Now().UTC()}).Error
 }
 
 // backfillProblemDifficulty converts the legacy 1..5 problem difficulty scale

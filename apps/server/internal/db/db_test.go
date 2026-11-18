@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -565,4 +567,176 @@ func TestMigrateCreatesAvatarColumns(t *testing.T) {
 
 	assert.True(t, g.Migrator().HasColumn(&user.User{}, "avatar_key"))
 	assert.True(t, g.Migrator().HasColumn(&user.User{}, "avatar_content_type"))
+}
+
+func TestMigrateCreatesUserAIModelsSchema(t *testing.T) {
+	dsn := os.Getenv("KAPOJ_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("KAPOJ_TEST_DATABASE_URL not set; skipping database test")
+	}
+	g, err := open(dsn, io.Discard)
+	require.NoError(t, err)
+	require.NoError(t, Migrate(g))
+	sqlDB, err := g.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	assert.True(t, g.Migrator().HasTable("user_ai_models"), "缺少表 user_ai_models")
+	for _, column := range []string{
+		"user_id", "name", "protocol", "base_url", "model_name",
+		"api_key_encrypted", "is_active", "last_test_at", "last_test_ok",
+		"last_test_error", "last_test_latency_ms", "created_at", "updated_at",
+	} {
+		assert.True(t, g.Migrator().HasColumn(&ai.UserModel{}, column), "缺少列 %s", column)
+	}
+	assert.True(t, g.Migrator().HasColumn(&ai.PlatformModel{}, "protocol"), "ai_platform_models 缺少 protocol 列")
+
+	var protocolDefault string
+	require.NoError(t, g.Raw(`
+		SELECT COALESCE(column_default, '') FROM information_schema.columns
+		WHERE table_name = 'ai_platform_models' AND column_name = 'protocol'`).Scan(&protocolDefault).Error)
+	assert.Contains(t, protocolDefault, "openai", "平台模型 protocol 默认值应为 openai")
+
+	var activeIndexDef string
+	require.NoError(t, g.Raw(`
+		SELECT COALESCE(pg_get_indexdef((
+			SELECT indexrelid FROM pg_index
+			JOIN pg_class ON pg_class.oid = pg_index.indexrelid
+			WHERE pg_class.relname = 'uniq_user_ai_models_active'
+		)), '')`).Scan(&activeIndexDef).Error)
+	assert.Contains(t, activeIndexDef, "UNIQUE INDEX", "active 索引必须是唯一索引")
+	assert.Contains(t, activeIndexDef, "(user_id)")
+	assert.Contains(t, activeIndexDef, "WHERE is_active", "active 索引必须是部分索引")
+
+	const (
+		userID      = int64(900001)
+		otherUserID = int64(900002)
+	)
+	cleanup := func() {
+		require.NoError(t, g.Where("user_id IN ?", []int64{userID, otherUserID}).Delete(&ai.UserModel{}).Error)
+	}
+	cleanup()
+	t.Cleanup(cleanup)
+
+	row := ai.UserModel{
+		UserID: userID, Name: "schema-test", Protocol: "anthropic",
+		BaseURL: "https://api.example.com", ModelName: "claude-sonnet-4-20250514",
+		APIKeyEncrypted: "encrypted",
+	}
+	require.NoError(t, g.Create(&row).Error)
+
+	duplicateName := ai.UserModel{
+		UserID: userID, Name: "schema-test", BaseURL: "https://api.example.com",
+		ModelName: "claude-sonnet-4-20250514",
+	}
+	assert.Error(t, g.Create(&duplicateName).Error, "同一用户模型名称必须唯一")
+
+	activeA := ai.UserModel{UserID: userID, Name: "active-a", BaseURL: "https://a.example.com", ModelName: "m", IsActive: true}
+	require.NoError(t, g.Create(&activeA).Error)
+	activeB := ai.UserModel{UserID: userID, Name: "active-b", BaseURL: "https://b.example.com", ModelName: "m", IsActive: true}
+	assert.Error(t, g.Create(&activeB).Error, "每个用户最多一个当前使用模型")
+
+	otherActive := ai.UserModel{UserID: otherUserID, Name: "active-a", BaseURL: "https://a.example.com", ModelName: "m", IsActive: true}
+	require.NoError(t, g.Create(&otherActive).Error, "不同用户可各自有一个当前使用模型")
+
+	defaulted := ai.UserModel{UserID: otherUserID, Name: "default-protocol", BaseURL: "https://d.example.com", ModelName: "m"}
+	require.NoError(t, g.Create(&defaulted).Error)
+	var loaded ai.UserModel
+	require.NoError(t, g.Where("user_id = ? AND name = ?", otherUserID, "default-protocol").First(&loaded).Error)
+	assert.Equal(t, "openai", loaded.Protocol, "protocol 默认值应为 openai")
+}
+
+func TestBackfillUserAIModels(t *testing.T) {
+	dsn := os.Getenv("KAPOJ_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("KAPOJ_TEST_DATABASE_URL not set; skipping database test")
+	}
+	g, err := open(dsn, io.Discard)
+	require.NoError(t, err)
+	require.NoError(t, Migrate(g))
+	sqlDB, err := g.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	const (
+		providerCode     = "test-user-ai-model-provider"
+		longProviderCode = "test-user-ai-model-provider-long"
+		backfillKey      = "user_ai_models_backfill_v1"
+	)
+	userID := int64(900001)
+	longUserID := int64(900002)
+	cleanup := func() {
+		require.NoError(t, g.Where("user_id IN ?", []int64{userID, longUserID}).Delete(&ai.UserModel{}).Error)
+		require.NoError(t, g.Where("user_id IN ?", []int64{userID, longUserID}).Delete(&ai.UserConfig{}).Error)
+		require.NoError(t, g.Where("code IN ?", []string{providerCode, longProviderCode}).Delete(&ai.Provider{}).Error)
+		require.NoError(t, g.Where("key = ?", backfillKey).Delete(&Migration{}).Error)
+	}
+	cleanup()
+	t.Cleanup(cleanup)
+
+	provider := ai.Provider{
+		Code: providerCode, Name: "Test Provider",
+		BaseURL: "https://api.test.example/v1", DefaultModel: "gpt-4o-mini", IsActive: true,
+	}
+	require.NoError(t, g.Create(&provider).Error)
+	longModelName := strings.Repeat("模", 40)
+	longProvider := ai.Provider{
+		Code: longProviderCode, Name: strings.Repeat("长", 60),
+		BaseURL: "https://long.test.example/v1", DefaultModel: longModelName, IsActive: true,
+	}
+	require.NoError(t, g.Create(&longProvider).Error)
+	require.NoError(t, g.Create(&ai.UserConfig{
+		UserID: userID, Provider: providerCode, ModelName: "gpt-4o-mini",
+		APIKeyEncrypted: "encrypted-token-a",
+	}).Error)
+	require.NoError(t, g.Create(&ai.UserConfig{
+		UserID: longUserID, Provider: longProviderCode, ModelName: longModelName,
+		APIKeyEncrypted: "encrypted-token-b",
+	}).Error)
+
+	require.NoError(t, g.Where("key = ?", backfillKey).Delete(&Migration{}).Error)
+	require.NoError(t, Migrate(g))
+
+	var got []ai.UserModel
+	require.NoError(t, g.Where("user_id IN ?", []int64{userID, longUserID}).Order("user_id").Find(&got).Error)
+	require.Len(t, got, 2, "每个有旧配置的用户应回填一条用户模型")
+
+	row := got[0]
+	assert.Equal(t, userID, row.UserID)
+	assert.Equal(t, "Test Provider / gpt-4o-mini", row.Name)
+	assert.Equal(t, "openai", row.Protocol)
+	assert.Equal(t, provider.BaseURL, row.BaseURL)
+	assert.Equal(t, "gpt-4o-mini", row.ModelName)
+	assert.Equal(t, "encrypted-token-a", row.APIKeyEncrypted)
+	assert.True(t, row.IsActive, "回填的模型应为当前使用")
+	assert.Nil(t, row.LastTestAt)
+	assert.False(t, row.LastTestOK)
+	assert.Equal(t, 0, row.LastTestLatencyMS)
+
+	longRow := got[1]
+	assert.Equal(t, longUserID, longRow.UserID)
+	assert.Equal(t, strings.Repeat("长", 60)+" / "+strings.Repeat("模", 37), longRow.Name, "名称应截断到 100 个字符")
+	assert.Equal(t, 100, utf8.RuneCountInString(longRow.Name))
+	assert.Equal(t, "openai", longRow.Protocol)
+	assert.Equal(t, longProvider.BaseURL, longRow.BaseURL)
+	assert.Equal(t, longModelName, longRow.ModelName)
+	assert.Equal(t, "encrypted-token-b", longRow.APIKeyEncrypted)
+	assert.True(t, longRow.IsActive)
+
+	var markers int64
+	require.NoError(t, g.Model(&Migration{}).Where("key = ?", backfillKey).Count(&markers).Error)
+	assert.EqualValues(t, 1, markers, "回填必须写迁移标记")
+
+	// With the marker in place Migrate must not touch the rows again.
+	require.NoError(t, Migrate(g))
+	var count int64
+	require.NoError(t, g.Model(&ai.UserModel{}).Where("user_id IN ?", []int64{userID, longUserID}).Count(&count).Error)
+	assert.EqualValues(t, 2, count, "迁移标记阻止重复回填")
+
+	// Even without the marker the per-user NOT EXISTS guard keeps the
+	// backfill idempotent for users that already own a model.
+	require.NoError(t, g.Where("key = ?", backfillKey).Delete(&Migration{}).Error)
+	require.NoError(t, Migrate(g))
+	require.NoError(t, g.Model(&ai.UserModel{}).Where("user_id IN ?", []int64{userID, longUserID}).Count(&count).Error)
+	assert.EqualValues(t, 2, count, "已有用户模型时回填应跳过")
 }
