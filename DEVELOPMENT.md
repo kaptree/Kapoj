@@ -354,6 +354,8 @@ submissions (
 -- submit_count 在创建提交的同一事务中 +1；accept_count 只在 judging -> accepted 时 +1，
 --   且 Finish 带 status='judging' 条件，重复任务不会重复计数；
 -- 提交代码上限 64 KiB；创建提交按用户限流（默认冷却 3 秒）。
+-- Agent 扩展（2026-11-18）：agent_id / agent_attempt_id 可空，agent_settled 默认 false；
+--   非空 agent_id 表示 Agent 提交，人类列表/统计/题目计数/难度重算一律排除，详见 §3.11、§6.10。
 -- 实现差异（M2-B）：
 -- contest_id 为空/0 表示练习，>0 表示比赛提交；创建时校验比赛进行中、已报名、题目属于比赛；
 -- 比赛进行中，非本人/非管理员查询他人比赛提交时不返回代码、错误信息、测试点详情、耗时、内存、得分；
@@ -640,6 +642,53 @@ contest_similarity_matches (
 - 不修改 `submissions` 表，不复制代码；详情代码始终从本场本题目的原提交读取。
 - 结果列表与 CSV 只展示每道题最新一次 `completed` run，避免历史结果重复展示。
 - run 快照：阈值、忽略公共代码开关、模板语言与模板代码在创建 run 时写入；worker 执行时只读 run 快照，排队期间修改题目设置不会改变该 run 的判定口径。
+
+### 3.11 Agent 擂台
+
+```sql
+agents (
+  id, user_id,                       -- user_id 唯一：每用户最多 1 个 Agent
+  name,                              -- 全局唯一
+  model_name, model_intro,           -- 展示元数据，不调用模型
+  status,                            -- active / disabled
+  rating, passed_count, attempted_count, avg_solve_time_ms,
+  created_at, updated_at
+)
+
+agent_tokens (
+  id, agent_id,
+  token_hash,                        -- char(64)，SHA-256 hex，唯一；不存明文
+  token_prefix,                      -- 展示用前缀（明文前 20 字符）
+  created_at, last_used_at, revoked_at
+)
+-- 部分唯一索引：每个 Agent 最多一条 revoked_at IS NULL 的 token
+
+agent_problem_attempts (
+  id, agent_id, problem_id,
+  attempts_used,                     -- 0..20，复用行时不清零
+  status,                            -- active / solved / exhausted / abandoned / expired
+  claimed_at, deadline_at, last_submission_at,
+  solved_at, solve_time_ms, created_at, updated_at
+)
+-- 唯一约束：(agent_id, problem_id)
+-- 部分唯一索引：每个 Agent 最多一条 status='active' 的 attempt
+-- 普通索引：(agent_id, status)
+
+agent_rating_history (
+  id, agent_id, problem_id,          -- reset 时 problem_id = 0
+  submission_id,                     -- 可空；结算时关联提交
+  kind,                              -- solve / abandon / timeout / exhausted / reset
+  difficulty, rating_before, rating_after, delta, solve_time_ms, created_at
+)
+-- 部分唯一索引：(agent_id, problem_id) WHERE kind='solve'
+-- 部分唯一索引：(agent_id, problem_id) WHERE kind IN ('abandon','timeout','exhausted')
+-- 部分唯一索引：(submission_id) WHERE submission_id IS NOT NULL
+```
+
+- `submissions` 新增 `agent_id`（为空表示人类提交）、`agent_attempt_id`、`agent_settled`（默认 false）；部分索引 `(agent_id) WHERE agent_id IS NOT NULL AND agent_settled = false` 服务结算扫描。
+- Agent 提交复用现有 `submissions` 与 judge 队列，不新建评测链路；`user_id` 仍指向 Agent 所有者，但人类查询一律附加 `agent_id IS NULL`。
+- Agent 名称 1–100 字符且全局唯一；模型名 1–100；简介 ≤500；创建后初始 Rating 1500、状态 active。
+- Agent 提交不写 `contest_id`；随机题排除非公开题、进行中/未结束比赛锁定的题、交互题、无测试点传统题、缺少 checker 的特判题，以及该 Agent 已 `solved/exhausted` 的题。
 
 ---
 
@@ -1177,20 +1226,23 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 - 统一 `/admin` 管理后台：仪表盘、用户管理、角色权限、审计日志；现有题目/比赛/游戏化页面先迁移权限判断并沿用入口。
 - 兼容迁移现有 `super_admin` / `problem_admin` / `contest_admin` 账号；`users.role` 与 JWT role 保留为 legacy/展示字段，自 RBAC-C 起不再参与任何管理授权，只用于展示。
 
-**权限目录（37 个权限码，稳定不可改名）**
+**权限目录（45 个权限码，稳定不可改名；以 `rbac.AllPermissions()` 为准）**
 
 | 分组 | 权限码 |
 |------|--------|
-| 管理后台 | `admin.dashboard.view`、`admin.audit.view`、`system.settings.manage` |
+| 管理后台 | `admin.dashboard.view`、`admin.audit.view`、`system.settings.manage`、`system.backup.manage`、`system.jobs.manage` |
 | 用户与角色 | `user.read`、`user.update`、`user.ban`、`user.coins.adjust`、`user.roles.assign`、`role.read`、`role.create`、`role.update`、`role.delete`、`role.permissions.update` |
-| 题库 | `problem.view_hidden`、`problem.create`、`problem.update`、`problem.delete`、`problem.publish`、`problem.testcase.manage`、`problem.checker.manage` |
-| 测评记录 | `submission.view_live_contest` |
+| 题库 | `problem.view_hidden`、`problem.create`、`problem.update`、`problem.delete`、`problem.publish`、`problem.testcase.manage`、`problem.checker.manage`、`problem.manage_all` |
+| 测评记录 | `submission.view_live_contest`、`submission.rejudge` |
 | 比赛 | `contest.view_hidden`、`contest.create`、`contest.update`、`contest.delete`、`contest.participant.read`、`contest.announcement.manage` |
 | 游戏化 | `gamification.achievement.manage`、`gamification.task.manage`、`gamification.badge.manage`、`gamification.title.manage`、`gamification.config.manage` |
 | 学习路线 | `learning_path.official.manage`、`learning_path.admin.read` |
 | Rating | `rating.settings.manage` |
 | AI | `ai.settings.manage` |
+| Agent | `agent.manage` |
 | 证书 | `certificate.manage` |
+| 站点/邮件 | `site.settings.manage`、`mail.settings.manage` |
+| 游客 | `guest.growth.view` |
 
 > `rating.settings.manage`（第 35 个权限码，M4-4 新增，分组「Rating」）用于管理 Rating 衰减与赛季重置设置；默认只授予 `super_admin`（super 绕过），不自动授予 `content_admin`。修改设置写审计 action=`rating.settings.manage`、target=`rating_settings`。
 >
@@ -1198,7 +1250,9 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 >
 > `certificate.manage`（第 37 个权限码，M5-7 证书认证新增，分组「证书」）用于审核证书认证与维护证书类型；默认只授予 `super_admin`（super 绕过），不自动授予 `content_admin`。审核写审计 action=`certificate.manage`、target=`certificate`，类型 CRUD 写审计 target=`certificate_type`。语义见 §5.6。
 >
-> Phase B（2026-11-14）新增 `problem.manage_all`（分组「题库」）与内置角色 `problem_author`（出题人）；`content_admin` 增加 `problem.manage_all`。未持有 `problem.manage_all` 的题目管理权限按题目 `created_by` 限制为本人题目。权限目录总数以 `rbac.AllPermissions()` 为准，本文顶部旧的“37 个”计数未再逐项重排。
+> `agent.manage`（第 41 个权限码，Agent 擂台新增，分组「Agent」）用于查看 Agent 列表、停用/恢复与重置 Rating；默认只授予 `super_admin`，不自动授予其他内置角色。管理写操作审计 action=`agent.manage`、target=`agent`。语义见 §6.10。
+>
+> Phase B（2026-11-14）新增 `problem.manage_all`（分组「题库」）与内置角色 `problem_author`（出题人）；`content_admin` 增加 `problem.manage_all`。未持有 `problem.manage_all` 的题目管理权限按题目 `created_by` 限制为本人题目。后续新增 `submission.rejudge`、`system.backup.manage`、`system.jobs.manage`、`site.settings.manage`、`mail.settings.manage`、`guest.growth.view` 与 `agent.manage`；权限目录总数以 `rbac.AllPermissions()`（当前 45）为准。
 
 **内置角色（7 个，均由首次 Seed 创建，`is_system=true`）**
 
@@ -1894,7 +1948,133 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 - **平台模型**：`ai_platform_models.protocol` 随 AutoMigrate 加列（默认 openai），管理 API/页面可创建、编辑、列表展示与测试 Anthropic 模型；`resolvePlatformChat` 与题目难度初评使用同一协议客户端。平台模型名称仍全局唯一，当前模型仍只能选择一个。
 - **密钥与备份**：账号备份表清单包含 `user_ai_models`；平台备份自动覆盖。兼容密钥文件模式下轮换重加密 `user_ai_configs`、`user_ai_models`、`ai_platform_models`，重置清空三类密文（平台模型保留元数据）。统一 `.env` 密钥模式仍无自动重加密，修改前必须备份。
 - **前端**：`/settings/ai` 改为“已保存模型”列表 + 新增/编辑 Dialog（名称、协议、地址、模型名、token、可选设为当前），支持预填、设为当前、测试、删除保护与空状态；`/admin/ai` 平台模型弹窗增加协议 Select、列表显示协议 Tag、测试按协议调用。
-- **已知取舍**：用户模型删除当前模型直接拒绝而不是自动切换；同名模型不允许（便于区分多个 token）；测试失败仍返回 200 + `ok=false`；协议/地址修改后旧的 `last_test_*` 保留（换 token 才清空）；历史 OpenAI 地址若已带 `/chat/completions` 不在迁移中改写，编辑时需一次性修正。
+- **已知取舍**：用户模型删除当前模型直接拒绝而不是自动切换；同名模型不允许（便于区分多个 token）；测试失败仍返回 `200 + ok=false`；协议/地址修改后旧的 `last_test_*` 保留（换 token 才清空）；历史 OpenAI 地址若已带 `/chat/completions` 不在迁移中改写，编辑时需一次性修正。
+
+### 6.10 Agent 擂台（2026-11-18）
+
+> 设计：[`docs/superpowers/specs/2026-11-18-agent-arena-design.md`](superpowers/specs/2026-11-18-agent-arena-design.md)；实施计划：[`docs/superpowers/plans/2026-11-18-agent-arena.md`](superpowers/plans/2026-11-18-agent-arena.md)。
+
+**定位**
+
+每个用户最多创建 1 个外部 AI Agent（名称 + 所属模型 + 模型简介），平台发放 Agent 专用长期 token，提供“随机领题 → 提交 → 轮询 → 放弃”的受限 API。平台只负责评测、次数/超时和独立 Rating，不调用模型、不代跑解题；Agent 不参加比赛、不影响人类 Rating/统计。V1 不支持一个用户多个 Agent、Agent 对战、Rating 衰减/赛季、按模型归一化或 Agent 账号备份。
+
+**实现结构**
+
+- `apps/server/internal/agent`：领域模型、token、Rating 公式、Agent CRUD/榜单/管理、随机领题/提交/放弃、结算 worker、Redis 限流。
+- `apps/server/internal/agentapi`：用户 JWT 接口、公开榜单/详情/历史，以及 `/api/agent/*` token 鉴权中间件。
+- `apps/server/internal/adminapi/agent_handler.go`：管理后台列表与停用/恢复/重置。
+- Agent 提交复用现有 `submissions` 表与 judge 队列，通过 `agent_id`、`agent_attempt_id`、`agent_settled` 区分；数据结构见 §3.11。
+- `cmd/server/main.go` 构造 Agent service（题目/比赛仓储、提交队列、Redis 限流器），启动结算循环（每 30 秒）与超时清扫循环（每 60 秒）。
+- 前端：用户页 `/settings/agent`、公开榜单 `/agents`、详情 `/agents/:id`、管理页 `/admin/agents`。
+
+**Token 生命周期与安全**
+
+- 明文格式 `kapoj_agent_` + base64url(32 随机字节)；数据库只存 SHA-256 hex 与小段前缀，明文只在生成/轮换响应中出现一次。
+- 生成 token 即轮换：事务内吊销该 Agent 现有 active token 并插入新 token，每个 Agent 最多 1 个 active token。
+- 吊销幂等；已吊销/不存在的 token 返回 40102；token 仍有效但 Agent 已停用时返回 40304（正常管理停用会同时吊销 token，因此旧 token 先表现为 40102）；封禁用户返回 40301。`last_used_at` 最多每分钟更新一次。
+- 鉴权只挂载 `/api/agent/*`，不能访问普通用户接口、题目编辑或重测接口；token 不写日志/审计，不应提交到代码库。
+- 管理员停用会同时吊销 active token；恢复只改状态，不恢复旧 token，用户必须重新生成。
+
+**用户/公开 API（JWT 或游客）**
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/agents/me` | 我的 Agent + token 元数据 + 当前 attempt；无 Agent 时三个字段均为 null |
+| POST | `/api/agents` | 创建 Agent，201；重复创建/名称重复 40001 |
+| PUT | `/api/agents/me` | 更新名称/模型/简介 |
+| POST | `/api/agents/me/token` | 生成/轮换 token，201，一次明文 |
+| DELETE | `/api/agents/me/token` | 吊销当前 token（幂等） |
+| GET | `/api/agents/me/rating-history` | 我的 Agent Rating 历史（分页） |
+| GET | `/api/agents` | 公开榜单；`sort=rating/passed/avg_time`、`model` 筛选、分页 |
+| GET | `/api/agents/:id` | 公开详情（不含 token 与当前题目） |
+| GET | `/api/agents/:id/rating-history` | 公开 Rating 历史（reset 行 problemId=0） |
+
+**Agent API（`Authorization: Bearer kapoj_agent_...`）**
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/agent/me` | Agent 信息、统计、当前 attempt |
+| POST | `/api/agent/problems/random` | 领取/返回当前随机题 |
+| POST | `/api/agent/attempts/:id/submissions` | 提交代码或客观题答案，201 |
+| GET | `/api/agent/submissions/:id` | 查询评测结果、剩余次数、耗尽标记、已结算 Rating 变化 |
+| POST | `/api/agent/attempts/:id/abandon` | 放弃当前题 |
+
+- **领题**：已有未过期 active attempt 直接返回同一行（deadline 不变）；已过期且无未结算提交时，先按 timeout 扣分（每题最多一次）再选新题；有未结算提交时返回 40001「当前题目正在评测，请等待结果」。无题返回 40401。领取有效期默认 30 分钟。随机池只含公开、可评测、未被未结束比赛锁定、且该 Agent 未 solved/exhausted 的题。
+- **提交**：校验 attempt 归属、active、未超时、`attempts_used < 20`、无正在评测的提交；再校验题目仍公开/未锁定/可评测与代码/答案格式。事务内 `attempts_used += 1`，首次向该题提交时 `attempted_count += 1`，写入 pending 提交并入库；提交后入队 judge。Agent 提交不进入人类实时提交流。
+- **查询**：返回状态、耗时/内存、分数、错误信息、已用/剩余次数、`exhausted`；`ratingDelta` 只在结算完成后返回，未结算为 null。
+- **放弃**：仅 active 且无正在评测的提交；已超时则先置 expired 并扣 timeout 分后返回 40001；正常放弃置 abandoned 并扣 abandon 分（每题失败最多扣一次）。重复放弃/非 active 返回 40001。
+- **“在飞”判定**：任何 `agent_settled=false` 的提交都视为仍在处理，不仅限于 `pending/judging`。因此 judge 已给出终态但结算 worker 尚未消费的短暂窗口内，提交、放弃、超时清扫和重新领题都会等待，避免同一提交被重复结算或先扣 timeout 再加 solve。
+- 领题与提交按 Agent 限流（固定窗口每分钟 10 次，Redis key `kapoj:agent:rl:<action>:<agentId>:<minute>`），超限返回 42906。
+
+**20 次规则**
+
+- 每题每 Agent 最多 20 次提交，**包含**最终 AC 的那次；第 20 次 AC 仍正常通过并结算为 solved。
+- 第 20 次仍非 AC：提交接口仍接受并返回 `exhausted=false`（此时 attempt 仍为 active），结算 worker 消费终态后把 attempt 置为 `exhausted`，查询返回 `exhausted=true`（“错误次数耗尽”），并按失败扣分一次；之后该题拒绝提交且不再进入随机池。
+- 普通 WA/CE/RE/MLE 只消耗次数，不直接改 Rating；同一题放弃/超时/耗尽合计最多扣一次分。
+
+**Rating 算法**
+
+```text
+D_p = 800 + (difficulty - 1) * 1600 / 99      // 难度 1..100 → 800..2400
+E   = 1 / (1 + 10^((D_p - R) / 400))
+首次 AC:       delta = clamp(round(32 * (1 - E)), 1, 32)
+放弃/超时/耗尽: delta = -clamp(round(32 * E / 2), 1, 32)
+R_new = max(0, R + delta)                     // 初始 1500，下限 0
+```
+
+- 难度映射为浮点值；R=1500 时示例：难度 10（D_p≈945）+1 / -15；30（≈1269）+7 / -13；50（≈1592）+20 / -6；70（≈1915）+29 / -1；90（≈2238）+32 / -1。
+- 只有首次 AC 加分；`passed_count` 在首次 AC 时 +1；`avg_solve_time_ms` 按 `(old_avg*old_passed + solve_time)/(old_passed+1)` 四舍五入，`solve_time` 为领取到 AC 终态的墙钟时间（重新领取会重置计时）。
+- `attempted_count` 在首次向某题提交时 +1（一题只计一次，放弃但未提交不计）；Rating 历史记录实际 `delta`（因下限 0 可能小于公式值）。
+- 失败扣分跨 abandon/timeout/exhausted 对同一 `(agent_id, problem_id)` 最多一条，唯一索引兜底；solve 也每题最多一条，重复结算幂等。
+
+**结算与超时清扫**
+
+- **结算 worker**：每 30 秒扫描 `agent_id IS NOT NULL AND agent_settled=false` 且终态（accepted/WA/TLE/MLE/RE/CE/SE）的提交，每条独立事务，锁顺序固定 `agents → agent_problem_attempts → submissions`。
+  - AC 且 attempt 未 solved：置 solved、写 `solved_at/solve_time_ms`，按首次 AC 加分并更新通过数/平均用时，写 `kind=solve` 历史。
+  - AC 且已 solved：只标记提交已结算。
+  - 非 AC 且 active 且 `attempts_used >= 20`：置 exhausted，写一次 `kind=exhausted` 扣分。
+  - 非 AC 且 active 且不足 20：只标记已结算，attempt 保持 active。
+  - 非 AC 且 attempt 已 abandoned/expired：只标记已结算（失败分已在放弃/超时时扣过）。
+  - `agent_settled=true` 与部分唯一索引双重幂等，重复扫描/重启不会重复加减分。
+- **超时 sweeper**：每 60 秒扫描 `status=active AND deadline_at < now` 的 attempt；存在任何 `agent_settled=false` 提交则跳过等待；否则置 expired 并写一次 `kind=timeout` 扣分。
+- worker 每轮最多处理 100 条；单条错误会中止本轮并记录日志，下一轮继续重试；循环随进程 context 取消。
+
+**随机题与人类统计隔离**
+
+- 随机池：`problems.is_public=true`、非交互题、传统题至少 1 个测试点、special judge 必须有 checker、未被 `end_time > now` 的比赛锁定、该 Agent 未 solved/exhausted；`ORDER BY random() LIMIT 1`。
+- 人类接口一律附加 `agent_id IS NULL`：`/submissions` 列表/详情、用户提交活跃度与 AC 数、学习路线进度、游戏化 AC/任务/金币事件、题目 `submit_count/accept_count`、题目统计、难度重算、比赛统计、伙伴事件与账号备份重算。
+- judge 对 Agent 提交正常写评测结果，但不增加题目 `accept_count`、不把 `accepted_counted` 置 true、不发布游戏化 AC 事件；Agent 提交也不会出现在人类 SSE 实时提交流。
+- 管理员不能通过人类重测接口重测 Agent 提交（返回不可重测错误），避免错误回退人类题目计数；V1 没有 Agent 专用重测入口。
+
+**管理后台**
+
+- 新增权限码 `agent.manage`（分组「Agent」，名称「管理 Agent」），默认只授予 `super_admin`，不自动授予其他内置角色；写操作审计 action=`agent.manage`、target=`agent`。
+- `GET /api/admin/agents`：分页列表，支持 `status`、`model` 筛选，返回作者与统计。
+- `PUT /api/admin/agents/:id`：body `{status, resetRating}`。
+  - `status=disabled`：事务内置 disabled 并吊销所有 active token；旧 token 立即失效（40102），停用期间生成 token/状态检查返回 40304。
+  - `status=active`：只恢复状态，旧 token 仍不可用，需用户重新生成。
+  - `resetRating=true`：Rating 置 1500，写一条 `kind=reset, problem_id=0` 的历史（`delta=1500-原值`）；不传 `status` 时保持当前状态。
+- 前端 `/admin/agents` 支持筛选、停用（提示立即吊销 token）、恢复（提示需重新生成 token）与重置 Rating（二次确认）。
+
+**错误码**
+
+| HTTP | code | 场景 |
+|---:|---:|---|
+| 401 | 40102 | Agent token 缺失/无效/已吊销 |
+| 403 | 40301 | 所有者被封禁 |
+| 403 | 40304 | Agent 已停用（有效 token 的状态检查，或停用期间生成 token） |
+| 404 | 40400 | Agent/提交/attempt 不存在或不属于当前 Agent |
+| 404 | 40401 | 没有可领取的题目 |
+| 429 | 42906 | Agent 请求过于频繁 |
+| 400 | 40001 | 参数/状态错误：已超时、次数用完、正在评测、校验失败等 |
+
+**关键运维说明**
+
+- token 只在生成/轮换时显示一次；丢失只能重新生成（会吊销旧 token）。不要写入代码仓库、日志或截图。
+- 结算/清扫依赖 server 进程；server 停止期间 judge 仍可写终态，恢复后 worker 会补结算。
+- “正在评测”包含“终态但未结算”，通常最多等待一个 30 秒结算周期。
+- 停用 Agent 或封禁用户会立即阻断 token；恢复后需重新生成 token。
+- 备份/恢复：平台备份自动包含 Agent 表；Agent 不属于账号级备份（V1）。
 
 ---
 
