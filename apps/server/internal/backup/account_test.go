@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kaptree/kapoj/apps/server/internal/ai"
 	"github.com/kaptree/kapoj/apps/server/internal/backup"
 	"github.com/kaptree/kapoj/apps/server/internal/companion"
 	"github.com/kaptree/kapoj/apps/server/internal/dbtypes"
@@ -19,6 +20,85 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/submission"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
+
+func TestAccountBackupIncludesUserModels(t *testing.T) {
+	e := newBackupEnv(t)
+	ctx := context.Background()
+	a := &user.User{
+		Username: "user-model-a", Nickname: "A", Email: "user-model-a@example.com", PasswordHash: "hash-a",
+	}
+	b := &user.User{
+		Username: "user-model-b", Nickname: "B", Email: "user-model-b@example.com", PasswordHash: "hash-b",
+	}
+	require.NoError(t, e.db.Create(a).Error)
+	require.NoError(t, e.db.Create(b).Error)
+
+	now := time.Now().UTC()
+	aModel := &ai.UserModel{
+		UserID: a.ID, Name: "a-model", Protocol: "anthropic",
+		BaseURL: "https://api.example.com", ModelName: "claude-sonnet",
+		APIKeyEncrypted: "v1:cipher-a", IsActive: true,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	require.NoError(t, e.db.Create(aModel).Error)
+	bModel := &ai.UserModel{
+		UserID: b.ID, Name: "b-model", Protocol: "openai",
+		BaseURL: "https://api.example.com/v1", ModelName: "gpt",
+		APIKeyEncrypted: "v1:cipher-b", IsActive: true,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	require.NoError(t, e.db.Create(bModel).Error)
+
+	pkg, err := e.svc.StartCreate(ctx, backup.KindAccount, &a.ID, 1)
+	require.NoError(t, err)
+	require.Equal(t, backup.PackageReady, pkg.Status)
+
+	rc, err := e.packages.Open(ctx, pkg.Filename)
+	require.NoError(t, err)
+	zipPath := filepath.Join(t.TempDir(), "account.zip")
+	file, err := os.Create(zipPath)
+	require.NoError(t, err)
+	_, err = io.Copy(file, rc)
+	require.NoError(t, err)
+	require.NoError(t, file.Close())
+	require.NoError(t, rc.Close())
+	reader, err := backup.OpenReader(zipPath, 0, 0)
+	require.NoError(t, err)
+	defer func() { _ = reader.Close() }()
+	assert.True(t, reader.Has("account/user_ai_models.csv"), "账号备份应包含用户模型 CSV")
+	assert.Contains(t, reader.Manifest.Tables, "user_ai_models")
+
+	// 修改导出行的名称并插入一条陈旧行；恢复时应先删除该用户的全部模型再导入。
+	require.NoError(t, e.db.Model(&ai.UserModel{}).Where("id = ?", aModel.ID).
+		Update("name", "changed").Error)
+	stale := &ai.UserModel{
+		UserID: a.ID, Name: "stale", Protocol: "openai",
+		BaseURL: "https://api.example.com/v1", ModelName: "stale",
+		APIKeyEncrypted: "v1:cipher-stale", IsActive: false,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	require.NoError(t, e.db.Create(stale).Error)
+
+	job, err := e.svc.StartRestore(ctx, backup.KindAccount, 1, &pkg.ID, "", &a.ID)
+	require.NoError(t, err)
+	require.Equal(t, backup.RestoreSuccess, job.Status, job.Error)
+
+	var restored []ai.UserModel
+	require.NoError(t, e.db.Where("user_id = ?", a.ID).Order("id").Find(&restored).Error)
+	require.Len(t, restored, 1)
+	assert.Equal(t, aModel.ID, restored[0].ID)
+	assert.Equal(t, "a-model", restored[0].Name)
+	assert.Equal(t, "anthropic", restored[0].Protocol)
+	assert.Equal(t, "claude-sonnet", restored[0].ModelName)
+	assert.Equal(t, "v1:cipher-a", restored[0].APIKeyEncrypted)
+	assert.True(t, restored[0].IsActive)
+
+	// 其他用户的模型不受影响。
+	var other ai.UserModel
+	require.NoError(t, e.db.First(&other, bModel.ID).Error)
+	assert.Equal(t, "b-model", other.Name)
+	assert.Equal(t, "v1:cipher-b", other.APIKeyEncrypted)
+}
 
 func TestAccountBackupRestoreIsScopedToUser(t *testing.T) {
 	e := newBackupEnv(t)

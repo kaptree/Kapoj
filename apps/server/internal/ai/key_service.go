@@ -93,8 +93,8 @@ const (
 //
 //  1. env 来源只读；
 //  2. 校验新密钥（base64/32 字节）；
-//  3. 仅保留模式：无旧密钥且存在用户配置或平台模型密文 → 拒绝破坏性覆盖；
-//  4. 写密钥文件（备份旧文件）→ DB 事务（重加密或清除两类配置 + 指纹 + 审计）→
+//  3. 仅保留模式：无旧密钥且存在用户配置、用户模型或平台模型密文 → 拒绝破坏性覆盖；
+//  4. 写密钥文件（备份旧文件）→ DB 事务（重加密或清除三类配置 + 指纹 + 审计）→
 //     成功删除备份并切换内存密钥，失败恢复备份/回滚。
 func (s *SettingsService) rotate(ctx context.Context, actorID int64, raw string, audit func(*gorm.DB) error, mode keyRotationMode) (*KeyView, error) {
 	s.keyMu.Lock()
@@ -122,8 +122,14 @@ func (s *SettingsService) rotate(ctx context.Context, actorID int64, raw string,
 		Where("api_key_encrypted <> ''").Count(&platformCipherCount).Error; err != nil {
 		return nil, err
 	}
+	var userModelCipherCount int64
+	if err := s.db.WithContext(ctx).Model(&UserModel{}).
+		Where("api_key_encrypted <> ''").Count(&userModelCipherCount).Error; err != nil {
+		return nil, err
+	}
 	hasOld := s.keys.Configured()
-	if mode == keepUserConfigs && (cfgCount > 0 || platformCipherCount > 0) && !hasOld {
+	if mode == keepUserConfigs &&
+		(cfgCount > 0 || platformCipherCount > 0 || userModelCipherCount > 0) && !hasOld {
 		return nil, httpx.ErrValidation("存在无法解密的 AI 配置，请先恢复旧密钥")
 	}
 
@@ -140,6 +146,9 @@ func (s *SettingsService) rotate(ctx context.Context, actorID int64, raw string,
 			return err
 		}
 		if mode == keepUserConfigs {
+			if err := s.reencryptUserModels(tx, newEnc); err != nil {
+				return err
+			}
 			if err := s.reencryptConfigs(tx, newEnc); err != nil {
 				return err
 			}
@@ -147,6 +156,9 @@ func (s *SettingsService) rotate(ctx context.Context, actorID int64, raw string,
 				return err
 			}
 		} else {
+			if err := tx.Where("1 = 1").Delete(&UserModel{}).Error; err != nil {
+				return fmt.Errorf("ai: purge user models: %w", err)
+			}
 			if err := tx.Where("1 = 1").Delete(&UserConfig{}).Error; err != nil {
 				return fmt.Errorf("ai: purge user configs: %w", err)
 			}
@@ -179,6 +191,32 @@ func (s *SettingsService) rotate(ctx context.Context, actorID int64, raw string,
 		Masked:      s.keys.Masked(),
 		Fingerprint: fingerprint,
 	}, nil
+}
+
+// reencryptUserModels 在事务内以 SELECT FOR UPDATE 锁定有密文的用户模型，
+// 用旧密钥解密、新密钥加密；任一失败使事务回滚。旧 user_ai_configs 仍由
+// reencryptConfigs 处理，以支持回滚到旧版本。
+func (s *SettingsService) reencryptUserModels(tx *gorm.DB, newEnc *Encryptor) error {
+	var models []UserModel
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("api_key_encrypted <> ''").Find(&models).Error; err != nil {
+		return fmt.Errorf("ai: load user models for rotation: %w", err)
+	}
+	for i := range models {
+		plain, err := s.keys.Decrypt(models[i].APIKeyEncrypted)
+		if err != nil {
+			return fmt.Errorf("ai: decrypt user model %d: %w", models[i].ID, err)
+		}
+		ciphertext, err := newEnc.Encrypt(plain)
+		if err != nil {
+			return fmt.Errorf("ai: re-encrypt user model %d: %w", models[i].ID, err)
+		}
+		if err := tx.Model(&UserModel{}).Where("id = ?", models[i].ID).
+			Update("api_key_encrypted", ciphertext).Error; err != nil {
+			return fmt.Errorf("ai: update user model %d: %w", models[i].ID, err)
+		}
+	}
+	return nil
 }
 
 // reencryptConfigs 在事务内以 SELECT FOR UPDATE 锁定全部用户配置，用旧密钥

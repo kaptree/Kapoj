@@ -36,6 +36,7 @@ var accountTables = []accountTable{
 	{name: "learning_path_purchases", where: "user_id = %d"},
 	{name: "learning_path_recommendations", where: "user_id = %d"},
 	{name: "user_ai_configs", where: "user_id = %d"},
+	{name: "user_ai_models", where: "user_id = %d"},
 	{name: "activity_logs", where: "user_id = %d"},
 	{name: "shared_items", where: "user_id = %d"},
 	{name: "rating_history", where: "user_id = %d"},
@@ -351,7 +352,7 @@ func (s *Service) restoreAccount(ctx context.Context, zipPath string, targetUser
 		"submissions", "coin_transactions", "user_achievements", "user_task_records",
 		"user_login_days", "user_badges", "user_titles", "user_roles",
 		"user_learning_progress", "learning_path_purchases", "learning_path_recommendations",
-		"user_ai_configs", "activity_logs", "shared_items", "rating_history",
+		"user_ai_configs", "user_ai_models", "activity_logs", "shared_items", "rating_history",
 		"contest_participants", "companion_states", "companion_events",
 	} {
 		deleteStatements = append(deleteStatements,

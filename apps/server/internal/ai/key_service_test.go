@@ -191,6 +191,128 @@ func TestKeyRotationReencryptsUserConfigs(t *testing.T) {
 	assert.Equal(t, sha256Hex(newKey), s.KeyFingerprint)
 }
 
+func TestRotateReencryptsUserModels(t *testing.T) {
+	t.Run("保留模式重加密新表", func(t *testing.T) {
+		g := testutil.PG(t)
+		ctx := context.Background()
+		file := filepath.Join(t.TempDir(), "ai.key")
+
+		oldKey := b64Key(strings.Repeat("o", 32))
+		require.NoError(t, os.WriteFile(file, []byte(oldKey+"\n"), 0o600))
+		svc := newKeySettingsService(t, g, "", file)
+
+		oldEnc, err := ai.NewEncryptor(oldKey)
+		require.NoError(t, err)
+		ct, err := oldEnc.Encrypt("sk-user-model-secret")
+		require.NoError(t, err)
+		now := time.Now().UTC()
+		model := &ai.UserModel{
+			UserID: 1, Name: "My Claude", Protocol: "anthropic",
+			BaseURL: "https://api.example.com", ModelName: "claude-sonnet",
+			APIKeyEncrypted: ct, IsActive: true,
+			CreatedAt: now, UpdatedAt: now,
+		}
+		require.NoError(t, g.Create(model).Error)
+
+		res, err := svc.GenerateKey(ctx, 42, nil)
+		require.NoError(t, err)
+
+		// 新表密文已变化，可用新密钥解密、旧密钥无法解密。
+		var after ai.UserModel
+		require.NoError(t, g.First(&after, model.ID).Error)
+		assert.NotEqual(t, ct, after.APIKeyEncrypted)
+		newEnc, err := ai.NewEncryptor(res.Key)
+		require.NoError(t, err)
+		plain, err := newEnc.Decrypt(after.APIKeyEncrypted)
+		require.NoError(t, err)
+		assert.Equal(t, "sk-user-model-secret", plain)
+		_, err = oldEnc.Decrypt(after.APIKeyEncrypted)
+		assert.Error(t, err)
+
+		// 其余字段保持不变。
+		assert.Equal(t, int64(1), after.UserID)
+		assert.Equal(t, "My Claude", after.Name)
+		assert.Equal(t, "anthropic", after.Protocol)
+		assert.Equal(t, "https://api.example.com", after.BaseURL)
+		assert.Equal(t, "claude-sonnet", after.ModelName)
+		assert.True(t, after.IsActive)
+	})
+
+	t.Run("无旧密钥时拒绝覆盖新表密文", func(t *testing.T) {
+		g := testutil.PG(t)
+		ctx := context.Background()
+		file := filepath.Join(t.TempDir(), "ai.key")
+		svc := newKeySettingsService(t, g, "", file)
+		assert.Equal(t, "none", svc.KeyView().Source)
+
+		now := time.Now().UTC()
+		require.NoError(t, g.Create(&ai.UserModel{
+			UserID: 1, Name: "Legacy", Protocol: "openai",
+			BaseURL: "https://api.example.com/v1", ModelName: "m",
+			APIKeyEncrypted: "v1:AAAA", IsActive: true,
+			CreatedAt: now, UpdatedAt: now,
+		}).Error)
+
+		_, err := svc.SetKey(ctx, 42, b64Key(strings.Repeat("n", 32)), nil)
+		assertValidationCode(t, err, 40001)
+
+		// 不写文件，内存密钥仍为 none，密文保持不变。
+		assert.NoFileExists(t, file)
+		assert.Equal(t, "none", svc.KeyView().Source)
+		var model ai.UserModel
+		require.NoError(t, g.First(&model).Error)
+		assert.Equal(t, "v1:AAAA", model.APIKeyEncrypted)
+	})
+}
+
+func TestResetDeletesUserModels(t *testing.T) {
+	g := testutil.PG(t)
+	ctx := context.Background()
+	file := filepath.Join(t.TempDir(), "ai.key")
+
+	oldKey := b64Key(strings.Repeat("o", 32))
+	require.NoError(t, os.WriteFile(file, []byte(oldKey+"\n"), 0o600))
+	svc := newKeySettingsService(t, g, "", file)
+
+	oldEnc, err := ai.NewEncryptor(oldKey)
+	require.NoError(t, err)
+	now := time.Now().UTC()
+	ct, err := oldEnc.Encrypt("sk-user-model-secret")
+	require.NoError(t, err)
+	require.NoError(t, g.Create(&ai.UserModel{
+		UserID: 1, Name: "My Model", Protocol: "openai",
+		BaseURL: "https://api.example.com/v1", ModelName: "m",
+		APIKeyEncrypted: ct, IsActive: true,
+		CreatedAt: now, UpdatedAt: now,
+	}).Error)
+	cfgCT, err := oldEnc.Encrypt("sk-legacy-secret")
+	require.NoError(t, err)
+	require.NoError(t, g.Create(&ai.UserConfig{
+		UserID: 1, Provider: "deepseek", ModelName: "m",
+		APIKeyEncrypted: cfgCT, CreatedAt: now, UpdatedAt: now,
+	}).Error)
+
+	res, err := svc.ResetKey(ctx, 42, nil)
+	require.NoError(t, err)
+
+	// 新表与旧表配置都被清除，旧密文不留存。
+	var modelCount int64
+	require.NoError(t, g.Model(&ai.UserModel{}).Count(&modelCount).Error)
+	assert.Zero(t, modelCount)
+	var cfgCount int64
+	require.NoError(t, g.Model(&ai.UserConfig{}).Count(&cfgCount).Error)
+	assert.Zero(t, cfgCount)
+
+	// 新密钥生效。
+	data, err := os.ReadFile(file)
+	require.NoError(t, err)
+	assert.Equal(t, res.Key, strings.TrimSpace(string(data)))
+	view := svc.KeyView()
+	assert.True(t, view.Configured)
+	assert.Equal(t, "file", view.Source)
+	assert.Equal(t, sha256Hex(res.Key), view.Fingerprint)
+}
+
 func TestKeyRotationRollback(t *testing.T) {
 	t.Run("解密失败回滚", func(t *testing.T) {
 		g := testutil.PG(t)
