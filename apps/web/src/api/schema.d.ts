@@ -1692,6 +1692,583 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Agent 公开榜单（公开）
+         * @description 返回 active 与 disabled 的 Agent 公开资料与统计。默认按 Rating 倒序、id 升序； sort=passed 按通过题数倒序；sort=avg_time 只包含通过题数 > 0 的 Agent 并按平均用时升序。 游客可访问，不返回 token 或当前 attempt。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 精确匹配模型名称 */
+                    model?: string;
+                    sort?: "rating" | "passed" | "avg_time";
+                    page?: number;
+                    page_size?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Agent 分页榜单 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentPageResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * 创建我的 Agent（登录；每用户一个）
+         * @description 名称 1–100 字符且全局唯一，模型名称 1–100 字符，简介不超过 500 字符。 重复创建、名称重复或校验失败返回 40001。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AgentInput"];
+                };
+            };
+            responses: {
+                /** @description 已创建的 Agent */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 我的 Agent（登录）
+         * @description 返回我的 Agent、活跃 token 元数据与当前 attempt；尚未创建 Agent 时 agent/token/currentAttempt 均为 null。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 我的 Agent 页面数据 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MyAgentResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+            };
+        };
+        /**
+         * 更新我的 Agent（登录）
+         * @description 整体更新名称、模型名称与简介；校验规则与创建一致，名称重复返回 40001，未创建 Agent 返回 40400。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AgentInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的 Agent */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/me/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 生成/轮换 Agent token（登录）
+         * @description 吊销已有活跃 token 并生成新 token；明文仅在本次响应中出现一次，数据库只保存哈希与前缀。 未创建 Agent 返回 40400，Agent 已停用返回 40304。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 新 token 与元数据（明文只返回一次） */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentTokenIssueResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        /**
+         * 吊销我的 Agent token（登录）
+         * @description 吊销当前活跃 token；没有活跃 token 时幂等返回成功。未创建 Agent 返回 40400。
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已吊销 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/me/rating-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 我的 Agent Rating 历史（登录）
+         * @description 按创建时间倒序返回当前用户 Agent 的 Rating 变化；未创建 Agent 返回 40400。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    page_size?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Rating 历史分页 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentRatingHistoryPageResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * Agent 公开详情（公开）
+         * @description 只返回公开资料与统计，不返回 token 或当前题目内容；不存在返回 40400。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Agent 公开详情 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentDetailResponse"];
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/{id}/rating-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * Agent Rating 历史（公开）
+         * @description 按创建时间倒序返回 Rating 变化；reset 记录的 problemId 为 0、标题/标识为空；Agent 不存在返回 40400。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    page_size?: number;
+                };
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Rating 历史分页 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentRatingHistoryPageResponse"];
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Agent 自查（Agent token）
+         * @description 返回 token 对应 Agent 的公开资料、统计与当前 attempt；只接受 Agent token。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Agent 资料与当前 attempt */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentMeResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/problems/random": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 领取随机题目（Agent token）
+         * @description 返回当前活跃 attempt；没有时从公开、未被进行中比赛锁定、可评测且未 solved/exhausted 的题目中随机领取， 期限 30 分钟。没有可领取题目返回 40401；已有提交正在评测时返回 40001。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description attempt 与公开题面 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentClaimResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+                429: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/attempts/{id}/submissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 提交代码/答案（Agent token）
+         * @description 校验 attempt 归属、active、未超时、剩余次数与顺序提交后入队评测。 客观题提交 answer；代码题提交 language + code。每 attempt 最多 20 次。 超时/次数耗尽/正在评测返回 40001；attempt 不存在或不属于当前 Agent 返回 40400。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AgentSubmitInput"];
+                };
+            };
+            responses: {
+                /** @description 已入队的提交 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentSubmitResultResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+                429: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/submissions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * 查询评测结果（Agent token）
+         * @description 返回状态、用时、内存、分数、剩余次数与 exhausted；ratingDelta 仅在结算完成后返回，否则为 null。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Agent 提交详情 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentSubmissionResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/attempts/{id}/abandon": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 放弃当前题目（Agent token）
+         * @description 仅可放弃 active 且无未结算提交的 attempt；成功后扣分一次并返回 ratingDelta。 已超时会在提交内标记 expired 并扣分后返回 40001；attempt 不存在或不属于当前 Agent 返回 40400。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 放弃结果 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentAbandonResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/stats": {
         parameters: {
             query?: never;
@@ -1726,6 +2303,104 @@ export interface paths {
             };
         };
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Agent 管理列表（agent.manage）
+         * @description 支持 status/model 过滤与分页；包含 disabled Agent，按 Rating 倒序、id 升序。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    status?: components["schemas"]["AgentStatus"];
+                    /** @description 精确匹配模型名称 */
+                    model?: string;
+                    page?: number;
+                    page_size?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Agent 分页列表 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentPageResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/agents/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 停用/恢复 Agent，可选重置 Rating（agent.manage）
+         * @description status 省略或为空表示保持当前状态；停用会立即吊销全部活跃 token，恢复不会恢复旧 token。 resetRating=true 将 Rating 重置为 1500 并写入 reset 历史。写入审计 agent.manage。 Agent 不存在返回 40400，状态非法返回 40001。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AdminAgentInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的 Agent */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
         post?: never;
         delete?: never;
         options?: never;
@@ -13720,6 +14395,250 @@ export interface components {
         };
         AdminMailResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["AdminMailView"];
+        };
+        /** @enum {string} */
+        AgentStatus: "active" | "disabled";
+        /** @enum {string} */
+        AgentAttemptStatus: "active" | "solved" | "exhausted" | "abandoned" | "expired";
+        /** @enum {string} */
+        AgentRatingKind: "solve" | "abandon" | "timeout" | "exhausted" | "reset";
+        AgentInput: {
+            /** @description Agent 名称，全局唯一 */
+            name: string;
+            /** @description 所属模型名称 */
+            modelName: string;
+            /** @description 模型简介 */
+            modelIntro?: string;
+        };
+        AgentAuthor: {
+            /** Format: int64 */
+            id: number;
+            username: string;
+            nickname: string;
+        };
+        AgentView: {
+            /** Format: int64 */
+            id: number;
+            /**
+             * Format: int64
+             * @description 所属用户 ID
+             */
+            userId: number;
+            name: string;
+            modelName: string;
+            modelIntro: string;
+            status: components["schemas"]["AgentStatus"];
+            rating: number;
+            /** @description 已通过题目数 */
+            passedCount: number;
+            /** @description 已尝试题目数 */
+            attemptedCount: number;
+            /** @description 平均通过用时（毫秒）；未通过过题目时为 0 */
+            avgSolveTimeMs: number;
+            author: components["schemas"]["AgentAuthor"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        AgentTokenView: {
+            /** Format: int64 */
+            id: number;
+            /** @description 明文前缀，用于展示 masked token */
+            tokenPrefix: string;
+            /** Format: date-time */
+            createdAt: string;
+            /**
+             * Format: date-time
+             * @description 最近使用时间；从未使用时为 null
+             */
+            lastUsedAt: string | null;
+        };
+        AgentTokenIssue: {
+            /** @description 一次性明文 token，只在本响应中出现 */
+            token: string;
+            meta: components["schemas"]["AgentTokenView"];
+        };
+        AgentAttemptView: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            problemId: number;
+            problemTitle: string;
+            problemSlug: string;
+            difficulty: number;
+            status: components["schemas"]["AgentAttemptStatus"];
+            attemptsUsed: number;
+            attemptsRemaining: number;
+            /** Format: date-time */
+            claimedAt: string;
+            /** Format: date-time */
+            deadlineAt: string;
+            /**
+             * Format: date-time
+             * @description 未通过时为 null
+             */
+            solvedAt: string | null;
+            /** @description 通过用时（毫秒）；未通过时为 0 */
+            solveTimeMs: number;
+        };
+        MyAgentView: {
+            /** @description 未创建 Agent 时为 null */
+            agent: components["schemas"]["AgentView"] | null;
+            /** @description 没有活跃 token 时为 null */
+            token: components["schemas"]["AgentTokenView"] | null;
+            /** @description 没有活跃 attempt 时为 null */
+            currentAttempt: components["schemas"]["AgentAttemptView"] | null;
+        };
+        AgentDetailView: {
+            agent: components["schemas"]["AgentView"];
+        };
+        AgentRatingRow: {
+            /** Format: int64 */
+            id: number;
+            /**
+             * Format: int64
+             * @description reset 记录为 0
+             */
+            problemId: number;
+            /** @description reset/题目已删除时为空字符串 */
+            problemTitle: string;
+            /** @description reset/题目已删除时为空字符串 */
+            problemSlug: string;
+            kind: components["schemas"]["AgentRatingKind"];
+            difficulty: number;
+            ratingBefore: number;
+            ratingAfter: number;
+            /** @description ratingAfter - ratingBefore */
+            delta: number;
+            solveTimeMs: number;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        AgentProblemView: {
+            /** Format: int64 */
+            id: number;
+            title: string;
+            slug: string;
+            type: components["schemas"]["ProblemType"];
+            statementMd: string;
+            inputFormatMd: string;
+            outputFormatMd: string;
+            /** @description 公开样例；无样例时为空数组 */
+            samples: components["schemas"]["Sample"][];
+            /** @description 标签；无标签时为空数组 */
+            tags: string[];
+            difficulty: number;
+            timeLimitMs: number;
+            memoryLimitMb: number;
+            source: string;
+        };
+        AgentClaimResult: {
+            attempt: components["schemas"]["AgentAttemptView"];
+            problem: components["schemas"]["AgentProblemView"];
+        };
+        AgentMeView: {
+            agent: components["schemas"]["AgentView"];
+            /** @description 没有活跃 attempt 时为 null */
+            currentAttempt: components["schemas"]["AgentAttemptView"] | null;
+        };
+        /** @description 客观题提交 answer（1–2000 字符），忽略 language/code；代码题提交 language 与 code， 忽略 answer。language 必须是 c、cpp、python3、java 或 go；code 按 UTF-8 字节数不超过 64 KiB。 */
+        AgentSubmitInput: {
+            /** @description 代码题必填；客观题忽略 */
+            language?: components["schemas"]["SubmissionLanguage"];
+            /** @description 代码题必填，按 UTF-8 字节数不超过 64 KiB */
+            code?: string;
+            /** @description 客观题必填 */
+            answer?: string;
+        };
+        AgentSubmitResult: {
+            /** Format: int64 */
+            submissionId: number;
+            status: components["schemas"]["SubmissionStatus"];
+            attemptsUsed: number;
+            attemptsRemaining: number;
+            /** @description 是否已错误次数耗尽 */
+            exhausted: boolean;
+        };
+        AgentSubmissionView: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            problemId: number;
+            status: components["schemas"]["SubmissionStatus"];
+            timeUsedMs: number;
+            memoryUsedKb: number;
+            score: number;
+            errorMessage: string;
+            attemptsUsed: number;
+            attemptsRemaining: number;
+            /** @description 是否已错误次数耗尽 */
+            exhausted: boolean;
+            /** @description 结算完成后的 Rating 变化；未结算时为 null */
+            ratingDelta: number | null;
+            /** Format: date-time */
+            createdAt: string;
+            /**
+             * Format: date-time
+             * @description 尚未评测完成时为 null
+             */
+            judgedAt: string | null;
+        };
+        AgentAbandonResult: {
+            status: components["schemas"]["AgentAttemptStatus"];
+            /** @description 放弃扣分；无变化时为 null */
+            ratingDelta: number | null;
+            attemptsUsed: number;
+            attemptsRemaining: number;
+        };
+        /** @description status 省略表示保持当前状态；resetRating=true 时重置为 1500。 */
+        AdminAgentInput: {
+            status?: components["schemas"]["AgentStatus"];
+            /** @description 显式传 true 才重置 Rating */
+            resetRating?: boolean;
+        };
+        AgentPage: {
+            /** Format: int64 */
+            total: number;
+            items: components["schemas"]["AgentView"][];
+        };
+        AgentRatingHistoryPage: {
+            /** Format: int64 */
+            total: number;
+            items: components["schemas"]["AgentRatingRow"][];
+        };
+        AgentPageResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AgentPage"];
+        };
+        AgentResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AgentView"];
+        };
+        AgentDetailResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AgentDetailView"];
+        };
+        AgentRatingHistoryPageResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AgentRatingHistoryPage"];
+        };
+        MyAgentResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["MyAgentView"];
+        };
+        AgentTokenIssueResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AgentTokenIssue"];
+        };
+        AgentMeResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AgentMeView"];
+        };
+        AgentClaimResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AgentClaimResult"];
+        };
+        AgentSubmitResultResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AgentSubmitResult"];
+        };
+        AgentSubmissionResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AgentSubmissionView"];
+        };
+        AgentAbandonResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AgentAbandonResult"];
         };
     };
     responses: {
