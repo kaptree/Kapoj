@@ -263,3 +263,78 @@ func TestAIGenerateRedisFailureMapsTo503(t *testing.T) {
 	assert.Equal(t, 50300, appErr.Code)
 	assert.Len(t, client.calls, 0)
 }
+
+func TestChatRequestUsesActiveAndFallsBackToLegacy(t *testing.T) {
+	g := testutil.PG(t)
+	ctx := context.Background()
+	require.NoError(t, ai.SeedProviders(ctx, g))
+
+	client := &fakeChatClient{fn: func(ai.ChatRequest) (string, error) { return "ok", nil }}
+	svc := newGenerateService(t, g, client, nil)
+	input := ai.GenerateInput{Code: "int x;", Language: "cpp", Cursor: intPtr(3)}
+
+	// Neither an active model nor a legacy config exists.
+	_, err := svc.Complete(ctx, 1, input)
+	assertValidationCode(t, err, 40001)
+	assert.Len(t, client.calls, 0)
+
+	// Legacy config alone is still usable and resolves to OpenAI.
+	_, err = svc.SaveConfig(ctx, 1, ai.SaveConfigInput{Provider: "deepseek", APIKey: "sk-legacy-123456"})
+	require.NoError(t, err)
+	_, err = svc.Complete(ctx, 1, input)
+	require.NoError(t, err)
+	require.Len(t, client.calls, 1)
+	legacyReq := client.calls[0]
+	assert.Equal(t, "openai", legacyReq.Protocol)
+	assert.Equal(t, "https://api.deepseek.com/v1", legacyReq.BaseURL)
+	assert.Equal(t, "deepseek-chat", legacyReq.Model)
+	assert.Equal(t, "sk-legacy-123456", legacyReq.APIKey)
+	assert.Equal(t, 4096, legacyReq.MaxTokens)
+
+	// An active user model takes precedence over the legacy config.
+	const activeKey = "sk-ant-active-123456"
+	active, err := svc.CreateUserModel(ctx, 1, ai.UserModelInput{
+		Name:      "anthropic",
+		Protocol:  "anthropic",
+		BaseURL:   "https://api.anthropic.com/v1",
+		ModelName: "claude-3-5-sonnet-latest",
+		APIKey:    activeKey,
+	})
+	require.NoError(t, err)
+	require.True(t, active.IsActive)
+
+	_, err = svc.Complete(ctx, 1, input)
+	require.NoError(t, err)
+	require.Len(t, client.calls, 2)
+	activeReq := client.calls[1]
+	assert.Equal(t, "anthropic", activeReq.Protocol)
+	assert.Equal(t, "https://api.anthropic.com/v1", activeReq.BaseURL)
+	assert.Equal(t, "claude-3-5-sonnet-latest", activeReq.Model)
+	assert.Equal(t, activeKey, activeReq.APIKey)
+	assert.Equal(t, 4096, activeReq.MaxTokens)
+	assert.Equal(t, 0.2, activeReq.Temperature)
+	require.NotEmpty(t, activeReq.Messages)
+
+	// Without an active row the legacy config is the fallback again.
+	require.NoError(t, g.Model(&ai.UserModel{}).
+		Where("user_id = ?", 1).UpdateColumn("is_active", false).Error)
+	_, err = svc.Complete(ctx, 1, input)
+	require.NoError(t, err)
+	require.Len(t, client.calls, 3)
+	assert.Equal(t, "openai", client.calls[2].Protocol)
+	assert.Equal(t, "deepseek-chat", client.calls[2].Model)
+	assert.Equal(t, 4096, client.calls[2].MaxTokens)
+
+	// An active row with an unknown protocol or invalid base URL is rejected.
+	require.NoError(t, g.Model(&ai.UserModel{}).Where("id = ?", active.ID).
+		Updates(map[string]any{"is_active": true, "protocol": "grpc"}).Error)
+	_, err = svc.Complete(ctx, 1, input)
+	assertValidationCode(t, err, 40001)
+	assert.Len(t, client.calls, 3)
+
+	require.NoError(t, g.Model(&ai.UserModel{}).Where("id = ?", active.ID).
+		Updates(map[string]any{"protocol": "openai", "base_url": ""}).Error)
+	_, err = svc.Complete(ctx, 1, input)
+	assertValidationCode(t, err, 40001)
+	assert.Len(t, client.calls, 3)
+}

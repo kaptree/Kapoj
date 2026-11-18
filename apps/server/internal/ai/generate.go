@@ -15,6 +15,9 @@ import (
 const (
 	maxCodeBytes   = 64 * 1024 // 64 KiB
 	maxLanguageLen = 32
+
+	// defaultChatMaxTokens is the output cap for user-facing chat requests.
+	defaultChatMaxTokens = 4096
 )
 
 // GenerateInput is the shared request body for complete/format/optimize.
@@ -107,11 +110,22 @@ func (s *Service) generate(ctx context.Context, userID int64, in GenerateInput, 
 	return out, nil
 }
 
-// chatRequest resolves the user's config and provider into a ChatRequest that
-// carries the decrypted API key.
+// chatRequest resolves the active user model, falling back to the legacy
+// single user_ai_configs row, into a ChatRequest that carries the decrypted API
+// key.
 func (s *Service) chatRequest(ctx context.Context, userID int64) (ChatRequest, error) {
+	var model UserModel
+	err := s.db.WithContext(ctx).Where("user_id = ? AND is_active = ?", userID, true).
+		First(&model).Error
+	if err == nil {
+		return s.userModelChatRequest(model)
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return ChatRequest{}, err
+	}
+
 	var cfg UserConfig
-	err := s.db.WithContext(ctx).Where("user_id = ?", userID).First(&cfg).Error
+	err = s.db.WithContext(ctx).Where("user_id = ?", userID).First(&cfg).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return ChatRequest{}, httpx.ErrValidation("尚未配置 AI 模型")
 	}
@@ -131,23 +145,70 @@ func (s *Service) chatRequest(ctx context.Context, userID int64) (ChatRequest, e
 		return ChatRequest{}, httpx.ErrValidation("服务商未启用")
 	}
 
-	model := strings.TrimSpace(cfg.ModelName)
-	if model == "" {
+	modelName := strings.TrimSpace(cfg.ModelName)
+	if modelName == "" {
 		return ChatRequest{}, httpx.ErrValidation("模型名不能为空")
 	}
 
-	apiKey, err := s.keys.Decrypt(cfg.APIKeyEncrypted)
+	apiKey, err := s.decryptAPIKey(cfg.APIKeyEncrypted)
+	if err != nil {
+		return ChatRequest{}, err
+	}
+	return ChatRequest{
+		Protocol:  protocolOpenAI,
+		BaseURL:   provider.BaseURL,
+		APIKey:    apiKey,
+		Model:     modelName,
+		MaxTokens: defaultChatMaxTokens,
+	}, nil
+}
+
+// userModelChatRequest validates an active user model row and builds the chat
+// request. Unknown protocols and empty/invalid base URLs are 40001.
+func (s *Service) userModelChatRequest(model UserModel) (ChatRequest, error) {
+	protocol, err := normalizeUserModelProtocol(model.Protocol)
+	if err != nil {
+		return ChatRequest{}, err
+	}
+	baseURL, err := normalizeAIBaseURL(model.BaseURL, protocol)
+	if err != nil {
+		return ChatRequest{}, err
+	}
+	modelName := strings.TrimSpace(model.ModelName)
+	if modelName == "" {
+		return ChatRequest{}, httpx.ErrValidation("模型名不能为空")
+	}
+	if strings.TrimSpace(model.APIKeyEncrypted) == "" {
+		return ChatRequest{}, httpx.ErrValidation("尚未配置 AI 模型")
+	}
+	apiKey, err := s.decryptAPIKey(model.APIKeyEncrypted)
+	if err != nil {
+		return ChatRequest{}, err
+	}
+	return ChatRequest{
+		Protocol:  protocol,
+		BaseURL:   baseURL,
+		APIKey:    apiKey,
+		Model:     modelName,
+		MaxTokens: defaultChatMaxTokens,
+	}, nil
+}
+
+// decryptAPIKey decrypts a stored token. A missing platform key keeps its
+// 40002 AppError; any other decryption failure is sanitized to 502.
+func (s *Service) decryptAPIKey(ciphertext string) (string, error) {
+	apiKey, err := s.keys.Decrypt(ciphertext)
 	if err != nil {
 		// KeyManager.Decrypt returns the 40002 AppError only when no platform
 		// key is configured; any other failure is a decrypt error.
 		var appErr *httpx.AppError
 		if errors.As(err, &appErr) {
-			return ChatRequest{}, err
+			return "", err
 		}
 		slog.Error("ai: decrypt api key failed", "operation", "decrypt", "err", err)
-		return ChatRequest{}, httpx.ErrBadGateway
+		return "", httpx.ErrBadGateway
 	}
-	return ChatRequest{BaseURL: provider.BaseURL, APIKey: apiKey, Model: model}, nil
+	return apiKey, nil
 }
 
 // checkLimit applies the per-user cooldown. Redis failures map to a 503.

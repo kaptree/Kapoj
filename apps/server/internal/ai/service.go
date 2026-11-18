@@ -12,11 +12,14 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 )
 
-// ProviderOption 是返回给用户的可用 provider 选项。
+// ProviderOption 是返回给用户的可用 provider 选项；BaseURL/Protocol 用于
+// 新增用户模型时预填（内置 provider 均为 OpenAI 兼容协议）。
 type ProviderOption struct {
 	Code         string `json:"code"`
 	Name         string `json:"name"`
 	DefaultModel string `json:"defaultModel"`
+	BaseURL      string `json:"baseUrl"`
+	Protocol     string `json:"protocol"`
 }
 
 // ConfigView 是用户 AI 配置的脱敏视图，绝不包含明文或密文 API key。
@@ -62,7 +65,13 @@ func (s *Service) ListProviders(ctx context.Context) ([]ProviderOption, error) {
 	}
 	out := make([]ProviderOption, 0, len(providers))
 	for _, p := range providers {
-		out = append(out, ProviderOption{Code: p.Code, Name: p.Name, DefaultModel: p.DefaultModel})
+		out = append(out, ProviderOption{
+			Code:         p.Code,
+			Name:         p.Name,
+			DefaultModel: p.DefaultModel,
+			BaseURL:      p.BaseURL,
+			Protocol:     protocolOpenAI,
+		})
 	}
 	return out, nil
 }
