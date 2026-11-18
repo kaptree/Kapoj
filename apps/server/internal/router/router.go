@@ -146,6 +146,7 @@ func New(d Deps) *gin.Engine {
 	auth.RegisterAccountRoutes(api, authSvc)
 	if d.Agent != nil {
 		agentapi.RegisterUserRoutes(api, d.Agent)
+		agentapi.RegisterPublicRoutes(api, d.Agent)
 		agentapi.RegisterAgentRoutes(public, d.Agent)
 	}
 	problemJSON := r.Group("/api", authenticated(maxProblemJSONBytes)...)
@@ -164,7 +165,8 @@ func New(d Deps) *gin.Engine {
 	userapi.RegisterAvatarRoutes(public, uploads, userSvc)
 	if d.RBAC != nil {
 		adminapi.RegisterRoutes(api, d.RBAC, adminapi.Options{
-			Game: d.Game, Rating: d.Rating, AI: d.AISettings, AIPlatform: d.AIPlatform,
+			Game: d.Game, Rating: d.Rating, AI: d.AISettings,
+			AIPlatform: d.AIPlatform, Agent: d.Agent,
 		})
 	}
 	jobsapi.RegisterRoutes(api, d.Jobs, d.Difficulty, d.RBAC)

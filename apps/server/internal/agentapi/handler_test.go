@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -34,9 +35,10 @@ type noopQueue struct{}
 func (noopQueue) Enqueue(context.Context, int64) error { return nil }
 
 type apiFixture struct {
-	t  *testing.T
-	h  http.Handler
-	db *gorm.DB
+	t   *testing.T
+	h   http.Handler
+	db  *gorm.DB
+	svc *agent.Service
 }
 
 func newAPIFixture(t *testing.T) *apiFixture {
@@ -56,7 +58,7 @@ func newAPIFixture(t *testing.T) *apiFixture {
 			RefreshTokenTTL: time.Hour, SubmitCooldown: time.Second,
 		},
 	})
-	return &apiFixture{t: t, h: h, db: g}
+	return &apiFixture{t: t, h: h, db: g, svc: svc}
 }
 
 func (f *apiFixture) user(username, status string) int64 {
@@ -212,4 +214,156 @@ func TestAgentUserAPI(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	data = dataObject(t, resp)
 	assert.Nil(t, data["token"])
+}
+
+func TestAgentPublicLeaderboardDetailAndHistory(t *testing.T) {
+	f := newAPIFixture(t)
+	ctx := context.Background()
+
+	alice := f.user("api-public-alice", "active")
+	bob := f.user("api-public-bob", "active")
+	noAgent := f.user("api-public-noagent", "active")
+
+	alpha, err := f.svc.CreateAgent(ctx, alice, agent.AgentInput{
+		Name: "Public Alpha", ModelName: "gpt-5", ModelIntro: "first",
+	})
+	require.NoError(t, err)
+	beta, err := f.svc.CreateAgent(ctx, bob, agent.AgentInput{
+		Name: "Public Beta", ModelName: "claude-4", ModelIntro: "second",
+	})
+	require.NoError(t, err)
+	require.NoError(t, f.db.Model(&agent.Agent{}).Where("id = ?", alpha.ID).
+		Updates(map[string]any{
+			"rating": 1700, "passed_count": 3, "avg_solve_time_ms": 250,
+		}).Error)
+	require.NoError(t, f.db.Model(&agent.Agent{}).Where("id = ?", beta.ID).
+		Updates(map[string]any{
+			"rating": 1900, "passed_count": 0, "avg_solve_time_ms": 0,
+		}).Error)
+
+	// The leaderboard is public and ordered by rating DESC.
+	w, resp := f.do(http.MethodGet, "/api/agents", "", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data := dataObject(t, resp)
+	assert.EqualValues(t, 2, data["total"])
+	items := data["items"].([]any)
+	require.Len(t, items, 2)
+	first := items[0].(map[string]any)
+	assert.Equal(t, "Public Beta", first["name"])
+	assert.EqualValues(t, 1900, first["rating"])
+	author := first["author"].(map[string]any)
+	assert.Equal(t, "api-public-bob", author["username"])
+	assert.Equal(t, "nick-api-public-bob", author["nickname"])
+
+	// Model filter plus avg_time excludes Agents without a solved problem.
+	w, resp = f.do(http.MethodGet, "/api/agents?sort=avg_time", "", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data = dataObject(t, resp)
+	assert.EqualValues(t, 1, data["total"])
+	items = data["items"].([]any)
+	require.Len(t, items, 1)
+	assert.Equal(t, "Public Alpha", items[0].(map[string]any)["name"])
+
+	w, resp = f.do(http.MethodGet, "/api/agents?model=gpt-5&sort=passed", "", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data = dataObject(t, resp)
+	assert.EqualValues(t, 1, data["total"])
+	assert.Equal(t, "Public Alpha", data["items"].([]any)[0].(map[string]any)["name"])
+
+	w, resp = f.do(http.MethodGet, "/api/agents?model=gpt", "", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.EqualValues(t, 0, dataObject(t, resp)["total"])
+
+	w, resp = f.do(http.MethodGet, "/api/agents?page=2&page_size=1", "", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data = dataObject(t, resp)
+	assert.EqualValues(t, 2, data["total"])
+	require.Len(t, data["items"].([]any), 1)
+	assert.Equal(t, "Public Alpha", data["items"].([]any)[0].(map[string]any)["name"])
+
+	// Public detail exposes stats and author only.
+	w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/agents/%d", alpha.ID), "", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	detail := dataObject(t, resp)
+	agentData, ok := detail["agent"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "Public Alpha", agentData["name"])
+	assert.Equal(t, "gpt-5", agentData["modelName"])
+	assert.EqualValues(t, 1700, agentData["rating"])
+	assert.EqualValues(t, 3, agentData["passedCount"])
+	assert.Equal(t, "api-public-alice", agentData["author"].(map[string]any)["username"])
+	for _, forbidden := range []string{"token", "currentAttempt", "testcases", "solution"} {
+		assert.NotContains(t, w.Body.String(), forbidden)
+	}
+
+	w, resp = f.do(http.MethodGet, "/api/agents/999999", "", "")
+	require.Equal(t, http.StatusNotFound, w.Code, w.Body.String())
+	assert.EqualValues(t, 40400, resp["code"])
+
+	// History joins problem titles; reset rows have no problem.
+	p := &problem.Problem{
+		Title: "API History Problem", Slug: "api-history-problem",
+		Type: problem.TypeTraditional, Difficulty: 66,
+		TimeLimitMS: 1000, MemoryLimitMB: 256, IsPublic: true,
+	}
+	require.NoError(t, problem.NewGormRepository(f.db).Create(ctx, p))
+	now := time.Now().UTC()
+	require.NoError(t, f.db.Create(&agent.AgentRatingHistory{
+		AgentID: alpha.ID, ProblemID: p.ID, Kind: agent.RatingSolve,
+		Difficulty: 66, RatingBefore: 1500, RatingAfter: 1518, Delta: 18,
+		SolveTimeMS: 900, CreatedAt: now.Add(-2 * time.Hour),
+	}).Error)
+	require.NoError(t, f.db.Create(&agent.AgentRatingHistory{
+		AgentID: alpha.ID, ProblemID: 0, Kind: agent.RatingReset,
+		RatingBefore: 1518, RatingAfter: 1500, Delta: -18,
+		CreatedAt: now.Add(-time.Hour),
+	}).Error)
+
+	w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/agents/%d/rating-history", alpha.ID), "", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data = dataObject(t, resp)
+	assert.EqualValues(t, 2, data["total"])
+	history := data["items"].([]any)
+	require.Len(t, history, 2)
+	resetRow := history[0].(map[string]any)
+	assert.Equal(t, "reset", resetRow["kind"])
+	assert.EqualValues(t, 0, resetRow["problemId"])
+	assert.Empty(t, resetRow["problemTitle"])
+	assert.Empty(t, resetRow["problemSlug"])
+	assert.EqualValues(t, -18, resetRow["delta"])
+	solveRow := history[1].(map[string]any)
+	assert.Equal(t, "solve", solveRow["kind"])
+	assert.EqualValues(t, p.ID, solveRow["problemId"])
+	assert.Equal(t, "API History Problem", solveRow["problemTitle"])
+	assert.Equal(t, "api-history-problem", solveRow["problemSlug"])
+	assert.EqualValues(t, 66, solveRow["difficulty"])
+	assert.EqualValues(t, 18, solveRow["delta"])
+	assert.EqualValues(t, 900, solveRow["solveTimeMs"])
+
+	w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/agents/%d/rating-history?page=2&page_size=1", alpha.ID), "", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data = dataObject(t, resp)
+	assert.EqualValues(t, 2, data["total"])
+	require.Len(t, data["items"].([]any), 1)
+
+	// Owner history requires login and a real Agent.
+	w, resp = f.do(http.MethodGet, "/api/agents/me/rating-history", "", "")
+	require.Equal(t, http.StatusUnauthorized, w.Code, w.Body.String())
+	assert.EqualValues(t, 40100, resp["code"])
+
+	aliceToken := f.token(alice)
+	w, resp = f.do(http.MethodGet, "/api/agents/me/rating-history", aliceToken, "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.EqualValues(t, 2, dataObject(t, resp)["total"])
+
+	w, resp = f.do(http.MethodGet, "/api/agents/me/rating-history", f.token(noAgent), "")
+	require.Equal(t, http.StatusNotFound, w.Code, w.Body.String())
+	assert.EqualValues(t, 40400, resp["code"])
+
+	// /agents/me still resolves to the owner endpoint, not the :id wildcard.
+	w, resp = f.do(http.MethodGet, "/api/agents/me", aliceToken, "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	me := dataObject(t, resp)
+	require.NotNil(t, me["agent"])
+	assert.Equal(t, "Public Alpha", me["agent"].(map[string]any)["name"])
 }

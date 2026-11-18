@@ -21,9 +21,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kaptree/kapoj/apps/server/internal/activity"
+	"github.com/kaptree/kapoj/apps/server/internal/agent"
 	"github.com/kaptree/kapoj/apps/server/internal/ai"
 	"github.com/kaptree/kapoj/apps/server/internal/auth"
 	"github.com/kaptree/kapoj/apps/server/internal/config"
+	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/learning"
 	"github.com/kaptree/kapoj/apps/server/internal/mail"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
@@ -568,4 +570,70 @@ func TestRouterDoesNotTrustForwardedForByDefault(t *testing.T) {
 	sessions := resp["data"].([]any)
 	require.Len(t, sessions, 1)
 	assert.Equal(t, "192.0.2.1", sessions[0].(map[string]any)["ip"], "default config must not trust X-Forwarded-For")
+}
+
+func TestRouterWiresAgentPublicAndAdminRoutes(t *testing.T) {
+	g := testutil.PG(t)
+	rbacSvc := testutil.SeedRBAC(t, g)
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	store, err := storage.NewLocal(t.TempDir())
+	require.NoError(t, err)
+	agentSvc := agent.NewService(g,
+		problem.NewGormRepository(g), contest.NewGormRepository(g), nil, nil)
+	h := New(Deps{
+		DB: g, Redis: rdb, Storage: store, RBAC: rbacSvc, Agent: agentSvc,
+		Config: &config.Config{
+			JWTSecret: strings.Repeat("s", 32), AccessTokenTTL: 15 * time.Minute,
+			RefreshTokenTTL: time.Hour, SubmitCooldown: time.Second,
+		},
+		Enqueuer: noopQueue{},
+	})
+
+	w, resp := call(h, http.MethodGet, "/api/agents", "", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.EqualValues(t, 0, resp["data"].(map[string]any)["total"])
+
+	w, resp = call(h, http.MethodPost, "/api/auth/register", "",
+		`{"username":"agentrouter","email":"agentrouter@example.com","password":"correct-horse"}`)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	session := registerSession(t, resp)
+	token := session["accessToken"].(string)
+	userID := int64(session["user"].(map[string]any)["id"].(float64))
+
+	w, resp = call(h, http.MethodPost, "/api/agents", token,
+		`{"name":"Router Agent","modelName":"gpt-5"}`)
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	agentID := int64(resp["data"].(map[string]any)["id"].(float64))
+
+	w, resp = call(h, http.MethodGet, fmt.Sprintf("/api/agents/%d", agentID), "", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, "Router Agent",
+		resp["data"].(map[string]any)["agent"].(map[string]any)["name"])
+
+	// The admin routes are mounted and gated by agent.manage.
+	w, resp = call(h, http.MethodGet, "/api/admin/agents", token, "")
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.EqualValues(t, 40300, resp["code"])
+
+	testutil.AssignRole(t, g, userID, rbac.RoleCodeSuperAdmin)
+	w, resp = call(h, http.MethodGet, "/api/admin/agents", token, "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.EqualValues(t, 1, resp["data"].(map[string]any)["total"])
+
+	w, resp = call(h, http.MethodPut, fmt.Sprintf("/api/admin/agents/%d", agentID), token,
+		`{"status":"disabled"}`)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, "disabled", resp["data"].(map[string]any)["status"])
+
+	var audit rbac.AdminAuditLog
+	require.NoError(t, g.Where("action = ? AND target_id = ?",
+		rbac.AuditActionAgentManage, agentID).First(&audit).Error)
+	assert.EqualValues(t, userID, audit.ActorID)
+
+	w, resp = call(h, http.MethodGet, fmt.Sprintf("/api/agents/%d", agentID), "", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, "disabled",
+		resp["data"].(map[string]any)["agent"].(map[string]any)["status"])
 }

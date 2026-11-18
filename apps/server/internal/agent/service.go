@@ -27,6 +27,9 @@ const (
 	lastUsedThrottle   = time.Minute
 	agentInputMaxName  = 100
 	agentInputMaxIntro = 500
+
+	defaultPageSize = 20
+	maxPageSize     = 100
 )
 
 // ProblemLookup is the problem dependency used by claim/submission logic. Task
@@ -113,6 +116,41 @@ type AgentView struct {
 	Author         AgentAuthor `json:"author"`
 	CreatedAt      time.Time   `json:"createdAt"`
 	UpdatedAt      time.Time   `json:"updatedAt"`
+}
+
+// AgentFilter filters and sorts the public Agent leaderboard.
+type AgentFilter struct {
+	Model string
+	Sort  string // rating | passed | avg_time
+}
+
+// AgentDetailView is the public Agent detail payload. It intentionally exposes
+// only the public profile and statistics, never tokens or the current attempt.
+type AgentDetailView struct {
+	Agent AgentView `json:"agent"`
+}
+
+// AgentRatingRow is one public rating history entry with its problem label.
+// Reset entries have no problem: ProblemID is 0 and the title/slug are empty.
+type AgentRatingRow struct {
+	ID           int64      `json:"id"`
+	ProblemID    int64      `json:"problemId"`
+	ProblemTitle string     `json:"problemTitle"`
+	ProblemSlug  string     `json:"problemSlug"`
+	Kind         RatingKind `json:"kind"`
+	Difficulty   int        `json:"difficulty"`
+	RatingBefore int        `json:"ratingBefore"`
+	RatingAfter  int        `json:"ratingAfter"`
+	Delta        int        `json:"delta"`
+	SolveTimeMS  int        `json:"solveTimeMs"`
+	CreatedAt    time.Time  `json:"createdAt"`
+}
+
+// AdminAgentInput is the admin status/reset payload. An empty status keeps the
+// current one; ResetRating is only applied when explicitly true.
+type AdminAgentInput struct {
+	Status      Status `json:"status"`
+	ResetRating bool   `json:"resetRating"`
 }
 
 // AgentTokenView is token metadata; the plaintext is never returned here.
@@ -281,6 +319,325 @@ func (s *Service) UpdateAgent(ctx context.Context, userID int64, in AgentInput) 
 		return nil, err
 	}
 	return s.agentView(ctx, a)
+}
+
+// ListAgents returns one page of the public leaderboard. The default order is
+// rating DESC, id ASC; sort=passed ranks by solved problems and sort=avg_time
+// ranks the fastest average solve time among Agents that solved something.
+func (s *Service) ListAgents(
+	ctx context.Context, f AgentFilter, page, size int,
+) (httpx.Page[AgentView], error) {
+	return s.listAgentPage(ctx, f.Model, "", f.Sort, page, size)
+}
+
+// AgentDetail returns the public profile of one Agent.
+func (s *Service) AgentDetail(ctx context.Context, id int64) (*AgentDetailView, error) {
+	var a Agent
+	err := s.db.WithContext(ctx).First(&a, id).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, httpx.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	view, err := s.agentView(ctx, a)
+	if err != nil {
+		return nil, err
+	}
+	return &AgentDetailView{Agent: *view}, nil
+}
+
+// RatingHistory returns one page of an Agent's rating history, newest first,
+// with problem titles and slugs joined in.
+func (s *Service) RatingHistory(
+	ctx context.Context, agentID int64, page, size int,
+) (httpx.Page[AgentRatingRow], error) {
+	return s.ratingHistoryPage(ctx, agentID, page, size)
+}
+
+// RatingHistoryForUser resolves the current user's Agent and returns its
+// history. A user without an Agent gets a 404.
+func (s *Service) RatingHistoryForUser(
+	ctx context.Context, userID int64, page, size int,
+) (httpx.Page[AgentRatingRow], error) {
+	var a Agent
+	err := s.db.WithContext(ctx).Select("id").Where("user_id = ?", userID).First(&a).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return httpx.Page[AgentRatingRow]{}, httpx.ErrNotFound
+	}
+	if err != nil {
+		return httpx.Page[AgentRatingRow]{}, err
+	}
+	return s.ratingHistoryPage(ctx, a.ID, page, size)
+}
+
+// AdminList returns one page of Agents for the management UI.
+func (s *Service) AdminList(
+	ctx context.Context, status, model string, page, size int,
+) (httpx.Page[AgentView], error) {
+	return s.listAgentPage(ctx, model, status, "rating", page, size)
+}
+
+// AdminUpdate disables/restores an Agent and optionally resets its rating. The
+// agents row is locked first. Disabling revokes every live token in the same
+// transaction; restoring only changes the status, so the owner must issue a
+// fresh token afterwards.
+func (s *Service) AdminUpdate(
+	ctx context.Context, id int64, in AdminAgentInput,
+) (*AgentView, error) {
+	if in.Status != "" && in.Status != StatusActive && in.Status != StatusDisabled {
+		return nil, httpx.ErrValidation("Agent 状态无效")
+	}
+
+	var view *AgentView
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var a Agent
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&a, id).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return httpx.ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+
+		now := s.now()
+		updates := map[string]any{"updated_at": now}
+		if in.Status != "" {
+			updates["status"] = in.Status
+		}
+		if in.ResetRating {
+			updates["rating"] = initialRating
+			entry := AgentRatingHistory{
+				AgentID:      a.ID,
+				ProblemID:    0,
+				Kind:         RatingReset,
+				RatingBefore: a.Rating,
+				RatingAfter:  initialRating,
+				Delta:        initialRating - a.Rating,
+				CreatedAt:    now,
+			}
+			if err := tx.Create(&entry).Error; err != nil {
+				return err
+			}
+		}
+
+		if err := tx.Model(&Agent{}).Where("id = ?", a.ID).Updates(updates).Error; err != nil {
+			return err
+		}
+		if in.Status == StatusDisabled {
+			if err := tx.Model(&AgentToken{}).
+				Where("agent_id = ? AND revoked_at IS NULL", a.ID).
+				Update("revoked_at", now).Error; err != nil {
+				return err
+			}
+		}
+
+		if in.Status != "" {
+			a.Status = in.Status
+		}
+		if in.ResetRating {
+			a.Rating = initialRating
+		}
+		a.UpdatedAt = now
+		updated, err := buildAgentView(tx, a)
+		if err != nil {
+			return err
+		}
+		view = updated
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return view, nil
+}
+
+// listAgentPage is shared by the public leaderboard and the admin list. Both
+// include the owner identity so clients can show the author without N+1 calls.
+func (s *Service) listAgentPage(
+	ctx context.Context, model, status, sort string, page, size int,
+) (httpx.Page[AgentView], error) {
+	page, size = normalizePage(page, size)
+
+	base := func() *gorm.DB {
+		q := s.db.WithContext(ctx).Table("agents AS a").
+			Joins("JOIN users AS u ON u.id = a.user_id")
+		if model != "" {
+			q = q.Where("a.model_name = ?", model)
+		}
+		if status != "" {
+			q = q.Where("a.status = ?", status)
+		}
+		if sort == "avg_time" {
+			q = q.Where("a.passed_count > 0")
+		}
+		return q
+	}
+
+	var total int64
+	if err := base().Count(&total).Error; err != nil {
+		return httpx.Page[AgentView]{}, err
+	}
+
+	var rows []agentListRow
+	err := base().Select(`
+			a.id, a.user_id, a.name, a.model_name, a.model_intro, a.status,
+			a.rating, a.passed_count, a.attempted_count, a.avg_solve_time_ms,
+			a.created_at, a.updated_at,
+			u.id AS author_id, u.username AS author_username,
+			u.nickname AS author_nickname`).
+		Order(agentListOrder(sort)).
+		Limit(size).
+		Offset((page - 1) * size).
+		Scan(&rows).Error
+	if err != nil {
+		return httpx.Page[AgentView]{}, err
+	}
+
+	items := make([]AgentView, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, row.view())
+	}
+	return httpx.Page[AgentView]{Total: total, Items: items}, nil
+}
+
+func agentListOrder(sort string) string {
+	switch sort {
+	case "passed":
+		return "a.passed_count DESC, a.id ASC"
+	case "avg_time":
+		return "a.avg_solve_time_ms ASC, a.id ASC"
+	default:
+		return "a.rating DESC, a.id ASC"
+	}
+}
+
+func normalizePage(page, size int) (int, int) {
+	if page < 1 {
+		page = 1
+	}
+	if size < 1 {
+		size = defaultPageSize
+	}
+	if size > maxPageSize {
+		size = maxPageSize
+	}
+	return page, size
+}
+
+type agentListRow struct {
+	ID             int64     `gorm:"column:id"`
+	UserID         int64     `gorm:"column:user_id"`
+	Name           string    `gorm:"column:name"`
+	ModelName      string    `gorm:"column:model_name"`
+	ModelIntro     string    `gorm:"column:model_intro"`
+	Status         Status    `gorm:"column:status"`
+	Rating         int       `gorm:"column:rating"`
+	PassedCount    int       `gorm:"column:passed_count"`
+	AttemptedCount int       `gorm:"column:attempted_count"`
+	AvgSolveTimeMS int       `gorm:"column:avg_solve_time_ms"`
+	CreatedAt      time.Time `gorm:"column:created_at"`
+	UpdatedAt      time.Time `gorm:"column:updated_at"`
+	AuthorID       int64     `gorm:"column:author_id"`
+	AuthorUsername string    `gorm:"column:author_username"`
+	AuthorNickname string    `gorm:"column:author_nickname"`
+}
+
+func (r agentListRow) view() AgentView {
+	return AgentView{
+		ID:             r.ID,
+		UserID:         r.UserID,
+		Name:           r.Name,
+		ModelName:      r.ModelName,
+		ModelIntro:     r.ModelIntro,
+		Status:         r.Status,
+		Rating:         r.Rating,
+		PassedCount:    r.PassedCount,
+		AttemptedCount: r.AttemptedCount,
+		AvgSolveTimeMS: r.AvgSolveTimeMS,
+		Author: AgentAuthor{
+			ID:       r.AuthorID,
+			Username: r.AuthorUsername,
+			Nickname: r.AuthorNickname,
+		},
+		CreatedAt: r.CreatedAt,
+		UpdatedAt: r.UpdatedAt,
+	}
+}
+
+func (s *Service) ratingHistoryPage(
+	ctx context.Context, agentID int64, page, size int,
+) (httpx.Page[AgentRatingRow], error) {
+	var a Agent
+	err := s.db.WithContext(ctx).Select("id").First(&a, agentID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return httpx.Page[AgentRatingRow]{}, httpx.ErrNotFound
+	}
+	if err != nil {
+		return httpx.Page[AgentRatingRow]{}, err
+	}
+
+	page, size = normalizePage(page, size)
+
+	var total int64
+	err = s.db.WithContext(ctx).Model(&AgentRatingHistory{}).
+		Where("agent_id = ?", agentID).Count(&total).Error
+	if err != nil {
+		return httpx.Page[AgentRatingRow]{}, err
+	}
+
+	var rows []ratingHistoryRow
+	err = s.db.WithContext(ctx).Raw(`
+		SELECT h.id, COALESCE(h.problem_id, 0) AS problem_id,
+		       COALESCE(p.title, '') AS problem_title,
+		       COALESCE(p.slug, '') AS problem_slug,
+		       h.kind, h.difficulty, h.rating_before, h.rating_after,
+		       h.delta, h.solve_time_ms, h.created_at
+		FROM agent_rating_history h
+		LEFT JOIN problems p ON p.id = h.problem_id
+		WHERE h.agent_id = ?
+		ORDER BY h.created_at DESC, h.id DESC
+		LIMIT ? OFFSET ?`,
+		agentID, size, (page-1)*size).Scan(&rows).Error
+	if err != nil {
+		return httpx.Page[AgentRatingRow]{}, err
+	}
+
+	items := make([]AgentRatingRow, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, row.view())
+	}
+	return httpx.Page[AgentRatingRow]{Total: total, Items: items}, nil
+}
+
+type ratingHistoryRow struct {
+	ID           int64      `gorm:"column:id"`
+	ProblemID    int64      `gorm:"column:problem_id"`
+	ProblemTitle string     `gorm:"column:problem_title"`
+	ProblemSlug  string     `gorm:"column:problem_slug"`
+	Kind         RatingKind `gorm:"column:kind"`
+	Difficulty   int        `gorm:"column:difficulty"`
+	RatingBefore int        `gorm:"column:rating_before"`
+	RatingAfter  int        `gorm:"column:rating_after"`
+	Delta        int        `gorm:"column:delta"`
+	SolveTimeMS  int        `gorm:"column:solve_time_ms"`
+	CreatedAt    time.Time  `gorm:"column:created_at"`
+}
+
+func (r ratingHistoryRow) view() AgentRatingRow {
+	return AgentRatingRow{
+		ID:           r.ID,
+		ProblemID:    r.ProblemID,
+		ProblemTitle: r.ProblemTitle,
+		ProblemSlug:  r.ProblemSlug,
+		Kind:         r.Kind,
+		Difficulty:   r.Difficulty,
+		RatingBefore: r.RatingBefore,
+		RatingAfter:  r.RatingAfter,
+		Delta:        r.Delta,
+		SolveTimeMS:  r.SolveTimeMS,
+		CreatedAt:    r.CreatedAt,
+	}
 }
 
 // GenerateToken rotates the Agent token: any live token is revoked and a new
@@ -460,8 +817,12 @@ func (s *Service) currentAttempt(ctx context.Context, agentID int64) (*AttemptVi
 }
 
 func (s *Service) agentView(ctx context.Context, a Agent) (*AgentView, error) {
+	return buildAgentView(s.db.WithContext(ctx), a)
+}
+
+func buildAgentView(db *gorm.DB, a Agent) (*AgentView, error) {
 	var author AgentAuthor
-	err := s.db.WithContext(ctx).Table("users").
+	err := db.Table("users").
 		Select("id, username, nickname").
 		Where("id = ?", a.UserID).
 		Scan(&author).Error

@@ -20,6 +20,77 @@ func RegisterUserRoutes(api gin.IRouter, svc *agent.Service) {
 	api.DELETE("/agents/me/token", requireAuth, h.revokeToken)
 }
 
+// RegisterPublicRoutes mounts the public leaderboard/detail/history endpoints on
+// the existing /api group. The group already runs optional authentication, so
+// guests may read the leaderboard while /agents/me/rating-history requires a
+// login.
+func RegisterPublicRoutes(api gin.IRouter, svc *agent.Service) {
+	h := &publicHandler{svc: svc}
+	api.GET("/agents", h.list)
+	api.GET("/agents/me/rating-history", middleware.RequireAuth(), h.myRatingHistory)
+	api.GET("/agents/:id", h.detail)
+	api.GET("/agents/:id/rating-history", h.ratingHistory)
+}
+
+type publicHandler struct {
+	svc *agent.Service
+}
+
+func (h *publicHandler) list(c *gin.Context) {
+	page, size := httpx.ParsePage(c.Request.URL.RawQuery)
+	q := c.Request.URL.Query()
+	result, err := h.svc.ListAgents(c.Request.Context(), agent.AgentFilter{
+		Model: q.Get("model"),
+		Sort:  q.Get("sort"),
+	}, page, size)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, result)
+}
+
+func (h *publicHandler) detail(c *gin.Context) {
+	id, ok := agentPathID(c, "id")
+	if !ok {
+		return
+	}
+	detail, err := h.svc.AgentDetail(c.Request.Context(), id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, detail)
+}
+
+func (h *publicHandler) ratingHistory(c *gin.Context) {
+	id, ok := agentPathID(c, "id")
+	if !ok {
+		return
+	}
+	page, size := httpx.ParsePage(c.Request.URL.RawQuery)
+	result, err := h.svc.RatingHistory(c.Request.Context(), id, page, size)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, result)
+}
+
+func (h *publicHandler) myRatingHistory(c *gin.Context) {
+	userID, ok := currentUserID(c)
+	if !ok {
+		return
+	}
+	page, size := httpx.ParsePage(c.Request.URL.RawQuery)
+	result, err := h.svc.RatingHistoryForUser(c.Request.Context(), userID, page, size)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, result)
+}
+
 type userHandler struct {
 	svc *agent.Service
 }

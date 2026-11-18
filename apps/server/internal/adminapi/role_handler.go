@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/kaptree/kapoj/apps/server/internal/agent"
 	"github.com/kaptree/kapoj/apps/server/internal/ai"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
@@ -17,13 +18,17 @@ import (
 // middleware.Authenticate。所有管理接口都通过 RequirePermission 授权，
 // super_admin 由中间件直接放行。opts.Game 非空时额外挂载金币调整接口；
 // opts.Rating 非空时额外挂载 Rating 设置接口；opts.AI 非空时额外挂载
-// AI 设置接口；opts.AIPlatform 非空时额外挂载平台模型接口。
+// AI 设置接口；opts.AIPlatform 非空时额外挂载平台模型接口；opts.Agent
+// 非空时额外挂载 Agent 管理接口（agent.manage）。
 func RegisterRoutes(api gin.IRouter, s *rbac.Service, opts ...Options) {
 	var o Options
 	if len(opts) > 0 {
 		o = opts[0]
 	}
-	h := &handler{svc: s, game: o.Game, rating: o.Rating, ai: o.AI, aiPlatform: o.AIPlatform}
+	h := &handler{
+		svc: s, game: o.Game, rating: o.Rating, ai: o.AI,
+		aiPlatform: o.AIPlatform, agentSvc: o.Agent,
+	}
 
 	api.GET("/admin/stats", append(requirePermission(s, string(rbac.PermAdminDashboardView)), h.stats)...)
 	api.GET("/admin/audit", append(requirePermission(s, string(rbac.PermAdminAuditView)), h.listAudit)...)
@@ -56,6 +61,14 @@ func RegisterRoutes(api gin.IRouter, s *rbac.Service, opts ...Options) {
 		api.POST("/admin/ai/key/reset", append(requirePermission(s, string(rbac.PermAISettingsManage)), h.resetAIKey)...)
 		api.PUT("/admin/ai/key", append(requirePermission(s, string(rbac.PermAISettingsManage)), h.setAIKey)...)
 	}
+	if h.agentSvc != nil {
+		api.GET("/admin/agents", append(requirePermission(s, string(rbac.PermAgentManage)), h.listAgents)...)
+		api.PUT("/admin/agents/:id", append(
+			requirePermission(s, string(rbac.PermAgentManage)),
+			middleware.AuditAdminAction(s, string(rbac.PermAgentManage), rbac.AuditTargetAgent),
+			h.updateAgent,
+		)...)
+	}
 	if h.aiPlatform != nil {
 		api.GET("/admin/ai/models", append(requirePermission(s, string(rbac.PermAISettingsManage)), h.listAIPlatformModels)...)
 		api.POST("/admin/ai/models", append(requirePermission(s, string(rbac.PermAISettingsManage)), h.createAIPlatformModel)...)
@@ -72,6 +85,7 @@ type handler struct {
 	rating     *rating.Service
 	ai         *ai.SettingsService
 	aiPlatform *ai.PlatformService
+	agentSvc   *agent.Service
 }
 
 // roleUpdateRequest 是 PUT /admin/roles/:id 的请求体。Code 为可选字段：

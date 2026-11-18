@@ -2,6 +2,7 @@ package agent_test
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -63,11 +64,26 @@ func (f *agentFixture) user(username, status string) int64 {
 
 func (f *agentFixture) create(userID int64, name string) *agent.AgentView {
 	f.t.Helper()
+	return f.createWithModel(userID, name, "test-model")
+}
+
+func (f *agentFixture) createWithModel(userID int64, name, model string) *agent.AgentView {
+	f.t.Helper()
 	view, err := f.svc.CreateAgent(context.Background(), userID, agent.AgentInput{
-		Name: name, ModelName: "test-model", ModelIntro: "test intro",
+		Name: name, ModelName: model, ModelIntro: "test intro",
 	})
 	require.NoError(f.t, err)
 	return view
+}
+
+func (f *agentFixture) problem(slug, title string, difficulty int) int64 {
+	f.t.Helper()
+	p := &problem.Problem{
+		Title: title, Slug: slug, Type: problem.TypeTraditional,
+		Difficulty: difficulty, TimeLimitMS: 1000, MemoryLimitMB: 256, IsPublic: true,
+	}
+	require.NoError(f.t, problem.NewGormRepository(f.db).Create(context.Background(), p))
+	return p.ID
 }
 
 func requireAppError(t *testing.T, err error, status, code int) *httpx.AppError {
@@ -299,4 +315,305 @@ func TestAgentTokenRejectsDisabledOrBanned(t *testing.T) {
 	_, err = f.svc.AuthenticateToken(ctx, issue.Token)
 	appErr = requireAppError(t, err, 403, 40301)
 	assert.Equal(t, "账号已被封禁", appErr.Message)
+}
+
+func TestAgentLeaderboardFiltersAndSorts(t *testing.T) {
+	f := newAgentFixture(t)
+	ctx := context.Background()
+
+	type seed struct {
+		username string
+		name     string
+		model    string
+		rating   int
+		passed   int
+		avg      int
+	}
+	seeds := []seed{
+		{"leader-alice", "Leader Alpha", "gpt-5", 1600, 2, 300},
+		{"leader-bob", "Leader Beta", "gpt-5", 1800, 0, 0},
+		{"leader-carol", "Leader Gamma", "claude-4", 1500, 5, 100},
+		{"leader-dave", "Leader Delta", "claude-4", 1800, 1, 200},
+	}
+	for _, sd := range seeds {
+		userID := f.user(sd.username, "active")
+		view := f.createWithModel(userID, sd.name, sd.model)
+		require.NoError(t, f.db.Model(&agent.Agent{}).Where("id = ?", view.ID).
+			Updates(map[string]any{
+				"rating":            sd.rating,
+				"passed_count":      sd.passed,
+				"avg_solve_time_ms": sd.avg,
+			}).Error)
+	}
+
+	names := func(page httpx.Page[agent.AgentView], want ...string) {
+		t.Helper()
+		if want == nil {
+			want = []string{}
+		}
+		got := make([]string, len(page.Items))
+		for i, item := range page.Items {
+			got[i] = item.Name
+		}
+		assert.Equal(t, want, got)
+	}
+
+	// Default ordering is rating DESC, id ASC.
+	page, err := f.svc.ListAgents(ctx, agent.AgentFilter{}, 1, 20)
+	require.NoError(t, err)
+	assert.EqualValues(t, 4, page.Total)
+	names(page, "Leader Beta", "Leader Delta", "Leader Alpha", "Leader Gamma")
+	assert.Equal(t, "leader-bob", page.Items[0].Author.Username)
+	assert.Equal(t, "nick-leader-bob", page.Items[0].Author.Nickname)
+	assert.Equal(t, "Leader Beta", page.Items[0].Name)
+
+	// Explicit rating sort matches the default and ties break by id ASC.
+	page, err = f.svc.ListAgents(ctx, agent.AgentFilter{Sort: "rating"}, 1, 20)
+	require.NoError(t, err)
+	names(page, "Leader Beta", "Leader Delta", "Leader Alpha", "Leader Gamma")
+
+	// Model filter is exact and case-sensitive.
+	page, err = f.svc.ListAgents(ctx, agent.AgentFilter{Model: "gpt-5"}, 1, 20)
+	require.NoError(t, err)
+	assert.EqualValues(t, 2, page.Total)
+	names(page, "Leader Beta", "Leader Alpha")
+
+	page, err = f.svc.ListAgents(ctx, agent.AgentFilter{Model: "gpt"}, 1, 20)
+	require.NoError(t, err)
+	assert.Zero(t, page.Total)
+	names(page)
+
+	// passed_count DESC.
+	page, err = f.svc.ListAgents(ctx, agent.AgentFilter{Sort: "passed"}, 1, 20)
+	require.NoError(t, err)
+	assert.EqualValues(t, 4, page.Total)
+	names(page, "Leader Gamma", "Leader Alpha", "Leader Delta", "Leader Beta")
+
+	// avg_time ASC only considers Agents that have passed at least one problem.
+	page, err = f.svc.ListAgents(ctx, agent.AgentFilter{Sort: "avg_time"}, 1, 20)
+	require.NoError(t, err)
+	assert.EqualValues(t, 3, page.Total)
+	names(page, "Leader Gamma", "Leader Delta", "Leader Alpha")
+
+	// Pagination keeps the filtered total and honors page/page_size.
+	page, err = f.svc.ListAgents(ctx, agent.AgentFilter{}, 2, 2)
+	require.NoError(t, err)
+	assert.EqualValues(t, 4, page.Total)
+	names(page, "Leader Alpha", "Leader Gamma")
+
+	page, err = f.svc.ListAgents(ctx, agent.AgentFilter{Sort: "passed"}, 2, 3)
+	require.NoError(t, err)
+	assert.EqualValues(t, 4, page.Total)
+	names(page, "Leader Beta")
+}
+
+func TestAgentPublicDetailAndHistory(t *testing.T) {
+	f := newAgentFixture(t)
+	ctx := context.Background()
+
+	owner := f.user("detail-owner", "active")
+	created := f.create(owner, "Detail Agent")
+	firstProblem := f.problem("history-first", "History First", 72)
+	secondProblem := f.problem("history-second", "History Second", 35)
+
+	detail, err := f.svc.AgentDetail(ctx, created.ID)
+	require.NoError(t, err)
+	require.NotNil(t, detail)
+	assert.Equal(t, created.ID, detail.Agent.ID)
+	assert.Equal(t, "Detail Agent", detail.Agent.Name)
+	assert.Equal(t, "detail-owner", detail.Agent.Author.Username)
+	assert.Equal(t, "nick-detail-owner", detail.Agent.Author.Nickname)
+	assert.NotZero(t, detail.Agent.CreatedAt)
+
+	raw, err := json.Marshal(detail)
+	require.NoError(t, err)
+	for _, forbidden := range []string{"token", "currentAttempt", "testcases", "solution", "deadlineAt"} {
+		assert.NotContains(t, string(raw), forbidden)
+	}
+
+	_, err = f.svc.AgentDetail(ctx, 999999)
+	requireAppError(t, err, 404, 40400)
+
+	base := f.clock.now
+	solveAt := base.Add(-3 * time.Hour)
+	abandonAt := base.Add(-2 * time.Hour)
+	resetAt := base.Add(-time.Hour)
+	require.NoError(t, f.db.Create(&agent.AgentRatingHistory{
+		AgentID: created.ID, ProblemID: firstProblem, Kind: agent.RatingSolve,
+		Difficulty: 72, RatingBefore: 1500, RatingAfter: 1516, Delta: 16,
+		SolveTimeMS: 1234, CreatedAt: solveAt,
+	}).Error)
+	require.NoError(t, f.db.Create(&agent.AgentRatingHistory{
+		AgentID: created.ID, ProblemID: secondProblem, Kind: agent.RatingAbandon,
+		Difficulty: 35, RatingBefore: 1516, RatingAfter: 1508, Delta: -8,
+		CreatedAt: abandonAt,
+	}).Error)
+	require.NoError(t, f.db.Create(&agent.AgentRatingHistory{
+		AgentID: created.ID, ProblemID: 0, Kind: agent.RatingReset,
+		RatingBefore: 1508, RatingAfter: 1500, Delta: -8,
+		CreatedAt: resetAt,
+	}).Error)
+
+	page, err := f.svc.RatingHistory(ctx, created.ID, 1, 20)
+	require.NoError(t, err)
+	assert.EqualValues(t, 3, page.Total)
+	require.Len(t, page.Items, 3)
+
+	reset := page.Items[0]
+	assert.Equal(t, agent.RatingReset, reset.Kind)
+	assert.Zero(t, reset.ProblemID)
+	assert.Empty(t, reset.ProblemTitle)
+	assert.Empty(t, reset.ProblemSlug)
+	assert.Equal(t, 1508, reset.RatingBefore)
+	assert.Equal(t, 1500, reset.RatingAfter)
+	assert.Equal(t, -8, reset.Delta)
+	assert.True(t, reset.CreatedAt.Equal(resetAt))
+
+	abandon := page.Items[1]
+	assert.Equal(t, agent.RatingAbandon, abandon.Kind)
+	assert.Equal(t, secondProblem, abandon.ProblemID)
+	assert.Equal(t, "History Second", abandon.ProblemTitle)
+	assert.Equal(t, "history-second", abandon.ProblemSlug)
+	assert.Equal(t, 35, abandon.Difficulty)
+	assert.Equal(t, -8, abandon.Delta)
+
+	solve := page.Items[2]
+	assert.Equal(t, agent.RatingSolve, solve.Kind)
+	assert.Equal(t, firstProblem, solve.ProblemID)
+	assert.Equal(t, "History First", solve.ProblemTitle)
+	assert.Equal(t, "history-first", solve.ProblemSlug)
+	assert.Equal(t, 72, solve.Difficulty)
+	assert.Equal(t, 16, solve.Delta)
+	assert.Equal(t, 1234, solve.SolveTimeMS)
+
+	page, err = f.svc.RatingHistory(ctx, created.ID, 2, 2)
+	require.NoError(t, err)
+	assert.EqualValues(t, 3, page.Total)
+	require.Len(t, page.Items, 1)
+	assert.Equal(t, agent.RatingSolve, page.Items[0].Kind)
+
+	// The owner shortcut resolves the Agent from the user.
+	page, err = f.svc.RatingHistoryForUser(ctx, owner, 1, 20)
+	require.NoError(t, err)
+	assert.EqualValues(t, 3, page.Total)
+
+	_, err = f.svc.RatingHistoryForUser(ctx, f.user("detail-noagent", "active"), 1, 20)
+	requireAppError(t, err, 404, 40400)
+	_, err = f.svc.RatingHistory(ctx, 999999, 1, 20)
+	requireAppError(t, err, 404, 40400)
+}
+
+func TestAdminAgentUpdateDisablesAndResets(t *testing.T) {
+	f := newAgentFixture(t)
+	ctx := context.Background()
+
+	owner := f.user("admin-owner", "active")
+	other := f.user("admin-other", "active")
+	created := f.createWithModel(owner, "Admin Agent", "gpt-5")
+	otherAgent := f.createWithModel(other, "Other Agent", "claude-4")
+	require.NoError(t, f.db.Model(&agent.Agent{}).Where("id = ?", otherAgent.ID).
+		Update("status", agent.StatusDisabled).Error)
+
+	issued, err := f.svc.GenerateToken(ctx, owner)
+	require.NoError(t, err)
+	_, err = f.svc.AuthenticateToken(ctx, issued.Token)
+	require.NoError(t, err)
+
+	// Admin list includes every status and author metadata; filters are exact.
+	page, err := f.svc.AdminList(ctx, "", "", 1, 20)
+	require.NoError(t, err)
+	assert.EqualValues(t, 2, page.Total)
+	require.Len(t, page.Items, 2)
+	assert.Equal(t, "Admin Agent", page.Items[0].Name)
+	assert.Equal(t, "admin-owner", page.Items[0].Author.Username)
+
+	page, err = f.svc.AdminList(ctx, string(agent.StatusDisabled), "", 1, 20)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, page.Total)
+	require.Len(t, page.Items, 1)
+	assert.Equal(t, "Other Agent", page.Items[0].Name)
+
+	page, err = f.svc.AdminList(ctx, "", "gpt-5", 1, 20)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, page.Total)
+	require.Len(t, page.Items, 1)
+	assert.Equal(t, "Admin Agent", page.Items[0].Name)
+
+	page, err = f.svc.AdminList(ctx, string(agent.StatusDisabled), "gpt-5", 1, 20)
+	require.NoError(t, err)
+	assert.Zero(t, page.Total)
+
+	// Disabling sets the status and revokes every live token in one transaction.
+	view, err := f.svc.AdminUpdate(ctx, created.ID, agent.AdminAgentInput{Status: agent.StatusDisabled})
+	require.NoError(t, err)
+	require.NotNil(t, view)
+	assert.Equal(t, agent.StatusDisabled, view.Status)
+	assert.Equal(t, 1500, view.Rating)
+	assert.Equal(t, "admin-owner", view.Author.Username)
+
+	var activeTokens int64
+	require.NoError(t, f.db.Model(&agent.AgentToken{}).
+		Where("agent_id = ? AND revoked_at IS NULL", created.ID).Count(&activeTokens).Error)
+	assert.Zero(t, activeTokens)
+	_, err = f.svc.AuthenticateToken(ctx, issued.Token)
+	requireAppError(t, err, 401, 40102)
+	_, err = f.svc.GenerateToken(ctx, owner)
+	requireAppError(t, err, 403, 40304)
+
+	// Restoring only flips the status; the revoked token stays revoked.
+	view, err = f.svc.AdminUpdate(ctx, created.ID, agent.AdminAgentInput{Status: agent.StatusActive})
+	require.NoError(t, err)
+	assert.Equal(t, agent.StatusActive, view.Status)
+	_, err = f.svc.AuthenticateToken(ctx, issued.Token)
+	requireAppError(t, err, 401, 40102)
+
+	fresh, err := f.svc.GenerateToken(ctx, owner)
+	require.NoError(t, err)
+	_, err = f.svc.AuthenticateToken(ctx, fresh.Token)
+	require.NoError(t, err)
+
+	// An empty status keeps the current one and resetRating is opt-in.
+	require.NoError(t, f.db.Model(&agent.Agent{}).Where("id = ?", created.ID).
+		Update("rating", 1650).Error)
+	view, err = f.svc.AdminUpdate(ctx, created.ID, agent.AdminAgentInput{})
+	require.NoError(t, err)
+	assert.Equal(t, agent.StatusActive, view.Status)
+	assert.Equal(t, 1650, view.Rating)
+
+	var resets int64
+	require.NoError(t, f.db.Model(&agent.AgentRatingHistory{}).
+		Where("agent_id = ? AND kind = ?", created.ID, agent.RatingReset).Count(&resets).Error)
+	assert.Zero(t, resets)
+
+	view, err = f.svc.AdminUpdate(ctx, created.ID, agent.AdminAgentInput{ResetRating: true})
+	require.NoError(t, err)
+	assert.Equal(t, agent.StatusActive, view.Status)
+	assert.Equal(t, 1500, view.Rating)
+
+	var reset agent.AgentRatingHistory
+	require.NoError(t, f.db.Where("agent_id = ? AND kind = ?", created.ID, agent.RatingReset).
+		Order("id DESC").First(&reset).Error)
+	assert.Zero(t, reset.ProblemID)
+	assert.Zero(t, reset.Difficulty)
+	assert.Equal(t, 1650, reset.RatingBefore)
+	assert.Equal(t, 1500, reset.RatingAfter)
+	assert.Equal(t, -150, reset.Delta)
+	assert.Zero(t, reset.SolveTimeMS)
+	assert.True(t, reset.CreatedAt.Equal(f.clock.now))
+
+	// An explicit reset is written even when the rating is already 1500.
+	_, err = f.svc.AdminUpdate(ctx, created.ID, agent.AdminAgentInput{ResetRating: true})
+	require.NoError(t, err)
+	require.NoError(t, f.db.Model(&agent.AgentRatingHistory{}).
+		Where("agent_id = ? AND kind = ?", created.ID, agent.RatingReset).Count(&resets).Error)
+	assert.EqualValues(t, 2, resets)
+
+	// The revoked token never comes back, even after a reset.
+	_, err = f.svc.AuthenticateToken(ctx, issued.Token)
+	requireAppError(t, err, 401, 40102)
+
+	_, err = f.svc.AdminUpdate(ctx, created.ID, agent.AdminAgentInput{Status: agent.Status("banned")})
+	requireAppError(t, err, 400, 40001)
+	_, err = f.svc.AdminUpdate(ctx, 999999, agent.AdminAgentInput{Status: agent.StatusDisabled})
+	requireAppError(t, err, 404, 40400)
 }
