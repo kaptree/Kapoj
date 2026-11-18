@@ -850,19 +850,22 @@ func TestMigrateCreatesAgentSchema(t *testing.T) {
 	require.NoError(t, g.Raw(`
 		SELECT indexname AS index_name, indexdef AS index_def
 		FROM pg_indexes
-		WHERE schemaname = 'public' AND indexname IN (
+		WHERE schemaname = current_schema() AND indexname IN (
 			'uniq_agent_tokens_active',
 			'uniq_agent_attempts_active',
 			'uniq_agent_rating_solve',
 			'uniq_agent_rating_fail',
 			'uniq_agent_rating_submission',
-			'idx_submissions_agent_unsettled'
+			'idx_submissions_agent_unsettled',
+			'idx_agent_problem_attempts_agent_status'
 		)`).Scan(&indexDefs).Error)
 	defs := make(map[string]string, len(indexDefs))
 	for _, def := range indexDefs {
 		defs[def.IndexName] = def.IndexDef
 	}
-	require.Len(t, defs, 6, "缺少 Agent 相关索引")
+	require.Len(t, defs, 7, "缺少 Agent 相关索引")
+
+	assert.Contains(t, defs["idx_agent_problem_attempts_agent_status"], "(agent_id, status)")
 
 	tokensActive := defs["uniq_agent_tokens_active"]
 	assert.Contains(t, tokensActive, "UNIQUE INDEX")
@@ -896,6 +899,42 @@ func TestMigrateCreatesAgentSchema(t *testing.T) {
 	assert.Contains(t, unsettled, "(agent_id)")
 	assert.Contains(t, unsettled, "agent_id IS NOT NULL")
 	assert.Contains(t, unsettled, "agent_settled = false")
+}
+
+func TestMigrateRepairsAgentAttemptStatusIndex(t *testing.T) {
+	dsn := os.Getenv("KAPOJ_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("KAPOJ_TEST_DATABASE_URL not set; skipping database test")
+	}
+	g, err := open(dsn, io.Discard)
+	require.NoError(t, err)
+	require.NoError(t, Migrate(g))
+	sqlDB, err := g.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	indexDef := func() string {
+		var def string
+		require.NoError(t, g.Raw(`
+			SELECT COALESCE(indexdef, '') FROM pg_indexes
+			WHERE schemaname = current_schema()
+			  AND indexname = 'idx_agent_problem_attempts_agent_status'`).Scan(&def).Error)
+		return def
+	}
+
+	// Simulate the pre-fix schema: the same-named index only covers agent_id.
+	require.NoError(t, g.Exec("DROP INDEX IF EXISTS idx_agent_problem_attempts_agent_status").Error)
+	require.NoError(t, g.Exec(`
+		CREATE INDEX idx_agent_problem_attempts_agent_status
+		ON agent_problem_attempts (agent_id)`).Error)
+	require.NotContains(t, indexDef(), "(agent_id, status)")
+
+	require.NoError(t, Migrate(g))
+	assert.Contains(t, indexDef(), "(agent_id, status)", "Migrate 必须修复旧的同名索引")
+
+	// A healthy index must be left alone on subsequent starts.
+	require.NoError(t, Migrate(g))
+	assert.Contains(t, indexDef(), "(agent_id, status)")
 }
 
 func TestAgentSchemaConstraints(t *testing.T) {

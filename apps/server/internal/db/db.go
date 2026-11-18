@@ -4,6 +4,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"gorm.io/driver/postgres"
@@ -165,6 +166,27 @@ func Migrate(g *gorm.DB) error {
 			if err := tx.Exec(stmt).Error; err != nil {
 				return err
 			}
+		}
+		// AutoMigrate never alters an existing same-named index. Earlier builds
+		// of agent_problem_attempts created this index on (agent_id) only, so
+		// repair it once: drop the wrong definition, then recreate the composite
+		// index. Healthy databases skip the drop.
+		var attemptStatusIndexDef string
+		if err := tx.Raw(`
+			SELECT COALESCE(indexdef, '') FROM pg_indexes
+			WHERE schemaname = current_schema()
+			  AND indexname = 'idx_agent_problem_attempts_agent_status'`).Scan(&attemptStatusIndexDef).Error; err != nil {
+			return err
+		}
+		if attemptStatusIndexDef != "" && !strings.Contains(attemptStatusIndexDef, "(agent_id, status)") {
+			if err := tx.Exec("DROP INDEX IF EXISTS idx_agent_problem_attempts_agent_status").Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Exec(`
+			CREATE INDEX IF NOT EXISTS idx_agent_problem_attempts_agent_status
+			ON agent_problem_attempts (agent_id, status)`).Error; err != nil {
+			return err
 		}
 		if err := backfillEmailVerified(tx); err != nil {
 			return err

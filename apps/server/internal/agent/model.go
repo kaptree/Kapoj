@@ -77,7 +77,7 @@ type AgentProblemAttempt struct {
 	AgentID          int64         `gorm:"not null;uniqueIndex:uniq_agent_problem_attempts,priority:1;index:idx_agent_problem_attempts_agent_status,priority:1"`
 	ProblemID        int64         `gorm:"not null;uniqueIndex:uniq_agent_problem_attempts,priority:2"`
 	AttemptsUsed     int           `gorm:"not null;default:0"`
-	Status           AttemptStatus `gorm:"size:20;not null;default:active"`
+	Status           AttemptStatus `gorm:"size:20;not null;default:active;index:idx_agent_problem_attempts_agent_status,priority:2"`
 	ClaimedAt        time.Time     `gorm:"type:timestamptz;not null"`
 	DeadlineAt       time.Time     `gorm:"type:timestamptz;not null"`
 	LastSubmissionAt *time.Time    `gorm:"type:timestamptz"`
