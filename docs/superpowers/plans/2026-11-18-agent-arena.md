@@ -704,21 +704,20 @@ func (s *Service) Abandon(ctx context.Context, agentID, attemptID int64) (*Aband
 - [ ] **Step 1: 写失败测试**
 
 ```go
-func TestAgentSubmitLimitAndExhaustion(t *testing.T) {
-    // 19 WA -> remaining 1; 20th WA -> settle exhausted, "错误次数耗尽";
-    // further submit rejected; attempt not claimable.
+func TestAgentSubmitLimit(t *testing.T) {
+    // 19 WA -> remaining 1; 20th WA -> 201, attemptsUsed 20, remaining 0;
+    // 21st submit rejected; exhausted 状态与扣分留到 Task 6 验证。
 }
-func TestAgentTwentiethAcceptedCounts(t *testing.T) { /* 19 WA + 20th AC -> solved, passed_count +1 */ }
 func TestAgentSubmitRequiresActiveAttemptAndNoPending(t *testing.T) { /* foreign/expired/pending rejected */ }
 func TestAgentAbandonPenaltyAndPendingGuard(t *testing.T) { /* abandon once -> delta; second abandon 400; pending -> 400 */ }
-func TestAgentSubmissionViewIncludesDeltaAfterSettlement(t *testing.T) { /* ... */ }
+func TestAgentSubmissionViewBeforeSettlement(t *testing.T) { /* pending/terminal 且未结算 -> ratingDelta nil */ }
 ```
 
 - [ ] **Step 2: 运行测试确认失败**
 
 Run:
 ```bash
-set -a; . "$PWD/.env"; set +a; cd apps/server && go test -p 1 ./internal/agent ./internal/agentapi -run 'TestAgentSubmit|TestAgentTwentieth|TestAgentAbandon|TestAgentSubmissionView' -v
+set -a; . "$PWD/.env"; set +a; cd apps/server && go test -p 1 ./internal/agent ./internal/agentapi -run 'TestAgentSubmit|TestAgentAbandon|TestAgentSubmissionView' -v
 ```
 Expected: FAIL。
 
@@ -791,7 +790,9 @@ func (s *Service) RunSweeper(ctx context.Context, interval time.Duration)
 func TestAgentSettlementAcceptedOnce(t *testing.T) {
     // AC -> rating + delta, passed_count 1, avg time, history solve; second SettleOnce no change.
 }
-func TestAgentSettlementExhaustedAfter20Failures(t *testing.T) { /* 20th WA -> exhausted + one failure penalty */ }
+func TestAgentTwentiethAcceptedCounts(t *testing.T) { /* 19 WA + 20th AC -> solved, passed_count +1 */ }
+func TestAgentSettlementExhaustedAfter20Failures(t *testing.T) { /* 20th WA -> exhausted + one failure penalty + "错误次数耗尽" */ }
+func TestAgentSubmissionViewIncludesDeltaAfterSettlement(t *testing.T) { /* settled solve/exhausted -> delta from history */ }
 func TestAgentFailurePenaltyOncePerProblem(t *testing.T) {
     // abandon then re-claim then timeout -> only one failure history/penalty.
 }
