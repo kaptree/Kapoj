@@ -109,12 +109,27 @@ func (s *Service) GetConfig(ctx context.Context, userID int64) (*ConfigView, err
 }
 
 // SaveConfig 保存用户配置：provider 必须启用；model 为空时用默认 model；
-// 首次保存必须提供 key；已有配置且 key 为空时保留原密文。
+// 首次保存必须提供 key；已有配置且 key 为空时保留原密文。读/加密/写入整体
+// 持有密钥读锁，避免轮换重加密的密文随后被旧密钥密文覆盖。
 func (s *Service) SaveConfig(ctx context.Context, userID int64, in SaveConfigInput) (*ConfigView, error) {
 	if !s.keys.Configured() {
 		return nil, errNoKey()
 	}
 
+	var view *ConfigView
+	err := s.keys.WithKeyReadLock(func() error {
+		var err error
+		view, err = s.saveConfig(ctx, userID, in)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return view, nil
+}
+
+// saveConfig 执行 SaveConfig 的实际读写；调用方必须已持有密钥读锁。
+func (s *Service) saveConfig(ctx context.Context, userID int64, in SaveConfigInput) (*ConfigView, error) {
 	code := strings.TrimSpace(in.Provider)
 	if code == "" {
 		return nil, httpx.ErrValidation("服务商不能为空")

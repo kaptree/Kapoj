@@ -18,6 +18,12 @@ type KeyManager struct {
 	mu     sync.RWMutex
 	enc    *Encryptor
 	source string
+
+	// opMu 把密钥轮换与“加密后落库”的操作串行化。轮换持有写锁，从扫描
+	// 密文前一直保持到 Replace 完成；写入密文的调用方持有读锁，覆盖加密和
+	// 写入事务。这样轮换不会漏掉在扫描之后才提交的旧密钥密文。
+	// 与保护密钥状态的 mu 分离，避免锁顺序嵌套（opMu → mu）。
+	opMu sync.RWMutex
 }
 
 // errNoKey 是未配置 AI 加密密钥（平台级密钥缺失）时返回的统一 API 错误。
@@ -125,4 +131,20 @@ func (km *KeyManager) Replace(enc *Encryptor, source string) {
 	defer km.mu.Unlock()
 	km.enc = enc
 	km.source = source
+}
+
+// WithKeyReadLock 在密钥读锁内执行 fn。写入密文的调用方（加密 + 持久化
+// 事务）必须使用它，确保不会在轮换扫描之后提交旧密钥密文。
+func (km *KeyManager) WithKeyReadLock(fn func() error) error {
+	km.opMu.RLock()
+	defer km.opMu.RUnlock()
+	return fn()
+}
+
+// WithKeyWriteLock 在密钥写锁内执行 fn。密钥轮换/重置必须从扫描密文前
+// 持有到 Replace 完成，期间不会出现新的旧密钥密文写入。
+func (km *KeyManager) WithKeyWriteLock(fn func() error) error {
+	km.opMu.Lock()
+	defer km.opMu.Unlock()
+	return fn()
 }

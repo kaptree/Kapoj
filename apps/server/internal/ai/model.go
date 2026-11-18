@@ -32,8 +32,9 @@ type Settings struct {
 // TableName keeps the table name from the design document.
 func (Settings) TableName() string { return "ai_settings" }
 
-// PlatformModel 是平台级 OpenAI 兼容模型（系统任务使用），token 加密存储。
-// 与用户级 ai_providers / user_ai_configs 语义独立。
+// PlatformModel 是平台级 AI 模型（系统任务使用），支持 OpenAI 兼容与
+// Anthropic 协议，token 加密存储。与用户级 ai_providers / user_ai_configs
+// 语义独立。
 type PlatformModel struct {
 	ID                int64      `gorm:"primaryKey"`
 	Name              string     `gorm:"size:100;not null;uniqueIndex:uniq_ai_platform_models_name"`

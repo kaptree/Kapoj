@@ -148,6 +148,34 @@ func TestAIConfigAPIRequiresAuth(t *testing.T) {
 	assert.EqualValues(t, 40001, resp["code"])
 }
 
+// 没有 active user_ai_models 行时，旧 GET /configs 必须回退到
+// user_ai_configs，与 chatRequest 的解析顺序一致。
+func TestAIConfigLegacyFallback(t *testing.T) {
+	h, g := newAIHandler(t)
+	userID := createUser(t, g, "ailegacy")
+	token := tokenFor(t, userID)
+
+	key := base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))
+	enc, err := ai.NewEncryptor(key)
+	require.NoError(t, err)
+	ciphertext, err := enc.Encrypt("sk-legacy-1234567890")
+	require.NoError(t, err)
+	require.NoError(t, g.Create(&ai.UserConfig{
+		UserID: userID, Provider: "deepseek", ModelName: "deepseek-chat",
+		APIKeyEncrypted: ciphertext, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}).Error)
+
+	w, resp := do(t, h, http.MethodGet, "/api/ai/configs", token, "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data := resp["data"].(map[string]any)
+	assert.Equal(t, true, data["configured"])
+	assert.Equal(t, true, data["keyConfigured"])
+	assert.Equal(t, "deepseek", data["provider"])
+	assert.Equal(t, "deepseek-chat", data["modelName"])
+	assert.Equal(t, "sk-…7890", data["apiKeyMasked"])
+	assert.Len(t, data["providers"].([]any), 4)
+}
+
 func TestAIRoutesDisabledReturn404(t *testing.T) {
 	h, g := newAISettingsHandler(t, false)
 	userID := createUser(t, g, "aidisabled")

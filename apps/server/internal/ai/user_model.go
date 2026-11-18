@@ -103,47 +103,50 @@ func (s *Service) CreateUserModel(ctx context.Context, userID int64, in UserMode
 	if err != nil {
 		return nil, err
 	}
-	encrypted, err := s.keys.Encrypt(in.APIKey)
-	if err != nil {
-		return nil, err
-	}
 
 	var view *UserModelView
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := ensureUserModelNameFree(tx, userID, in.Name, 0); err != nil {
+	// 读锁覆盖加密与写入事务，避免轮换在扫描之后才看到旧密钥密文。
+	err = s.keys.WithKeyReadLock(func() error {
+		encrypted, err := s.keys.Encrypt(in.APIKey)
+		if err != nil {
 			return err
 		}
-		var count int64
-		if err := tx.Model(&UserModel{}).Where("user_id = ?", userID).Count(&count).Error; err != nil {
-			return fmt.Errorf("ai: count user models: %w", err)
-		}
-		active := count == 0 || in.IsActive
-		if active {
-			if err := tx.Model(&UserModel{}).
-				Where("user_id = ? AND is_active = ?", userID, true).
-				UpdateColumn("is_active", false).Error; err != nil {
-				return fmt.Errorf("ai: clear active user models: %w", err)
+		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := ensureUserModelNameFree(tx, userID, in.Name, 0); err != nil {
+				return err
 			}
-		}
+			var count int64
+			if err := tx.Model(&UserModel{}).Where("user_id = ?", userID).Count(&count).Error; err != nil {
+				return fmt.Errorf("ai: count user models: %w", err)
+			}
+			active := count == 0 || in.IsActive
+			if active {
+				if err := tx.Model(&UserModel{}).
+					Where("user_id = ? AND is_active = ?", userID, true).
+					UpdateColumn("is_active", false).Error; err != nil {
+					return fmt.Errorf("ai: clear active user models: %w", err)
+				}
+			}
 
-		now := time.Now().UTC()
-		model := UserModel{
-			UserID:          userID,
-			Name:            in.Name,
-			Protocol:        in.Protocol,
-			BaseURL:         in.BaseURL,
-			ModelName:       in.ModelName,
-			APIKeyEncrypted: encrypted,
-			IsActive:        active,
-			CreatedAt:       now,
-			UpdatedAt:       now,
-		}
-		if err := tx.Create(&model).Error; err != nil {
-			return fmt.Errorf("ai: create user model: %w", err)
-		}
-		modelView := userModelView(s.keys, model)
-		view = &modelView
-		return nil
+			now := time.Now().UTC()
+			model := UserModel{
+				UserID:          userID,
+				Name:            in.Name,
+				Protocol:        in.Protocol,
+				BaseURL:         in.BaseURL,
+				ModelName:       in.ModelName,
+				APIKeyEncrypted: encrypted,
+				IsActive:        active,
+				CreatedAt:       now,
+				UpdatedAt:       now,
+			}
+			if err := tx.Create(&model).Error; err != nil {
+				return fmt.Errorf("ai: create user model: %w", err)
+			}
+			modelView := userModelView(s.keys, model)
+			view = &modelView
+			return nil
+		})
 	})
 	if err != nil {
 		return nil, err
@@ -159,54 +162,62 @@ func (s *Service) UpdateUserModel(ctx context.Context, userID, id int64, in User
 		return nil, err
 	}
 
-	var encrypted *string
-	if in.APIKey != "" {
-		ciphertext, err := s.keys.Encrypt(in.APIKey)
-		if err != nil {
-			return nil, err
+	var view *UserModelView
+	update := func() error {
+		var encrypted *string
+		if in.APIKey != "" {
+			ciphertext, err := s.keys.Encrypt(in.APIKey)
+			if err != nil {
+				return err
+			}
+			encrypted = &ciphertext
 		}
-		encrypted = &ciphertext
+		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			var model UserModel
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("id = ? AND user_id = ?", id, userID).First(&model).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return httpx.ErrNotFound
+				}
+				return err
+			}
+			if err := ensureUserModelNameFree(tx, userID, in.Name, id); err != nil {
+				return err
+			}
+
+			updates := map[string]any{
+				"name":       in.Name,
+				"protocol":   in.Protocol,
+				"base_url":   in.BaseURL,
+				"model_name": in.ModelName,
+				"updated_at": time.Now().UTC(),
+			}
+			if encrypted != nil {
+				updates["api_key_encrypted"] = *encrypted
+				// A previous connectivity result does not describe the new token.
+				updates["last_test_at"] = nil
+				updates["last_test_ok"] = false
+				updates["last_test_error"] = ""
+				updates["last_test_latency_ms"] = 0
+			}
+			if err := tx.Model(&UserModel{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+				return fmt.Errorf("ai: update user model: %w", err)
+			}
+			if err := tx.First(&model, id).Error; err != nil {
+				return err
+			}
+			modelView := userModelView(s.keys, model)
+			view = &modelView
+			return nil
+		})
 	}
 
-	var view *UserModelView
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var model UserModel
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ? AND user_id = ?", id, userID).First(&model).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return httpx.ErrNotFound
-			}
-			return err
-		}
-		if err := ensureUserModelNameFree(tx, userID, in.Name, id); err != nil {
-			return err
-		}
-
-		updates := map[string]any{
-			"name":       in.Name,
-			"protocol":   in.Protocol,
-			"base_url":   in.BaseURL,
-			"model_name": in.ModelName,
-			"updated_at": time.Now().UTC(),
-		}
-		if encrypted != nil {
-			updates["api_key_encrypted"] = *encrypted
-			// A previous connectivity result does not describe the new token.
-			updates["last_test_at"] = nil
-			updates["last_test_ok"] = false
-			updates["last_test_error"] = ""
-			updates["last_test_latency_ms"] = 0
-		}
-		if err := tx.Model(&UserModel{}).Where("id = ?", id).Updates(updates).Error; err != nil {
-			return fmt.Errorf("ai: update user model: %w", err)
-		}
-		if err := tx.First(&model, id).Error; err != nil {
-			return err
-		}
-		modelView := userModelView(s.keys, model)
-		view = &modelView
-		return nil
-	})
+	if in.APIKey == "" {
+		// 仅元数据更新不写密文，无需与轮换串行化。
+		err = update()
+	} else {
+		err = s.keys.WithKeyReadLock(update)
+	}
 	if err != nil {
 		return nil, err
 	}

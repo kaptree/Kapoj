@@ -92,51 +92,54 @@ func (s *PlatformService) List(ctx context.Context) ([]PlatformModelView, error)
 // Create 校验并创建平台模型；token 必填并用当前密钥加密。审计回调在事务内
 // 执行，失败回滚。
 func (s *PlatformService) Create(ctx context.Context, actorID int64, in PlatformModelInput, audit func(*gorm.DB) error) (*PlatformModelView, error) {
-	in, err := validatePlatformModelInput(in, true)
-	if err != nil {
-		return nil, err
-	}
-	encrypted, err := s.keys.Encrypt(in.APIKey)
+	in, err := validatePlatformModelInput(in, true, "")
 	if err != nil {
 		return nil, err
 	}
 
 	var view *PlatformModelView
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := ensurePlatformModelNameFree(tx, in.Name, 0); err != nil {
+	// 读锁覆盖加密与写入事务，避免轮换在扫描之后才看到旧密钥密文。
+	err = s.keys.WithKeyReadLock(func() error {
+		encrypted, err := s.keys.Encrypt(in.APIKey)
+		if err != nil {
 			return err
 		}
-		if audit != nil {
-			if err := audit(tx); err != nil {
+		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := ensurePlatformModelNameFree(tx, in.Name, 0); err != nil {
 				return err
 			}
-		}
-		now := time.Now().UTC()
-		model := PlatformModel{
-			Name:            in.Name,
-			Protocol:        in.Protocol,
-			BaseURL:         in.BaseURL,
-			ModelName:       in.ModelName,
-			APIKeyEncrypted: encrypted,
-			Enabled:         in.Enabled,
-			CreatedBy:       actorID,
-			CreatedAt:       now,
-			UpdatedAt:       now,
-		}
-		if err := tx.Create(&model).Error; err != nil {
-			return fmt.Errorf("ai: create platform model: %w", err)
-		}
-		// GORM 的 default:true 标签会把零值 false 覆盖为 true，创建后显式写入
-		// 请求的启用状态。
-		if err := tx.Model(&model).Update("enabled", in.Enabled).Error; err != nil {
-			return fmt.Errorf("ai: set platform model enabled: %w", err)
-		}
-		if err := tx.First(&model, model.ID).Error; err != nil {
-			return err
-		}
-		modelView := platformModelView(s.keys, model)
-		view = &modelView
-		return nil
+			if audit != nil {
+				if err := audit(tx); err != nil {
+					return err
+				}
+			}
+			now := time.Now().UTC()
+			model := PlatformModel{
+				Name:            in.Name,
+				Protocol:        in.Protocol,
+				BaseURL:         in.BaseURL,
+				ModelName:       in.ModelName,
+				APIKeyEncrypted: encrypted,
+				Enabled:         in.Enabled,
+				CreatedBy:       actorID,
+				CreatedAt:       now,
+				UpdatedAt:       now,
+			}
+			if err := tx.Create(&model).Error; err != nil {
+				return fmt.Errorf("ai: create platform model: %w", err)
+			}
+			// GORM 的 default:true 标签会把零值 false 覆盖为 true，创建后显式写入
+			// 请求的启用状态。
+			if err := tx.Model(&model).Update("enabled", in.Enabled).Error; err != nil {
+				return fmt.Errorf("ai: set platform model enabled: %w", err)
+			}
+			if err := tx.First(&model, model.ID).Error; err != nil {
+				return err
+			}
+			modelView := platformModelView(s.keys, model)
+			view = &modelView
+			return nil
+		})
 	})
 	if err != nil {
 		return nil, err
@@ -144,67 +147,81 @@ func (s *PlatformService) Create(ctx context.Context, actorID int64, in Platform
 	return view, nil
 }
 
-// Update 修改平台模型元数据；APIKey 为空时保留原密文。审计回调在事务内执行。
+// Update 修改平台模型元数据；APIKey 为空时保留原密文。省略 protocol 时
+// 保留现有协议（只有创建才默认 openai）。审计回调在事务内执行。
 func (s *PlatformService) Update(ctx context.Context, actorID, id int64, in PlatformModelInput, audit func(*gorm.DB) error) (*PlatformModelView, error) {
 	_ = actorID // 审计调用方通过 audit 回调记录操作者
-	in, err := validatePlatformModelInput(in, false)
-	if err != nil {
-		return nil, err
-	}
-
-	var encrypted *string
-	if in.APIKey != "" {
-		ciphertext, err := s.keys.Encrypt(in.APIKey)
-		if err != nil {
-			return nil, err
-		}
-		encrypted = &ciphertext
-	}
 
 	var view *PlatformModelView
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var model PlatformModel
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&model, id).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return httpx.ErrNotFound
-			}
-			return err
-		}
-		if err := ensurePlatformModelNameFree(tx, in.Name, id); err != nil {
-			return err
-		}
-		if audit != nil {
-			if err := audit(tx); err != nil {
+	update := func() error {
+		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			var model PlatformModel
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&model, id).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return httpx.ErrNotFound
+				}
 				return err
 			}
-		}
 
-		updates := map[string]any{
-			"name":       in.Name,
-			"protocol":   in.Protocol,
-			"base_url":   in.BaseURL,
-			"model_name": in.ModelName,
-			"enabled":    in.Enabled,
-			"updated_at": time.Now().UTC(),
-		}
-		if encrypted != nil {
-			updates["api_key_encrypted"] = *encrypted
-			// A previous connectivity result does not describe the new token.
-			updates["last_test_at"] = nil
-			updates["last_test_ok"] = false
-			updates["last_test_error"] = ""
-			updates["last_test_latency_ms"] = 0
-		}
-		if err := tx.Model(&PlatformModel{}).Where("id = ?", id).Updates(updates).Error; err != nil {
-			return fmt.Errorf("ai: update platform model: %w", err)
-		}
-		if err := tx.First(&model, id).Error; err != nil {
-			return err
-		}
-		modelView := platformModelView(s.keys, model)
-		view = &modelView
-		return nil
-	})
+			validated, err := validatePlatformModelInput(in, false, model.Protocol)
+			if err != nil {
+				return err
+			}
+			in := validated
+
+			var encrypted *string
+			if in.APIKey != "" {
+				ciphertext, err := s.keys.Encrypt(in.APIKey)
+				if err != nil {
+					return err
+				}
+				encrypted = &ciphertext
+			}
+
+			if err := ensurePlatformModelNameFree(tx, in.Name, id); err != nil {
+				return err
+			}
+			if audit != nil {
+				if err := audit(tx); err != nil {
+					return err
+				}
+			}
+
+			updates := map[string]any{
+				"name":       in.Name,
+				"protocol":   in.Protocol,
+				"base_url":   in.BaseURL,
+				"model_name": in.ModelName,
+				"enabled":    in.Enabled,
+				"updated_at": time.Now().UTC(),
+			}
+			if encrypted != nil {
+				updates["api_key_encrypted"] = *encrypted
+				// A previous connectivity result does not describe the new token.
+				updates["last_test_at"] = nil
+				updates["last_test_ok"] = false
+				updates["last_test_error"] = ""
+				updates["last_test_latency_ms"] = 0
+			}
+			if err := tx.Model(&PlatformModel{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+				return fmt.Errorf("ai: update platform model: %w", err)
+			}
+			if err := tx.First(&model, id).Error; err != nil {
+				return err
+			}
+			modelView := platformModelView(s.keys, model)
+			view = &modelView
+			return nil
+		})
+	}
+
+	var err error
+	if strings.TrimSpace(in.APIKey) == "" {
+		// 仅元数据更新不写密文，无需与轮换串行化。
+		err = update()
+	} else {
+		err = s.keys.WithKeyReadLock(update)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -244,7 +261,8 @@ func (s *PlatformService) Delete(ctx context.Context, actorID, id int64, audit f
 	})
 }
 
-// Test 解密 token 并对 {baseURL}/chat/completions 发送一次轻量请求，更新
+// Test 解密 token 并按模型协议向对应 chat 端点（OpenAI 兼容
+// /chat/completions 或 Anthropic /messages）发送一次轻量请求，更新
 // last_test_*。上游失败以脱敏分类返回，不断言 AI 总开关状态。
 func (s *PlatformService) Test(ctx context.Context, id int64) (*PlatformTestResult, error) {
 	if !s.keys.Configured() {
@@ -370,7 +388,9 @@ func (s *PlatformService) Select(ctx context.Context, actorID int64, modelID *in
 
 // validatePlatformModelInput trims and validates names/protocol/base URL;
 // requireToken 用于创建（token 必填），更新时空 token 表示保留原密文。
-func validatePlatformModelInput(in PlatformModelInput, requireToken bool) (PlatformModelInput, error) {
+// existingProtocol 非空时用于更新：省略 protocol 保留现有协议而不是重置为
+// openai；显式值仍会校验并规范化。
+func validatePlatformModelInput(in PlatformModelInput, requireToken bool, existingProtocol string) (PlatformModelInput, error) {
 	in.Name = strings.TrimSpace(in.Name)
 	if n := utf8.RuneCountInString(in.Name); n == 0 || n > platformNameMaxLen {
 		return in, httpx.ErrValidation("模型名称长度须为 1-100 个字符")
@@ -379,7 +399,11 @@ func validatePlatformModelInput(in PlatformModelInput, requireToken bool) (Platf
 	if n := utf8.RuneCountInString(in.ModelName); n == 0 || n > platformNameMaxLen {
 		return in, httpx.ErrValidation("模型名长度须为 1-100 个字符")
 	}
-	protocol, err := normalizeAIProtocol(in.Protocol)
+	rawProtocol := strings.TrimSpace(in.Protocol)
+	if rawProtocol == "" {
+		rawProtocol = existingProtocol
+	}
+	protocol, err := normalizeAIProtocol(rawProtocol)
 	if err != nil {
 		return in, err
 	}
@@ -397,7 +421,8 @@ func validatePlatformModelInput(in PlatformModelInput, requireToken bool) (Platf
 }
 
 // normalizeAIProtocol 只接受 openai / anthropic。空值保留历史 OpenAI 兼容
-// 行为，便于尚未发送 protocol 的旧客户端继续创建模型。
+// 行为，便于尚未发送 protocol 的旧客户端继续创建模型；更新时的空值由
+// validatePlatformModelInput 先回落为现有协议。
 func normalizeAIProtocol(raw string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "", protocolOpenAI:

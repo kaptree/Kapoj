@@ -183,8 +183,10 @@ func currentIsSuper(c *gin.Context) bool {
 	return access != nil && access.IsSuper
 }
 
-// getConfig 保留旧 GET /ai/configs 兼容：读取当前 active 用户模型的 provider
-// （能按 base URL 映射到内置 provider 时）、模型名与脱敏 token。
+// getConfig 保留旧 GET /ai/configs 兼容：优先读取当前 active 用户模型的
+// provider（能按 base URL 映射到内置 provider 时）、模型名与脱敏 token；
+// 没有 active 用户模型时回退到旧的 user_ai_configs，与 chatRequest 的
+// 解析顺序保持一致。
 func (h *handler) getConfig(c *gin.Context) {
 	userID, ok := currentUserID(c)
 	if !ok {
@@ -195,17 +197,24 @@ func (h *handler) getConfig(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
-	view := &ai.ConfigView{
-		KeyConfigured: list.KeyConfigured,
-		Providers:     list.Providers,
-	}
 	if model := activeUserModel(list); model != nil {
-		view.Configured = true
-		view.Provider = providerCodeForModel(list.Providers, *model)
-		view.ModelName = model.ModelName
-		view.APIKeyMasked = model.APIKeyMasked
+		httpx.OK(c, &ai.ConfigView{
+			Configured:    true,
+			KeyConfigured: list.KeyConfigured,
+			Provider:      providerCodeForModel(list.Providers, *model),
+			ModelName:     model.ModelName,
+			APIKeyMasked:  model.APIKeyMasked,
+			Providers:     list.Providers,
+		})
+		return
 	}
-	httpx.OK(c, view)
+
+	legacy, err := h.svc.GetConfig(c.Request.Context(), userID)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, legacy)
 }
 
 // saveConfig 保留旧 POST /ai/configs 语义：provider + modelName + apiKey。

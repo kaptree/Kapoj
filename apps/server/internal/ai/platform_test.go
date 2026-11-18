@@ -391,6 +391,39 @@ func TestPlatformModelProtocolCRUD(t *testing.T) {
 		assert.Equal(t, "openai", updated.Protocol)
 	})
 
+	t.Run("更新省略协议时保留现有协议", func(t *testing.T) {
+		g := testutil.PG(t)
+		keys := newKeyManager(t)
+		svc, _ := newPlatformService(t, g, keys, &fakeChatClient{})
+
+		in := platformInput()
+		in.Name = "Claude"
+		in.Protocol = "anthropic"
+		in.BaseURL = "https://api.anthropic.com/v1"
+		in.ModelName = "claude-3-5-haiku-latest"
+		created, err := svc.Create(ctx, 7, in, nil)
+		require.NoError(t, err)
+		require.Equal(t, "anthropic", created.Protocol)
+
+		// 旧客户端/省略字段的更新：协议与 token 都必须保留。
+		in.Name = "Claude Renamed"
+		in.Protocol = ""
+		in.APIKey = ""
+		updated, err := svc.Update(ctx, 7, created.ID, in, nil)
+		require.NoError(t, err)
+		assert.Equal(t, "anthropic", updated.Protocol)
+		assert.Equal(t, "Claude Renamed", updated.Name)
+		assert.Equal(t, "https://api.anthropic.com/v1", updated.BaseURL)
+		assert.Equal(t, "sk-…7890", updated.APIKeyMasked, "省略 token 必须保留原密文")
+
+		var row ai.PlatformModel
+		require.NoError(t, g.First(&row, created.ID).Error)
+		assert.Equal(t, "anthropic", row.Protocol)
+		plain, err := keys.Decrypt(row.APIKeyEncrypted)
+		require.NoError(t, err)
+		assert.Equal(t, "sk-1234567890", plain)
+	})
+
 	t.Run("非法协议被拒绝", func(t *testing.T) {
 		g := testutil.PG(t)
 		keys := newKeyManager(t)

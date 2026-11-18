@@ -265,6 +265,122 @@ func TestRotateReencryptsUserModels(t *testing.T) {
 	})
 }
 
+// TestRotateBlocksConcurrentUserModelCreate 验证轮换开始后创建的用户模型会
+// 等待密钥切换完成，而不是以旧密钥密文提交后变得无法解密。轮换在重加密
+// user_ai_configs 时被测试持有的行锁阻塞；用户模型扫描在此之前已经完成，
+// 因而该测试确定地复现“扫描后提交”的竞态窗口。
+func TestRotateBlocksConcurrentUserModelCreate(t *testing.T) {
+	g := testutil.PG(t)
+	ctx := context.Background()
+	file := filepath.Join(t.TempDir(), "ai.key")
+
+	oldKey := b64Key(strings.Repeat("o", 32))
+	require.NoError(t, os.WriteFile(file, []byte(oldKey+"\n"), 0o600))
+	km, err := ai.NewKeyManager("", file)
+	require.NoError(t, err)
+	settingsSvc := ai.NewSettingsService(g, km, file)
+	svc := ai.NewService(g, km, nil, nil)
+
+	oldEnc, err := ai.NewEncryptor(oldKey)
+	require.NoError(t, err)
+	ct, err := oldEnc.Encrypt("sk-seed-secret")
+	require.NoError(t, err)
+	seed := ai.UserConfig{
+		UserID: 1, Provider: "deepseek", ModelName: "deepseek-chat",
+		APIKeyEncrypted: ct, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}
+	require.NoError(t, g.Create(&seed).Error)
+
+	// 锁住旧配置行，让轮换在用户模型扫描之后停在配置重加密阶段。
+	blocker := g.Begin()
+	require.NoError(t, blocker.Error)
+	t.Cleanup(func() { _ = blocker.Rollback().Error })
+	var lockedID int64
+	require.NoError(t, blocker.Raw(
+		`SELECT id FROM user_ai_configs WHERE id = ? FOR UPDATE`, seed.ID,
+	).Scan(&lockedID).Error)
+	require.Equal(t, seed.ID, lockedID)
+
+	type rotateResult struct {
+		res *ai.KeyGenerateResult
+		err error
+	}
+	rotated := make(chan rotateResult, 1)
+	go func() {
+		res, err := settingsSvc.GenerateKey(ctx, 42, nil)
+		rotated <- rotateResult{res: res, err: err}
+	}()
+
+	// 行锁等待在 pg_locks 中表现为未授予的事务 ID 锁；本测试是唯一会等待
+	// 的会话，因此出现未授予锁即说明轮换已停在扫描之后的配置重加密阶段。
+	require.Eventually(t, func() bool {
+		var waiting int64
+		err := g.Raw(`SELECT count(*) FROM pg_locks WHERE NOT granted`).Scan(&waiting).Error
+		return err == nil && waiting > 0
+	}, 10*time.Second, 10*time.Millisecond, "rotation should block on the held user config row")
+
+	type createResult struct {
+		view *ai.UserModelView
+		err  error
+	}
+	created := make(chan createResult, 1)
+	go func() {
+		view, err := svc.CreateUserModel(ctx, 99, ai.UserModelInput{
+			Name:      "concurrent",
+			Protocol:  "openai",
+			BaseURL:   "https://api.example.com/v1",
+			ModelName: "model-x",
+			APIKey:    "sk-concurrent-secret",
+		})
+		created <- createResult{view: view, err: err}
+	}()
+
+	var cr createResult
+	createDone := false
+	select {
+	case cr = <-created:
+		// 未串行化时创建会在轮换提交前完成；下面的新密钥断言会失败。
+		createDone = true
+		require.NoError(t, cr.err)
+		t.Log("create completed before rotation; stale-ciphertext assertion will catch the race")
+	case <-time.After(250 * time.Millisecond):
+		// 读锁生效：创建正在等待轮换结束。
+	}
+
+	require.NoError(t, blocker.Rollback().Error)
+
+	var rot rotateResult
+	select {
+	case rot = <-rotated:
+	case <-time.After(10 * time.Second):
+		t.Fatal("rotation did not finish")
+	}
+	require.NoError(t, rot.err)
+	require.NotNil(t, rot.res)
+
+	if !createDone {
+		select {
+		case cr = <-created:
+		case <-time.After(10 * time.Second):
+			t.Fatal("create did not finish")
+		}
+	}
+	require.NoError(t, cr.err)
+	require.NotNil(t, cr.view)
+
+	// 并发创建的行必须能用轮换后的新密钥解密。
+	var row ai.UserModel
+	require.NoError(t, g.Where("user_id = ?", 99).First(&row).Error)
+	newEnc, err := ai.NewEncryptor(rot.res.Key)
+	require.NoError(t, err)
+	plain, err := newEnc.Decrypt(row.APIKeyEncrypted)
+	require.NoError(t, err)
+	assert.Equal(t, "sk-concurrent-secret", plain)
+	_, err = oldEnc.Decrypt(row.APIKeyEncrypted)
+	assert.Error(t, err, "concurrent create must not persist old-key ciphertext")
+	assert.Equal(t, "sk-…cret", cr.view.APIKeyMasked)
+}
+
 func TestResetDeletesUserModels(t *testing.T) {
 	g := testutil.PG(t)
 	ctx := context.Background()

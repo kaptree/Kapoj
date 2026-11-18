@@ -91,15 +91,31 @@ const (
 
 // rotate 是生成、手动保存与重置共享的实现：
 //
-//  1. env 来源只读；
-//  2. 校验新密钥（base64/32 字节）；
-//  3. 仅保留模式：无旧密钥且存在用户配置、用户模型或平台模型密文 → 拒绝破坏性覆盖；
-//  4. 写密钥文件（备份旧文件）→ DB 事务（重加密或清除三类配置 + 指纹 + 审计）→
+//  1. 串行化并发轮换（keyMu），并持有 KeyManager 写锁（opMu），阻止新的
+//     密文写入，直到扫描/重加密与内存密钥切换全部完成；
+//  2. env 来源只读；
+//  3. 校验新密钥（base64/32 字节）；
+//  4. 仅保留模式：无旧密钥且存在用户配置、用户模型或平台模型密文 → 拒绝破坏性覆盖；
+//  5. 写密钥文件（备份旧文件）→ DB 事务（重加密或清除三类配置 + 指纹 + 审计）→
 //     成功删除备份并切换内存密钥，失败恢复备份/回滚。
 func (s *SettingsService) rotate(ctx context.Context, actorID int64, raw string, audit func(*gorm.DB) error, mode keyRotationMode) (*KeyView, error) {
 	s.keyMu.Lock()
 	defer s.keyMu.Unlock()
 
+	var view *KeyView
+	err := s.keys.WithKeyWriteLock(func() error {
+		var err error
+		view, err = s.rotateLocked(ctx, actorID, raw, audit, mode)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return view, nil
+}
+
+// rotateLocked 执行轮换的实际步骤；调用方必须已持有 keyMu 和 opMu 写锁。
+func (s *SettingsService) rotateLocked(ctx context.Context, actorID int64, raw string, audit func(*gorm.DB) error, mode keyRotationMode) (*KeyView, error) {
 	if s.keys.Source() == "env" {
 		return nil, httpx.ErrValidation("AI 加密密钥由部署配置管理，只读")
 	}
