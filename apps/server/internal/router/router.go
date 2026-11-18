@@ -146,6 +146,7 @@ func New(d Deps) *gin.Engine {
 	auth.RegisterAccountRoutes(api, authSvc)
 	if d.Agent != nil {
 		agentapi.RegisterUserRoutes(api, d.Agent)
+		agentapi.RegisterAgentRoutes(public, d.Agent)
 	}
 	problemJSON := r.Group("/api", authenticated(maxProblemJSONBytes)...)
 	uploads := r.Group("/api", authenticated(maxUploadBytes)...)

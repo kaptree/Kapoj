@@ -9,7 +9,7 @@ import (
 )
 
 // RegisterUserRoutes mounts the JWT-authenticated Agent owner endpoints on the
-// existing /api group. Agent token (machine) routes are registered by Task 4.
+// existing /api group. Agent token (machine) routes live in RegisterAgentRoutes.
 func RegisterUserRoutes(api gin.IRouter, svc *agent.Service) {
 	h := &userHandler{svc: svc}
 	requireAuth := middleware.RequireAuth()
