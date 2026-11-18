@@ -3461,6 +3461,116 @@ paths:
               schema: { $ref: '#/components/schemas/AIConfigViewResponse' }
         '400': { $ref: '#/components/responses/Error' }
         '401': { $ref: '#/components/responses/Error' }
+  /ai/models:
+    get:
+      summary: 查询当前用户 AI 模型列表（登录）
+      description: >-
+        返回当前用户的全部模型（脱敏）、当前模型 ID 与可用于预填的 provider 目录。
+        apiKeyMasked 只返回脱敏值，绝不包含明文或密文；没有任何模型时 models 为空数组、
+        activeModelId 为 null。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 用户模型列表视图
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AIUserModelsViewResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+    post:
+      summary: 新增用户 AI 模型（登录）
+      description: >-
+        创建一个用户模型；apiKey 必填并用平台密钥加密保存，平台未配置加密密钥返回 40002。
+        protocol 只接受 openai/anthropic，baseUrl 不能以 /chat/completions 或 /messages 结尾；
+        名称在用户内唯一（重复返回 40001）。首个模型或 isActive=true 时自动设为当前模型。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AIUserModelInput' }
+      responses:
+        '201':
+          description: 已创建的用户模型（脱敏）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AIUserModelResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+  /ai/models/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    put:
+      summary: 编辑用户 AI 模型（登录）
+      description: >-
+        修改模型元数据；apiKey 为空表示保留原密文，非空时重新加密并清空旧的测试结果。
+        active 状态只能通过 PUT /ai/models/{id}/active 修改。参数非法或名称重复返回 40001，
+        模型不存在或不属于当前用户返回 40400。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AIUserModelInput' }
+      responses:
+        '200':
+          description: 更新后的用户模型（脱敏）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AIUserModelResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+    delete:
+      summary: 删除用户 AI 模型（登录）
+      description: >-
+        删除模型；当前 active 模型拒绝删除（40001），需先切换。模型不存在或不属于当前用户
+        返回 40400。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 已删除
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmptyResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /ai/models/{id}/active:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    put:
+      summary: 切换当前用户 AI 模型（登录）
+      description: >-
+        将指定模型设为当前模型，并清空该用户其他模型的 active 标记。模型不存在或不属于
+        当前用户返回 40400。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 切换后的用户模型（脱敏）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AIUserModelResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /ai/models/{id}/test:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    post:
+      summary: 测试用户 AI 模型连通性（登录）
+      description: >-
+        解密 token 并按 protocol 发送一次轻量请求，更新 lastTest 字段；上游测试失败仍返回
+        200 与 {ok:false,...}。平台未配置加密密钥返回 40002，模型不存在或不属于当前用户
+        返回 40400。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 连通性测试结果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AIModelTestResultResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
   /ai/complete:
     post:
       summary: 代码自动补全（登录，限流）
@@ -6372,6 +6482,7 @@ components:
       properties:
         id: { type: integer, format: int64 }
         name: { type: string }
+        protocol: { type: string, enum: [openai, anthropic], description: 上游协议；旧客户端可忽略，历史行返回 openai }
         baseUrl: { type: string }
         modelName: { type: string }
         enabled: { type: boolean }
@@ -6387,7 +6498,8 @@ components:
       required: [name, baseUrl, modelName, enabled]
       properties:
         name: { type: string, minLength: 1, maxLength: 100 }
-        baseUrl: { type: string, maxLength: 512, description: 必须以 http:// 或 https:// 开头，不能以 /chat/completions 结尾 }
+        protocol: { type: string, enum: [openai, anthropic], description: 上游协议；省略时默认 openai（兼容旧客户端） }
+        baseUrl: { type: string, maxLength: 512, description: 必须以 http:// 或 https:// 开头，不能以 /chat/completions 或 /messages 结尾 }
         modelName: { type: string, minLength: 1, maxLength: 100 }
         apiKey: { type: string, description: 创建时必填；更新时为空表示保留原密文 }
         enabled: { type: boolean }
@@ -6942,6 +7054,8 @@ components:
         code: { type: string, description: provider code，如 deepseek/openai/qwen/glm }
         name: { type: string }
         defaultModel: { type: string }
+        baseUrl: { type: string, description: 内置 provider 的 API base URL，用于新增模型时预填；旧客户端可忽略 }
+        protocol: { type: string, enum: [openai, anthropic], description: 内置 provider 的协议；当前均为 openai，旧客户端可忽略 }
     AIConfigView:
       type: object
       description: 用户 AI 配置脱敏视图；apiKeyMasked 绝不包含明文或密文 API key。
@@ -6963,6 +7077,55 @@ components:
         provider: { type: string, description: provider code，必须为启用状态 }
         apiKey: { type: string, description: 首次保存必填；已有配置且留空时保留原密钥 }
         modelName: { type: string, description: 为空时使用 provider 默认模型 }
+    AIUserModelView:
+      type: object
+      description: 用户模型脱敏视图；绝不包含 token 明文或密文。
+      required: [id, name, protocol, baseUrl, modelName, apiKeyMasked, isActive, lastTestAt, lastTestOk, lastTestError, lastTestLatencyMs]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string, description: 用户内唯一的模型名称 }
+        protocol: { type: string, enum: [openai, anthropic] }
+        baseUrl: { type: string }
+        modelName: { type: string }
+        apiKeyMasked: { type: string, description: 脱敏 token；解密失败或未配置时为空字符串 }
+        isActive: { type: boolean, description: 是否为当前使用的模型 }
+        lastTestAt: { type: string, format: date-time, nullable: true, description: 最近一次连通性测试时间；从未测试时为 null }
+        lastTestOk: { type: boolean }
+        lastTestError: { type: string, description: 脱敏分类信息，不含 token }
+        lastTestLatencyMs: { type: integer }
+    AIUserModelInput:
+      type: object
+      description: 新增/编辑用户模型的请求体；更新时 apiKey 为空表示保留原密文，isActive 只在创建时生效。
+      required: [name, protocol, baseUrl, modelName]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100, description: 用户内唯一 }
+        protocol: { type: string, enum: [openai, anthropic] }
+        baseUrl: { type: string, maxLength: 512, description: 必须以 http:// 或 https:// 开头，不能以 /chat/completions 或 /messages 结尾 }
+        modelName: { type: string, minLength: 1, maxLength: 100 }
+        apiKey: { type: string, description: 创建时必填；更新时为空表示保留原密文 }
+        isActive: { type: boolean, description: 创建时设为当前模型；更新时被忽略 }
+    AIUserModelsView:
+      type: object
+      description: 用户模型列表视图；models 为空时 activeModelId 为 null。
+      required: [keyConfigured, activeModelId, models, providers]
+      properties:
+        keyConfigured: { type: boolean, description: 平台是否已配置 AI 加密密钥；false 时用户无法新增模型或调用 AI }
+        activeModelId: { type: integer, format: int64, nullable: true, description: 当前模型 ID；没有模型时为 null }
+        models:
+          type: array
+          description: 用户全部模型（按创建顺序）
+          items: { $ref: '#/components/schemas/AIUserModelView' }
+        providers:
+          type: array
+          description: 启用的 provider 列表，用于预填
+          items: { $ref: '#/components/schemas/AIProviderOption' }
+    AIModelTestResult:
+      type: object
+      required: [ok, latencyMs, message]
+      properties:
+        ok: { type: boolean }
+        latencyMs: { type: integer }
+        message: { type: string, description: 脱敏分类信息，不含 token 或上游响应正文 }
     AICompleteInput:
       type: object
       description: >-
@@ -7025,6 +7188,27 @@ components:
           required: [data]
           properties:
             data: { $ref: '#/components/schemas/AIConfigView' }
+    AIUserModelsViewResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/AIUserModelsView' }
+    AIUserModelResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/AIUserModelView' }
+    AIModelTestResultResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/AIModelTestResult' }
     AICompleteResponse:
       allOf:
         - $ref: '#/components/schemas/Envelope'

@@ -8162,6 +8162,244 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ai/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 查询当前用户 AI 模型列表（登录）
+         * @description 返回当前用户的全部模型（脱敏）、当前模型 ID 与可用于预填的 provider 目录。 apiKeyMasked 只返回脱敏值，绝不包含明文或密文；没有任何模型时 models 为空数组、 activeModelId 为 null。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 用户模型列表视图 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AIUserModelsViewResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        /**
+         * 新增用户 AI 模型（登录）
+         * @description 创建一个用户模型；apiKey 必填并用平台密钥加密保存，平台未配置加密密钥返回 40002。 protocol 只接受 openai/anthropic，baseUrl 不能以 /chat/completions 或 /messages 结尾； 名称在用户内唯一（重复返回 40001）。首个模型或 isActive=true 时自动设为当前模型。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AIUserModelInput"];
+                };
+            };
+            responses: {
+                /** @description 已创建的用户模型（脱敏） */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AIUserModelResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/models/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 编辑用户 AI 模型（登录）
+         * @description 修改模型元数据；apiKey 为空表示保留原密文，非空时重新加密并清空旧的测试结果。 active 状态只能通过 PUT /ai/models/{id}/active 修改。参数非法或名称重复返回 40001， 模型不存在或不属于当前用户返回 40400。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AIUserModelInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的用户模型（脱敏） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AIUserModelResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        /**
+         * 删除用户 AI 模型（登录）
+         * @description 删除模型；当前 active 模型拒绝删除（40001），需先切换。模型不存在或不属于当前用户 返回 40400。
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已删除 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EmptyResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/models/{id}/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 切换当前用户 AI 模型（登录）
+         * @description 将指定模型设为当前模型，并清空该用户其他模型的 active 标记。模型不存在或不属于 当前用户返回 40400。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 切换后的用户模型（脱敏） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AIUserModelResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/models/{id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 测试用户 AI 模型连通性（登录）
+         * @description 解密 token 并按 protocol 发送一次轻量请求，更新 lastTest 字段；上游测试失败仍返回 200 与 {ok:false,...}。平台未配置加密密钥返回 40002，模型不存在或不属于当前用户 返回 40400。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 连通性测试结果 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AIModelTestResultResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ai/complete": {
         parameters: {
             query?: never;
@@ -11964,6 +12202,11 @@ export interface components {
             /** Format: int64 */
             id: number;
             name: string;
+            /**
+             * @description 上游协议；旧客户端可忽略，历史行返回 openai
+             * @enum {string}
+             */
+            protocol?: "openai" | "anthropic";
             baseUrl: string;
             modelName: string;
             enabled: boolean;
@@ -11984,7 +12227,12 @@ export interface components {
         };
         PlatformModelInput: {
             name: string;
-            /** @description 必须以 http:// 或 https:// 开头，不能以 /chat/completions 结尾 */
+            /**
+             * @description 上游协议；省略时默认 openai（兼容旧客户端）
+             * @enum {string}
+             */
+            protocol?: "openai" | "anthropic";
+            /** @description 必须以 http:// 或 https:// 开头，不能以 /chat/completions 或 /messages 结尾 */
             baseUrl: string;
             modelName: string;
             /** @description 创建时必填；更新时为空表示保留原密文 */
@@ -12427,6 +12675,13 @@ export interface components {
             code: string;
             name: string;
             defaultModel: string;
+            /** @description 内置 provider 的 API base URL，用于新增模型时预填；旧客户端可忽略 */
+            baseUrl?: string;
+            /**
+             * @description 内置 provider 的协议；当前均为 openai，旧客户端可忽略
+             * @enum {string}
+             */
+            protocol?: "openai" | "anthropic";
         };
         /** @description 用户 AI 配置脱敏视图；apiKeyMasked 绝不包含明文或密文 API key。 */
         AIConfigView: {
@@ -12450,6 +12705,64 @@ export interface components {
             apiKey?: string;
             /** @description 为空时使用 provider 默认模型 */
             modelName?: string;
+        };
+        /** @description 用户模型脱敏视图；绝不包含 token 明文或密文。 */
+        AIUserModelView: {
+            /** Format: int64 */
+            id: number;
+            /** @description 用户内唯一的模型名称 */
+            name: string;
+            /** @enum {string} */
+            protocol: "openai" | "anthropic";
+            baseUrl: string;
+            modelName: string;
+            /** @description 脱敏 token；解密失败或未配置时为空字符串 */
+            apiKeyMasked: string;
+            /** @description 是否为当前使用的模型 */
+            isActive: boolean;
+            /**
+             * Format: date-time
+             * @description 最近一次连通性测试时间；从未测试时为 null
+             */
+            lastTestAt: string | null;
+            lastTestOk: boolean;
+            /** @description 脱敏分类信息，不含 token */
+            lastTestError: string;
+            lastTestLatencyMs: number;
+        };
+        /** @description 新增/编辑用户模型的请求体；更新时 apiKey 为空表示保留原密文，isActive 只在创建时生效。 */
+        AIUserModelInput: {
+            /** @description 用户内唯一 */
+            name: string;
+            /** @enum {string} */
+            protocol: "openai" | "anthropic";
+            /** @description 必须以 http:// 或 https:// 开头，不能以 /chat/completions 或 /messages 结尾 */
+            baseUrl: string;
+            modelName: string;
+            /** @description 创建时必填；更新时为空表示保留原密文 */
+            apiKey?: string;
+            /** @description 创建时设为当前模型；更新时被忽略 */
+            isActive?: boolean;
+        };
+        /** @description 用户模型列表视图；models 为空时 activeModelId 为 null。 */
+        AIUserModelsView: {
+            /** @description 平台是否已配置 AI 加密密钥；false 时用户无法新增模型或调用 AI */
+            keyConfigured: boolean;
+            /**
+             * Format: int64
+             * @description 当前模型 ID；没有模型时为 null
+             */
+            activeModelId: number | null;
+            /** @description 用户全部模型（按创建顺序） */
+            models: components["schemas"]["AIUserModelView"][];
+            /** @description 启用的 provider 列表，用于预填 */
+            providers: components["schemas"]["AIProviderOption"][];
+        };
+        AIModelTestResult: {
+            ok: boolean;
+            latencyMs: number;
+            /** @description 脱敏分类信息，不含 token 或上游响应正文 */
+            message: string;
         };
         /** @description 代码自动补全请求体；cursor 必填（字节偏移），problemId 必填。 */
         AICompleteInput: {
@@ -12505,6 +12818,15 @@ export interface components {
         };
         AIConfigViewResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["AIConfigView"];
+        };
+        AIUserModelsViewResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AIUserModelsView"];
+        };
+        AIUserModelResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AIUserModelView"];
+        };
+        AIModelTestResultResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AIModelTestResult"];
         };
         AICompleteResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["AICompleteOutput"];
