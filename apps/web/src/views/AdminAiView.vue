@@ -99,8 +99,16 @@ const keyStatusSeverity = computed<'secondary' | 'success' | 'info' | 'warn' | '
 
 // --- Platform models --------------------------------------------------------
 
+type PlatformProtocol = NonNullable<PlatformModelView['protocol']>
+
+const PROTOCOL_OPTIONS: { label: string; value: PlatformProtocol }[] = [
+  { label: 'OpenAI', value: 'openai' },
+  { label: 'Anthropic', value: 'anthropic' },
+]
+
 interface PlatformModelForm {
   name: string
+  protocol: PlatformProtocol
   baseUrl: string
   modelName: string
   apiKey: string
@@ -108,7 +116,7 @@ interface PlatformModelForm {
 }
 
 function emptyModelForm(): PlatformModelForm {
-  return { name: '', baseUrl: '', modelName: '', apiKey: '', enabled: true }
+  return { name: '', protocol: 'openai', baseUrl: '', modelName: '', apiKey: '', enabled: true }
 }
 
 const models = ref<PlatformModelView[]>([])
@@ -143,6 +151,12 @@ const apiKeyHint = computed(() => {
     : '留空则保留原 Token'
 })
 
+const baseUrlHint = computed(() =>
+  modelForm.value.protocol === 'anthropic'
+    ? '以 http:// 或 https:// 开头，填写到域名或 /v1，不要包含 /messages'
+    : '以 http:// 或 https:// 开头，不要包含 /chat/completions',
+)
+
 /** Enabled models plus "未选择"; keep the current pick visible even if it was disabled. */
 const modelOptions = computed<{ label: string; value: number | null }[]>(() => {
   const options = models.value
@@ -170,6 +184,14 @@ function modelStatusSeverity(model: PlatformModelView): 'secondary' | 'success' 
 function modelStatusLabel(model: PlatformModelView): string {
   if (!model.lastTestAt) return '未测试'
   return model.lastTestOk ? '成功' : '失败'
+}
+
+function protocolLabel(protocol: PlatformModelView['protocol']): string {
+  return protocol === 'anthropic' ? 'Anthropic' : 'OpenAI'
+}
+
+function protocolSeverity(protocol: PlatformModelView['protocol']): 'secondary' | 'warn' {
+  return protocol === 'anthropic' ? 'warn' : 'secondary'
 }
 
 function applyView(view: AdminAISettingsView) {
@@ -425,6 +447,7 @@ function openEditModel(model: PlatformModelView) {
   editingModel.value = model
   modelForm.value = {
     name: model.name,
+    protocol: model.protocol ?? 'openai',
     baseUrl: model.baseUrl,
     modelName: model.modelName,
     apiKey: '',
@@ -432,6 +455,11 @@ function openEditModel(model: PlatformModelView) {
   }
   modelFormErrors.value = { name: '', baseUrl: '', modelName: '', apiKey: '' }
   modelDialogVisible.value = true
+}
+
+function onProtocolChange(value: PlatformProtocol) {
+  modelForm.value.protocol = value
+  modelFormErrors.value.baseUrl = ''
 }
 
 /** Client-side mirror of the server rules; the server remains authoritative. */
@@ -443,7 +471,9 @@ function validateModelForm(): boolean {
   if (baseUrl === '') errors.baseUrl = '请填写接口地址'
   else if (!/^https?:\/\//i.test(baseUrl))
     errors.baseUrl = '接口地址必须以 http:// 或 https:// 开头'
-  else if (/\/chat\/completions\/?$/i.test(baseUrl)) {
+  else if (form.protocol === 'anthropic') {
+    if (/\/messages\/?$/i.test(baseUrl)) errors.baseUrl = '接口地址只填到域名或 /v1'
+  } else if (/\/chat\/completions\/?$/i.test(baseUrl)) {
     errors.baseUrl = '接口地址不能以 /chat/completions 结尾'
   }
   if (form.modelName.trim() === '') errors.modelName = '请填写模型名'
@@ -458,6 +488,7 @@ async function saveModel() {
   try {
     const input: PlatformModelInput = {
       name: modelForm.value.name.trim(),
+      protocol: modelForm.value.protocol,
       baseUrl: modelForm.value.baseUrl.trim(),
       modelName: modelForm.value.modelName.trim(),
       enabled: modelForm.value.enabled,
@@ -616,7 +647,8 @@ onMounted(() => {
         </Message>
 
         <p class="platform-hint">
-          平台模型供系统任务使用；Token 只保存在服务端，列表与测试结果均不显示明文。
+          平台模型供系统任务使用，支持 OpenAI 兼容与 Anthropic 协议；Token
+          只保存在服务端，列表与测试结果均不显示明文。
         </p>
 
         <Message
@@ -674,6 +706,14 @@ onMounted(() => {
                 <span>{{ data.name }}</span>
                 <Tag v-if="data.id === selectedModelId" value="当前使用" severity="info" />
               </div>
+            </template>
+          </Column>
+          <Column header="协议" style="width: 110px">
+            <template #body="{ data }">
+              <Tag
+                :value="protocolLabel(data.protocol)"
+                :severity="protocolSeverity(data.protocol)"
+              />
             </template>
           </Column>
           <Column header="接口地址" style="min-width: 200px">
@@ -880,10 +920,28 @@ onMounted(() => {
 
           <AppFormField
             v-slot="field"
+            input-id="platform-model-protocol"
+            label="协议"
+            hint="Anthropic 使用 /v1/messages 接口与 x-api-key 头"
+            required
+          >
+            <Select
+              :model-value="modelForm.protocol"
+              :input-id="field.id"
+              :options="PROTOCOL_OPTIONS"
+              option-label="label"
+              option-value="value"
+              fluid
+              @update:model-value="onProtocolChange"
+            />
+          </AppFormField>
+
+          <AppFormField
+            v-slot="field"
             input-id="platform-model-base-url"
             label="接口地址"
             :error="modelFormErrors.baseUrl"
-            hint="以 http:// 或 https:// 开头，不要包含 /chat/completions"
+            :hint="baseUrlHint"
             required
           >
             <InputText

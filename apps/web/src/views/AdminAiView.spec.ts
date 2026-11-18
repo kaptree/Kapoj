@@ -70,6 +70,7 @@ function platformModelView(overrides: Partial<PlatformModelView> = {}): Platform
   return {
     id: 1,
     name: '平台模型 A',
+    protocol: 'openai',
     baseUrl: 'https://api.example.com/v1',
     modelName: 'deepseek-chat',
     enabled: true,
@@ -116,6 +117,12 @@ function dialogButton(label: string): HTMLButtonElement {
   return Array.from(dialog().querySelectorAll('button')).find(
     (item) => item.textContent?.trim() === label,
   ) as HTMLButtonElement
+}
+
+function dialogSelect(wrapper: Awaited<ReturnType<typeof mountPage>>, inputId: string) {
+  const found = wrapper.findAllComponents(Select).find((item) => item.props('inputId') === inputId)
+  if (!found) throw new Error(`Select ${inputId} not found`)
+  return found
 }
 
 function setField(element: Element, value: string) {
@@ -750,6 +757,7 @@ describe('AdminAiView', () => {
 
     expect(createAdminAIPlatformModel).toHaveBeenCalledWith({
       name: '新模型',
+      protocol: 'openai',
       baseUrl: 'https://api.example.com/v1',
       modelName: 'deepseek-chat',
       apiKey: 'sk-test',
@@ -759,6 +767,112 @@ describe('AdminAiView', () => {
       expect.objectContaining({ severity: 'success', summary: '模型已创建' }),
     )
     expect(listAdminAIPlatformModels).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
+  it('creates an Anthropic platform model from the dialog', async () => {
+    auth.can.mockImplementation((code) => code === PERM.ai.settings.manage)
+    vi.mocked(createAdminAIPlatformModel).mockResolvedValue(
+      platformModelView({
+        id: 13,
+        name: 'Anthropic 模型',
+        protocol: 'anthropic',
+        baseUrl: 'https://api.anthropic.com/v1',
+        modelName: 'claude-sonnet-4-5',
+      }),
+    )
+
+    const wrapper = await mountPage()
+    await wrapper.find('[data-test="add-platform-model"]').trigger('click')
+    await flushPromises()
+    expect(dialog()).toBeTruthy()
+    expect(dialogSelect(wrapper, 'platform-model-protocol').props('modelValue')).toBe('openai')
+
+    setField(dialog().querySelector('#platform-model-name')!, 'Anthropic 模型')
+    dialogSelect(wrapper, 'platform-model-protocol').vm.$emit('update:modelValue', 'anthropic')
+    await flushPromises()
+    setField(dialog().querySelector('#platform-model-base-url')!, 'https://api.anthropic.com/v1')
+    setField(dialog().querySelector('#platform-model-model-name')!, 'claude-sonnet-4-5')
+    setField(dialog().querySelector('#platform-model-api-key')!, 'sk-ant-test')
+    dialogButton('创建').click()
+    await flushPromises()
+
+    expect(createAdminAIPlatformModel).toHaveBeenCalledWith({
+      name: 'Anthropic 模型',
+      protocol: 'anthropic',
+      baseUrl: 'https://api.anthropic.com/v1',
+      modelName: 'claude-sonnet-4-5',
+      apiKey: 'sk-ant-test',
+      enabled: true,
+    })
+    expect(toast.add).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'success', summary: '模型已创建' }),
+    )
+    wrapper.unmount()
+  })
+
+  it('shows the protocol in the table and sends it on update', async () => {
+    auth.can.mockImplementation((code) => code === PERM.ai.settings.manage)
+    vi.mocked(listAdminAIPlatformModels).mockResolvedValue([
+      platformModelView({
+        id: 8,
+        name: 'Claude 平台模型',
+        protocol: 'anthropic',
+        baseUrl: 'https://api.anthropic.com/v1',
+        modelName: 'claude-sonnet-4-5',
+      }),
+    ])
+    vi.mocked(updateAdminAIPlatformModel).mockResolvedValue(
+      platformModelView({ id: 8, name: 'Claude 平台模型', protocol: 'anthropic' }),
+    )
+
+    const wrapper = await mountPage()
+
+    const row = wrapper.find('tbody tr')
+    expect(row.findAll('.p-tag').map((tag) => tag.text())).toContain('Anthropic')
+
+    await wrapper.find('[data-test="edit-platform-model-8"]').trigger('click')
+    await flushPromises()
+    expect(dialogSelect(wrapper, 'platform-model-protocol').props('modelValue')).toBe('anthropic')
+
+    dialogButton('保存').click()
+    await flushPromises()
+
+    expect(updateAdminAIPlatformModel).toHaveBeenCalledWith(8, {
+      name: 'Claude 平台模型',
+      protocol: 'anthropic',
+      baseUrl: 'https://api.anthropic.com/v1',
+      modelName: 'claude-sonnet-4-5',
+      enabled: true,
+    })
+    wrapper.unmount()
+  })
+
+  it('defaults a legacy platform model without protocol to OpenAI when editing', async () => {
+    auth.can.mockImplementation((code) => code === PERM.ai.settings.manage)
+    vi.mocked(listAdminAIPlatformModels).mockResolvedValue([
+      platformModelView({ id: 14, name: '旧模型', protocol: undefined }),
+    ])
+    vi.mocked(updateAdminAIPlatformModel).mockResolvedValue(
+      platformModelView({ id: 14, name: '旧模型' }),
+    )
+
+    const wrapper = await mountPage()
+    await wrapper.find('[data-test="edit-platform-model-14"]').trigger('click')
+    await flushPromises()
+
+    expect(dialogSelect(wrapper, 'platform-model-protocol').props('modelValue')).toBe('openai')
+
+    dialogButton('保存').click()
+    await flushPromises()
+
+    expect(updateAdminAIPlatformModel).toHaveBeenCalledWith(14, {
+      name: '旧模型',
+      protocol: 'openai',
+      baseUrl: 'https://api.example.com/v1',
+      modelName: 'deepseek-chat',
+      enabled: true,
+    })
     wrapper.unmount()
   })
 
@@ -792,6 +906,7 @@ describe('AdminAiView', () => {
 
     expect(updateAdminAIPlatformModel).toHaveBeenCalledWith(5, {
       name: '新名称',
+      protocol: 'openai',
       baseUrl: 'https://old.example/v1',
       modelName: 'old-model',
       enabled: true,
