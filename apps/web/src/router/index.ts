@@ -84,6 +84,12 @@ export const router = createRouter({
           meta: { requiresAuth: true, title: 'AI 设置' },
         },
         {
+          path: 'settings/agent',
+          name: 'agent-settings',
+          component: () => import('@/views/AgentSettingsView.vue'),
+          meta: { requiresAuth: true, title: '我的 Agent' },
+        },
+        {
           path: 'settings/certificates',
           name: 'certificate-settings',
           component: () => import('@/views/CertificateSettingsView.vue'),

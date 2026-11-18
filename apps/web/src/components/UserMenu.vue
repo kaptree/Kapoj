@@ -33,6 +33,13 @@ const menuItems = computed<MenuItem[]>(() => {
       },
     },
     {
+      label: '我的 Agent',
+      icon: 'pi pi-microchip-ai',
+      command: () => {
+        void router.push({ name: 'agent-settings' })
+      },
+    },
+    {
       label: '装扮管理',
       icon: 'pi pi-palette',
       command: () => {

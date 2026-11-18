@@ -38,6 +38,7 @@ const routes = [
   { path: '/settings/profile', name: 'profile-edit', component: { template: '<div />' } },
   { path: '/settings/security', name: 'security-settings', component: { template: '<div />' } },
   { path: '/settings/ai', name: 'ai-settings', component: { template: '<div />' } },
+  { path: '/settings/agent', name: 'agent-settings', component: { template: '<div />' } },
   {
     path: '/settings/certificates',
     name: 'certificate-settings',
@@ -129,6 +130,30 @@ describe('UserMenu', () => {
     aiItem?.command?.({} as never)
     await flushPromises()
     expect(router.currentRoute.value.name).toBe('ai-settings')
+  })
+
+  it('shows the 我的 Agent menu item for logged-in users and navigates to it', async () => {
+    auth.isLoggedIn = true
+    auth.user = loggedInUser()
+    const { wrapper, router } = await mountMenu()
+
+    const model = wrapper.findComponent(Menu).props('model') as MenuItem[]
+    const agentItem = model.find((item) => item.label === '我的 Agent')
+    expect(agentItem).toBeDefined()
+    expect(agentItem?.icon).toBe('pi pi-microchip-ai')
+
+    agentItem?.command?.({} as never)
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe('agent-settings')
+  })
+
+  it('does not show the 我的 Agent entry to guests', async () => {
+    auth.isLoggedIn = false
+    auth.user = null
+    const { wrapper } = await mountMenu()
+
+    expect(wrapper.findComponent(Menu).exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('我的 Agent')
   })
 
   it('shows the 账号安全 menu item for logged-in users and navigates to it', async () => {
