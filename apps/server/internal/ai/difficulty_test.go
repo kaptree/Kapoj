@@ -227,6 +227,49 @@ func TestAssessDifficultyTimeoutIsCategorized(t *testing.T) {
 	assert.ErrorIs(t, err, ai.ErrAssessmentTimeout)
 }
 
+func TestAssessDifficultyUsesPlatformProtocol(t *testing.T) {
+	cases := []struct {
+		name     string
+		protocol string
+	}{
+		{"anthropic", "anthropic"},
+		{"openai", "openai"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := testutil.PG(t)
+			keys := newKeyManager(t)
+			encrypted, err := keys.Encrypt(difficultyTestAPIKey)
+			require.NoError(t, err)
+			model := ai.PlatformModel{
+				Name:            "Protocol " + tc.protocol,
+				Protocol:        tc.protocol,
+				BaseURL:         "https://platform.example/v1",
+				ModelName:       "platform-chat",
+				APIKeyEncrypted: encrypted,
+				Enabled:         true,
+			}
+			require.NoError(t, g.Create(&model).Error)
+			selectPlatformModel(t, g, &model.ID)
+
+			client := &fakeChatClient{fn: func(ai.ChatRequest) (string, error) {
+				return `{"difficulty":50,"confidence":0.5,"reason":"x"}`, nil
+			}}
+			svc := ai.NewService(g, keys, nil, client)
+
+			_, err = svc.AssessDifficulty(context.Background(), ai.DifficultyAssessmentInput{Title: "x"})
+			require.NoError(t, err)
+			require.Len(t, client.calls, 1)
+			req := client.calls[0]
+			assert.Equal(t, tc.protocol, req.Protocol, "difficulty must use the selected platform protocol")
+			assert.Equal(t, 512, req.MaxTokens, "difficulty responses must keep the 512-token cap")
+			assert.Equal(t, model.BaseURL, req.BaseURL)
+			assert.Equal(t, difficultyTestAPIKey, req.APIKey)
+			assert.Equal(t, model.ModelName, req.Model)
+		})
+	}
+}
+
 func TestAssessDifficultyMissingPlatformModel(t *testing.T) {
 	ctx := context.Background()
 

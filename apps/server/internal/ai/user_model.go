@@ -375,16 +375,13 @@ func validateUserModelInput(in UserModelInput, requireToken bool) (UserModelInpu
 	return in, nil
 }
 
-// normalizeUserModelProtocol 只接受 openai / anthropic。
+// normalizeUserModelProtocol 只接受显式填写的 openai / anthropic；与平台模型
+// 不同，用户模型创建不允许省略协议。
 func normalizeUserModelProtocol(raw string) (string, error) {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case protocolOpenAI:
-		return protocolOpenAI, nil
-	case protocolAnthropic:
-		return protocolAnthropic, nil
-	default:
+	if strings.TrimSpace(raw) == "" {
 		return "", httpx.ErrValidation("不支持的 AI 协议")
 	}
+	return normalizeAIProtocol(raw)
 }
 
 // ensureUserModelNameFree 校验名称在该用户内唯一（excludeID > 0 时忽略自身）。

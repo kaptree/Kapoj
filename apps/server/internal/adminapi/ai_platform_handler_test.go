@@ -288,6 +288,69 @@ func TestAdminAIPlatformModelTestConnection(t *testing.T) {
 	assert.EqualValues(t, 40400, resp["code"])
 }
 
+func TestPlatformModelProtocolAdminAPI(t *testing.T) {
+	f := newAIPlatformFixture(t, true)
+	_, tok := f.user(t, "ai_platform_protocol", rbac.RoleCodeSuperAdmin)
+
+	// 显式 anthropic：创建响应与数据库都要保留协议。
+	w, resp := f.do(http.MethodPost, "/api/admin/ai/models", tok,
+		`{"name":"Claude","protocol":"anthropic","baseUrl":"https://api.anthropic.com/v1","modelName":"claude-3-5-haiku-latest","apiKey":"sk-ant-1234","enabled":true}`)
+	requireStatus(t, w, resp, http.StatusCreated)
+	created := dataMap(t, resp)
+	anthropicID := responseInt64(t, created["id"])
+	assert.Equal(t, "anthropic", created["protocol"])
+	var row ai.PlatformModel
+	require.NoError(t, f.db.First(&row, anthropicID).Error)
+	assert.Equal(t, "anthropic", row.Protocol)
+
+	// 省略 protocol 时保持旧客户端兼容，默认 openai。
+	w, resp = f.do(http.MethodPost, "/api/admin/ai/models", tok,
+		`{"name":"OpenAI","baseUrl":"https://api.openai.com/v1","modelName":"gpt-4o-mini","apiKey":"sk-openai-1234","enabled":true}`)
+	requireStatus(t, w, resp, http.StatusCreated)
+	openaiID := responseInt64(t, dataMap(t, resp)["id"])
+	assert.Equal(t, "openai", dataMap(t, resp)["protocol"])
+	var openaiRow ai.PlatformModel
+	require.NoError(t, f.db.First(&openaiRow, openaiID).Error)
+	assert.Equal(t, "openai", openaiRow.Protocol)
+
+	// 更新协议：anthropic -> openai。
+	w, resp = f.do(http.MethodPut, fmt.Sprintf("/api/admin/ai/models/%d", anthropicID), tok,
+		`{"name":"Claude","protocol":"openai","baseUrl":"https://api.openai.com/v1","modelName":"gpt-4o-mini","enabled":true}`)
+	requireStatus(t, w, resp, http.StatusOK)
+	assert.Equal(t, "openai", dataMap(t, resp)["protocol"])
+	require.NoError(t, f.db.First(&row, anthropicID).Error)
+	assert.Equal(t, "openai", row.Protocol)
+
+	// 列表同样返回 protocol。
+	w, resp = f.do(http.MethodGet, "/api/admin/ai/models", tok, "")
+	requireStatus(t, w, resp, http.StatusOK)
+	protocols := map[int64]any{}
+	for _, item := range dataList(t, resp) {
+		m := item.(map[string]any)
+		protocols[responseInt64(t, m["id"])] = m["protocol"]
+	}
+	assert.Equal(t, "openai", protocols[anthropicID])
+	assert.Equal(t, "openai", protocols[openaiID])
+
+	// 非法协议：创建和更新都返回 40001，且不落库/不改行。
+	w, resp = f.do(http.MethodPost, "/api/admin/ai/models", tok,
+		`{"name":"Gemini","protocol":"gemini","baseUrl":"https://example.com/v1","modelName":"gemini-chat","apiKey":"sk-gemini-1234","enabled":true}`)
+	requireStatus(t, w, resp, http.StatusBadRequest)
+	assert.EqualValues(t, 40001, resp["code"])
+	assert.Contains(t, resp["message"], "不支持的 AI 协议")
+	var count int64
+	require.NoError(t, f.db.Model(&ai.PlatformModel{}).Where("name = ?", "Gemini").Count(&count).Error)
+	assert.Zero(t, count)
+
+	w, resp = f.do(http.MethodPut, fmt.Sprintf("/api/admin/ai/models/%d", openaiID), tok,
+		`{"name":"OpenAI","protocol":"gemini","baseUrl":"https://api.openai.com/v1","modelName":"gpt-4o-mini","enabled":true}`)
+	requireStatus(t, w, resp, http.StatusBadRequest)
+	assert.EqualValues(t, 40001, resp["code"])
+	var afterInvalid ai.PlatformModel
+	require.NoError(t, f.db.First(&afterInvalid, openaiID).Error)
+	assert.Equal(t, "openai", afterInvalid.Protocol, "非法更新不得修改协议")
+}
+
 func TestAdminAIPlatformModelAudit(t *testing.T) {
 	f := newAIPlatformFixture(t, true)
 	actorID, tok := f.user(t, "ai_platform_audit", rbac.RoleCodeSuperAdmin)

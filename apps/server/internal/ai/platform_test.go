@@ -302,6 +302,249 @@ func TestPlatformModelBaseURLNormalized(t *testing.T) {
 	assert.Equal(t, "https://example.com/v1", view.BaseURL)
 }
 
+func TestPlatformModelProtocolCRUD(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("创建省略协议时默认为 openai", func(t *testing.T) {
+		g := testutil.PG(t)
+		keys := newKeyManager(t)
+		svc, _ := newPlatformService(t, g, keys, &fakeChatClient{})
+
+		in := platformInput()
+		in.Protocol = ""
+		view, err := svc.Create(ctx, 7, in, nil)
+		require.NoError(t, err)
+		assert.Equal(t, "openai", view.Protocol)
+
+		var row ai.PlatformModel
+		require.NoError(t, g.First(&row, view.ID).Error)
+		assert.Equal(t, "openai", row.Protocol)
+	})
+
+	t.Run("创建 anthropic 并保留协议", func(t *testing.T) {
+		g := testutil.PG(t)
+		keys := newKeyManager(t)
+		svc, _ := newPlatformService(t, g, keys, &fakeChatClient{})
+
+		in := platformInput()
+		in.Name = "Claude"
+		in.Protocol = "anthropic"
+		in.BaseURL = "https://api.anthropic.com/v1"
+		in.ModelName = "claude-3-5-haiku-latest"
+		view, err := svc.Create(ctx, 7, in, nil)
+		require.NoError(t, err)
+		assert.Equal(t, "anthropic", view.Protocol)
+
+		var row ai.PlatformModel
+		require.NoError(t, g.First(&row, view.ID).Error)
+		assert.Equal(t, "anthropic", row.Protocol)
+	})
+
+	t.Run("协议大小写与空白被规范化", func(t *testing.T) {
+		g := testutil.PG(t)
+		keys := newKeyManager(t)
+		svc, _ := newPlatformService(t, g, keys, &fakeChatClient{})
+
+		in := platformInput()
+		in.Name = "Claude Trimmed"
+		in.Protocol = "  AnThRoPiC \t"
+		in.BaseURL = "https://api.anthropic.com/v1"
+		view, err := svc.Create(ctx, 7, in, nil)
+		require.NoError(t, err)
+		assert.Equal(t, "anthropic", view.Protocol)
+
+		list, err := svc.List(ctx)
+		require.NoError(t, err)
+		require.Len(t, list, 1)
+		assert.Equal(t, "anthropic", list[0].Protocol)
+	})
+
+	t.Run("更新协议", func(t *testing.T) {
+		g := testutil.PG(t)
+		keys := newKeyManager(t)
+		svc, _ := newPlatformService(t, g, keys, &fakeChatClient{})
+
+		created, err := svc.Create(ctx, 7, platformInput(), nil)
+		require.NoError(t, err)
+		require.Equal(t, "openai", created.Protocol)
+
+		in := platformInput()
+		in.Name = "DeepSeek"
+		in.Protocol = "anthropic"
+		in.BaseURL = "https://api.anthropic.com/v1"
+		in.ModelName = "claude-3-5-haiku-latest"
+		in.APIKey = ""
+		updated, err := svc.Update(ctx, 7, created.ID, in, nil)
+		require.NoError(t, err)
+		assert.Equal(t, "anthropic", updated.Protocol)
+		assert.Equal(t, "sk-…7890", updated.APIKeyMasked, "协议变更不应清空 token")
+
+		var row ai.PlatformModel
+		require.NoError(t, g.First(&row, created.ID).Error)
+		assert.Equal(t, "anthropic", row.Protocol)
+
+		// 改回 openai 同样生效。
+		in.Protocol = "openai"
+		in.BaseURL = "https://api.deepseek.com/v1"
+		updated, err = svc.Update(ctx, 7, created.ID, in, nil)
+		require.NoError(t, err)
+		assert.Equal(t, "openai", updated.Protocol)
+	})
+
+	t.Run("非法协议被拒绝", func(t *testing.T) {
+		g := testutil.PG(t)
+		keys := newKeyManager(t)
+		svc, _ := newPlatformService(t, g, keys, &fakeChatClient{})
+
+		in := platformInput()
+		in.Protocol = "gemini"
+		_, err := svc.Create(ctx, 7, in, nil)
+		assertValidationCode(t, err, 40001)
+
+		var count int64
+		require.NoError(t, g.Model(&ai.PlatformModel{}).Count(&count).Error)
+		assert.Zero(t, count, "非法协议不得创建行")
+
+		created, err := svc.Create(ctx, 7, platformInput(), nil)
+		require.NoError(t, err)
+		in = platformInput()
+		in.Protocol = "gemini"
+		_, err = svc.Update(ctx, 7, created.ID, in, nil)
+		assertValidationCode(t, err, 40001)
+
+		var row ai.PlatformModel
+		require.NoError(t, g.First(&row, created.ID).Error)
+		assert.Equal(t, "openai", row.Protocol, "非法更新不得修改协议")
+	})
+
+	t.Run("anthropic 地址不能包含 messages 端点", func(t *testing.T) {
+		g := testutil.PG(t)
+		keys := newKeyManager(t)
+		svc, _ := newPlatformService(t, g, keys, &fakeChatClient{})
+
+		for _, baseURL := range []string{
+			"https://api.anthropic.com/v1/messages",
+			"https://api.anthropic.com/messages",
+		} {
+			in := platformInput()
+			in.Name = "Claude Bad"
+			in.Protocol = "anthropic"
+			in.BaseURL = baseURL
+			in.ModelName = "claude-3-5-haiku-latest"
+			_, err := svc.Create(ctx, 7, in, nil)
+			assertValidationCode(t, err, 40001)
+		}
+
+		var count int64
+		require.NoError(t, g.Model(&ai.PlatformModel{}).Count(&count).Error)
+		assert.Zero(t, count)
+	})
+}
+
+func TestPlatformAnthropicTestConnection(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("使用 ProtocolClient 请求 Anthropic 端点", func(t *testing.T) {
+		const token = "sk-ant-1234567890"
+		var gotPath, gotAPIKey, gotVersion, gotAuth string
+		var gotBody struct {
+			Model     string `json:"model"`
+			MaxTokens int    `json:"max_tokens"`
+		}
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotPath = r.URL.Path
+			gotAPIKey = r.Header.Get("x-api-key")
+			gotVersion = r.Header.Get("anthropic-version")
+			gotAuth = r.Header.Get("Authorization")
+			_ = json.NewDecoder(r.Body).Decode(&gotBody)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"pong"}]}`))
+		}))
+		defer srv.Close()
+
+		g := testutil.PG(t)
+		keys := newKeyManager(t)
+		svc, _ := newPlatformService(t, g, keys, ai.NewProtocolClient(5*time.Second))
+
+		in := platformInput()
+		in.Name = "Claude"
+		in.Protocol = "anthropic"
+		in.BaseURL = srv.URL + "/v1"
+		in.ModelName = "claude-3-5-haiku-latest"
+		in.APIKey = token
+		created, err := svc.Create(ctx, 7, in, nil)
+		require.NoError(t, err)
+
+		res, err := svc.Test(ctx, created.ID)
+		require.NoError(t, err)
+		assert.True(t, res.OK)
+		assert.Equal(t, "连接成功", res.Message)
+		assert.Equal(t, "/v1/messages", gotPath)
+		assert.Equal(t, token, gotAPIKey)
+		assert.NotEmpty(t, gotVersion)
+		assert.Empty(t, gotAuth, "Anthropic 不应发送 Bearer token")
+		assert.Equal(t, "claude-3-5-haiku-latest", gotBody.Model)
+		assert.Equal(t, 16, gotBody.MaxTokens)
+
+		var row ai.PlatformModel
+		require.NoError(t, g.First(&row, created.ID).Error)
+		assert.True(t, row.LastTestOK)
+		assert.Equal(t, "anthropic", row.Protocol)
+	})
+
+	t.Run("测试请求携带平台协议与 16 个最大 token", func(t *testing.T) {
+		g := testutil.PG(t)
+		keys := newKeyManager(t)
+		client := &fakeChatClient{fn: func(ai.ChatRequest) (string, error) { return "pong", nil }}
+		svc, _ := newPlatformService(t, g, keys, client)
+
+		in := platformInput()
+		in.Name = "Claude"
+		in.Protocol = "anthropic"
+		in.BaseURL = "https://api.anthropic.com/v1"
+		created, err := svc.Create(ctx, 7, in, nil)
+		require.NoError(t, err)
+
+		_, err = svc.Test(ctx, created.ID)
+		require.NoError(t, err)
+		require.Len(t, client.calls, 1)
+		assert.Equal(t, "anthropic", client.calls[0].Protocol)
+		assert.Equal(t, 16, client.calls[0].MaxTokens)
+	})
+
+	t.Run("空内容响应映射为脱敏格式错误", func(t *testing.T) {
+		const token = "sk-ant-secret-9999"
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"content":[]}`))
+		}))
+		defer srv.Close()
+
+		g := testutil.PG(t)
+		keys := newKeyManager(t)
+		svc, _ := newPlatformService(t, g, keys, ai.NewProtocolClient(5*time.Second))
+
+		in := platformInput()
+		in.Name = "Claude Empty"
+		in.Protocol = "anthropic"
+		in.BaseURL = srv.URL
+		in.APIKey = token
+		created, err := svc.Create(ctx, 7, in, nil)
+		require.NoError(t, err)
+
+		res, err := svc.Test(ctx, created.ID)
+		require.NoError(t, err)
+		assert.False(t, res.OK)
+		assert.Equal(t, "响应格式错误", res.Message)
+		assert.NotContains(t, res.Message, token)
+
+		var row ai.PlatformModel
+		require.NoError(t, g.First(&row, created.ID).Error)
+		assert.False(t, row.LastTestOK)
+		assert.Equal(t, "响应格式错误", row.LastTestError)
+	})
+}
+
 func TestPlatformModelTestConnection(t *testing.T) {
 	t.Run("成功且不受 AI 总开关影响", func(t *testing.T) {
 		var gotPath, gotAuth string

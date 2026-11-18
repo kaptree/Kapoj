@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -19,7 +18,6 @@ import (
 
 const (
 	platformNameMaxLen         = 100
-	platformBaseURLMaxLen      = 512
 	platformLastTestErrMaxLen  = 500
 	platformTestTimeout        = 10 * time.Second
 	platformTestSuccessMessage = "连接成功"
@@ -32,6 +30,7 @@ const (
 type PlatformModelView struct {
 	ID                int64      `json:"id"`
 	Name              string     `json:"name"`
+	Protocol          string     `json:"protocol"`
 	BaseURL           string     `json:"baseUrl"`
 	ModelName         string     `json:"modelName"`
 	Enabled           bool       `json:"enabled"`
@@ -48,6 +47,7 @@ type PlatformModelView struct {
 // 保留原密文。
 type PlatformModelInput struct {
 	Name      string `json:"name"`
+	Protocol  string `json:"protocol"`
 	BaseURL   string `json:"baseUrl"`
 	ModelName string `json:"modelName"`
 	APIKey    string `json:"apiKey"`
@@ -114,6 +114,7 @@ func (s *PlatformService) Create(ctx context.Context, actorID int64, in Platform
 		now := time.Now().UTC()
 		model := PlatformModel{
 			Name:            in.Name,
+			Protocol:        in.Protocol,
 			BaseURL:         in.BaseURL,
 			ModelName:       in.ModelName,
 			APIKeyEncrypted: encrypted,
@@ -180,6 +181,7 @@ func (s *PlatformService) Update(ctx context.Context, actorID, id int64, in Plat
 
 		updates := map[string]any{
 			"name":       in.Name,
+			"protocol":   in.Protocol,
 			"base_url":   in.BaseURL,
 			"model_name": in.ModelName,
 			"enabled":    in.Enabled,
@@ -272,9 +274,10 @@ func (s *PlatformService) Test(ctx context.Context, id int64) (*PlatformTestResu
 		}
 		testCtx, cancel := context.WithTimeout(ctx, platformTestTimeout)
 		_, chatErr := s.client.Chat(testCtx, ChatRequest{
-			BaseURL: model.BaseURL,
-			APIKey:  plain,
-			Model:   model.ModelName,
+			Protocol: model.Protocol,
+			BaseURL:  model.BaseURL,
+			APIKey:   plain,
+			Model:    model.ModelName,
 			Messages: []ChatMessage{
 				{Role: "user", Content: "ping"},
 			},
@@ -365,8 +368,8 @@ func (s *PlatformService) Select(ctx context.Context, actorID int64, modelID *in
 	return view, nil
 }
 
-// validatePlatformModelInput trims and validates names/base URL; requireToken
-// 用于创建（token 必填），更新时空 token 表示保留原密文。
+// validatePlatformModelInput trims and validates names/protocol/base URL;
+// requireToken 用于创建（token 必填），更新时空 token 表示保留原密文。
 func validatePlatformModelInput(in PlatformModelInput, requireToken bool) (PlatformModelInput, error) {
 	in.Name = strings.TrimSpace(in.Name)
 	if n := utf8.RuneCountInString(in.Name); n == 0 || n > platformNameMaxLen {
@@ -376,7 +379,12 @@ func validatePlatformModelInput(in PlatformModelInput, requireToken bool) (Platf
 	if n := utf8.RuneCountInString(in.ModelName); n == 0 || n > platformNameMaxLen {
 		return in, httpx.ErrValidation("模型名长度须为 1-100 个字符")
 	}
-	baseURL, err := normalizePlatformBaseURL(in.BaseURL)
+	protocol, err := normalizeAIProtocol(in.Protocol)
+	if err != nil {
+		return in, err
+	}
+	in.Protocol = protocol
+	baseURL, err := normalizeAIBaseURL(in.BaseURL, protocol)
 	if err != nil {
 		return in, err
 	}
@@ -388,43 +396,17 @@ func validatePlatformModelInput(in PlatformModelInput, requireToken bool) (Platf
 	return in, nil
 }
 
-// normalizePlatformBaseURL 只接受 http/https、必须有主机、不允许 userinfo，
-// 去掉末尾 "/" 且不允许以 /chat/completions 结尾（客户端会拼接该路径）。
-// 内网/本地地址允许，便于接入自建模型。
-func normalizePlatformBaseURL(raw string) (string, error) {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return "", httpx.ErrValidation("接口地址不能为空")
-	}
-	if len(trimmed) > platformBaseURLMaxLen {
-		return "", httpx.ErrValidation("接口地址过长")
-	}
-	parsed, err := url.Parse(trimmed)
-	if err != nil {
-		return "", httpx.ErrValidation("接口地址格式无效")
-	}
-	switch strings.ToLower(parsed.Scheme) {
-	case "http", "https":
+// normalizeAIProtocol 只接受 openai / anthropic。空值保留历史 OpenAI 兼容
+// 行为，便于尚未发送 protocol 的旧客户端继续创建模型。
+func normalizeAIProtocol(raw string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", protocolOpenAI:
+		return protocolOpenAI, nil
+	case protocolAnthropic:
+		return protocolAnthropic, nil
 	default:
-		return "", httpx.ErrValidation("接口地址必须以 http:// 或 https:// 开头")
+		return "", httpx.ErrValidation("不支持的 AI 协议")
 	}
-	if parsed.Host == "" {
-		return "", httpx.ErrValidation("接口地址缺少主机名")
-	}
-	if parsed.User != nil {
-		return "", httpx.ErrValidation("接口地址不能包含用户名或密码")
-	}
-	if parsed.RawQuery != "" || parsed.ForceQuery {
-		return "", httpx.ErrValidation("接口地址不能包含查询参数")
-	}
-	if parsed.Fragment != "" {
-		return "", httpx.ErrValidation("接口地址不能包含片段")
-	}
-	normalized := strings.TrimRight(trimmed, "/")
-	if strings.HasSuffix(strings.ToLower(normalized), "/chat/completions") {
-		return "", httpx.ErrValidation("接口地址不能以 /chat/completions 结尾")
-	}
-	return normalized, nil
 }
 
 // ensurePlatformModelNameFree 校验名称唯一（excludeID > 0 时忽略自身）。
@@ -446,9 +428,14 @@ func ensurePlatformModelNameFree(tx *gorm.DB, name string, excludeID int64) erro
 // platformModelView 构造脱敏视图；解密失败时 masked 留空，避免因历史坏密文
 // 阻断整个列表。
 func platformModelView(keys *KeyManager, model PlatformModel) PlatformModelView {
+	protocol := strings.TrimSpace(model.Protocol)
+	if protocol == "" {
+		protocol = protocolOpenAI
+	}
 	view := PlatformModelView{
 		ID:                model.ID,
 		Name:              model.Name,
+		Protocol:          protocol,
 		BaseURL:           model.BaseURL,
 		ModelName:         model.ModelName,
 		Enabled:           model.Enabled,
@@ -483,7 +470,7 @@ func platformTestFailureMessage(err error) string {
 			return fmt.Sprintf("HTTP %d", code)
 		}
 		return "上游返回错误状态"
-	case errors.Is(err, errMalformedResponse), errors.Is(err, errEmptyChoices):
+	case errors.Is(err, errMalformedResponse), errors.Is(err, errEmptyChoices), errors.Is(err, errEmptyContent):
 		return "响应格式错误"
 	}
 	var netErr net.Error

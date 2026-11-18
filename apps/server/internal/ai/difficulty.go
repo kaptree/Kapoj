@@ -196,7 +196,7 @@ func (s *Service) resolvePlatformChat(ctx context.Context) (ChatRequest, error) 
 		slog.Error("ai: decrypt platform model token failed", "operation", "difficulty", "err", err)
 		return ChatRequest{}, httpx.ErrValidation("平台 AI 模型 Token 解密失败")
 	}
-	return ChatRequest{BaseURL: model.BaseURL, APIKey: apiKey, Model: model.ModelName}, nil
+	return ChatRequest{Protocol: model.Protocol, BaseURL: model.BaseURL, APIKey: apiKey, Model: model.ModelName}, nil
 }
 
 // difficultyAssessmentMessages builds the scoring prompt. Every field is

@@ -193,7 +193,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	aiClient := ai.NewOpenAIClient(cfg.AIRequestTimeout)
+	aiClient := ai.NewProtocolClient(cfg.AIRequestTimeout)
 	aiSvc := ai.NewService(g, keyMgr,
 		ai.NewRedisLimiter(rdb, cfg.AICooldown),
 		aiClient)
