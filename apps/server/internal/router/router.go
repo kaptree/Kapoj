@@ -12,6 +12,8 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/activity"
 	"github.com/kaptree/kapoj/apps/server/internal/activityapi"
 	"github.com/kaptree/kapoj/apps/server/internal/adminapi"
+	"github.com/kaptree/kapoj/apps/server/internal/agent"
+	"github.com/kaptree/kapoj/apps/server/internal/agentapi"
 	"github.com/kaptree/kapoj/apps/server/internal/ai"
 	"github.com/kaptree/kapoj/apps/server/internal/aiapi"
 	"github.com/kaptree/kapoj/apps/server/internal/auth"
@@ -91,6 +93,8 @@ type Deps struct {
 	DifficultyAISettings problemapi.AISettings
 	// Jobs wires the scheduled job service into the admin jobs API.
 	Jobs *jobs.Service
+	// Agent wires Agent Arena user routes into the authenticated API group.
+	Agent *agent.Service
 }
 
 func New(d Deps) *gin.Engine {
@@ -140,6 +144,9 @@ func New(d Deps) *gin.Engine {
 	}
 	api := r.Group("/api", authenticated(maxBodyBytes)...)
 	auth.RegisterAccountRoutes(api, authSvc)
+	if d.Agent != nil {
+		agentapi.RegisterUserRoutes(api, d.Agent)
+	}
 	problemJSON := r.Group("/api", authenticated(maxProblemJSONBytes)...)
 	uploads := r.Group("/api", authenticated(maxUploadBytes)...)
 	imports := r.Group("/api", authenticated(maxImportBodyBytes)...)
