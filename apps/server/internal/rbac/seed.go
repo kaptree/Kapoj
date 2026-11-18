@@ -15,7 +15,7 @@ import (
 const (
 	// SeedVersion 是当前权限目录与内置角色的数据版本。提升版本只会补齐缺失的
 	// 权限目录与内置角色，不会新增或恢复任何角色权限授权。
-	SeedVersion = "4"
+	SeedVersion = "5"
 
 	metaSeedVersionKey = "seed_version"
 )
@@ -76,9 +76,19 @@ func Seed(ctx context.Context, g *gorm.DB) error {
 				return err
 			}
 		}
+		if stored < 5 {
+			if err := migrateSeedV5(tx); err != nil {
+				return err
+			}
+		}
 		return writeSeedVersion(tx)
 	})
 }
+
+// migrateSeedV5 intentionally grants the new agent permission to no built-in
+// role; only super administrators (who bypass checks) have it until an
+// administrator grants it to a custom role.
+func migrateSeedV5(*gorm.DB) error { return nil }
 
 // migrateSeedV4 intentionally grants the new backup permission to no built-in
 // role; only super administrators (who bypass checks) have it until an

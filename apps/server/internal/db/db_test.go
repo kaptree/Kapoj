@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kaptree/kapoj/apps/server/internal/activity"
+	"github.com/kaptree/kapoj/apps/server/internal/agent"
 	"github.com/kaptree/kapoj/apps/server/internal/ai"
 	"github.com/kaptree/kapoj/apps/server/internal/companion"
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
@@ -24,6 +25,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 	"github.com/kaptree/kapoj/apps/server/internal/site"
 	"github.com/kaptree/kapoj/apps/server/internal/social"
+	"github.com/kaptree/kapoj/apps/server/internal/submission"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
 
@@ -739,4 +741,296 @@ func TestBackfillUserAIModels(t *testing.T) {
 	require.NoError(t, Migrate(g))
 	require.NoError(t, g.Model(&ai.UserModel{}).Where("user_id IN ?", []int64{userID, longUserID}).Count(&count).Error)
 	assert.EqualValues(t, 2, count, "已有用户模型时回填应跳过")
+}
+
+func TestMigrateCreatesAgentSchema(t *testing.T) {
+	dsn := os.Getenv("KAPOJ_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("KAPOJ_TEST_DATABASE_URL not set; skipping database test")
+	}
+	g, err := open(dsn, io.Discard)
+	require.NoError(t, err)
+	require.NoError(t, Migrate(g))
+	sqlDB, err := g.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	for _, table := range []string{
+		"agents", "agent_tokens", "agent_problem_attempts", "agent_rating_history",
+	} {
+		assert.True(t, g.Migrator().HasTable(table), "缺少表 %s", table)
+	}
+	for _, column := range []string{
+		"user_id", "name", "model_name", "model_intro", "status", "rating",
+		"passed_count", "attempted_count", "avg_solve_time_ms",
+	} {
+		assert.True(t, g.Migrator().HasColumn(&agent.Agent{}, column), "agents 缺少列 %s", column)
+	}
+	for _, column := range []string{
+		"agent_id", "token_hash", "token_prefix", "last_used_at", "revoked_at",
+	} {
+		assert.True(t, g.Migrator().HasColumn(&agent.AgentToken{}, column), "agent_tokens 缺少列 %s", column)
+	}
+	for _, column := range []string{
+		"agent_id", "problem_id", "attempts_used", "status", "claimed_at",
+		"deadline_at", "last_submission_at", "solved_at", "solve_time_ms",
+	} {
+		assert.True(t, g.Migrator().HasColumn(&agent.AgentProblemAttempt{}, column),
+			"agent_problem_attempts 缺少列 %s", column)
+	}
+	for _, column := range []string{
+		"agent_id", "problem_id", "submission_id", "kind", "difficulty",
+		"rating_before", "rating_after", "delta", "solve_time_ms", "created_at",
+	} {
+		assert.True(t, g.Migrator().HasColumn(&agent.AgentRatingHistory{}, column),
+			"agent_rating_history 缺少列 %s", column)
+	}
+	for _, column := range []string{"agent_id", "agent_attempt_id", "agent_settled"} {
+		assert.True(t, g.Migrator().HasColumn(&submission.Submission{}, column),
+			"submissions 缺少列 %s", column)
+	}
+
+	assert.True(t, g.Migrator().HasIndex(&agent.Agent{}, "uniq_agents_user"))
+	assert.True(t, g.Migrator().HasIndex(&agent.Agent{}, "uniq_agents_name"))
+	assert.True(t, g.Migrator().HasIndex(&agent.AgentToken{}, "idx_agent_tokens_token_hash"))
+	assert.True(t, g.Migrator().HasIndex(&agent.AgentToken{}, "idx_agent_tokens_agent_id"))
+	assert.True(t, g.Migrator().HasIndex(&agent.AgentProblemAttempt{}, "uniq_agent_problem_attempts"))
+	assert.True(t, g.Migrator().HasIndex(&agent.AgentProblemAttempt{}, "idx_agent_problem_attempts_agent_status"))
+	assert.True(t, g.Migrator().HasIndex(&agent.AgentRatingHistory{}, "idx_agent_rating_history_agent_created"))
+	assert.True(t, g.Migrator().HasIndex(&submission.Submission{}, "idx_submissions_agent_settled"))
+	assert.True(t, g.Migrator().HasIndex(&submission.Submission{}, "idx_submissions_agent_id"))
+	assert.True(t, g.Migrator().HasIndex(&submission.Submission{}, "idx_submissions_agent_attempt_id"))
+
+	var tokenHash struct {
+		DataType  string
+		MaxLength *int64 `gorm:"column:max_length"`
+	}
+	require.NoError(t, g.Raw(`
+		SELECT data_type, character_maximum_length AS max_length
+		FROM information_schema.columns
+		WHERE table_schema = current_schema()
+		  AND table_name = 'agent_tokens' AND column_name = 'token_hash'`).Scan(&tokenHash).Error)
+	assert.Equal(t, "character", tokenHash.DataType, "token_hash 应为 char")
+	require.NotNil(t, tokenHash.MaxLength)
+	assert.EqualValues(t, 64, *tokenHash.MaxLength, "token_hash 应为 char(64)")
+
+	var tokenPrefix struct {
+		DataType  string
+		MaxLength *int64 `gorm:"column:max_length"`
+	}
+	require.NoError(t, g.Raw(`
+		SELECT data_type, character_maximum_length AS max_length
+		FROM information_schema.columns
+		WHERE table_schema = current_schema()
+		  AND table_name = 'agent_tokens' AND column_name = 'token_prefix'`).Scan(&tokenPrefix).Error)
+	assert.Equal(t, "character varying", tokenPrefix.DataType, "token_prefix 应为 varchar")
+	require.NotNil(t, tokenPrefix.MaxLength)
+	assert.EqualValues(t, 24, *tokenPrefix.MaxLength, "token_prefix 应为 varchar(24)")
+
+	var historyNullables []struct {
+		ColumnName string `gorm:"column:column_name"`
+		IsNullable string `gorm:"column:is_nullable"`
+	}
+	require.NoError(t, g.Raw(`
+		SELECT column_name, is_nullable
+		FROM information_schema.columns
+		WHERE table_schema = current_schema()
+		  AND table_name = 'agent_rating_history'
+		  AND column_name IN ('problem_id', 'submission_id')`).Scan(&historyNullables).Error)
+	require.Len(t, historyNullables, 2)
+	for _, column := range historyNullables {
+		assert.Equal(t, "YES", column.IsNullable,
+			"agent_rating_history.%s 必须可空", column.ColumnName)
+	}
+
+	var indexDefs []struct {
+		IndexName string `gorm:"column:index_name"`
+		IndexDef  string `gorm:"column:index_def"`
+	}
+	require.NoError(t, g.Raw(`
+		SELECT indexname AS index_name, indexdef AS index_def
+		FROM pg_indexes
+		WHERE schemaname = 'public' AND indexname IN (
+			'uniq_agent_tokens_active',
+			'uniq_agent_attempts_active',
+			'uniq_agent_rating_solve',
+			'uniq_agent_rating_fail',
+			'uniq_agent_rating_submission',
+			'idx_submissions_agent_unsettled'
+		)`).Scan(&indexDefs).Error)
+	defs := make(map[string]string, len(indexDefs))
+	for _, def := range indexDefs {
+		defs[def.IndexName] = def.IndexDef
+	}
+	require.Len(t, defs, 6, "缺少 Agent 相关索引")
+
+	tokensActive := defs["uniq_agent_tokens_active"]
+	assert.Contains(t, tokensActive, "UNIQUE INDEX")
+	assert.Contains(t, tokensActive, "(agent_id)")
+	assert.Contains(t, tokensActive, "WHERE (revoked_at IS NULL)")
+
+	attemptsActive := defs["uniq_agent_attempts_active"]
+	assert.Contains(t, attemptsActive, "UNIQUE INDEX")
+	assert.Contains(t, attemptsActive, "(agent_id)")
+	assert.Contains(t, attemptsActive, "'active'")
+
+	ratingSolve := defs["uniq_agent_rating_solve"]
+	assert.Contains(t, ratingSolve, "UNIQUE INDEX")
+	assert.Contains(t, ratingSolve, "(agent_id, problem_id)")
+	assert.Contains(t, ratingSolve, "'solve'")
+
+	ratingFail := defs["uniq_agent_rating_fail"]
+	assert.Contains(t, ratingFail, "UNIQUE INDEX")
+	assert.Contains(t, ratingFail, "(agent_id, problem_id)")
+	for _, kind := range []string{"'abandon'", "'timeout'", "'exhausted'"} {
+		assert.Contains(t, ratingFail, kind)
+	}
+
+	ratingSubmission := defs["uniq_agent_rating_submission"]
+	assert.Contains(t, ratingSubmission, "UNIQUE INDEX")
+	assert.Contains(t, ratingSubmission, "(submission_id)")
+	assert.Contains(t, ratingSubmission, "WHERE (submission_id IS NOT NULL)")
+
+	unsettled := defs["idx_submissions_agent_unsettled"]
+	assert.NotContains(t, unsettled, "UNIQUE INDEX", "未结算索引不必唯一")
+	assert.Contains(t, unsettled, "(agent_id)")
+	assert.Contains(t, unsettled, "agent_id IS NOT NULL")
+	assert.Contains(t, unsettled, "agent_settled = false")
+}
+
+func TestAgentSchemaConstraints(t *testing.T) {
+	dsn := os.Getenv("KAPOJ_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("KAPOJ_TEST_DATABASE_URL not set; skipping database test")
+	}
+	g, err := open(dsn, io.Discard)
+	require.NoError(t, err)
+	require.NoError(t, Migrate(g))
+	sqlDB, err := g.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	const (
+		userAUsername = "agent_schema_user_a"
+		userBUsername = "agent_schema_user_b"
+		agentAName    = "agent-schema-a"
+		agentBName    = "agent-schema-b"
+	)
+	agentNames := []string{agentAName, agentBName}
+	usernames := []string{userAUsername, userBUsername}
+	cleanup := func() {
+		var ids []int64
+		require.NoError(t, g.Model(&agent.Agent{}).Where("name IN ?", agentNames).Pluck("id", &ids).Error)
+		if len(ids) > 0 {
+			require.NoError(t, g.Where("agent_id IN ?", ids).Delete(&agent.AgentRatingHistory{}).Error)
+			require.NoError(t, g.Where("agent_id IN ?", ids).Delete(&agent.AgentProblemAttempt{}).Error)
+			require.NoError(t, g.Where("agent_id IN ?", ids).Delete(&agent.AgentToken{}).Error)
+		}
+		require.NoError(t, g.Where("name IN ?", agentNames).Delete(&agent.Agent{}).Error)
+		require.NoError(t, g.Where("username IN ?", usernames).Delete(&user.User{}).Error)
+	}
+	cleanup()
+	t.Cleanup(cleanup)
+
+	userA := &user.User{
+		Username: userAUsername, Nickname: "Agent Schema A",
+		Email: userAUsername + "@example.com", PasswordHash: "not-a-real-hash",
+		Status: user.StatusActive,
+	}
+	require.NoError(t, g.Create(userA).Error)
+	userB := &user.User{
+		Username: userBUsername, Nickname: "Agent Schema B",
+		Email: userBUsername + "@example.com", PasswordHash: "not-a-real-hash",
+		Status: user.StatusActive,
+	}
+	require.NoError(t, g.Create(userB).Error)
+
+	first := &agent.Agent{UserID: userA.ID, Name: agentAName, ModelName: "model-a", ModelIntro: "intro"}
+	require.NoError(t, g.Create(first).Error)
+	assert.Equal(t, agent.StatusActive, first.Status, "新 Agent 默认 active")
+	assert.Equal(t, 1500, first.Rating, "新 Agent 初始 Rating 为 1500")
+	assert.Zero(t, first.PassedCount)
+	assert.Zero(t, first.AttemptedCount)
+	assert.Zero(t, first.AvgSolveTimeMS)
+
+	assert.Error(t, g.Create(&agent.Agent{
+		UserID: userA.ID, Name: agentBName, ModelName: "model-b",
+	}).Error, "同一用户只能创建一个 Agent")
+	assert.Error(t, g.Create(&agent.Agent{
+		UserID: userB.ID, Name: agentAName, ModelName: "model-b",
+	}).Error, "Agent 名称必须全局唯一")
+
+	token := &agent.AgentToken{
+		AgentID: first.ID, TokenHash: strings.Repeat("a", 64), TokenPrefix: "kapoj_agent_schema001",
+	}
+	require.NoError(t, g.Create(token).Error)
+	assert.Error(t, g.Create(&agent.AgentToken{
+		AgentID: first.ID, TokenHash: strings.Repeat("b", 64), TokenPrefix: "kapoj_agent_schema002",
+	}).Error, "同一 Agent 只能有一个未吊销 token")
+	revokedAt := time.Now().UTC()
+	require.NoError(t, g.Create(&agent.AgentToken{
+		AgentID: first.ID, TokenHash: strings.Repeat("c", 64),
+		TokenPrefix: "kapoj_agent_schema003", RevokedAt: &revokedAt,
+	}).Error, "已吊销 token 不受部分唯一索引约束")
+	require.NoError(t, g.Create(&agent.AgentToken{
+		AgentID: first.ID, TokenHash: strings.Repeat("d", 64),
+		TokenPrefix: "kapoj_agent_schema004", RevokedAt: &revokedAt,
+	}).Error)
+
+	now := time.Now().UTC()
+	attempt := &agent.AgentProblemAttempt{
+		AgentID: first.ID, ProblemID: 900001, Status: agent.AttemptActive,
+		ClaimedAt: now, DeadlineAt: now.Add(time.Hour),
+	}
+	require.NoError(t, g.Create(attempt).Error)
+	assert.Error(t, g.Create(&agent.AgentProblemAttempt{
+		AgentID: first.ID, ProblemID: 900002, Status: agent.AttemptActive,
+		ClaimedAt: now, DeadlineAt: now.Add(time.Hour),
+	}).Error, "同一 Agent 同一时间只能有一个 active attempt")
+	assert.Error(t, g.Create(&agent.AgentProblemAttempt{
+		AgentID: first.ID, ProblemID: 900001, Status: agent.AttemptAbandoned,
+		ClaimedAt: now, DeadlineAt: now.Add(time.Hour),
+	}).Error, "同一 Agent 同一题目只能有一条 attempt 记录")
+
+	solve := &agent.AgentRatingHistory{
+		AgentID: first.ID, ProblemID: 900001, Kind: agent.RatingSolve,
+		Difficulty: 50, RatingBefore: 1500, RatingAfter: 1520, Delta: 20,
+	}
+	require.NoError(t, g.Create(solve).Error)
+	assert.Error(t, g.Create(&agent.AgentRatingHistory{
+		AgentID: first.ID, ProblemID: 900001, Kind: agent.RatingSolve,
+		Difficulty: 50, RatingBefore: 1500, RatingAfter: 1520, Delta: 20,
+	}).Error, "同一 Agent 同一题目只能有一条 solve 记录")
+
+	fail := &agent.AgentRatingHistory{
+		AgentID: first.ID, ProblemID: 900002, Kind: agent.RatingAbandon,
+		Difficulty: 50, RatingBefore: 1500, RatingAfter: 1490, Delta: -10,
+	}
+	require.NoError(t, g.Create(fail).Error)
+	assert.Error(t, g.Create(&agent.AgentRatingHistory{
+		AgentID: first.ID, ProblemID: 900002, Kind: agent.RatingTimeout,
+		Difficulty: 50, RatingBefore: 1500, RatingAfter: 1490, Delta: -10,
+	}).Error, "同一 Agent 同一题目只能有一条失败记录")
+	assert.Error(t, g.Create(&agent.AgentRatingHistory{
+		AgentID: first.ID, ProblemID: 900002, Kind: agent.RatingExhausted,
+		Difficulty: 50, RatingBefore: 1500, RatingAfter: 1490, Delta: -10,
+	}).Error, "abandon/timeout/exhausted 共用同一唯一约束")
+
+	submissionID := int64(990001)
+	require.NoError(t, g.Create(&agent.AgentRatingHistory{
+		AgentID: first.ID, ProblemID: 900003, SubmissionID: &submissionID,
+		Kind: agent.RatingReset, RatingBefore: 1500, RatingAfter: 1500,
+	}).Error)
+	assert.Error(t, g.Create(&agent.AgentRatingHistory{
+		AgentID: first.ID, ProblemID: 900004, SubmissionID: &submissionID,
+		Kind: agent.RatingReset, RatingBefore: 1500, RatingAfter: 1500,
+	}).Error, "同一提交只能写入一条 Rating 记录")
+	require.NoError(t, g.Create(&agent.AgentRatingHistory{
+		AgentID: first.ID, ProblemID: 900005, Kind: agent.RatingReset,
+		RatingBefore: 1500, RatingAfter: 1500,
+	}).Error, "submission_id 为空的历史记录不受唯一约束")
+	require.NoError(t, g.Create(&agent.AgentRatingHistory{
+		AgentID: first.ID, ProblemID: 900006, Kind: agent.RatingReset,
+		RatingBefore: 1500, RatingAfter: 1500,
+	}).Error)
 }

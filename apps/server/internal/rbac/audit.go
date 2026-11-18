@@ -33,6 +33,7 @@ const (
 	AuditActionMailSettingsManage = "mail.settings.manage"
 	AuditActionSystemBackupManage = "system.backup.manage"
 	AuditActionSystemJobsManage   = "system.jobs.manage"
+	AuditActionAgentManage        = "agent.manage"
 	AuditActionProblemExport      = "problem.export"
 	AuditActionProblemBulk        = "problem.bulk"
 	AuditActionProblemImport      = "problem.import"
@@ -50,6 +51,7 @@ const (
 	AuditTargetMailSettings       = "mail_settings"
 	AuditTargetBackup             = "backup"
 	AuditTargetScheduledJob       = "scheduled_job"
+	AuditTargetAgent              = "agent"
 	AuditTargetDifficultySettings = "difficulty_settings"
 )
 

@@ -27,6 +27,9 @@ type Submission struct {
 	UserID          int64                         `gorm:"not null;index:idx_submissions_user_created,priority:1;index:idx_submissions_contest_user,priority:2"`
 	ProblemID       int64                         `gorm:"not null;index:idx_submissions_problem_status,priority:1"`
 	ContestID       *int64                        `gorm:"index:idx_submissions_contest_user,priority:1"`
+	AgentID         *int64                        `gorm:"index:idx_submissions_agent_settled,priority:1;index"`
+	AgentAttemptID  *int64                        `gorm:"index"`
+	AgentSettled    bool                          `gorm:"not null;default:false;index:idx_submissions_agent_settled,priority:2"`
 	Language        Language                      `gorm:"size:20;not null"`
 	Code            string                        `gorm:"type:text;not null"`
 	Answer          string                        `gorm:"type:text;not null;default:''"`

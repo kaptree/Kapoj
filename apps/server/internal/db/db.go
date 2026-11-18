@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/kaptree/kapoj/apps/server/internal/activity"
+	"github.com/kaptree/kapoj/apps/server/internal/agent"
 	"github.com/kaptree/kapoj/apps/server/internal/ai"
 	"github.com/kaptree/kapoj/apps/server/internal/backup"
 	"github.com/kaptree/kapoj/apps/server/internal/certificate"
@@ -82,6 +83,8 @@ func Migrate(g *gorm.DB) error {
 			&problem.SolutionPost{}, &problem.SolutionReply{}, &problem.SolutionPostLike{},
 			&contest.Contest{}, &contest.ContestProblem{}, &contest.ContestParticipant{},
 			&contest.Announcement{}, &submission.Submission{},
+			&agent.Agent{}, &agent.AgentToken{}, &agent.AgentProblemAttempt{},
+			&agent.AgentRatingHistory{},
 			&similarity.Settings{}, &similarity.Run{}, &similarity.Match{},
 			&rating.RatingHistory{}, &rating.RatingSettings{}, &rating.RatingRun{},
 			&difficulty.Settings{}, &problem.DifficultyHistory{},
@@ -138,6 +141,30 @@ func Migrate(g *gorm.DB) error {
 			ON user_ai_models (user_id)
 			WHERE is_active`).Error; err != nil {
 			return err
+		}
+		// Agent Arena guards. Partial indexes make the uniqueness rules apply
+		// only to live rows (active token/attempt, unsettled submissions), so
+		// revoked tokens, finished attempts and rating history never conflict.
+		agentIndexes := []string{
+			`CREATE UNIQUE INDEX IF NOT EXISTS uniq_agent_tokens_active
+			 ON agent_tokens (agent_id) WHERE revoked_at IS NULL`,
+			`CREATE UNIQUE INDEX IF NOT EXISTS uniq_agent_attempts_active
+			 ON agent_problem_attempts (agent_id) WHERE status = 'active'`,
+			`CREATE UNIQUE INDEX IF NOT EXISTS uniq_agent_rating_solve
+			 ON agent_rating_history (agent_id, problem_id) WHERE kind = 'solve'`,
+			`CREATE UNIQUE INDEX IF NOT EXISTS uniq_agent_rating_fail
+			 ON agent_rating_history (agent_id, problem_id)
+			 WHERE kind IN ('abandon', 'timeout', 'exhausted')`,
+			`CREATE UNIQUE INDEX IF NOT EXISTS uniq_agent_rating_submission
+			 ON agent_rating_history (submission_id) WHERE submission_id IS NOT NULL`,
+			`CREATE INDEX IF NOT EXISTS idx_submissions_agent_unsettled
+			 ON submissions (agent_id)
+			 WHERE agent_id IS NOT NULL AND agent_settled = false`,
+		}
+		for _, stmt := range agentIndexes {
+			if err := tx.Exec(stmt).Error; err != nil {
+				return err
+			}
 		}
 		if err := backfillEmailVerified(tx); err != nil {
 			return err
