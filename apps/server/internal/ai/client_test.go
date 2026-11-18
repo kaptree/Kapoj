@@ -62,6 +62,29 @@ func TestOpenAIClientSendsAuthAndParsesContent(t *testing.T) {
 	assert.Equal(t, 128, gotBody.MaxTokens)
 }
 
+func TestOpenAIClientRejectsCompletionBaseURL(t *testing.T) {
+	for _, suffix := range []string{"/chat/completions", "/v1/chat/completions", "/chat/completions/"} {
+		t.Run(suffix, func(t *testing.T) {
+			called := false
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				called = true
+				_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"x"}}]}`))
+			}))
+			defer srv.Close()
+
+			c := ai.NewOpenAIClient(5 * time.Second)
+			_, err := c.Chat(context.Background(), ai.ChatRequest{
+				BaseURL: srv.URL + suffix,
+				APIKey:  "sk-test",
+				Model:   "m",
+			})
+			require.Error(t, err)
+			assert.False(t, called, "an endpoint base URL must not be called")
+			assert.Contains(t, err.Error(), "/chat/completions")
+		})
+	}
+}
+
 func TestOpenAIClientErrors(t *testing.T) {
 	const key = "sk-super-secret-key"
 	ctx := context.Background()
