@@ -28,7 +28,7 @@ func PG(t *testing.T) *pgxpool.Pool {
 
 	mustExec(t, pool, `
 CREATE TABLE IF NOT EXISTS users (
-  id bigint PRIMARY KEY,
+  id bigserial PRIMARY KEY,
   username varchar(32) NOT NULL DEFAULT '',
   nickname varchar(64) NOT NULL DEFAULT '',
   email varchar(254) NOT NULL DEFAULT '',
