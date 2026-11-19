@@ -7,9 +7,8 @@ import { getCompanion, petCompanion } from '@/api/companion'
 import { getContest } from '@/api/contests'
 import { getActivitySummary, signInActivity } from '@/api/leaderboard'
 import { clearCompanionMuteCache } from '@/composables/useCompanionMute'
-import { pickCompanionLine } from '@/content/companion/lines.zh-CN'
+import { COMPANION_LINES } from '@/content/companion/lines.zh-CN'
 import { useCompanionStore } from '@/stores/companion'
-import { localDateKey } from '@/utils/date'
 import CompanionDock from './CompanionDock.vue'
 
 const auth = vi.hoisted(() => ({ isLoggedIn: true, user: { id: 7 } }))
@@ -48,6 +47,17 @@ function remoteState(overrides: Record<string, unknown> = {}) {
     ...overrides,
   }
 }
+
+const PET_REACTION_LINES = [
+  ...COMPANION_LINES['pet.happy'],
+  ...COMPANION_LINES['pet.shy'],
+  ...COMPANION_LINES['pet.pout'],
+  ...COMPANION_LINES['pet.surprised'],
+  ...COMPANION_LINES['pet.sleepy'],
+  ...COMPANION_LINES['pet.smug'],
+]
+
+const PET_ALREADY_LINES = COMPANION_LINES['pet.already']
 
 const routes = [
   { path: '/', name: 'home', component: { template: '<div />' } },
@@ -237,7 +247,7 @@ describe('CompanionDock', () => {
 
     expect(store.bond).toBe(121)
     expect(wrapper.get('.companion-dock__pet').attributes('disabled')).toBeUndefined()
-    expect(wrapper.text()).toContain(pickCompanionLine('pet', localDateKey()))
+    expect(PET_REACTION_LINES.some((line) => wrapper.text().includes(line))).toBe(true)
     // The refresh keeps level name and threshold in sync with the new level.
     expect(wrapper.get('.companion-bond').text()).toContain('Lv.4 搭档 121/220')
   })
@@ -255,7 +265,7 @@ describe('CompanionDock', () => {
     await wrapper.get('.companion-dock__pet').trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('今天已经摸过了')
+    expect(PET_ALREADY_LINES.some((line) => wrapper.text().includes(line))).toBe(true)
     expect(store.bond).toBe(120)
   })
 
@@ -296,12 +306,92 @@ describe('CompanionDock', () => {
 
     await wrapper.get('.companion-dock__pet').trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain(pickCompanionLine('pet', localDateKey()))
+    expect(PET_REACTION_LINES.some((line) => wrapper.text().includes(line))).toBe(true)
 
     store.setLatestEventLine('后来同步的事件')
     await wrapper.vm.$nextTick()
     expect(wrapper.text()).toContain('后来同步的事件')
   })
+
+  it('pets from the character button and shows the expression bubble', async () => {
+    const wrapper = await mountDock()
+    await flushPromises()
+
+    await wrapper.get('.companion-dock__character').trigger('click')
+    await flushPromises()
+
+    expect(petCompanion).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('.companion-q-avatar').attributes('data-expression')).not.toBe('neutral')
+    expect(wrapper.find('.companion-dock__floating-bubble').exists()).toBe(true)
+    expect(PET_REACTION_LINES.some((line) => wrapper.text().includes(line))).toBe(true)
+  })
+
+  it('guards a burst of five character clicks to one request', async () => {
+    let resolvePet!: (value: unknown) => void
+    vi.mocked(petCompanion).mockImplementation(
+      () => new Promise((resolve) => (resolvePet = resolve)) as never,
+    )
+    const wrapper = await mountDock()
+    await flushPromises()
+
+    const character = wrapper.get('.companion-dock__character')
+    for (let i = 0; i < 5; i += 1) await character.trigger('click')
+    expect(petCompanion).toHaveBeenCalledTimes(1)
+
+    resolvePet({ awarded: true, bond: 121, level: 3 })
+    await flushPromises()
+  })
+
+  it('labels the character and opens the panel from the menu button', async () => {
+    const wrapper = await mountDock()
+    await flushPromises()
+
+    expect(wrapper.get('.companion-dock__character').attributes('aria-label')).toBe(
+      `摸摸 ${useCompanionStore().name}`,
+    )
+    await wrapper.get('.companion-dock__menu').trigger('click')
+    expect(wrapper.get('.companion-dock__menu').attributes('aria-expanded')).toBe('true')
+    await wrapper.get('.companion-dock__panel').trigger('keydown', { key: 'Escape' })
+    expect(wrapper.find('.companion-dock__panel').exists()).toBe(false)
+  })
+
+  it('disables iris movement when motion is reduced', async () => {
+    const wrapper = await mountDock()
+    await flushPromises()
+    const store = useCompanionStore()
+    store.load()
+    store.setMotion('reduce')
+    await wrapper.vm.$nextTick()
+
+    const iris = wrapper.find('.companion-q-avatar__iris')
+    expect(iris.exists()).toBe(true)
+    expect(iris.attributes('style') ?? '').not.toContain('translate')
+  })
+
+  it('greets once per day after a short delay and stays quiet in quiet mode', async () => {
+    const first = await mountDock()
+    await flushPromises()
+    await new Promise((resolve) => setTimeout(resolve, 2200))
+    await flushPromises()
+    expect(first.find('.companion-dock__floating-bubble').exists()).toBe(true)
+    first.unmount()
+
+    const second = await mountDock()
+    await flushPromises()
+    await new Promise((resolve) => setTimeout(resolve, 2200))
+    await flushPromises()
+    expect(second.find('.companion-dock__floating-bubble').exists()).toBe(false)
+    second.unmount()
+
+    const store = useCompanionStore()
+    store.load()
+    store.setActivityLevel('quiet')
+    const quiet = await mountDock()
+    await flushPromises()
+    await new Promise((resolve) => setTimeout(resolve, 2200))
+    await flushPromises()
+    expect(quiet.find('.companion-dock__floating-bubble').exists()).toBe(false)
+  }, 15000)
 
   it('hides when the site disables the companion globally', async () => {
     const wrapper = await mountDock()

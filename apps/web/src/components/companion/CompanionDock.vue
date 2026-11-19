@@ -6,13 +6,17 @@ import { getCompanion, petCompanion } from '../../api/companion'
 import { getActivitySummary, signInActivity } from '../../api/leaderboard'
 import type { ActivitySummary } from '../../api/types'
 import { useCompanionMute } from '../../composables/useCompanionMute'
+import { useCompanionGaze } from '../../composables/useCompanionGaze'
+import type { CompanionLineKey } from '../../content/companion/lines.zh-CN'
 import { pickCompanionLine } from '../../content/companion/lines.zh-CN'
+import { pickPetExpression } from '../../content/companion/petExpressions'
+import type { CompanionQExpression } from '../../content/companion/types'
 import { useAuthStore } from '../../stores/auth'
 import { useCompanionStore } from '../../stores/companion'
 import { localDateKey } from '../../utils/date'
-import CompanionAvatar from './CompanionAvatar.vue'
 import CompanionBondMeter from './CompanionBondMeter.vue'
 import CompanionBubble from './CompanionBubble.vue'
+import CompanionQAvatar from './CompanionQAvatar.vue'
 
 const AUTH_ROUTES = new Set([
   'login',
@@ -21,6 +25,16 @@ const AUTH_ROUTES = new Set([
   'reset-password',
   'verify-email',
 ])
+
+const PET_LINE_KEYS: Record<CompanionQExpression, CompanionLineKey> = {
+  neutral: 'pet',
+  happy: 'pet.happy',
+  shy: 'pet.shy',
+  pout: 'pet.pout',
+  surprised: 'pet.surprised',
+  sleepy: 'pet.sleepy',
+  smug: 'pet.smug',
+}
 
 const auth = useAuthStore()
 const store = useCompanionStore()
@@ -37,8 +51,18 @@ const signInError = ref(false)
 const petting = ref(false)
 const petError = ref(false)
 const petLine = ref('')
+const greetingLine = ref('')
+const expression = ref<CompanionQExpression>('neutral')
+const blinking = ref(false)
 const toggleRef = ref<HTMLButtonElement | null>(null)
+const characterRef = ref<HTMLButtonElement | null>(null)
 const panelRef = ref<HTMLElement | null>(null)
+
+let petCooldownUntil = 0
+let expressionTimer: number | undefined
+let greetingTimer: number | undefined
+let blinkOnTimer: number | undefined
+let blinkOffTimer: number | undefined
 
 const visible = computed(
   () =>
@@ -49,13 +73,26 @@ const visible = computed(
     !AUTH_ROUTES.has(String(route.name)),
 )
 
-/** A just-petted response wins, then the latest synced event, then the greeting. */
+const reducedMotion = computed(() => {
+  if (store.motion === 'reduce') return true
+  return typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+})
+
+const gazeEnabled = computed(() => visible.value && !reducedMotion.value)
+const { lookX, lookY } = useCompanionGaze({ target: characterRef, enabled: gazeEnabled })
+
+/** A just-petted response wins, then the daily greeting, then the latest event. */
 const line = computed(
   () =>
     petLine.value ||
+    greetingLine.value ||
     store.latestEventLine ||
     pickCompanionLine(signedInToday.value === false ? 'signin' : 'greeting', localDateKey()),
 )
+
+/** Only spontaneous/pet lines float above the character; the default remains in the panel. */
+const characterLine = computed(() => petLine.value || greetingLine.value)
 
 async function loadSummary(): Promise<void> {
   if (!visible.value) return
@@ -84,30 +121,52 @@ async function handleSignIn(): Promise<void> {
   }
 }
 
+function clearExpressionTimer(): void {
+  if (expressionTimer !== undefined) {
+    window.clearTimeout(expressionTimer)
+    expressionTimer = undefined
+  }
+}
+
+function scheduleNeutral(): void {
+  clearExpressionTimer()
+  expressionTimer = window.setTimeout(() => {
+    expression.value = 'neutral'
+    expressionTimer = undefined
+  }, 3000)
+}
+
 /**
- * Pets once per day on the server. The button is guarded while in flight so a
- * double click can never submit twice; failures keep the last known bond.
+ * Pets once per interaction with an 800ms client-side guard. The server still
+ * owns the once-per-day bond award; this guard only prevents a burst of
+ * requests and expression flicker.
  */
 async function handlePet(): Promise<void> {
-  if (petting.value) return
+  if (petting.value || Date.now() < petCooldownUntil) return
 
   petting.value = true
   petError.value = false
-  petLine.value = ''
+  cancelGreeting()
+  const nextExpression = pickPetExpression(Math.random, expression.value)
+  expression.value = nextExpression
+  petCooldownUntil = Date.now() + 800
+  const seed = String(Date.now())
   try {
     const result = await petCompanion()
     store.bond = result.bond
     store.level = result.level
     petLine.value = result.awarded
-      ? pickCompanionLine('pet', localDateKey())
-      : '今天已经摸过了。……明天再来。'
+      ? pickCompanionLine(PET_LINE_KEYS[nextExpression], seed, petLine.value)
+      : pickCompanionLine('pet.already', seed)
     // The pet response omits the level name, next threshold and daily gain, so
     // an awarded pet refreshes the full state to keep the meter honest.
     if (result.awarded) void refreshProgress()
   } catch {
     petError.value = true
+    petLine.value = pickCompanionLine('pet', seed)
   } finally {
     petting.value = false
+    scheduleNeutral()
   }
 }
 
@@ -118,6 +177,57 @@ async function refreshProgress(): Promise<void> {
   } catch {
     // The pet itself succeeded; the next sync will fill in the details.
   }
+}
+
+function clearGreetingTimer(): void {
+  if (greetingTimer !== undefined) {
+    window.clearTimeout(greetingTimer)
+    greetingTimer = undefined
+  }
+}
+
+function greetingKeyFor(hour: number): CompanionLineKey {
+  if (hour >= 5 && hour < 12) return 'greet.morning'
+  if (hour >= 12 && hour < 18) return 'greet.afternoon'
+  return 'greet.night'
+}
+
+function scheduleGreeting(): void {
+  clearGreetingTimer()
+  if (!visible.value || store.activityLevel === 'quiet' || !store.shouldGreet()) return
+  greetingTimer = window.setTimeout(() => {
+    const key = greetingKeyFor(new Date().getHours())
+    greetingLine.value = pickCompanionLine(key, localDateKey())
+    store.markGreeted()
+    greetingTimer = undefined
+  }, 2000)
+}
+
+/** User interaction before the 2s greeting cancels it for today. */
+function cancelGreeting(): void {
+  clearGreetingTimer()
+  if (!greetingLine.value) return
+  greetingLine.value = ''
+}
+
+function clearBlink(): void {
+  if (blinkOnTimer !== undefined) window.clearTimeout(blinkOnTimer)
+  if (blinkOffTimer !== undefined) window.clearTimeout(blinkOffTimer)
+  blinkOnTimer = undefined
+  blinkOffTimer = undefined
+  blinking.value = false
+}
+
+function scheduleBlink(): void {
+  clearBlink()
+  if (!visible.value || reducedMotion.value) return
+  blinkOnTimer = window.setTimeout(() => {
+    blinking.value = true
+    blinkOffTimer = window.setTimeout(() => {
+      blinking.value = false
+      scheduleBlink()
+    }, 120)
+  }, 3000 + Math.random() * 4000)
 }
 
 function close(): void {
@@ -155,17 +265,29 @@ watch(
   (value) => {
     if (!value) {
       open.value = false
+      clearGreetingTimer()
+      clearBlink()
       return
     }
     void loadSummary()
+    scheduleGreeting()
+    scheduleBlink()
   },
   { immediate: true },
 )
 
 watch(
+  () => store.activityLevel,
+  () => scheduleGreeting(),
+)
+
+watch(reducedMotion, () => scheduleBlink())
+
+watch(
   () => route.fullPath,
   () => {
     open.value = false
+    cancelGreeting()
   },
 )
 
@@ -184,6 +306,9 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onWindowKeydown)
+  clearExpressionTimer()
+  clearGreetingTimer()
+  clearBlink()
 })
 </script>
 
@@ -200,18 +325,41 @@ onBeforeUnmount(() => {
         {{ signingIn ? '签到中…' : '签到' }}
       </button>
       <button
+        ref="characterRef"
+        class="companion-dock__character"
+        type="button"
+        :aria-label="`摸摸 ${store.name}`"
+        :disabled="petting"
+        @click="handlePet"
+      >
+        <CompanionQAvatar
+          :expression="expression"
+          :look-x="lookX"
+          :look-y="lookY"
+          :blinking="blinking"
+          frame="dock"
+          :reduced-motion="reducedMotion"
+        />
+      </button>
+      <button
         ref="toggleRef"
-        class="companion-dock__toggle"
+        class="companion-dock__toggle companion-dock__menu"
         type="button"
         :aria-expanded="open ? 'true' : 'false'"
         aria-controls="companion-dock-panel"
         :aria-label="open ? '收起伙伴面板' : '打开伙伴面板'"
         @click="toggle"
       >
-        <CompanionAvatar pose="chibi" size="sm" eager />
+        <span aria-hidden="true">⋯</span>
         <span class="companion-dock__dot" aria-hidden="true" />
       </button>
     </div>
+
+    <CompanionBubble
+      v-if="!open && characterLine"
+      :text="characterLine"
+      class="companion-dock__floating-bubble"
+    />
 
     <p v-if="signInError" class="companion-dock__error">……线路断了。</p>
 
@@ -225,7 +373,11 @@ onBeforeUnmount(() => {
       tabindex="-1"
     >
       <div class="companion-dock__intro">
-        <CompanionAvatar pose="bust" size="sm" eager />
+        <CompanionQAvatar
+          :expression="expression"
+          :size="64"
+          :reduced-motion="reducedMotion"
+        />
         <CompanionBubble :text="line" />
       </div>
 
@@ -301,8 +453,35 @@ onBeforeUnmount(() => {
 
 .companion-dock__anchor {
   display: flex;
-  gap: 8px;
-  align-items: center;
+  gap: 6px;
+  align-items: flex-end;
+}
+
+.companion-dock__character {
+  display: inline-flex;
+  width: 104px;
+  height: 104px;
+  padding: 0;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  filter: drop-shadow(0 8px 16px rgb(0 0 0 / 22%));
+  transition: transform 120ms ease;
+}
+
+.companion-dock__character:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.companion-dock__character:focus-visible {
+  outline: 2px solid var(--kapoj-kapo);
+  outline-offset: 2px;
+  border-radius: 18px;
+}
+
+.companion-dock__character:disabled {
+  cursor: default;
+  opacity: 0.8;
 }
 
 .companion-dock__toggle {
@@ -310,9 +489,13 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 56px;
-  height: 56px;
+  width: 30px;
+  height: 30px;
   padding: 0;
+  margin-bottom: 6px;
+  font-size: 1.05rem;
+  line-height: 1;
+  color: var(--kapoj-text-secondary);
   cursor: pointer;
   background: var(--kapoj-surface);
   border: 1px solid var(--kapoj-border-strong);
@@ -321,6 +504,7 @@ onBeforeUnmount(() => {
 }
 
 .companion-dock__toggle:hover {
+  color: var(--kapoj-kapo-text);
   border-color: var(--kapoj-kapo);
 }
 
@@ -329,18 +513,19 @@ onBeforeUnmount(() => {
   outline-offset: 2px;
 }
 
-.companion-dock__toggle :deep(.companion-avatar) {
-  width: 42px;
-}
-
 .companion-dock__dot {
   position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 8px;
-  height: 8px;
+  top: 2px;
+  right: 2px;
+  width: 6px;
+  height: 6px;
   background: var(--kapoj-kapo);
   border-radius: 50%;
+}
+
+.companion-dock__floating-bubble {
+  max-width: 220px;
+  margin: 0 4px 2px;
 }
 
 .companion-dock__panel {
@@ -364,8 +549,9 @@ onBeforeUnmount(() => {
   align-items: flex-start;
 }
 
-.companion-dock__intro :deep(.companion-avatar) {
-  width: 48px;
+.companion-dock__intro :deep(.companion-q-avatar) {
+  flex: none;
+  width: 64px;
 }
 
 .companion-dock__intro :deep(.companion-bubble) {
@@ -470,6 +656,20 @@ onBeforeUnmount(() => {
   .companion-dock {
     right: 16px;
     bottom: 16px;
+  }
+
+  .companion-dock__character {
+    width: 88px;
+    height: 88px;
+  }
+
+  .companion-dock__toggle {
+    width: 28px;
+    height: 28px;
+  }
+
+  .companion-dock__floating-bubble {
+    max-width: 190px;
   }
 }
 </style>
