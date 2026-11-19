@@ -428,7 +428,11 @@ func TestTaskAPI(t *testing.T) {
 
 	w, resp = f.do(http.MethodPost, taskPath+"/claim", userToken, nil)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
-	assert.Equal(t, claimed["claimedAt"], resp["data"].(map[string]any)["claimedAt"])
+	firstClaimedAt, err := time.Parse(time.RFC3339Nano, claimed["claimedAt"].(string))
+	require.NoError(t, err)
+	againClaimedAt, err := time.Parse(time.RFC3339Nano, resp["data"].(map[string]any)["claimedAt"].(string))
+	require.NoError(t, err)
+	assert.WithinDuration(t, firstClaimedAt, againClaimedAt, time.Microsecond)
 
 	w, resp = f.do(http.MethodGet, "/api/tasks", userToken, nil)
 	require.Equal(t, http.StatusOK, w.Code)

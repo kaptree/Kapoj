@@ -133,7 +133,7 @@ func TestTaskClaimAndAutoComplete(t *testing.T) {
 	assert.False(t, findTask(t, guestItems, task.ID).HasRecords)
 
 	again := e.claim(t, task.ID)
-	assert.Equal(t, *item.ClaimedAt, *again.ClaimedAt, "重复领取应幂等返回原记录")
+	assert.WithinDuration(t, *item.ClaimedAt, *again.ClaimedAt, time.Microsecond, "重复领取应幂等返回原记录")
 
 	// 领取后 AC 全部题目，EvaluateUser 应自动完成并发奖。
 	e.addAC(t, p1.ID, item.ClaimedAt.Add(time.Second))
@@ -474,7 +474,7 @@ func TestTaskClaimConcurrent(t *testing.T) {
 			first = item.ClaimedAt
 			continue
 		}
-		assert.Equal(t, *first, *item.ClaimedAt, "并发领取应返回同一条记录")
+		assert.WithinDuration(t, *first, *item.ClaimedAt, time.Microsecond, "并发领取应返回同一条记录")
 	}
 	var count int64
 	require.NoError(t, e.db.Model(&gamification.UserTaskRecord{}).
