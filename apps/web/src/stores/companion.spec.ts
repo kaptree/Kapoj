@@ -298,16 +298,16 @@ describe('companion store', () => {
     })
   })
 
-  it('defaults missing global config fields to Kapo, muted and user-disable allowed', () => {
+  it('defaults missing global config fields to Koj, muted and user-disable allowed', () => {
     const store = useCompanionStore()
     store.applyGlobalConfig(null)
 
-    expect(store.name).toBe('Kapo')
+    expect(store.name).toBe('Koj')
     expect(store.contestMute).toBe(true)
     expect(store.allowUserDisable).toBe(true)
 
     store.applyGlobalConfig(siteSettings({ name: '   ' }))
-    expect(store.name).toBe('Kapo')
+    expect(store.name).toBe('Koj')
   })
 
   it('reset restores defaults and clears all three storage keys', () => {

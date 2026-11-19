@@ -143,7 +143,7 @@ export const useCompanionStore = defineStore('companion', () => {
   const aiDialogueEnabled = ref(true)
   const aiReady = ref(false)
   const aiRemainingToday = ref(0)
-  const name = ref('Kapo')
+  const name = ref('Koj')
   const contestMute = ref(true)
   const allowUserDisable = ref(true)
 
@@ -282,7 +282,7 @@ export const useCompanionStore = defineStore('companion', () => {
   /** Applies the site-wide switch; a missing config is treated as enabled. */
   function applyGlobalConfig(settings: SiteCompanionSettings | null | undefined): void {
     globalEnabled.value = settings?.enabled ?? true
-    name.value = settings?.name?.trim() || 'Kapo'
+    name.value = settings?.name?.trim() || 'Koj'
     contestMute.value = settings?.contestMute ?? true
     const allowDisable = settings?.allowUserDisable ?? true
     allowUserDisable.value = allowDisable

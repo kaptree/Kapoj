@@ -4,6 +4,7 @@ import { computed, ref } from 'vue'
 import { updateCompanionSettings } from '@/api/companion'
 import type { CompanionSettingsPatch } from '@/api/types'
 import AppSurface from '@/components/ui/AppSurface.vue'
+import CompanionPersonalityPanel from './CompanionPersonalityPanel.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useCompanionStore } from '@/stores/companion'
 import type { CompanionActivityLevel } from '@/stores/companion'
@@ -19,6 +20,7 @@ const syncError = ref('')
 /** Activity and dock stay local-first; only the profile is server-owned state. */
 const LOCAL_SYNC_ERROR = '未能同步到服务器，本地偏好已保存。'
 const PROFILE_SYNC_ERROR = '公开设置同步失败，已恢复原值。'
+const PERSONALITY_SYNC_ERROR = '性格设置同步失败，已恢复原值。'
 
 const ACTIVITY_OPTIONS: ReadonlyArray<{
   value: CompanionActivityLevel
@@ -88,6 +90,29 @@ async function togglePublicProfile(): Promise<void> {
     syncError.value = PROFILE_SYNC_ERROR
   }
 }
+
+async function savePersonality(patch: {
+  personalityPrompt: string
+  aiDialogueEnabled: boolean
+}): Promise<void> {
+  if (!auth.isLoggedIn) return
+
+  const previous = {
+    personalityPrompt: store.personalityPrompt,
+    aiDialogueEnabled: store.aiDialogueEnabled,
+  }
+  store.personalityPrompt = patch.personalityPrompt
+  store.aiDialogueEnabled = patch.aiDialogueEnabled
+  syncError.value = ''
+  try {
+    const state = await updateCompanionSettings(patch)
+    store.applyRemoteState(state)
+  } catch {
+    store.personalityPrompt = previous.personalityPrompt
+    store.aiDialogueEnabled = previous.aiDialogueEnabled
+    syncError.value = PERSONALITY_SYNC_ERROR
+  }
+}
 </script>
 
 <template>
@@ -95,7 +120,7 @@ async function togglePublicProfile(): Promise<void> {
     <div class="companion-settings__head">
       <span class="companion-settings__title">{{ store.name }}</span>
       <span class="companion-settings__desc">
-        她的出现频率、动效与显示方式。登录后会同步到账号，未登录时仅本浏览器生效。
+        她的出现频率、动效、性格与 AI 台词。登录后会同步到账号，未登录时仅本浏览器生效。
       </span>
     </div>
 
@@ -194,6 +219,15 @@ async function togglePublicProfile(): Promise<void> {
           公开伙伴
         </button>
       </div>
+
+      <CompanionPersonalityPanel
+        v-if="auth.isLoggedIn"
+        :personality-prompt="store.personalityPrompt"
+        :ai-dialogue-enabled="store.aiDialogueEnabled"
+        :ai-ready="store.aiReady"
+        :remaining-today="store.aiRemainingToday"
+        @save="savePersonality"
+      />
 
       <p v-if="syncError" class="companion-settings__hint" role="status">
         {{ syncError }}

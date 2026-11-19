@@ -119,7 +119,7 @@ export const DEFAULT_FOOTER: SiteFooterView = {
 /** Mirrors DefaultCompanionSettings on the server. */
 export const DEFAULT_COMPANION: SiteCompanionSettings = {
   enabled: true,
-  name: 'Kapo',
+  name: 'Koj',
   defaultActivityLevel: 'normal',
   contestMute: true,
   allowUserDisable: true,

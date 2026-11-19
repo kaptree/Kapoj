@@ -45,7 +45,12 @@ function mountSettings(before?: (store: ReturnType<typeof useCompanionStore>) =>
   setActivePinia(pinia)
   const store = useCompanionStore()
   before?.(store)
-  return mount(CompanionSettings, { global: { plugins: [PrimeVue, pinia] } })
+  return mount(CompanionSettings, {
+    global: {
+      plugins: [PrimeVue, pinia],
+      stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } },
+    },
+  })
 }
 
 beforeEach(() => {
@@ -183,6 +188,26 @@ describe('CompanionSettings', () => {
     expect(wrapper.text()).toContain('管理员已关闭此选项')
     // The admin lock forces the companion back on.
     expect(useCompanionStore().enabled).toBe(true)
+  })
+
+  it('saves the personality prompt and AI toggle remotely', async () => {
+    auth.isLoggedIn = true
+    const wrapper = mountSettings((store) => {
+      store.aiReady = true
+      store.personalityPrompt = '旧性格'
+      store.aiDialogueEnabled = true
+    })
+
+    await wrapper.get('[data-test="personality-prompt"]').setValue('新性格')
+    await wrapper.get('[data-test="ai-dialogue-toggle"]').trigger('click')
+    await wrapper.get('[data-test="personality-save"]').trigger('click')
+    await flushPromises()
+
+    expect(updateCompanionSettings).toHaveBeenCalledWith({
+      personalityPrompt: '新性格',
+      aiDialogueEnabled: false,
+    })
+    expect(useCompanionStore().personalityPrompt).toBe('新性格')
   })
 
   it('shows the configured companion name in the settings header', () => {
