@@ -35,12 +35,15 @@
               PostgreSQL 17    Redis 7        MinIO（对象存储：头像/徽章/证书/备份）
                      ▲
                      │ Redis 队列 judge
-                  judge（Go + Asynq：拉起 Docker 沙盒编译运行用户代码）
+                  judge（Go + Asynq）──Docker API──▶ socket-proxy（白名单）
+                                                         │ /var/run/docker.sock:ro
+                                                         ▼
+                                                      dockerd
 ```
 
 - 前端构建产物由 Caddy 容器直接托管（生产）；本地开发用 Vite（5173 端口）。
 - server 启动时自动执行数据库迁移与 RBAC Seed，无需手工迁移。
-- judge 通过挂载 `/var/run/docker.sock` 在独立容器中评测，平台进程绝不直接执行用户代码。
+- judge 默认通过 `socket-proxy` 白名单代理访问 Docker（仅容器生命周期、exec 与只读诊断 API），不直接挂载 `/var/run/docker.sock`；直连回退 `KAPOJ_JUDGE_DOCKER_DIRECT=1` 仅用于故障排查。平台进程绝不直接执行用户代码。
 
 ## 目录结构
 
@@ -126,6 +129,7 @@ sudo bash deploy.sh --domain oj.example.com   # 或填域名，自动签发 Let'
 - **反向代理与 HTTPS 详解**（自备 nginx/宝塔/CDN、自有证书、真实 IP 配置、排查表）：见 [运行手册 §11.3](运行手册.md#113-反向代理与-https)。
 - **创建第一个管理员**：前端注册后授予 `super_admin`，SQL 见 [运行手册 §7.3](运行手册.md#73-给账号授予管理员)。
 - **备份**：平台内置备份/恢复（管理员后台），建议每日全量并异地保存，见 [docs/数据备份与恢复.md](docs/数据备份与恢复.md)。
+- **评测安全**：默认自动启动 `socket-proxy`，judge 不直接挂载 Docker socket；独立评测节点、rootless Docker 与直连回退见 [运行手册 §12](运行手册.md#12-评测节点安全加固) 与 [docs/安全运维.md](docs/安全运维.md)。
 
 ## 配置
 
@@ -142,6 +146,7 @@ sudo bash deploy.sh --domain oj.example.com   # 或填域名，自动签发 Let'
 | [`docs/任务清单.md`](docs/任务清单.md) · [`docs/开发日志.md`](docs/开发日志.md) | 进度与变更记录 |
 | [`docs/superpowers/specs/`](docs/superpowers/specs/) · [`docs/superpowers/plans/`](docs/superpowers/plans/) | 各功能设计文档与实施计划 |
 | [`docs/性能测试报告.md`](docs/性能测试报告.md) · [`docs/数据备份与恢复.md`](docs/数据备份与恢复.md) | 性能基线、备份恢复操作 |
+| [`docs/安全运维.md`](docs/安全运维.md) | 评测节点威胁模型、Docker socket 加固、残余风险与事件处置 |
 
 ## 测试与检查
 

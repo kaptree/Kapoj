@@ -66,14 +66,70 @@ services:
       minio:
         condition: service_healthy
 
+  # Docker API 白名单代理：judge 只能通过它访问 Docker，不能直接挂载 socket。
+  # 只加入 judge-socket 内部网络，server/web 无法访问；不映射宿主机端口。
+  socket-proxy:
+    profiles: ["app"]
+    image: tecnativa/docker-socket-proxy:lts@sha256:be1ac64f33bd82043beb504822a17ba6b71668ea1ad7cf51a9a01d27bb7ab047
+    environment:
+      # 仅评测必需的容器生命周期、exec 与只读诊断接口。
+      CONTAINERS: "1"
+      EXEC: "1"
+      POST: "1"
+      ALLOW_START: "1"
+      ALLOW_STOP: "1"
+      ALLOW_RESTARTS: "1"
+      PING: "1"
+      VERSION: "1"
+      INFO: "1"
+      # 明确关闭高风险/非必需 API，便于审计（默认也是关闭）。
+      AUTH: "0"
+      BUILD: "0"
+      COMMIT: "0"
+      CONFIGS: "0"
+      DISTRIBUTION: "0"
+      EVENTS: "0"
+      IMAGES: "0"
+      NETWORKS: "0"
+      NODES: "0"
+      PLUGINS: "0"
+      SECRETS: "0"
+      SERVICES: "0"
+      SESSION: "0"
+      SWARM: "0"
+      SYSTEM: "0"
+      TASKS: "0"
+      VOLUMES: "0"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - judge-socket
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:2375/_ping >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   judge:
     profiles: ["app"]
     build:
       context: ../apps/judge
     env_file:
       - ../.env
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      # 默认经白名单代理访问 Docker；直连回退由 docker-compose.direct.yml 覆盖。
+      DOCKER_HOST: tcp://socket-proxy:2375
+    networks:
+      - default
+      - judge-socket
     depends_on:
       postgres:
         condition: service_healthy
@@ -81,6 +137,12 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      socket-proxy:
+        condition: service_healthy
 
 volumes:
   pgdata:
+
+networks:
+  judge-socket:
+    internal: true

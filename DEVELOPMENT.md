@@ -862,7 +862,7 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 - 特判（Special Judge）：题目 type 为 `special` 时，调用 `problems.checker_path` 指向的 checker 判定输出。
 - 判题状态机：`pending → judging → 终态`，终态取值与 3.3 节「判题状态」一致。
 - 失败重试：因系统原因（非用户代码问题）导致的失败由 Asynq 重试，超过次数后标记为 `system_error`。
-- 权限隔离：评测服务需要调用 Docker，应部署在独立主机或使用 rootless Docker，不与 Web 服务共享宿主机权限。
+- 权限隔离：评测服务需要调用 Docker；默认通过 `socket-proxy` 白名单代理访问，judge 不直接挂载宿主 socket，并与 Web 服务使用独立内部网络。高安全场景可将 judge 拆到独立主机或使用 rootless Docker，详见运行手册 §12 与 `docs/安全运维.md`。
 
 **实现状态（M1-B）**
 

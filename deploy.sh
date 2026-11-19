@@ -15,6 +15,7 @@
 #   sudo KAPOJ_DOCKER_MIRRORS=off bash deploy.sh）：
 #   KAPOJ_DOCKER_MIRRORS  空格分隔的镜像加速地址；设为 off 跳过加速配置
 #   KAPOJ_COMPOSE_URL     compose v2 独立二进制下载地址（回退安装分支）
+#   KAPOJ_JUDGE_DOCKER_DIRECT=1  跳过 socket-proxy，judge 直连 Docker socket（仅故障回退）
 #
 # 详细说明见 运行手册.md §11（生产部署）。
 set -euo pipefail
@@ -25,6 +26,8 @@ cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE_COMPOSE="docker/docker-compose.yml"
 PROD_COMPOSE="docker/docker-compose.prod.yml"
 COMPOSE=(docker compose -f "$BASE_COMPOSE" -f "$PROD_COMPOSE" --profile app)
+DIRECT_COMPOSE="docker/docker-compose.direct.yml"
+SOCKET_PROXY_IMAGE="tecnativa/docker-socket-proxy:lts@sha256:be1ac64f33bd82043beb504822a17ba6b71668ea1ad7cf51a9a01d27bb7ab047"
 JUDGE_IMAGES=(gcc:14 python:3.12-slim eclipse-temurin:21-jdk golang:1.26)
 # 镜像加速清单核对日期：2026-11-15（公共加速器可用性会变化，失效时用 KAPOJ_DOCKER_MIRRORS 覆盖，
 # 或改用阿里云/腾讯云控制台分配的专属加速地址）
@@ -297,6 +300,22 @@ set_env_key() { # $1=键 $2=值 —— 首次生成 .env 时使用
 }
 
 # ---------- 构建/启动/镜像 ----------
+ensure_socket_proxy() {
+  if [ "${KAPOJ_JUDGE_DOCKER_DIRECT:-0}" = "1" ]; then
+    ok "评测服务使用直连 Docker socket（回退模式，KAPOJ_JUDGE_DOCKER_DIRECT=1）"
+    return
+  fi
+  if docker image inspect "$SOCKET_PROXY_IMAGE" >/dev/null 2>&1; then
+    ok "Docker socket 白名单代理镜像已就绪"
+    return
+  fi
+  log "拉取 Docker socket 白名单代理（$SOCKET_PROXY_IMAGE）"
+  if ! docker pull "$SOCKET_PROXY_IMAGE"; then
+    die "socket-proxy 镜像拉取失败；可检查网络，或使用 KAPOJ_JUDGE_DOCKER_DIRECT=1 临时回退直连（不推荐长期使用）"
+  fi
+  ok "Docker socket 白名单代理镜像已就绪"
+}
+
 build_up() {
   step "构建全部镜像（前端构建约 1-2 分钟，Go 构建约 1 分钟）"
   "${COMPOSE[@]}" build
@@ -394,6 +413,11 @@ print_summary() {
   if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
     printf '%s\n' " ⚠ 检测到 ufw 已启用：请放行 80/443 —— sudo ufw allow 80,443/tcp"
   fi
+  if [ "${KAPOJ_JUDGE_DOCKER_DIRECT:-0}" = "1" ]; then
+    printf '%s\n' " Docker 访问   : 直连 socket（KAPOJ_JUDGE_DOCKER_DIRECT=1 回退模式，建议尽快切回 socket-proxy）"
+  else
+    printf '%s\n' " Docker 访问   : socket-proxy 白名单代理（judge 独立网络）"
+  fi
   printf '%s\n' " 日常运维      : ./deploy.sh status | logs | stop | restart | update"
   printf '%s\n' "${C_BOLD}========================================================${C_OFF}\n"
 }
@@ -408,6 +432,7 @@ cmd_install() {
   ensure_mirrors
   gen_env
   [ -f "$PROD_COMPOSE" ] || die "缺少 $PROD_COMPOSE，请在仓库根目录运行本脚本。"
+  ensure_socket_proxy
   build_up
   pull_judge_images
   wait_health
@@ -424,6 +449,7 @@ cmd_update() {
     fi
   fi
   load_entry_settings
+  ensure_socket_proxy
   build_up
   docker image prune -f >/dev/null 2>&1 || true
   wait_health
@@ -479,6 +505,10 @@ main() {
     esac
   done
   [ "${#args[@]}" -eq 0 ] || die "未知参数：${args[*]}（--help 查看用法）"
+  if [ "${KAPOJ_JUDGE_DOCKER_DIRECT:-0}" = "1" ]; then
+    [ -f "$DIRECT_COMPOSE" ] || die "缺少 $DIRECT_COMPOSE；无法启用直连回退模式。"
+    COMPOSE+=(-f "$DIRECT_COMPOSE")
+  fi
   case "$cmd" in
     install) need_root install; cmd_install ;;
     update)  cmd_update ;;

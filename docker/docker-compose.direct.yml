@@ -1,0 +1,20 @@
+services:
+  # 直连回退模式：仅在 socket-proxy 不可用或排障时使用。
+  # 用法：sudo KAPOJ_JUDGE_DOCKER_DIRECT=1 bash deploy.sh
+  # 或手动叠加：docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.direct.yml ...
+  socket-proxy:
+    profiles: !override ["direct-disabled"]
+
+  judge:
+    depends_on: !override
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      KAPOJ_JUDGE_DOCKER_DIRECT: "1"
+      DOCKER_HOST: unix:///var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
