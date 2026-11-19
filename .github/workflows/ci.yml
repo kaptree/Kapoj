@@ -51,7 +51,6 @@ jobs:
       POSTGRES_USER: kapoj
       POSTGRES_PASSWORD: kapoj_ci_postgres
       POSTGRES_DB: kapoj
-      KAPOJ_REDIS_ADDR: 127.0.0.1:6380
       KAPOJ_TEST_DATABASE_URL: postgres://kapoj:kapoj_ci_postgres@127.0.0.1:5433/kapoj_test?sslmode=disable
     steps:
       - uses: actions/checkout@v7
@@ -126,7 +125,6 @@ jobs:
       POSTGRES_USER: kapoj
       POSTGRES_PASSWORD: kapoj_ci_postgres
       POSTGRES_DB: kapoj
-      KAPOJ_REDIS_ADDR: 127.0.0.1:6380
       KAPOJ_TEST_DATABASE_URL: postgres://kapoj:kapoj_ci_postgres@127.0.0.1:5433/kapoj_test?sslmode=disable
     steps:
       - uses: actions/checkout@v7
