@@ -6,7 +6,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/kaptree/kapoj/apps/server/internal/db"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
@@ -25,7 +24,7 @@ func TestMigrateBackfillsEmailVerifiedOnce(t *testing.T) {
 	require.NoError(t, g.Create(legacy).Error)
 
 	// 模拟首次升级：标记不存在，Migrate 应回填。
-	require.NoError(t, db.Migrate(g))
+	testutil.Migrate(t, g)
 	var got user.User
 	require.NoError(t, g.First(&got, legacy.ID).Error)
 	require.NotNil(t, got.EmailVerifiedAt)
@@ -40,7 +39,7 @@ func TestMigrateBackfillsEmailVerifiedOnce(t *testing.T) {
 		Status:       user.StatusActive,
 	}
 	require.NoError(t, g.Create(fresh).Error)
-	require.NoError(t, db.Migrate(g))
+	testutil.Migrate(t, g)
 	got = user.User{}
 	require.NoError(t, g.First(&got, fresh.ID).Error)
 	assert.Nil(t, got.EmailVerifiedAt)

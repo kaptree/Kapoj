@@ -110,6 +110,9 @@ func TestAuditAdminActionWritesOnSuccess(t *testing.T) {
 		t.Cleanup(func() { slog.SetDefault(previous) })
 
 		require.NoError(t, g.Migrator().DropTable(&rbac.AdminAuditLog{}))
+		t.Cleanup(func() {
+			require.NoError(t, g.AutoMigrate(&rbac.AdminAuditLog{}))
+		})
 
 		w := postReq(r, "/problems/789", authorizedHeader)
 		require.Equal(t, http.StatusOK, w.Code)

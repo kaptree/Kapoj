@@ -10,7 +10,16 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/db"
 )
 
+// Migrate applies all versioned migrations to the test database.
+func Migrate(t *testing.T, g *gorm.DB) {
+	t.Helper()
+	if err := db.Migrate(g); err != nil {
+		t.Fatalf("migrate test database: %v", err)
+	}
+}
+
 // PG connects to KAPOJ_TEST_DATABASE_URL, migrates it and empties all tables.
+// schema_migrations is preserved so each test run starts at the latest version.
 // The test is skipped when the variable is not set.
 func PG(t *testing.T) *gorm.DB {
 	t.Helper()
@@ -22,11 +31,11 @@ func PG(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open test database: %v", err)
 	}
-	if err := db.Migrate(g); err != nil {
-		t.Fatalf("migrate test database: %v", err)
-	}
+	Migrate(t, g)
 	var tables []string
-	if err := g.Raw("SELECT quote_ident(tablename) FROM pg_tables WHERE schemaname = 'public'").Scan(&tables).Error; err != nil {
+	if err := g.Raw(`
+		SELECT quote_ident(tablename) FROM pg_tables
+		WHERE schemaname = 'public' AND tablename <> 'schema_migrations'`).Scan(&tables).Error; err != nil {
 		t.Fatalf("list tables: %v", err)
 	}
 	if len(tables) > 0 {

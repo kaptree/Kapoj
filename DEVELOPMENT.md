@@ -177,6 +177,8 @@ kapoj/
 - 数据库连接串为空时由 `POSTGRES_*` + `KAPOJ_DB_HOST/PORT` 构造，`KAPOJ_DATABASE_URL` 可显式覆盖；MinIO 访问密钥为空时回退 `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`。
 - `KAPOJ_AI_ENCRYPTION_KEY`/`KAPOJ_MAIL_ENCRYPTION_KEY` 在 `.env` 中配置；旧 `KAPOJ_AI_KEY_FILE`/`KAPOJ_MAIL_KEY_FILE` 仅作为直接运行时的兼容回退（Compose 不再挂载密钥目录）。
 - 后台可编辑的站点品牌、SMTP 服务器、AI Provider 等仍保存在数据库，不属于 `.env`。
+- **数据库迁移**：生产使用 `apps/server/migrations/` 的 golang-migrate 版本化 SQL（`schema_migrations` 版本表，SQL 通过 `go:embed` 嵌入 server 二进制）。启动顺序为 migrate up → 数据回填 → RBAC/AI/证书 Seed；迁移失败非 0 退出。旧库无 `schema_migrations` 但四张核心表齐全时自动 stamp baseline 1，部分核心表则拒绝启动。
+- **开发 AutoMigrate**：生产默认关闭 GORM AutoMigrate；仅开发可设置 `KAPOJ_DEV_AUTOMIGRATE=1`。AutoMigrate 与版本化迁移不可同时作为新表/新列来源，新增生产 DDL 必须写入 migrations。
 - 修改 `.env` 中的 AI 加密密钥会使既有 `user_ai_configs`/`user_ai_models`/`ai_platform_models` 密文无法解密；必须先备份并按维护流程处理（后台自动重加密仅在兼容密钥文件模式可用）。修改邮件加密密钥后需在后台重新填写 SMTP 密码。
 
 ---
@@ -206,7 +208,7 @@ users (
 -- 实现差异（M5-8）：users 增加 avatar_key（storage 键，仅内部上传）与 avatar_content_type（MIME）；
 -- avatarUploaded 为计算字段（avatar_key != ''），不单独存列；avatar_url 仍是所有展示位置读取的有效 URL
 -- （外链或内部接口 /api/users/<id>/avatar?v=<unix>）。
--- 实现差异（M4-A）：rating_history 已由 db.Migrate 创建，唯一索引名为 uniq_rating_history_user_contest，
+-- 实现差异（M4-A）：rating_history 已由版本化迁移创建，唯一索引名为 uniq_rating_history_user_contest，
 -- 使用部分唯一索引 (user_id, contest_id) WHERE contest_id IS NOT NULL；contest_id 可空，kind 本阶段只写 contest。
 -- 实现差异（M4-4）：rating_history 增加 period_key（默认 ''，比赛结算恒为空串），新增部分唯一索引
 -- uniq_rating_history_user_period：(user_id, kind, period_key) WHERE period_key <> ''；
@@ -356,8 +358,9 @@ submissions (
 -- submit_count 在创建提交的同一事务中 +1；accept_count 只在 judging -> accepted 时 +1，
 --   且 Finish 带 status='judging' 条件，重复任务不会重复计数；
 -- 提交代码上限 64 KiB；创建提交按用户限流（默认冷却 3 秒）。
--- 实现差异（CPU 计时）：cpu_time_ms 由 GORM AutoMigrate 自动添加（default 0），历史提交为 0；
---   新提交由 judge 写入；TLE 以 CPU 时间为准，time_used_ms 保留墙钟用于展示与诊断。
+-- 实现差异（CPU 计时）：cpu_time_ms 由版本化迁移 0002_add_submission_cpu_time_ms
+--   添加（bigint default 0），历史提交为 0；新提交由 judge 写入；
+--   TLE 以 CPU 时间为准，time_used_ms 保留墙钟用于展示与诊断。
 -- Agent 扩展（2026-11-18）：agent_id / agent_attempt_id 可空，agent_settled 默认 false；
 --   非空 agent_id 表示 Agent 提交，人类列表/统计/题目计数/难度重算一律排除，详见 §3.11、§6.10。
 -- 实现差异（M2-B）：
@@ -1734,7 +1737,7 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 
 **实现状态（M5-7 ✅，2026-11-08）与 API**
 
-- **数据模型**：`certificate_types`（name 唯一、`is_active`、`sort_order`）与 `certificates`（`certificate_type_name` 快照、`status`、`reject_reason`、`verify_code`、`image_key`/`image_content_type`、`reviewed_by`），字段与索引见 3.7；`db.Migrate` 建表，首次启动空表 seed 7 个类型。
+- **数据模型**：`certificate_types`（name 唯一、`is_active`、`sort_order`）与 `certificates`（`certificate_type_name` 快照、`status`、`reject_reason`、`verify_code`、`image_key`/`image_content_type`、`reviewed_by`），字段与索引见 3.7；由 `apps/server/migrations/` 建表，首次启动空表 seed 7 个类型。
 - **权限**：新增第 37 个权限码 `certificate.manage`（分组「证书」，默认仅 `super_admin`，super 绕过），用户提交/我的证书/图片只需登录；公开类型列表/公开核验无需登录。
 - **图片**：≤5 MiB，magic bytes 校验仅 PNG/JPEG/WebP（`http.DetectContentType`），本地 `storage.Storage` 保存 `certificates/<id>`；`GET /api/certificates/:id/image` 仅本人或 `certificate.manage`（他人/不存在统一 404，未登录 401），不暴露 storage key。
 - **提交**：`POST /api/certificates`（multipart `typeId`/`level`/`file`）→ pending；类型不存在/停用、level 空/超 50、空图/超 5 MiB/非图片均 40001；上传或回填失败删除行与对象。
@@ -1829,7 +1832,7 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 > 目标：管理后台在题目编辑中提交标程，AI 生成纯 Python 3 造数据脚本；judge 在 Docker 沙盒运行脚本生成输入、运行标程生成输出；管理员预览确认后写入题目测试数据。设计见 [`docs/superpowers/specs/2026-11-08-m5-4-ai-testdata-design.md`](superpowers/specs/2026-11-08-m5-4-ai-testdata-design.md)。
 
 - **脚本契约（纯 Python 3 标准库，替代 cyaron 旧设想）**：AI 生成的造数据脚本必须是**纯 Python 3 标准库**脚本——沙盒镜像 `python:3.12-slim` 不含 cyaron/第三方包，且沙盒无网络无法安装，故早期「用 cyaron 生成」设想改为纯标准库。脚本从 **stdin 读取一个 1-based 整数 seed**（`1`、`2`…，即组号），建议用 `random.Random(seed)` 生成确定性随机数据，向 **stdout 输出一组输入**；不写文件、不联网、不读取环境变量；输出 ≤ 16 MiB。
-- **数据模型**：`testcase_generations`（`id/problem_id/user_id/status/language/standard_code/generator_code/testcase_count/time_limit_ms/memory_limit_mb/error_message/created_at/updated_at`，索引 `(problem_id, created_at)`）与 `testcase_generation_cases`（`id/generation_id/sort_order/input_file/output_file/input_size/output_size`，唯一 `(generation_id, sort_order)`）。表由服务器 `db.Migrate` 创建，judge 只读写。
+- **数据模型**：`testcase_generations`（`id/problem_id/user_id/status/language/standard_code/generator_code/testcase_count/time_limit_ms/memory_limit_mb/error_message/created_at/updated_at`，索引 `(problem_id, created_at)`）与 `testcase_generation_cases`（`id/generation_id/sort_order/input_file/output_file/input_size/output_size`，唯一 `(generation_id, sort_order)`）。表由 server 版本化迁移创建，judge 只读写。
 - **状态机**：`pending → running → ready / failed`；`ready` 可确认（`confirmed`）或丢弃（`discarded`）；`failed` 可丢弃；`confirmed` 不可丢弃；`pending/running` 不能丢弃。judge 任务 `MaxRetry(0)`、超时 30 分钟，失败由管理员重新发起，不自动重试。
 - **judge 任务**：`judge:testcase-generation`（队列 `judge`，payload `{"generationId":<id>}`）。judge `Claim` 仅认领 `pending` 并置 `running`；先编译生成器（python3 `py_compile`）、再编译标程（按 language），随后对 `i=1..count` 用 seed 运行生成器得输入、运行标程得输出；任一失败（编译错误/超时/OOM/非 0/输出截断/空输出）→ `failed` + 中文/编译错误摘要（≤8 KiB），并清理半套 cases/文件。
 - **文件 key**：`problems/<problemID>/generated/<generationID>/<n>.in|.out`（n 从 1 开始，1-based），写入共享 `KAPOJ_STORAGE_DIR`；确认后复用相同 key 写入 `problem_testcases`，文件继续被测试点引用。
@@ -1951,7 +1954,7 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 - **当前模型解析**：`ai.Service.chatRequest` 先读 active `user_ai_models`，解密 token 并返回 `ChatRequest{Protocol,BaseURL,APIKey,Model,MaxTokens:4096}`；没有 active 行时回退旧 `user_ai_configs` + `ai_providers`（视为 openai）；仍无配置返回 40001「尚未配置 AI 模型」。协议未知/base URL 非法/空 token 均 40001；密钥解密失败脱敏为 50200。
 - **旧接口兼容**：`GET /api/ai/configs` 返回当前 active 模型的 provider（能按 base URL 匹配内置目录时）、模型名、脱敏 token、`configured`/`keyConfigured`；`POST /api/ai/configs` 有 active 行时更新该行为 openai + provider 目录地址，无 active 行时创建 `provider / model` 模型并设为当前。旧客户端无需改动；新设置页使用 `/ai/models`，提交页工具栏仍用旧 GET 判断是否已配置。
 - **协议与 Anthropic**：`ChatRequest.Protocol` 为空按 openai；`ProtocolClient` 分发到 `OpenAIClient`/`AnthropicClient`，未知协议在发请求前返回 40001。Anthropic 使用 `x-api-key`、`anthropic-version: 2023-06-01`、`/v1/messages`；system 消息抽出拼接；`max_tokens` 必填（未设置默认 4096）；响应拼接 text block；非 2xx/空 content/非法 JSON/超时统一脱敏为上游失败。
-- **平台模型**：`ai_platform_models.protocol` 随 AutoMigrate 加列（默认 openai），管理 API/页面可创建、编辑、列表展示与测试 Anthropic 模型；`resolvePlatformChat` 与题目难度初评使用同一协议客户端。平台模型名称仍全局唯一，当前模型仍只能选择一个。
+- **平台模型**：`ai_platform_models.protocol` 已包含在版本化 baseline（默认 openai），管理 API/页面可创建、编辑、列表展示与测试 Anthropic 模型；`resolvePlatformChat` 与题目难度初评使用同一协议客户端。平台模型名称仍全局唯一，当前模型仍只能选择一个。
 - **密钥与备份**：账号备份表清单包含 `user_ai_models`；平台备份自动覆盖。兼容密钥文件模式下轮换重加密 `user_ai_configs`、`user_ai_models`、`ai_platform_models`，重置清空三类密文（平台模型保留元数据）。统一 `.env` 密钥模式仍无自动重加密，修改前必须备份。
 - **前端**：`/settings/ai` 改为“已保存模型”列表 + 新增/编辑 Dialog（名称、协议、地址、模型名、token、可选设为当前），支持预填、设为当前、测试、删除保护与空状态；`/admin/ai` 平台模型弹窗增加协议 Select、列表显示协议 Tag、测试按协议调用。
 - **已知取舍**：用户模型删除当前模型直接拒绝而不是自动切换；同名模型不允许（便于区分多个 token）；测试失败仍返回 `200 + ok=false`；协议/地址修改后旧的 `last_test_*` 保留（换 token 才清空）；历史 OpenAI 地址若已带 `/chat/completions` 不在迁移中改写，编辑时需一次性修正。

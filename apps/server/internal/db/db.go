@@ -1,12 +1,19 @@
 package db
 
 import (
+	"database/sql"
+	"errors"
+	"fmt"
 	"io"
 	"log"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/golang-migrate/migrate/v4"
+	migratepostgres "github.com/golang-migrate/migrate/v4/database/postgres"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -32,6 +39,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/submission"
 	"github.com/kaptree/kapoj/apps/server/internal/testcasegen"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
+	"github.com/kaptree/kapoj/apps/server/migrations"
 )
 
 func Open(dsn string) (*gorm.DB, error) {
@@ -70,10 +78,128 @@ type Migration struct {
 // TableName keeps the migration ledger table name stable.
 func (Migration) TableName() string { return "db_migrations" }
 
-// Migrate creates or updates the schema for all models and runs one-off data
-// migrations under a PostgreSQL advisory lock. The lock serializes concurrent
-// app starts; the marker makes the backfill resumable after a crash.
+// Migrate applies versioned schema migrations and runs one-off data backfills.
+// The dev AutoMigrate path is intentionally off by default.
 func Migrate(g *gorm.DB) error {
+	return MigrateWithOptions(g, MigrateOptions{})
+}
+
+type MigrateOptions struct {
+	// DevAutoMigrate enables the legacy GORM AutoMigrate path. It must never
+	// run together with a versioned migration that writes the same tables.
+	DevAutoMigrate bool
+}
+
+// MigrateWithOptions applies migrations first, then (in development) the
+// legacy AutoMigrate path, repairs legacy indexes, and finally runs data
+// backfills. Production must leave DevAutoMigrate false so schema changes have
+// a single source of truth.
+func MigrateWithOptions(g *gorm.DB, opts MigrateOptions) error {
+	if err := applyMigrations(g); err != nil {
+		return fmt.Errorf("apply versioned migrations: %w", err)
+	}
+	if opts.DevAutoMigrate {
+		if err := devAutoMigrate(g); err != nil {
+			return fmt.Errorf("dev AutoMigrate: %w", err)
+		}
+	}
+	if err := repairLegacyIndexes(g); err != nil {
+		return fmt.Errorf("repair legacy indexes: %w", err)
+	}
+	if err := runDataBackfills(g); err != nil {
+		return fmt.Errorf("run data backfills: %w", err)
+	}
+	return nil
+}
+
+// applyMigrations uses golang-migrate with the embedded apps/server/migrations
+// files. Existing databases created by the pre-versioned AutoMigrate path are
+// adopted at version 1 after verifying the core tables, so production upgrades
+// do not try to recreate the baseline.
+func applyMigrations(g *gorm.DB) error {
+	var hasVersionTable bool
+	if err := g.Raw("SELECT to_regclass('public.schema_migrations') IS NOT NULL").Scan(&hasVersionTable).Error; err != nil {
+		return fmt.Errorf("check schema_migrations: %w", err)
+	}
+	baselineExisting := false
+	if !hasVersionTable {
+		var coreTables int
+		if err := g.Raw(`
+			SELECT count(*) FROM pg_tables
+			WHERE schemaname = 'public'
+			  AND tablename IN ('users', 'submissions', 'problems', 'roles')`).Scan(&coreTables).Error; err != nil {
+			return fmt.Errorf("inspect existing schema: %w", err)
+		}
+		switch coreTables {
+		case 0:
+			// Empty database: run the baseline and subsequent migrations.
+		case 4:
+			baselineExisting = true
+		default:
+			return fmt.Errorf("inconsistent existing database: found %d/4 core tables; refusing to stamp baseline", coreTables)
+		}
+	}
+
+	dsn := ""
+	if d, ok := g.Config.Dialector.(*postgres.Dialector); ok {
+		dsn = d.DSN
+	}
+	if dsn == "" {
+		return errors.New("cannot resolve database DSN for migrations")
+	}
+	sqlDB, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return fmt.Errorf("open migration database: %w", err)
+	}
+	defer func() { _ = sqlDB.Close() }()
+	driver, err := migratepostgres.WithInstance(sqlDB, &migratepostgres.Config{})
+	if err != nil {
+		return fmt.Errorf("open migrate postgres driver: %w", err)
+	}
+	source, err := iofs.New(migrations.FS, ".")
+	if err != nil {
+		return fmt.Errorf("open embedded migrations: %w", err)
+	}
+	m, err := migrate.NewWithInstance("iofs", source, "postgres", driver)
+	if err != nil {
+		return fmt.Errorf("create migrator: %w", err)
+	}
+	defer func() { _, _ = m.Close() }()
+	if baselineExisting {
+		if err := m.Force(1); err != nil {
+			return fmt.Errorf("stamp existing baseline at version 1: %w", err)
+		}
+	}
+	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		return err
+	}
+	return nil
+}
+
+func runDataBackfills(g *gorm.DB) error {
+	return g.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", migrationAdvisoryLock).Error; err != nil {
+			return err
+		}
+		if err := backfillEmailVerified(tx); err != nil {
+			return err
+		}
+		if err := backfillSubmissionFields(tx); err != nil {
+			return err
+		}
+		if err := backfillLearningPathCounts(tx); err != nil {
+			return err
+		}
+		if err := backfillProblemDifficulty(tx); err != nil {
+			return err
+		}
+		return backfillUserAIModels(tx)
+	})
+}
+
+// devAutoMigrate is the legacy development-only schema path. Production must
+// use the versioned migrations instead; do not add new production DDL here.
+func devAutoMigrate(g *gorm.DB) error {
 	return g.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", migrationAdvisoryLock).Error; err != nil {
 			return err
@@ -167,41 +293,28 @@ func Migrate(g *gorm.DB) error {
 				return err
 			}
 		}
-		// AutoMigrate never alters an existing same-named index. Earlier builds
-		// of agent_problem_attempts created this index on (agent_id) only, so
-		// repair it once: drop the wrong definition, then recreate the composite
-		// index. Healthy databases skip the drop.
-		var attemptStatusIndexDef string
-		if err := tx.Raw(`
-			SELECT COALESCE(indexdef, '') FROM pg_indexes
-			WHERE schemaname = current_schema()
-			  AND indexname = 'idx_agent_problem_attempts_agent_status'`).Scan(&attemptStatusIndexDef).Error; err != nil {
-			return err
-		}
-		if attemptStatusIndexDef != "" && !strings.Contains(attemptStatusIndexDef, "(agent_id, status)") {
-			if err := tx.Exec("DROP INDEX IF EXISTS idx_agent_problem_attempts_agent_status").Error; err != nil {
-				return err
-			}
-		}
-		if err := tx.Exec(`
-			CREATE INDEX IF NOT EXISTS idx_agent_problem_attempts_agent_status
-			ON agent_problem_attempts (agent_id, status)`).Error; err != nil {
-			return err
-		}
-		if err := backfillEmailVerified(tx); err != nil {
-			return err
-		}
-		if err := backfillSubmissionFields(tx); err != nil {
-			return err
-		}
-		if err := backfillLearningPathCounts(tx); err != nil {
-			return err
-		}
-		if err := backfillProblemDifficulty(tx); err != nil {
-			return err
-		}
-		return backfillUserAIModels(tx)
+		return nil
 	})
+}
+
+// repairLegacyIndexes fixes same-named indexes created by pre-versioned builds.
+// It is not a schema creator and is safe to run after every migration.
+func repairLegacyIndexes(g *gorm.DB) error {
+	var attemptStatusIndexDef string
+	if err := g.Raw(`
+		SELECT COALESCE(indexdef, '') FROM pg_indexes
+		WHERE schemaname = current_schema()
+		  AND indexname = 'idx_agent_problem_attempts_agent_status'`).Scan(&attemptStatusIndexDef).Error; err != nil {
+		return err
+	}
+	if attemptStatusIndexDef != "" && !strings.Contains(attemptStatusIndexDef, "(agent_id, status)") {
+		if err := g.Exec("DROP INDEX IF EXISTS idx_agent_problem_attempts_agent_status").Error; err != nil {
+			return err
+		}
+	}
+	return g.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_agent_problem_attempts_agent_status
+		ON agent_problem_attempts (agent_id, status)`).Error
 }
 
 // backfillUserAIModels copies each user's single legacy user_ai_configs row into

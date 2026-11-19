@@ -42,13 +42,13 @@
 ```
 
 - 前端构建产物由 Caddy 容器直接托管（生产）；本地开发用 Vite（5173 端口）。
-- server 启动时自动执行数据库迁移与 RBAC Seed，无需手工迁移。
+- server 启动时先执行 `apps/server/migrations/` 中的版本化迁移，再运行 RBAC Seed；生产默认不运行 GORM AutoMigrate（开发可用 `KAPOJ_DEV_AUTOMIGRATE=1` 显式开启）。
 - judge 默认通过 `socket-proxy` 白名单代理访问 Docker（仅容器生命周期、exec 与只读诊断 API），不直接挂载 `/var/run/docker.sock`；直连回退 `KAPOJ_JUDGE_DOCKER_DIRECT=1` 仅用于故障排查。平台进程绝不直接执行用户代码。
 
 ## 目录结构
 
 ```
-apps/server                  Go 后端（Gin + GORM + Asynq worker）
+apps/server                  Go 后端（Gin + GORM + Asynq worker；migrations/ 为版本化 SQL）
 apps/judge                   独立评测进程（Docker 沙盒）
 apps/web                     Vue 3 前端（PrimeVue 4 + md-editor-v3 + CodeMirror 6）
 packages/api                 OpenAPI 规范，前端类型由此生成
@@ -81,7 +81,7 @@ docs                         任务清单、开发日志、规格设计、实施
    chmod 600 .env
    ```
 
-3. 启动后端（二选一；启动时自动迁移数据库）。容器方式（推荐，自动读取根目录 `.env`）：
+3. 启动后端（二选一；启动时自动执行版本化数据库迁移）。容器方式（推荐，自动读取根目录 `.env`）：
 
    ```bash
    docker compose -f docker/docker-compose.yml --profile app up -d --build

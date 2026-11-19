@@ -75,6 +75,9 @@ func TestAuditFailureRollsBackRoleMutation(t *testing.T) {
 
 	// 删除审计表，使事务内审计写入失败。
 	require.NoError(t, g.Migrator().DropTable(&rbac.AdminAuditLog{}))
+	t.Cleanup(func() {
+		require.NoError(t, g.AutoMigrate(&rbac.AdminAuditLog{}))
+	})
 
 	var beforePermissions int64
 	require.NoError(t, g.Model(&rbac.RolePermission{}).Count(&beforePermissions).Error)

@@ -6,7 +6,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/kaptree/kapoj/apps/server/internal/db"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/submission"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
@@ -28,7 +27,7 @@ func TestMigrateBackfillsSubmissionFieldsOnce(t *testing.T) {
 	require.NoError(t, g.Create(legacy).Error)
 
 	// 模拟首次升级：标记不存在，Migrate 应回填代码长度与 AC 计数标记。
-	require.NoError(t, db.Migrate(g))
+	testutil.Migrate(t, g)
 	var got submission.Submission
 	require.NoError(t, g.First(&got, legacy.ID).Error)
 	assert.Equal(t, len("你好"), got.CodeLength, "code_length uses UTF-8 bytes")
@@ -40,7 +39,7 @@ func TestMigrateBackfillsSubmissionFieldsOnce(t *testing.T) {
 		Code: "ab", Status: submission.StatusAccepted,
 	}
 	require.NoError(t, g.Create(fresh).Error)
-	require.NoError(t, db.Migrate(g))
+	testutil.Migrate(t, g)
 	got = submission.Submission{}
 	require.NoError(t, g.First(&got, fresh.ID).Error)
 	assert.Zero(t, got.CodeLength)

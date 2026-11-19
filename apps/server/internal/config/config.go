@@ -45,6 +45,7 @@ type Config struct {
 	MailKeyFile              string
 	MailTimeout              time.Duration
 	TrustedProxies           []string
+	DevAutoMigrate           bool
 
 	BackupDir                  string
 	BackupMaxUploadBytes       int64
@@ -149,6 +150,7 @@ func Load() (*Config, error) {
 	v.SetDefault("mail_key_file", "data/mail.key")
 	v.SetDefault("mail_timeout", "20s")
 	v.SetDefault("trusted_proxies", "")
+	v.SetDefault("dev_automigrate", false)
 	v.SetDefault("backup_dir", "")
 	v.SetDefault("backup_max_upload_bytes", int64(2<<30))
 	v.SetDefault("backup_max_uncompressed_bytes", int64(20<<30))
@@ -194,6 +196,7 @@ func Load() (*Config, error) {
 		MailKeyFile:                v.GetString("mail_key_file"),
 		MailTimeout:                v.GetDuration("mail_timeout"),
 		TrustedProxies:             trustedProxies,
+		DevAutoMigrate:             v.GetBool("dev_automigrate"),
 		BackupDir:                  v.GetString("backup_dir"),
 		BackupMaxUploadBytes:       v.GetInt64("backup_max_upload_bytes"),
 		BackupMaxUncompressedBytes: v.GetInt64("backup_max_uncompressed_bytes"),

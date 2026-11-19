@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -108,8 +109,8 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	if err := db.Migrate(g); err != nil {
-		return err
+	if err := db.MigrateWithOptions(g, db.MigrateOptions{DevAutoMigrate: cfg.DevAutoMigrate}); err != nil {
+		return fmt.Errorf("database migration failed: %w", err)
 	}
 	if err := rbac.Seed(context.Background(), g); err != nil {
 		return err
