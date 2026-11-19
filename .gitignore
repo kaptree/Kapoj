@@ -2,10 +2,21 @@ node_modules/
 dist/
 coverage/
 *.log
+
+# 环境变量与密钥文件
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+
 .DS_Store
 .superpowers/
 apps/server/bin/
+# 本地运行数据（上传文件、备份、AI 密钥等）
 apps/server/data/*
 !apps/server/data/.gitkeep
 minio-data/*

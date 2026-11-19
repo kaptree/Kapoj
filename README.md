@@ -1,5 +1,7 @@
 # kapOJ
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 打造最有趣味的 Online Judge 平台：题目、比赛、评测之外，还有金币、徽章、称号、Rating 天梯、学习路线、AI 辅助与证书认证。规格见 [`DEVELOPMENT.md`](DEVELOPMENT.md)，操作指南见 [`运行手册.md`](运行手册.md)，进度见 [`docs/任务清单.md`](docs/任务清单.md) 与 [`docs/开发日志.md`](docs/开发日志.md)。
 
 当前进度：**M0–M9 全部里程碑已完成**（含 RBAC 权限体系、AI 辅助全套、用户 AI 多模型与 Anthropic 协议、Agent 擂台 V1、HydroOJ 题包导入、数据备份/恢复、邮箱验证与付费学习路线）。
@@ -180,3 +182,5 @@ corepack pnpm test:e2e     # 管理后台真实浏览器验收（Playwright + �
 ```bash
 corepack pnpm gen:api
 ```
+
+本项目基于 [MIT 许可证](LICENSE) 开源。Copyright © 2026 kaptree。
