@@ -139,6 +139,8 @@ export const useCompanionStore = defineStore('companion', () => {
   const latestEventLine = ref('')
   const globalEnabled = ref(true)
   const publicProfile = ref(false)
+  const equippedSkin = ref('')
+  const unlockedSkins = ref<string[]>([])
   const personalityPrompt = ref('')
   const aiDialogueEnabled = ref(true)
   const aiReady = ref(false)
@@ -254,6 +256,14 @@ export const useCompanionStore = defineStore('companion', () => {
     if (typeof state.publicProfile === 'boolean') {
       publicProfile.value = state.publicProfile
     }
+    if (typeof state.equippedSkin === 'string') {
+      equippedSkin.value = state.equippedSkin
+    }
+    if (Array.isArray(state.unlockedSkins)) {
+      unlockedSkins.value = state.unlockedSkins.filter(
+        (skin): skin is string => typeof skin === 'string',
+      )
+    }
     if (typeof state.personalityPrompt === 'string') {
       personalityPrompt.value = state.personalityPrompt
     }
@@ -321,6 +331,8 @@ export const useCompanionStore = defineStore('companion', () => {
     latestEventLine,
     globalEnabled,
     publicProfile,
+    equippedSkin,
+    unlockedSkins,
     personalityPrompt,
     aiDialogueEnabled,
     aiReady,

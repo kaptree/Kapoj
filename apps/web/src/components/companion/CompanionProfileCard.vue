@@ -4,7 +4,7 @@ import { RouterLink } from 'vue-router'
 
 import type { UserCompanion } from '@/api/types'
 import { pickCompanionLine, type CompanionLineKey } from '@/content/companion/lines.zh-CN'
-import CompanionAvatar from './CompanionAvatar.vue'
+import { COMPANION_OUTFITS, resolveCompanionOutfit } from '@/content/companion/manifest'
 
 const props = defineProps<{
   state: UserCompanion | null
@@ -21,6 +21,10 @@ const fillPercent = computed(() => {
 })
 
 const maxThreshold = computed(() => Math.max(0, props.state?.nextThreshold ?? 0))
+const currentOutfit = computed(() => resolveCompanionOutfit(props.state?.equippedSkin ?? ''))
+const unlockedOutfitCount = computed(() =>
+  COMPANION_OUTFITS.filter((outfit) => props.state?.unlockedSkins.includes(outfit.id)).length,
+)
 const showPrivateHint = computed(() =>
   Boolean(props.state && props.isSelf && !props.state.publicProfile),
 )
@@ -59,7 +63,13 @@ const bondValue = computed(() => {
     aria-labelledby="companion-profile-name"
   >
     <div class="companion-profile-card__portrait">
-      <CompanionAvatar pose="bust" size="md" alt="" />
+      <img
+        class="companion-profile-card__outfit"
+        :src="currentOutfit.src"
+        :alt="currentOutfit.name"
+        loading="lazy"
+        decoding="async"
+      />
     </div>
 
     <div class="companion-profile-card__body">
@@ -99,11 +109,9 @@ const bondValue = computed(() => {
 
       <div class="companion-profile-card__skins">
         <span class="companion-profile-card__skins-label">换装</span>
-        <ul v-if="state.unlockedSkins.length" class="companion-profile-card__skin-list">
-          <li v-for="skin in state.unlockedSkins" :key="skin" class="companion-profile-card__skin">
-            {{ skin }}
-          </li>
-        </ul>
+        <span v-if="unlockedOutfitCount" class="companion-profile-card__skin-current">
+          {{ currentOutfit.name }} · 已解锁 {{ unlockedOutfitCount }} 套
+        </span>
         <span v-else class="companion-profile-card__skins-empty">还没有换装</span>
       </div>
 
@@ -138,15 +146,17 @@ const bondValue = computed(() => {
   display: grid;
   flex: 0 0 auto;
   width: 84px;
-  height: 98px;
+  height: 112px;
   background: color-mix(in srgb, var(--kapoj-kapo) 8%, var(--kapoj-surface));
   border: 1px solid color-mix(in srgb, var(--kapoj-kapo) 22%, var(--kapoj-border));
   border-radius: 14px;
   place-items: center;
 }
 
-.companion-profile-card__portrait :deep(.companion-avatar) {
-  width: 68px;
+.companion-profile-card__outfit {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .companion-profile-card__body {

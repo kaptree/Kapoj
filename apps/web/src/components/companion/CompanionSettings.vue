@@ -4,7 +4,9 @@ import { computed, ref } from 'vue'
 import { updateCompanionSettings } from '@/api/companion'
 import type { CompanionSettingsPatch } from '@/api/types'
 import AppSurface from '@/components/ui/AppSurface.vue'
+import { COMPANION_OUTFITS } from '@/content/companion/manifest'
 import CompanionPersonalityPanel from './CompanionPersonalityPanel.vue'
+import CompanionWardrobe from './CompanionWardrobe.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useCompanionStore } from '@/stores/companion'
 import type { CompanionActivityLevel } from '@/stores/companion'
@@ -87,6 +89,21 @@ async function togglePublicProfile(): Promise<void> {
     // The profile flag is server-only: revert instead of showing a value that
     // was never persisted.
     store.publicProfile = previous
+    syncError.value = PROFILE_SYNC_ERROR
+  }
+}
+
+async function equipOutfit(id: string): Promise<void> {
+  if (!auth.isLoggedIn) return
+
+  const previous = store.equippedSkin
+  store.equippedSkin = id
+  syncError.value = ''
+  try {
+    const state = await updateCompanionSettings({ equippedSkin: id })
+    store.applyRemoteState(state)
+  } catch {
+    store.equippedSkin = previous
     syncError.value = PROFILE_SYNC_ERROR
   }
 }
@@ -219,6 +236,15 @@ async function savePersonality(patch: {
           公开伙伴
         </button>
       </div>
+
+      <CompanionWardrobe
+        v-if="auth.isLoggedIn"
+        :outfits="COMPANION_OUTFITS"
+        :equipped-skin="store.equippedSkin"
+        :unlocked-skins="store.unlockedSkins"
+        :level="store.level"
+        @equip="equipOutfit"
+      />
 
       <CompanionPersonalityPanel
         v-if="auth.isLoggedIn"

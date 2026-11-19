@@ -95,8 +95,8 @@ function userCompanion(overrides: Partial<UserCompanion> = {}): UserCompanion {
     level: 3,
     levelName: '搭档',
     nextThreshold: 170,
-    equippedSkin: 'culture-festival',
-    unlockedSkins: ['culture-festival'],
+    equippedSkin: 'outfit-2',
+    unlockedSkins: ['outfit-1', 'outfit-2'],
     publicProfile: true,
     daysTogether: 42,
     ...overrides,
@@ -286,7 +286,7 @@ describe('UserProfileView', () => {
     expect(card.text()).toContain('搭档')
     expect(card.text()).toContain('120 / 170')
     expect(card.text()).toContain('相伴 42 天')
-    expect(card.text()).toContain('culture-festival')
+    expect(card.text()).toContain('沙棕旅装')
     wrapper.unmount()
   })
 

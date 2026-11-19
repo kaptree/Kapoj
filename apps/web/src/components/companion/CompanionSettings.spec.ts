@@ -190,6 +190,25 @@ describe('CompanionSettings', () => {
     expect(useCompanionStore().enabled).toBe(true)
   })
 
+  it('equips an unlocked outfit and persists it', async () => {
+    auth.isLoggedIn = true
+    const wrapper = mountSettings((store) =>
+      store.applyRemoteState(
+        remoteState({
+          level: 2,
+          equippedSkin: 'outfit-1',
+          unlockedSkins: ['outfit-1', 'outfit-2', 'outfit-3'],
+        }) as never,
+      ),
+    )
+
+    await wrapper.get('[data-test="wardrobe-outfit-outfit-3"]').trigger('click')
+    await flushPromises()
+
+    expect(updateCompanionSettings).toHaveBeenCalledWith({ equippedSkin: 'outfit-3' })
+    expect(useCompanionStore().equippedSkin).toBe('outfit-3')
+  })
+
   it('saves the personality prompt and AI toggle remotely', async () => {
     auth.isLoggedIn = true
     const wrapper = mountSettings((store) => {

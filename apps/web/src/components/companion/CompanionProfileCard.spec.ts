@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest'
 
 import type { UserCompanion } from '@/api/types'
 import { pickCompanionLine } from '@/content/companion/lines.zh-CN'
-import CompanionAvatar from './CompanionAvatar.vue'
 import CompanionProfileCard from './CompanionProfileCard.vue'
 
 const base: UserCompanion = {
@@ -12,8 +11,8 @@ const base: UserCompanion = {
   level: 3,
   levelName: '搭档',
   nextThreshold: 170,
-  equippedSkin: 'culture-festival',
-  unlockedSkins: ['culture-festival', 'midnight'],
+  equippedSkin: 'outfit-3',
+  unlockedSkins: ['outfit-1', 'outfit-2', 'outfit-3'],
   publicProfile: true,
   daysTogether: 42,
 }
@@ -40,20 +39,31 @@ describe('CompanionProfileCard', () => {
     expect(wrapper.text()).toContain('Lv.3 搭档')
     expect(wrapper.text()).toContain('120 / 170')
     expect(wrapper.text()).toContain('相伴 42 天')
-    expect(wrapper.text()).toContain('culture-festival')
-    expect(wrapper.text()).toContain('midnight')
+    expect(wrapper.text()).toContain('冰蓝礼装')
+    expect(wrapper.text()).toContain('已解锁 3 套')
     expect(wrapper.text()).not.toContain('还没有换装')
 
-    const avatar = wrapper.getComponent(CompanionAvatar)
-    expect(avatar.props('pose')).toBe('bust')
-    expect(avatar.props('size')).toBe('md')
-    expect(avatar.props('alt')).toBe('')
+    const outfit = wrapper.get('img.companion-profile-card__outfit')
+    expect(outfit.attributes('src')).toBe('/companion/outfits/outfit-3.webp')
+    expect(outfit.attributes('alt')).toBe('冰蓝礼装')
 
     const bar = wrapper.get('[role="progressbar"]')
     expect(bar.attributes('aria-valuenow')).toBe('120')
     expect(bar.attributes('aria-valuemax')).toBe('170')
     expect(wrapper.get('.companion-profile-card__fill').attributes('style')).toContain(
       'width: 70.588',
+    )
+  })
+
+  it('renders the equipped outfit image and falls back to outfit-1', () => {
+    const wrapper = mountCard({ equippedSkin: 'outfit-3' })
+    expect(wrapper.get('img.companion-profile-card__outfit').attributes('src')).toBe(
+      '/companion/outfits/outfit-3.webp',
+    )
+
+    const fallback = mountCard({ equippedSkin: 'missing' })
+    expect(fallback.get('img.companion-profile-card__outfit').attributes('src')).toBe(
+      '/companion/outfits/outfit-1.webp',
     )
   })
 
