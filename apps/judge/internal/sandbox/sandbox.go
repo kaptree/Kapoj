@@ -41,8 +41,26 @@ type RunResult struct {
 	OutputTruncated bool
 }
 
+// RunCase is one testcase executed inside a shared run container.
+type RunCase struct {
+	InputPath string
+}
+
+// RunBatchRequest runs multiple testcases in one container. OnResult is called
+// after each case; returning false stops the batch before the next case.
+type RunBatchRequest struct {
+	Language         string
+	ArtifactDir      string
+	Cases            []RunCase
+	TimeLimitMS      int
+	MemoryLimitMB    int
+	OutputLimitBytes int
+	OnResult         func(index int, result RunResult) bool
+}
+
 type Sandbox interface {
 	Compile(ctx context.Context, req CompileRequest) (CompileResult, error)
 	Run(ctx context.Context, req RunRequest) (RunResult, error)
+	RunBatch(ctx context.Context, req RunBatchRequest) ([]RunResult, error)
 	Cleanup(artifactDir string)
 }

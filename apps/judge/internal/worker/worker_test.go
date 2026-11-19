@@ -28,6 +28,9 @@ func (failingSandbox) Compile(context.Context, sandbox.CompileRequest) (sandbox.
 func (failingSandbox) Run(context.Context, sandbox.RunRequest) (sandbox.RunResult, error) {
 	return sandbox.RunResult{}, errors.New("docker unavailable")
 }
+func (failingSandbox) RunBatch(context.Context, sandbox.RunBatchRequest) ([]sandbox.RunResult, error) {
+	return nil, errors.New("docker unavailable")
+}
 func (failingSandbox) Cleanup(string) {}
 
 func TestWorkerRetriesThenMarksSystemError(t *testing.T) {

@@ -847,13 +847,14 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 
 ```
 提交 → 后端校验 → 写入 submissions(status=pending) → 入队(Asynq)
-     → 评测服务取任务 → 拉取题目测试数据 → Docker 沙盒编译/运行
-     → 逐样例比对 → 汇总判题结果 → 写回 submissions + 更新题目统计
+     → 评测服务取任务 → 拉取题目测试数据 → Docker 沙盒编译（每提交 1 次）
+     → 单运行容器逐测试点执行 → 逐样例比对
+     → 汇总判题结果 → 写回 submissions + 更新题目统计
 ```
 
 **关键设计**
 
-- 沙盒隔离：每个评测在独立 Docker 容器中运行，限制 `--memory`、`--cpus`、`--network none`、超时 `timeout`。
+- 沙盒隔离：编译与运行分别在独立 Docker 容器中执行，限制 `--memory`、`--cpus`、`--network none`、超时 `timeout`；传统题全部测试点共用同一个运行容器，避免每点重复创建容器。
 - 特判（Special Judge）：题目 type 为 `special` 时，调用 `problems.checker_path` 指向的 checker 判定输出。
 - 判题状态机：`pending → judging → 终态`，终态取值与 3.3 节「判题状态」一致。
 - 失败重试：因系统原因（非用户代码问题）导致的失败由 Asynq 重试，超过次数后标记为 `system_error`。
@@ -865,9 +866,10 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 - 队列：Asynq，任务类型 `judge:submission`，队列名 `judge`，payload 为 `{"submissionId": <id>}`，最多重试 3 次。入队失败时提交被标记为 `system_error` 并返回 500。
 - 评测进程：`apps/judge`，可独立部署；从 PostgreSQL 读取提交/题目/测试点，从共享 `KAPOJ_STORAGE_DIR` 读取输入、答案与 checker。
 - 语言与镜像：C/C++ `gcc:14`、Python3 `python:3.12-slim`、Java `eclipse-temurin:21-jdk`、Go `golang:1.26`；镜像可用 `KAPOJ_JUDGE_*_IMAGE` 覆盖。
-- 沙盒：每个测试点使用独立容器；`--network none`、`--read-only`、`--cap-drop ALL`、`--pids-limit`、`--cpus 1`、`--memory/--memory-swap`，`/work`、`/tmp`、`/out` 使用 tmpfs。源码、编译产物、输入通过 `docker exec` + tar/cat 流传输，不使用宿主机 bind mount，因此 judge 自身在容器中也能运行。
-- 计时防篡改：运行容器的 wrapper 以 root 启动，`/out`、`/work` 归 root 且选手进程不可写；选手程序通过 `setpriv` 降权到 UID 65532，只有 `/tmp` 可写。耗时、内存峰值、OOM 计数由 root wrapper 写入；测量文件缺失或无法解析视为系统错误，不当作 0。
-- 资源：编译超时 30 秒、编译内存 1 GiB；运行时间上限为题目限制 + 3 秒容器宽限，实际耗时在容器内测量；输出上限 1 MiB；内存峰值读取 cgroup v2 `memory.peak`，OOM 通过 `memory.events` 判定。若内核不提供 cgroup v2，内存峰值记为 0，但 OOM 仍通过退出码识别；Java/Python/Go/C++ 的 OOM 堆栈（如 `OutOfMemoryError`、`MemoryError`、`std::bad_alloc`）也会判定为 MLE。
+- 沙盒：一次传统题提交只创建编译容器 1 个 + 运行容器 1 个；全部测试点在运行容器内依次执行，输入按轮覆盖 `/work/input.txt`，编译产物与 wrapper 只传输一次。`--network none`、`--read-only`、`--cap-drop ALL`、`--pids-limit`、`--cpus 1`、`--memory/--memory-swap` 不变，`/work`、`/tmp`、`/out` 使用 tmpfs。源码、编译产物、输入通过 `docker exec` + tar/cat 流传输，不使用宿主机 bind mount，因此 judge 自身在容器中也能运行。
+- 批量执行：新增 `sandbox.RunBatch`；每轮先清理 `/out` 测量文件、`/tmp` 与 `/dev/shm` 残留和上一轮 UID 65532 进程，再写入本轮输入并执行 wrapper。单轮 RE/TLE/MLE/OOM 只产生该轮结果，`RunBatch` 默认继续后续轮次；pipeline 仍保留“第一个非 AC 后停止后续测试点”的既有语义（通过逐轮回调提前结束）。
+- 计时防篡改：运行容器的 wrapper 以 root 启动，`/out`、`/work` 归 root 且选手进程不可写；选手程序通过 `setpriv` 降权到 UID 65532，只有 `/tmp` 与 Docker 默认的 `/dev/shm` 可写，两者均每轮清理。耗时、内存峰值、OOM 计数由 root wrapper 写入；测量文件缺失或无法解析视为系统错误，不当作 0。每轮用 `timeout --signal=KILL` 执行用户程序，外层 context 以题目限制 + 3 秒宽限兜底；`docker exec` 失败会清理残留进程后重试一次，仍失败则返回基础设施错误并删除运行容器。
+- 资源：编译超时 30 秒、编译内存 1 GiB；运行时间上限为题目限制 + 3 秒容器宽限，实际耗时在容器内测量；输出上限 1 MiB。内存峰值每轮优先写 `memory.peak=0` 后读取 cgroup v2 峰值；Docker 默认把 `/sys/fs/cgroup` 以只读挂载，此时由 root wrapper 每 10ms 采样 `memory.current` 作为本轮近似峰值。OOM 通过 `memory.events` 的 `oom_kill` 逐轮差值判定。若内核不提供 cgroup v2，内存峰值记为 0，但 OOM 仍通过退出码识别；Java/Python/Go/C++ 的 OOM 堆栈（如 `OutOfMemoryError`、`MemoryError`、`std::bad_alloc`）也会判定为 MLE。
 - 结论：编译失败 `compile_error`；运行超时 `time_limit_exceeded`；OOM `memory_limit_exceeded`；非零退出 `runtime_error`；输出超限或文本比对失败 `wrong_answer`；全部通过 `accepted`。系统原因（Docker/存储/DB/checker 编译失败）重试，耗尽后 `system_error`。
 - 特判：checker 以 C++ 编译，argv 为 `<checker> <输入> <选手输出> <标准答案>`；退出 0 通过，退出 1 答案错误，其他退出码（含信号、126/127）或输出超限属于系统错误；checker 超时/OOM/编译失败也属于系统错误。checker 编译诊断不写入日志或 `error_message`，避免泄露判题逻辑。
 - 超时与重试：任务在 Asynq 中设置 10 分钟超时，最多重试 3 次；judge 的 `ShutdownTimeout` 为 2 分钟，进程启动与关闭时都会按实例标签清扫容器。实例标签取 `KAPOJ_JUDGE_INSTANCE`（默认主机名），多实例部署时必须各不相同。
@@ -875,7 +877,7 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 - 日志脱敏：GORM 使用 `ParameterizedQueries`，慢查询/错误日志只出现占位符，不包含源代码或密码哈希。
 - 前端提交页：`/problems/:id/submit` 使用 Monaco（本地 worker、无 CDN），支持 c/cpp/python3/java/go，代码草稿按题目与语言保存在浏览器本地；提交后跳转测评记录。
 - 统计：`submit_count` 创建提交时递增；`accept_count` 仅在首次把提交从 `judging` 改为 `accepted` 时递增。
-- 已知限制：M1 不评测交互题；Java 堆上限按题内存减 64 MB（最低 16 MB）；运行时间按墙钟计时而非 CPU 时间；Docker socket 等价于宿主机 root 权限，生产需独立评测主机或 rootless Docker。
+- 已知限制：M1 不评测交互题；Java 堆上限按题内存减 64 MB（最低 16 MB）；运行时间按墙钟计时而非 CPU 时间；Docker socket 等价于宿主机 root 权限，生产需独立评测主机或 rootless Docker。传统题的测试点共用运行容器；special judge 的 checker 仍按测试点单独运行（用户程序已批量执行）。cgroup 只读时内存峰值为采样近似值，不是内核 `memory.peak` 的精确值。
 
 **Codex 提示词（代码测评沙盒）**
 

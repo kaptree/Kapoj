@@ -49,6 +49,10 @@ func (f *fakeSandbox) Run(_ context.Context, req sandbox.RunRequest) (sandbox.Ru
 	return f.defaultRun(req)
 }
 
+func (f *fakeSandbox) RunBatch(context.Context, sandbox.RunBatchRequest) ([]sandbox.RunResult, error) {
+	return nil, errors.New("RunBatch is not used by the generation pipeline")
+}
+
 // defaultRun emulates the real sandbox: the generator echoes its seed and the
 // standard program doubles its input.
 func (f *fakeSandbox) defaultRun(req sandbox.RunRequest) (sandbox.RunResult, error) {

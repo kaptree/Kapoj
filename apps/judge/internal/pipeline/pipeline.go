@@ -142,16 +142,41 @@ func (p *Pipeline) Run(ctx context.Context, submissionID int64) error {
 		}
 	}
 
+	inputs := make([]string, len(cases))
+	batchCases := make([]sandbox.RunCase, len(cases))
+	for i, tc := range cases {
+		inputPath := filepath.Join(work, fmt.Sprintf("tc%d.in", tc.ID))
+		if err := p.copyStorage(ctx, tc.InputFile, inputPath); err != nil {
+			return fmt.Errorf("read input %s: %w", tc.InputFile, err)
+		}
+		inputs[i] = inputPath
+		batchCases[i] = sandbox.RunCase{InputPath: inputPath}
+	}
+
 	var results []model.JudgeCaseResult
-	for _, tc := range cases {
-		result, err := p.runCase(ctx, work, sub, prob, tc, compiled.ArtifactDir, checkerArtifact)
-		if err != nil {
-			return err
-		}
-		results = append(results, result)
-		if result.Status != model.StatusAccepted {
-			break
-		}
+	var judgeErr error
+	_, err = p.sandbox.RunBatch(ctx, sandbox.RunBatchRequest{
+		Language: string(sub.Language), ArtifactDir: compiled.ArtifactDir, Cases: batchCases,
+		TimeLimitMS: prob.TimeLimitMS, MemoryLimitMB: prob.MemoryLimitMB,
+		OutputLimitBytes: outputLimitBytes,
+		OnResult: func(index int, run sandbox.RunResult) bool {
+			if judgeErr != nil {
+				return false
+			}
+			result, err := p.judgeRun(ctx, work, prob, cases[index], inputs[index], run, checkerArtifact)
+			if err != nil {
+				judgeErr = err
+				return false
+			}
+			results = append(results, result)
+			return result.Status == model.StatusAccepted
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("run testcases: %w", err)
+	}
+	if judgeErr != nil {
+		return judgeErr
 	}
 	status, timeMS, memoryKB, score := verdict.Aggregate(results)
 	return p.finish(ctx, sub, db.FinishInput{
@@ -197,26 +222,13 @@ func (p *Pipeline) publish(ctx context.Context, sub *model.Submission) {
 	}
 }
 
-func (p *Pipeline) runCase(
-	ctx context.Context, work string, sub *model.Submission, prob *model.Problem,
-	tc model.Testcase, artifactDir, checkerArtifact string,
+func (p *Pipeline) judgeRun(
+	ctx context.Context, work string, prob *model.Problem, tc model.Testcase,
+	inputPath string, run sandbox.RunResult, checkerArtifact string,
 ) (model.JudgeCaseResult, error) {
-	inputPath := filepath.Join(work, fmt.Sprintf("tc%d.in", tc.ID))
-	if err := p.copyStorage(ctx, tc.InputFile, inputPath); err != nil {
-		return model.JudgeCaseResult{}, fmt.Errorf("read input %s: %w", tc.InputFile, err)
-	}
 	answer, err := p.readStorage(ctx, tc.OutputFile, maxAnswerBytes)
 	if err != nil {
 		return model.JudgeCaseResult{}, fmt.Errorf("read answer %s: %w", tc.OutputFile, err)
-	}
-
-	run, err := p.sandbox.Run(ctx, sandbox.RunRequest{
-		Language: string(sub.Language), ArtifactDir: artifactDir, InputPath: inputPath,
-		TimeLimitMS: prob.TimeLimitMS, MemoryLimitMB: prob.MemoryLimitMB,
-		OutputLimitBytes: outputLimitBytes,
-	})
-	if err != nil {
-		return model.JudgeCaseResult{}, fmt.Errorf("run testcase %d: %w", tc.ID, err)
 	}
 	result := model.JudgeCaseResult{TestcaseID: tc.ID, TimeMS: run.TimeMS, MemoryKB: run.MemoryKB, Score: tc.Score}
 	switch {

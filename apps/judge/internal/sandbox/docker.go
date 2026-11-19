@@ -169,9 +169,6 @@ func (d *Docker) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if err := d.copyArtifacts(ctx, name, req.ArtifactDir, spec, checker); err != nil {
 		return RunResult{}, err
 	}
-	if err := d.writeFileFrom(ctx, name, "/work/input.txt", req.InputPath); err != nil {
-		return RunResult{}, err
-	}
 	if checker {
 		if err := d.writeFileFrom(ctx, name, "/work/output.txt", req.Checker.OutputPath); err != nil {
 			return RunResult{}, err
@@ -180,59 +177,196 @@ func (d *Docker) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 			return RunResult{}, err
 		}
 	}
-	script := runScript(spec.run, limit)
-	if err := d.writeFile(ctx, name, "/work/run.sh", []byte(script), 0o644); err != nil {
+	timeLimit := normalizeTimeLimit(req.TimeLimitMS)
+	if err := d.writeRunFiles(ctx, name, spec, timeLimit, limit); err != nil {
 		return RunResult{}, err
 	}
+	return d.runRound(ctx, name, req.InputPath, timeLimit, limit, true)
+}
 
-	timeLimit := req.TimeLimitMS
-	if timeLimit <= 0 {
-		timeLimit = 1000
+// RunBatch executes all cases in one run container. The container, compiled
+// artifacts and wrapper script are created once; each case only replaces the
+// input, runs the wrapper and reads fresh measurement files. OnResult may stop
+// the batch early without affecting the remaining container lifecycle.
+func (d *Docker) RunBatch(ctx context.Context, req RunBatchRequest) ([]RunResult, error) {
+	if len(req.Cases) == 0 {
+		return nil, nil
 	}
+	spec, err := languageFor(req.Language, false, req.MemoryLimitMB)
+	if err != nil {
+		return nil, err
+	}
+	image, err := d.image(req.Language)
+	if err != nil {
+		return nil, err
+	}
+	limit := effectiveOutputLimit(req.OutputLimitBytes)
+	name := containerName()
+	if err := d.start(ctx, name, image, d.runFlags(req.MemoryLimitMB, limit)); err != nil {
+		d.remove(name)
+		return nil, err
+	}
+	defer d.remove(name)
+
+	if err := d.copyArtifacts(ctx, name, req.ArtifactDir, spec, false); err != nil {
+		return nil, err
+	}
+	timeLimit := normalizeTimeLimit(req.TimeLimitMS)
+	if err := d.writeRunFiles(ctx, name, spec, timeLimit, limit); err != nil {
+		return nil, err
+	}
+
+	results := make([]RunResult, 0, len(req.Cases))
+	for i, c := range req.Cases {
+		run, err := d.runRound(ctx, name, c.InputPath, timeLimit, limit, false)
+		if err != nil {
+			return results, err
+		}
+		results = append(results, run)
+		if req.OnResult != nil && !req.OnResult(i, run) {
+			break
+		}
+	}
+	return results, nil
+}
+
+func normalizeTimeLimit(ms int) int {
+	if ms <= 0 {
+		return 1000
+	}
+	return ms
+}
+
+func (d *Docker) writeRunFiles(ctx context.Context, name string, spec languageSpec, timeLimit, outputLimit int) error {
+	if err := d.writeFile(ctx, name, "/work/time_limit_ms", []byte(strconv.Itoa(timeLimit)), 0o644); err != nil {
+		return err
+	}
+	return d.writeFile(ctx, name, "/work/run.sh", []byte(runScript(spec.run, outputLimit)), 0o644)
+}
+
+func (d *Docker) runRound(ctx context.Context, name, inputPath string, timeLimit, outputLimit int, deadlineAsTLE bool) (RunResult, error) {
 	runCtx, cancel := context.WithTimeout(ctx, time.Duration(timeLimit)*time.Millisecond+containerGrace)
 	defer cancel()
+
 	var out, errOut bytes.Buffer
-	err = d.exec(runCtx, name, nil, &out, &errOut, "sh", "/work/run.sh")
+	run := func() error {
+		input, err := os.Open(inputPath)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = input.Close() }()
+		out.Reset()
+		errOut.Reset()
+		return d.exec(runCtx, name, input, &out, &errOut, "sh", "-c",
+			"cat > /work/input.txt && sh /work/run.sh")
+	}
+	err := run()
+	if err != nil && ctx.Err() == nil && runCtx.Err() == nil {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = d.exec(cleanupCtx, name, nil, io.Discard, io.Discard, "sh", "-c", roundCleanupScript())
+		cleanupCancel()
+		err = run()
+	}
 	if ctx.Err() != nil {
 		return RunResult{}, ctx.Err()
 	}
 	if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
-		return RunResult{TimedOut: true, ExitCode: -1, TimeMS: timeLimit + 1}, nil
-	}
-	exitCode := 0
-	if err != nil {
-		var exitErr *exec.ExitError
-		if !errors.As(err, &exitErr) {
-			return RunResult{}, fmt.Errorf("run container: %w: %s", err, errOut.String())
+		if deadlineAsTLE {
+			return RunResult{TimedOut: true, ExitCode: -1, TimeMS: timeLimit + 1}, nil
 		}
-		exitCode = exitErr.ExitCode()
+		return RunResult{}, fmt.Errorf("run container timed out")
+	}
+	if err != nil {
+		return RunResult{}, fmt.Errorf("run container: %w: %s", err, errOut.String())
 	}
 
-	output, truncated, err := d.readOut(ctx, name, "/out/stdout", limit)
+	files, err := d.readRoundFiles(ctx, name)
 	if err != nil {
 		return RunResult{}, err
 	}
-	stderr, _, err := d.readOut(ctx, name, "/out/stderr", 4096)
+	exitCode, err := measurementInt(files, "exit_code")
 	if err != nil {
 		return RunResult{}, err
 	}
-	timeMS, err := d.readInt(ctx, name, "/out/time_ms")
+	timedOut, err := measurementInt(files, "timed_out")
 	if err != nil {
 		return RunResult{}, err
 	}
-	memoryKB, err := d.readInt(ctx, name, "/out/memory_kb")
+	timeMS, err := measurementInt(files, "time_ms")
 	if err != nil {
 		return RunResult{}, err
 	}
-	oomKills, err := d.readInt(ctx, name, "/out/oom_kill")
+	memoryKB, err := measurementInt(files, "memory_kb")
 	if err != nil {
 		return RunResult{}, err
+	}
+	oomKills, err := measurementInt(files, "oom_kill")
+	if err != nil {
+		return RunResult{}, err
+	}
+	output := files["stdout"]
+	truncated := len(output) > outputLimit
+	if truncated {
+		output = output[:outputLimit]
+	}
+	stderr := files["stderr"]
+	if len(stderr) > 4096 {
+		stderr = stderr[:4096]
 	}
 	return RunResult{
 		Output: output, Stderr: stderr, ExitCode: exitCode,
+		TimedOut:  timedOut != 0,
 		OOMKilled: oomKills > 0 || exitCode == 137,
 		TimeMS:    timeMS, MemoryKB: memoryKB, OutputTruncated: truncated,
 	}, nil
+}
+
+// readRoundFiles transfers /out once per round instead of issuing one docker
+// exec per measurement file. /out is root-owned and bounded by its tmpfs.
+func (d *Docker) readRoundFiles(ctx context.Context, name string) (map[string][]byte, error) {
+	var buf bytes.Buffer
+	var errOut limitedBuffer
+	errOut.max = 4096
+	if err := d.exec(ctx, name, nil, &buf, &errOut, "tar", "cf", "-", "-C", "/out", "."); err != nil {
+		return nil, fmt.Errorf("read round output: %w: %s", err, errOut.String())
+	}
+	files := make(map[string][]byte)
+	tr := tar.NewReader(&buf)
+	for {
+		hdr, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read round output tar: %w", err)
+		}
+		if hdr.Typeflag != tar.TypeReg && hdr.Typeflag != 0 {
+			continue
+		}
+		name := strings.TrimPrefix(filepath.Clean(hdr.Name), "./")
+		data, err := io.ReadAll(io.LimitReader(tr, 64<<20))
+		if err != nil {
+			return nil, fmt.Errorf("read round output %s: %w", name, err)
+		}
+		files[name] = data
+	}
+	return files, nil
+}
+
+func measurementInt(files map[string][]byte, name string) (int, error) {
+	data, ok := files[name]
+	if !ok {
+		return 0, fmt.Errorf("measurement %s is missing", name)
+	}
+	text := strings.TrimSpace(string(data))
+	if text == "" {
+		return 0, fmt.Errorf("measurement %s is missing", name)
+	}
+	n, err := strconv.Atoi(text)
+	if err != nil {
+		return 0, fmt.Errorf("measurement %s is invalid: %q", name, text)
+	}
+	return n, nil
 }
 
 func (d *Docker) image(language string) (string, error) {
@@ -360,43 +494,6 @@ func (d *Docker) copyOutDir(ctx context.Context, name, src, dest string) error {
 	return extractTar(buf.Bytes(), dest)
 }
 
-func (d *Docker) readOut(ctx context.Context, name, path string, limit int) ([]byte, bool, error) {
-	if limit <= 0 {
-		limit = 1 << 20
-	}
-	var buf bytes.Buffer
-	err := d.exec(ctx, name, nil, &buf, io.Discard, "sh", "-c",
-		fmt.Sprintf("head -c %d %s", limit+1, path))
-	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
-			return nil, false, nil
-		}
-		return nil, false, fmt.Errorf("read %s: %w", path, err)
-	}
-	truncated := buf.Len() > limit
-	if truncated {
-		return buf.Bytes()[:limit], true, nil
-	}
-	return buf.Bytes(), false, nil
-}
-
-func (d *Docker) readInt(ctx context.Context, name, path string) (int, error) {
-	data, _, err := d.readOut(ctx, name, path, 64)
-	if err != nil {
-		return 0, err
-	}
-	text := strings.TrimSpace(string(data))
-	if text == "" {
-		return 0, fmt.Errorf("measurement %s is missing", path)
-	}
-	n, err := strconv.Atoi(text)
-	if err != nil {
-		return 0, fmt.Errorf("measurement %s is invalid: %q", path, text)
-	}
-	return n, nil
-}
-
 func (d *Docker) compileFlags() []string {
 	return []string{
 		"--label", "kapoj.judge=1",
@@ -445,18 +542,78 @@ func runScript(command []string, outputLimit int) string {
 	fileLimit := outputFileBlocks(outputLimit)
 	return `#!/bin/sh
 ulimit -f ` + strconv.Itoa(fileLimit) + `
+for p in /proc/[0-9]*; do
+  [ -r "$p/status" ] || continue
+  while read -r key value rest; do
+    if [ "$key" = "Uid:" ]; then
+      set -- $value $rest
+      [ "$1" = "65532" ] && kill -9 "${p##*/}" 2>/dev/null || true
+      break
+    fi
+  done < "$p/status"
+done
+rm -f /out/stdout /out/stderr /out/time_ms /out/memory_kb /out/oom_kill /out/exit_code /out/timed_out /out/memory_peak_bytes 2>/dev/null
+rm -rf /tmp/* /tmp/.[!.]* /tmp/..?* 2>/dev/null
+rm -rf /dev/shm/* /dev/shm/.[!.]* /dev/shm/..?* 2>/dev/null
 cd /tmp
+
+time_limit_ms=$(cat /work/time_limit_ms 2>/dev/null || echo 1000)
+case "$time_limit_ms" in
+  ''|*[!0-9]*) time_limit_ms=1000 ;;
+esac
+[ "$time_limit_ms" -gt 0 ] || time_limit_ms=1000
+sec=$((time_limit_ms / 1000))
+frac=$((time_limit_ms % 1000))
+if [ "$frac" -eq 0 ]; then
+  limit="${sec}s"
+else
+  frac=$(printf '%03d' "$frac")
+  limit="${sec}.${frac}s"
+fi
+
 oom_before=0
 if [ -r /sys/fs/cgroup/memory.events ]; then
   while read -r key value; do
     [ "$key" = "oom_kill" ] && oom_before=$value
   done < /sys/fs/cgroup/memory.events
 fi
+
+# cgroup v2 memory.peak is the exact per-round high-water mark when writable.
+# Docker mounts /sys/fs/cgroup read-only by default, so fall back to sampling
+# memory.current in the root wrapper; the sampled peak is reset every round.
+reset_peak=0
+if echo 0 > /sys/fs/cgroup/memory.peak 2>/dev/null; then
+  reset_peak=1
+else
+  : > /out/memory_peak_bytes
+  (
+    peak=0
+    while :; do
+      current=$(cat /sys/fs/cgroup/memory.current 2>/dev/null) || break
+      if [ "$current" -gt "$peak" ]; then
+        peak=$current
+        echo "$peak" > /out/memory_peak_bytes
+      fi
+      sleep 0.01
+    done
+  ) &
+  sampler=$!
+fi
+
 start=$(date +%s%N)
-setpriv --reuid=65532 --regid=65532 --clear-groups -- ` + strings.Join(command, " ") + ` < /work/input.txt > /out/stdout 2> /out/stderr
+timeout --signal=KILL "$limit" setpriv --reuid=65532 --regid=65532 --clear-groups -- ` + strings.Join(command, " ") + ` < /work/input.txt > /out/stdout 2> /out/stderr
 status=$?
 end=$(date +%s%N)
-echo $(( (end - start) / 1000000 )) > /out/time_ms
+elapsed=$(( (end - start) / 1000000 ))
+
+echo "$status" > /out/exit_code
+echo "$elapsed" > /out/time_ms
+if [ "$status" -eq 124 ] || [ "$elapsed" -ge "$time_limit_ms" ]; then
+  echo 1 > /out/timed_out
+else
+  echo 0 > /out/timed_out
+fi
+
 oom_after=0
 if [ -r /sys/fs/cgroup/memory.events ]; then
   while read -r key value; do
@@ -464,13 +621,35 @@ if [ -r /sys/fs/cgroup/memory.events ]; then
   done < /sys/fs/cgroup/memory.events
 fi
 echo $(( oom_after - oom_before )) > /out/oom_kill
-if [ -r /sys/fs/cgroup/memory.peak ]; then
-  peak=$(cat /sys/fs/cgroup/memory.peak)
-  echo $(( peak / 1024 )) > /out/memory_kb
+
+if [ "$reset_peak" -eq 1 ]; then
+  peak=$(cat /sys/fs/cgroup/memory.peak 2>/dev/null || echo 0)
 else
-  echo 0 > /out/memory_kb
+  kill "$sampler" 2>/dev/null || true
+  wait "$sampler" 2>/dev/null || true
+  peak=$(cat /out/memory_peak_bytes 2>/dev/null || echo 0)
 fi
-exit $status
+echo $(( peak / 1024 )) > /out/memory_kb
+exit 0
+`
+}
+
+// roundCleanupScript kills a user process left behind by an interrupted
+// docker exec and clears per-round state before retrying the round.
+func roundCleanupScript() string {
+	return `for p in /proc/[0-9]*; do
+  [ -r "$p/status" ] || continue
+  while read -r key value rest; do
+    if [ "$key" = "Uid:" ]; then
+      set -- $value $rest
+      [ "$1" = "65532" ] && kill -9 "${p##*/}" 2>/dev/null || true
+      break
+    fi
+  done < "$p/status"
+done
+rm -rf /tmp/* /tmp/.[!.]* /tmp/..?* 2>/dev/null || true
+rm -rf /dev/shm/* /dev/shm/.[!.]* /dev/shm/..?* 2>/dev/null || true
+rm -f /out/stdout /out/stderr /out/time_ms /out/memory_kb /out/oom_kill /out/exit_code /out/timed_out /out/memory_peak_bytes 2>/dev/null || true
 `
 }
 

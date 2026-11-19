@@ -39,11 +39,13 @@ func (p *fakeGamePublisher) Publish(_ context.Context, ev gamequeue.Event) error
 }
 
 type fakeSandbox struct {
-	compileFn func(sandbox.CompileRequest) (sandbox.CompileResult, error)
-	runFn     func(sandbox.RunRequest) (sandbox.RunResult, error)
-	compiles  []sandbox.CompileRequest
-	runs      []sandbox.RunRequest
-	cleaned   []string
+	compileFn  func(sandbox.CompileRequest) (sandbox.CompileResult, error)
+	runFn      func(sandbox.RunRequest) (sandbox.RunResult, error)
+	runBatchFn func(sandbox.RunBatchRequest) ([]sandbox.RunResult, error)
+	compiles   []sandbox.CompileRequest
+	runs       []sandbox.RunRequest
+	batches    []sandbox.RunBatchRequest
+	cleaned    []string
 }
 
 func (f *fakeSandbox) Compile(_ context.Context, req sandbox.CompileRequest) (sandbox.CompileResult, error) {
@@ -60,6 +62,29 @@ func (f *fakeSandbox) Run(_ context.Context, req sandbox.RunRequest) (sandbox.Ru
 		return f.runFn(req)
 	}
 	return sandbox.RunResult{ExitCode: 0}, nil
+}
+
+func (f *fakeSandbox) RunBatch(ctx context.Context, req sandbox.RunBatchRequest) ([]sandbox.RunResult, error) {
+	f.batches = append(f.batches, req)
+	if f.runBatchFn != nil {
+		return f.runBatchFn(req)
+	}
+	results := make([]sandbox.RunResult, 0, len(req.Cases))
+	for i, c := range req.Cases {
+		run, err := f.Run(ctx, sandbox.RunRequest{
+			Language: req.Language, ArtifactDir: req.ArtifactDir, InputPath: c.InputPath,
+			TimeLimitMS: req.TimeLimitMS, MemoryLimitMB: req.MemoryLimitMB,
+			OutputLimitBytes: req.OutputLimitBytes,
+		})
+		if err != nil {
+			return results, err
+		}
+		results = append(results, run)
+		if req.OnResult != nil && !req.OnResult(i, run) {
+			break
+		}
+	}
+	return results, nil
 }
 
 func (f *fakeSandbox) Cleanup(dir string) { f.cleaned = append(f.cleaned, dir) }
@@ -149,6 +174,8 @@ func TestPipelineAccepted(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, model.StatusAccepted, got.Status)
 	assert.Equal(t, 1, acceptCount(t, e.pool, e.problem))
+	assert.Len(t, e.sb.batches, 1, "all testcases must run in one batch")
+	assert.Len(t, e.sb.batches[0].Cases, 2)
 	assert.Len(t, e.sb.runs, 2)
 	assert.Len(t, e.sb.cleaned, 1, "compiled artifacts must be cleaned up")
 
@@ -340,6 +367,7 @@ func TestPipelineStopsAtFirstFailure(t *testing.T) {
 	}
 
 	require.NoError(t, e.pipe.Run(context.Background(), sub))
+	assert.Len(t, e.sb.batches, 1)
 	assert.Len(t, e.sb.runs, 1, "later testcases are skipped after a failure")
 	got, _ := e.repo.FindByID(context.Background(), sub)
 	assert.Equal(t, model.StatusWrongAnswer, got.Status)

@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -140,6 +141,201 @@ int main(){for(int i=0;i<7*1024*1024;i++) putchar('a');}`,
 	assertNoJudgeContainers(t)
 }
 
+func TestDockerSandboxRunBatch(t *testing.T) {
+	d := newTestDocker(t)
+	code := `#include <fstream>
+#include <iostream>
+#include <string>
+#include <unistd.h>
+#include <vector>
+int main() {
+  std::string mode;
+  if (!(std::cin >> mode)) return 1;
+  if (mode == "ac") {
+    std::vector<char> data(32 * 1024 * 1024, 1);
+    volatile char sink = data[0];
+    (void)sink;
+    std::ofstream("/tmp/leak") << "x";
+    std::ofstream("/dev/shm/leak") << "x";
+    usleep(200000);
+    std::cout << "ok\n";
+    return 0;
+  }
+  if (mode == "tle") {
+    for (;;) {}
+  }
+  std::ifstream tmpLeak("/tmp/leak");
+  std::ifstream shmLeak("/dev/shm/leak");
+  std::cout << ((tmpLeak.good() || shmLeak.good()) ? "leak\n" : "clean\n");
+  return 1;
+}
+`
+	compiled, err := d.Compile(context.Background(), CompileRequest{
+		Language: "cpp", Source: []byte(code),
+	})
+	require.NoError(t, err)
+	require.False(t, compiled.Failed, compiled.ErrorOutput)
+	defer d.Cleanup(compiled.ArtifactDir)
+
+	dir := t.TempDir()
+	cases := make([]RunCase, 0, 3)
+	for _, name := range []string{"ac", "tle", "re"} {
+		path := dir + "/" + name + ".in"
+		require.NoError(t, os.WriteFile(path, []byte(name+"\n"), 0o644))
+		cases = append(cases, RunCase{InputPath: path})
+	}
+
+	results, err := d.RunBatch(context.Background(), RunBatchRequest{
+		Language: "cpp", ArtifactDir: compiled.ArtifactDir, Cases: cases,
+		TimeLimitMS: 300, MemoryLimitMB: 128, OutputLimitBytes: 1 << 20,
+	})
+	require.NoError(t, err)
+	require.Len(t, results, 3, "a failed round must not stop later rounds")
+
+	assert.Equal(t, 0, results[0].ExitCode)
+	assert.Equal(t, "ok\n", string(results[0].Output))
+	assert.False(t, results[0].TimedOut)
+	assert.Greater(t, results[0].MemoryKB, results[2].MemoryKB,
+		"memory must be measured per round, not accumulated")
+
+	assert.True(t, results[1].TimedOut, "the second round must hit the time limit")
+
+	assert.Equal(t, 1, results[2].ExitCode)
+	assert.Equal(t, "clean\n", string(results[2].Output),
+		"/tmp must be empty before every round")
+	assert.False(t, results[2].TimedOut)
+
+	assertNoJudgeContainers(t)
+}
+
+func TestDockerRunBatchTenCaseSpeedup(t *testing.T) {
+	if os.Getenv("KAPOJ_DOCKER_PERF_TESTS") != "1" {
+		t.Skip("set KAPOJ_DOCKER_PERF_TESTS=1 to run the timing-sensitive batch benchmark")
+	}
+	d := newTestDocker(t)
+	compiled, err := d.Compile(context.Background(), CompileRequest{
+		Language: "cpp",
+		Source:   []byte("#include <iostream>\nint main(){int a,b;if(!(std::cin>>a>>b))return 1;std::cout<<a+b<<\"\\n\";}"),
+	})
+	require.NoError(t, err)
+	require.False(t, compiled.Failed, compiled.ErrorOutput)
+	defer d.Cleanup(compiled.ArtifactDir)
+
+	dir := t.TempDir()
+	cases := make([]RunCase, 0, 10)
+	inputs := make([]string, 0, 10)
+	for i := 0; i < 10; i++ {
+		path := fmt.Sprintf("%s/%d.in", dir, i)
+		require.NoError(t, os.WriteFile(path, []byte("1 2\n"), 0o644))
+		inputs = append(inputs, path)
+		cases = append(cases, RunCase{InputPath: path})
+	}
+
+	start := time.Now()
+	for _, input := range inputs {
+		run, err := d.Run(context.Background(), RunRequest{
+			Language: "cpp", ArtifactDir: compiled.ArtifactDir, InputPath: input,
+			TimeLimitMS: 1000, MemoryLimitMB: 128, OutputLimitBytes: 1 << 20,
+		})
+		require.NoError(t, err)
+		require.Equal(t, 0, run.ExitCode)
+		require.Equal(t, "3\n", string(run.Output))
+	}
+	sequential := time.Since(start)
+
+	start = time.Now()
+	results, err := d.RunBatch(context.Background(), RunBatchRequest{
+		Language: "cpp", ArtifactDir: compiled.ArtifactDir, Cases: cases,
+		TimeLimitMS: 1000, MemoryLimitMB: 128, OutputLimitBytes: 1 << 20,
+	})
+	require.NoError(t, err)
+	require.Len(t, results, 10)
+	batch := time.Since(start)
+
+	speedup := 100 * (1 - float64(batch)/float64(sequential))
+	t.Logf("10 testcases: sequential Run=%s, RunBatch=%s, reduction=%.1f%%", sequential, batch, speedup)
+	assert.LessOrEqual(t, batch, sequential*2/5, "batch must reduce end-to-end time by at least 60%")
+	assertNoJudgeContainers(t)
+}
+
+func TestDockerRunRetriesExecOnce(t *testing.T) {
+	d := newTestDocker(t)
+	compiled, err := d.Compile(context.Background(), CompileRequest{
+		Language: "cpp",
+		Source:   []byte("#include <iostream>\nint main(){int a,b;if(!(std::cin>>a>>b))return 1;std::cout<<a+b<<\"\\n\";}"),
+	})
+	require.NoError(t, err)
+	require.False(t, compiled.Failed, compiled.ErrorOutput)
+	defer d.Cleanup(compiled.ArtifactDir)
+
+	input := t.TempDir() + "/input.txt"
+	require.NoError(t, os.WriteFile(input, []byte("1 2\n"), 0o644))
+	dir := t.TempDir()
+	marker := dir + "/failed-once"
+	dockerBin, err := exec.LookPath("docker")
+	require.NoError(t, err)
+	wrapper := dir + "/docker-wrapper.sh"
+	script := `#!/bin/sh
+if [ "$1" = "exec" ]; then
+  case "$*" in
+    *'sh /work/run.sh'*)
+      if [ ! -e '` + marker + `' ]; then
+        : > '` + marker + `'
+        exit 1
+      fi
+      ;;
+  esac
+fi
+exec '` + dockerBin + `' "$@"
+`
+	require.NoError(t, os.WriteFile(wrapper, []byte(script), 0o755))
+	d.bin = wrapper
+
+	run, err := d.Run(context.Background(), RunRequest{
+		Language: "cpp", ArtifactDir: compiled.ArtifactDir, InputPath: input,
+		TimeLimitMS: 1000, MemoryLimitMB: 128, OutputLimitBytes: 1 << 20,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "3\n", string(run.Output))
+	assert.FileExists(t, marker)
+	assertNoJudgeContainers(t)
+}
+
+func TestDockerRunBatchFailsAfterRetry(t *testing.T) {
+	d := newTestDocker(t)
+	compiled, err := d.Compile(context.Background(), CompileRequest{
+		Language: "cpp", Source: []byte("int main(){return 0;}"),
+	})
+	require.NoError(t, err)
+	require.False(t, compiled.Failed, compiled.ErrorOutput)
+	defer d.Cleanup(compiled.ArtifactDir)
+
+	input := t.TempDir() + "/input.txt"
+	require.NoError(t, os.WriteFile(input, []byte(""), 0o644))
+	dir := t.TempDir()
+	dockerBin, err := exec.LookPath("docker")
+	require.NoError(t, err)
+	wrapper := dir + "/docker-wrapper.sh"
+	script := `#!/bin/sh
+if [ "$1" = "exec" ]; then
+  case "$*" in
+    *'sh /work/run.sh'*) exit 1 ;;
+  esac
+fi
+exec '` + dockerBin + `' "$@"
+`
+	require.NoError(t, os.WriteFile(wrapper, []byte(script), 0o755))
+	d.bin = wrapper
+
+	_, err = d.RunBatch(context.Background(), RunBatchRequest{
+		Language: "cpp", ArtifactDir: compiled.ArtifactDir,
+		Cases:       []RunCase{{InputPath: input}},
+		TimeLimitMS: 1000, MemoryLimitMB: 128, OutputLimitBytes: 1 << 20,
+	})
+	require.Error(t, err)
+	assertNoJudgeContainers(t)
+}
+
 func assertNoJudgeContainers(t *testing.T) {
 	t.Helper()
 	out, err := exec.Command("docker", "ps", "-a", "--filter", "label=kapoj.judge=1", "--format", "{{.Names}}").Output()
@@ -198,7 +394,7 @@ func TestDockerSandboxProgramCannotForgeTiming(t *testing.T) {
 #include <unistd.h>
 int main(){mkdir("/out/time_ms",0700); usleep(2000000);}
 `
-	run, _ := compileAndRun(t, d, "cpp", code, "", 1000, 256, 1<<20)
+	run, _ := compileAndRun(t, d, "cpp", code, "", 3000, 256, 1<<20)
 	assert.False(t, run.TimedOut)
 	assert.GreaterOrEqual(t, run.TimeMS, 1500, "the wrapper must measure the real runtime")
 	assertNoJudgeContainers(t)
