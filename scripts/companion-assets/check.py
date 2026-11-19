@@ -46,6 +46,12 @@ Q_INITIAL_HARD_CAP = 250 * 1024
 OUTFIT_MAX_BYTES = 300 * 1024
 CARD_MAX_BYTES = 80 * 1024
 PUBLIC_MAX_BYTES = 350 * 1024
+MASCOT_DIR = WEB_PUBLIC / "mascot"
+MASCOT_FILES = {
+    "chibi": ((512, 512), 120 * 1024),
+    "bust": ((640, 747), 220 * 1024),
+    "full": ((1000, 1333), 320 * 1024),
+}
 
 
 def fail(message: str) -> None:
@@ -193,11 +199,19 @@ def check_production(show_sizes: bool = False) -> None:
     if initial > 180 * 1024:
         print(f"WARN: initial Q set is {initial / 1024:.1f}K, above the 180K target")
 
+    for pose, (size, cap) in MASCOT_FILES.items():
+        path = MASCOT_DIR / pose / "neutral@2x.webp"
+        image = require_rgba(path, size)
+        corners_transparent(image, f"mascot/{pose}")
+        alpha_bbox_nonempty(image, f"mascot/{pose}")
+        if path.stat().st_size > cap:
+            fail(f"mascot/{pose} is over {cap} bytes")
+
     check_webp_sizes(PRODUCTION_DIR, PUBLIC_MAX_BYTES, "public")
     if show_sizes:
         for path in sorted(PRODUCTION_DIR.rglob("*.webp")):
             print(f"{path.stat().st_size / 1024:7.1f}K  {path.relative_to(ROOT)}")
-    print(f"production assets ok (5 outfits, Q rig, initial {initial / 1024:.1f}K)")
+    print(f"production assets ok (5 outfits, Q rig, 3 mascot poses, initial {initial / 1024:.1f}K)")
 
 
 def main() -> None:

@@ -52,6 +52,17 @@ OUTFIT_META = (
 OUTFIT_CROP_BOTTOM = {"outfit-4": 0.72, "outfit-5": 0.72}
 ASSETS_JSON = ROOT / "apps/web/src/content/companion/assets.json"
 
+# Static mascot art used by the auth pages and the home hero. These are
+# derivatives of the outfit-1 portrait and the neutral Q rig, kept at the same
+# paths/dimensions the old placeholder pack used.
+MASCOT_DIR = ROOT / "apps" / "web" / "public" / "mascot"
+MASCOT_CHIBI_SIZE = (512, 512)
+MASCOT_BUST_SIZE = (640, 747)
+MASCOT_FULL_SIZE = (1000, 1333)
+MASCOT_MAX_BYTES = {"chibi": 120 * 1024, "bust": 220 * 1024, "full": 320 * 1024}
+# Head-to-waist crop of outfit-1 at its native 768x1024 canvas.
+MASCOT_BUST_CROP = (130, 20, 650, 627)
+
 # Eye centers/radii are measured from the blue iris components of the source.
 # They are kept here so every run aligns the layers the same way.
 EYES = (
@@ -876,6 +887,49 @@ def run_q() -> None:
     print(f"Q manifest written to {ASSETS_JSON.relative_to(ROOT)}")
 
 
+def _flatten_neutral_q() -> Image.Image:
+    """Compose the neutral Q expression from its committed layers."""
+    names = ("base", "iris-left", "iris-right", "eye-open", "mouth-neutral", "blush-soft")
+    canvas = Image.new("RGBA", (Q_OUT, Q_OUT), (0, 0, 0, 0))
+    for name in names:
+        path = PUBLIC_DIR / "q" / f"{name}.webp"
+        if not path.is_file():
+            raise SystemExit(
+                "missing Q layer; run `process.py q` before `process.py mascot`"
+            )
+        canvas.alpha_composite(Image.open(path).convert("RGBA"))
+    return canvas
+
+
+def run_mascot() -> None:
+    outfit_path = PUBLIC_DIR / "outfits" / "outfit-1.webp"
+    if not outfit_path.is_file():
+        raise SystemExit(
+            "missing outfit-1; run `process.py outfits` before `process.py mascot`"
+        )
+    outfit = Image.open(outfit_path).convert("RGBA")
+
+    images = {
+        "chibi": _flatten_neutral_q().resize(MASCOT_CHIBI_SIZE, Image.Resampling.LANCZOS),
+        "bust": outfit.crop(MASCOT_BUST_CROP).resize(
+            MASCOT_BUST_SIZE, Image.Resampling.LANCZOS
+        ),
+        "full": outfit.resize(MASCOT_FULL_SIZE, Image.Resampling.LANCZOS),
+    }
+
+    print(f"{'pose':8} {'size':>9} {'quality':>9} {'ssim':>7}")
+    for pose, image in images.items():
+        path = MASCOT_DIR / pose / "neutral@2x.webp"
+        size, quality, score = save_budget_webp(
+            image,
+            path,
+            MASCOT_MAX_BYTES[pose],
+            start_quality=95,
+            min_ssim=0.95,
+        )
+        print(f"{pose:8} {size / 1024:8.1f}K {quality:>9} {score:7.4f}")
+
+
 def save_png(image: Image.Image, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     image.save(path, "PNG")
@@ -910,7 +964,7 @@ def run_sample() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("sample", "q", "outfits"))
+    parser.add_argument("command", choices=("sample", "q", "outfits", "mascot"))
     args = parser.parse_args()
 
     if args.command == "sample":
@@ -921,6 +975,9 @@ def main() -> None:
         return
     if args.command == "outfits":
         run_outfits()
+        return
+    if args.command == "mascot":
+        run_mascot()
         return
     parser.print_help()
     sys.exit(2)

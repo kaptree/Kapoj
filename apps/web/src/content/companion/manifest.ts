@@ -9,9 +9,10 @@ import type {
 } from './types'
 
 /**
- * Derived from `public/sucai.png`: a square head crop, a 6:7 head-to-waist
- * crop, and the full-body 3:4 art. Expressions currently fall back to
- * `neutral`; add per-expression files when the expression pack arrives.
+ * Static mascot poses used by auth, loading and empty states. `chibi` is the
+ * neutral Q rig, `bust` is a 6:7 head-to-waist crop of outfit-1, and `full` is
+ * the full outfit-1 portrait. Regenerate them with the asset pipeline's
+ * `mascot` command. Expressions currently fall back to `neutral`.
  */
 export const COMPANION_ASSETS: CompanionAssetPack = {
   chibi: {

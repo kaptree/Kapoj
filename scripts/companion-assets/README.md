@@ -26,11 +26,14 @@ python3 scripts/companion-assets/check.py --sample
 # Full packs (Tasks 2-3)
 /tmp/companion-assets-venv/bin/python scripts/companion-assets/process.py outfits
 /tmp/companion-assets-venv/bin/python scripts/companion-assets/process.py q
+/tmp/companion-assets-venv/bin/python scripts/companion-assets/process.py mascot
 python3 scripts/companion-assets/check.py --production
 ```
 
 Samples go to `tmp/companion-sample/` and stay untracked. Production images go
-to `apps/web/public/companion/`.
+to `apps/web/public/companion/`; the `mascot` command refreshes the static
+`public/mascot/{chibi,bust,full}` art used by the auth pages and home hero from
+the neutral Q rig and `outfit-1`.
 
 ## Compression policy
 
@@ -42,6 +45,9 @@ to `apps/web/public/companion/`.
 - `public/` never receives the multi-megabyte source PNGs.
 - Initial Q set (`base`, two iris layers, `eye-open`, `mouth-neutral`,
   `blush-soft`): target ≤180KB, hard cap 250KB.
+- Static mascot poses (`public/mascot`): chibi ≤120KB (512×512), bust
+  ≤220KB (640×747), full ≤320KB (1000×1333); q95 with SSIM ≥0.95 when
+  lossless is over budget.
 
 ## Q layout
 
