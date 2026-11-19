@@ -301,6 +301,27 @@ exec '` + dockerBin + `' "$@"
 	assertNoJudgeContainers(t)
 }
 
+func TestRunRoundRecoversWrapperOOM(t *testing.T) {
+	dir := t.TempDir()
+	input := dir + "/input.txt"
+	require.NoError(t, os.WriteFile(input, []byte(""), 0o644))
+	wrapper := dir + "/docker-wrapper.sh"
+	script := `#!/bin/sh
+case "$*" in
+  *'sh /work/run.sh'*) exit 137 ;;
+  *'oom_before'*) echo "0 1"; exit 0 ;;
+esac
+exit 0
+`
+	require.NoError(t, os.WriteFile(wrapper, []byte(script), 0o755))
+	d := &Docker{bin: wrapper}
+
+	run, err := d.runRound(context.Background(), "fake-container", input, 1000, 1<<20, false)
+	require.NoError(t, err)
+	assert.True(t, run.OOMKilled)
+	assert.Equal(t, 137, run.ExitCode)
+}
+
 func TestDockerRunBatchFailsAfterRetry(t *testing.T) {
 	d := newTestDocker(t)
 	compiled, err := d.Compile(context.Background(), CompileRequest{

@@ -119,7 +119,11 @@ beforeEach(() => {
   Element.prototype.scrollIntoView = scrollIntoView as unknown as Element['scrollIntoView']
 })
 
-afterEach(() => {
+afterEach(async () => {
+  // PrimeVue TabList schedules a 150ms ink-bar update on mount. Let it run
+  // before the jsdom environment is torn down, otherwise it throws
+  // "HTMLElement is not defined" as an unhandled error.
+  await new Promise((resolve) => setTimeout(resolve, 200))
   document.body.innerHTML = ''
 })
 

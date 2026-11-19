@@ -262,10 +262,20 @@ func (d *Docker) runRound(ctx context.Context, name, inputPath string, timeLimit
 	}
 	err := run()
 	if err != nil && ctx.Err() == nil && runCtx.Err() == nil {
+		if exitedWithCode(err, 137) {
+			if recovered, ok := d.recoverOOM(ctx, name); ok {
+				return recovered, nil
+			}
+		}
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_ = d.exec(cleanupCtx, name, nil, io.Discard, io.Discard, "sh", "-c", roundCleanupScript())
 		cleanupCancel()
 		err = run()
+	}
+	if err != nil && exitedWithCode(err, 137) {
+		if recovered, ok := d.recoverOOM(ctx, name); ok {
+			return recovered, nil
+		}
 	}
 	if ctx.Err() != nil {
 		return RunResult{}, ctx.Err()
@@ -351,6 +361,44 @@ func (d *Docker) readRoundFiles(ctx context.Context, name string) (map[string][]
 		files[name] = data
 	}
 	return files, nil
+}
+
+func exitedWithCode(err error, code int) bool {
+	var exitErr *exec.ExitError
+	return errors.As(err, &exitErr) && exitErr.ExitCode() == code
+}
+
+// recoverOOM handles the Linux cgroup v2 case where the OOM killer also kills
+// the root wrapper shell. The wrapper has already written the pre-run oom_kill
+// counter, so a higher current value proves this was an OOM, not an exec error.
+func (d *Docker) recoverOOM(ctx context.Context, name string) (RunResult, bool) {
+	readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	var buf bytes.Buffer
+	err := d.exec(readCtx, name, nil, &buf, io.Discard, "sh", "-c", `
+before=0
+[ -r /out/oom_before ] && before=$(cat /out/oom_before)
+after=0
+if [ -r /sys/fs/cgroup/memory.events ]; then
+  while read -r key value; do
+    [ "$key" = "oom_kill" ] && after=$value
+  done < /sys/fs/cgroup/memory.events
+fi
+echo "$before $after"
+`)
+	if err != nil {
+		return RunResult{}, false
+	}
+	fields := strings.Fields(buf.String())
+	if len(fields) != 2 {
+		return RunResult{}, false
+	}
+	before, beforeErr := strconv.Atoi(fields[0])
+	after, afterErr := strconv.Atoi(fields[1])
+	if beforeErr != nil || afterErr != nil || after <= before {
+		return RunResult{}, false
+	}
+	return RunResult{ExitCode: 137, OOMKilled: true}, true
 }
 
 func measurementInt(files map[string][]byte, name string) (int, error) {
@@ -552,7 +600,7 @@ for p in /proc/[0-9]*; do
     fi
   done < "$p/status"
 done
-rm -f /out/stdout /out/stderr /out/time_ms /out/memory_kb /out/oom_kill /out/exit_code /out/timed_out /out/memory_peak_bytes 2>/dev/null
+rm -f /out/stdout /out/stderr /out/time_ms /out/memory_kb /out/oom_kill /out/oom_before /out/exit_code /out/timed_out /out/memory_peak_bytes 2>/dev/null
 rm -rf /tmp/* /tmp/.[!.]* /tmp/..?* 2>/dev/null
 rm -rf /dev/shm/* /dev/shm/.[!.]* /dev/shm/..?* 2>/dev/null
 cd /tmp
@@ -577,12 +625,13 @@ if [ -r /sys/fs/cgroup/memory.events ]; then
     [ "$key" = "oom_kill" ] && oom_before=$value
   done < /sys/fs/cgroup/memory.events
 fi
+echo "$oom_before" > /out/oom_before
 
 # cgroup v2 memory.peak is the exact per-round high-water mark when writable.
 # Docker mounts /sys/fs/cgroup read-only by default, so fall back to sampling
 # memory.current in the root wrapper; the sampled peak is reset every round.
 reset_peak=0
-if echo 0 > /sys/fs/cgroup/memory.peak 2>/dev/null; then
+if echo 0 2>/dev/null > /sys/fs/cgroup/memory.peak; then
   reset_peak=1
 else
   : > /out/memory_peak_bytes
@@ -649,7 +698,7 @@ func roundCleanupScript() string {
 done
 rm -rf /tmp/* /tmp/.[!.]* /tmp/..?* 2>/dev/null || true
 rm -rf /dev/shm/* /dev/shm/.[!.]* /dev/shm/..?* 2>/dev/null || true
-rm -f /out/stdout /out/stderr /out/time_ms /out/memory_kb /out/oom_kill /out/exit_code /out/timed_out /out/memory_peak_bytes 2>/dev/null || true
+rm -f /out/stdout /out/stderr /out/time_ms /out/memory_kb /out/oom_kill /out/oom_before /out/exit_code /out/timed_out /out/memory_peak_bytes 2>/dev/null || true
 `
 }
 
