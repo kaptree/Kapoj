@@ -3,7 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { getCompanion, petCompanion } from '@/api/companion'
+import { getCompanion, petCompanion, requestCompanionDialogue } from '@/api/companion'
 import { getContest } from '@/api/contests'
 import { getActivitySummary, signInActivity } from '@/api/leaderboard'
 import { clearCompanionMuteCache } from '@/composables/useCompanionMute'
@@ -18,7 +18,11 @@ vi.mock('@/api/leaderboard', () => ({
   signInActivity: vi.fn(),
 }))
 vi.mock('@/api/contests', () => ({ getContest: vi.fn() }))
-vi.mock('@/api/companion', () => ({ getCompanion: vi.fn(), petCompanion: vi.fn() }))
+vi.mock('@/api/companion', () => ({
+  getCompanion: vi.fn(),
+  petCompanion: vi.fn(),
+  requestCompanionDialogue: vi.fn(),
+}))
 
 /** Site config with the companion switched off site-wide. */
 const GLOBAL_OFF = {
@@ -91,6 +95,12 @@ beforeEach(() => {
   auth.isLoggedIn = true
   vi.mocked(getActivitySummary).mockResolvedValue({ signedInToday: true } as never)
   vi.mocked(getContest).mockReset()
+  vi.mocked(requestCompanionDialogue).mockReset()
+  vi.mocked(requestCompanionDialogue).mockResolvedValue({
+    source: 'default',
+    lineKey: 'pet.shy',
+    remainingToday: 0,
+  })
   vi.mocked(petCompanion).mockReset()
   vi.mocked(petCompanion).mockResolvedValue({ awarded: true, bond: 121, level: 3 } as never)
   vi.mocked(getCompanion).mockReset()
@@ -366,6 +376,149 @@ describe('CompanionDock', () => {
     const iris = wrapper.find('.companion-q-avatar__iris')
     expect(iris.exists()).toBe(true)
     expect(iris.attributes('style') ?? '').not.toContain('translate')
+  })
+
+  it('uses AI for a pet and shows the thinking line first', async () => {
+    let resolveAI!: (value: unknown) => void
+    vi.mocked(requestCompanionDialogue).mockImplementation(
+      () => new Promise((resolve) => (resolveAI = resolve)) as never,
+    )
+    const wrapper = await mountDock()
+    await flushPromises()
+    const store = useCompanionStore()
+    store.aiReady = true
+    store.aiDialogueEnabled = true
+
+    await wrapper.get('.companion-dock__character').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('……')
+    expect(requestCompanionDialogue).toHaveBeenCalledWith(
+      expect.objectContaining({ trigger: 'pet' }),
+      expect.any(AbortSignal),
+    )
+
+    resolveAI({ source: 'ai', line: 'AI 摸摸', remainingToday: 29 })
+    await flushPromises()
+    expect(wrapper.text()).toContain('AI 摸摸')
+  })
+
+  it('shows the static pet line if AI is slow, then replaces it', async () => {
+    let resolveAI!: (value: unknown) => void
+    vi.mocked(requestCompanionDialogue).mockImplementation(
+      () => new Promise((resolve) => (resolveAI = resolve)) as never,
+    )
+    const wrapper = await mountDock()
+    await flushPromises()
+    const store = useCompanionStore()
+    store.aiReady = true
+
+    await wrapper.get('.companion-dock__character').trigger('click')
+    await flushPromises()
+    await new Promise((resolve) => setTimeout(resolve, 1250))
+    await flushPromises()
+    expect(PET_REACTION_LINES.some((line) => wrapper.text().includes(line))).toBe(true)
+
+    resolveAI({ source: 'ai', line: '慢 AI', remainingToday: 28 })
+    await flushPromises()
+    expect(wrapper.text()).toContain('慢 AI')
+  })
+
+  it('ignores a stale AI line after a second pet', async () => {
+    const resolvers: Array<(value: unknown) => void> = []
+    vi.mocked(requestCompanionDialogue).mockImplementation(
+      () => new Promise((resolve) => resolvers.push(resolve)) as never,
+    )
+    const wrapper = await mountDock()
+    await flushPromises()
+    const store = useCompanionStore()
+    store.aiReady = true
+    const character = wrapper.get('.companion-dock__character')
+
+    await character.trigger('click')
+    await flushPromises()
+    await new Promise((resolve) => setTimeout(resolve, 850))
+    await character.trigger('click')
+    await flushPromises()
+    expect(resolvers).toHaveLength(2)
+
+    resolvers[0]({ source: 'ai', line: '旧 AI', remainingToday: 27 })
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('旧 AI')
+
+    resolvers[1]({ source: 'ai', line: '新 AI', remainingToday: 26 })
+    await flushPromises()
+    expect(wrapper.text()).toContain('新 AI')
+  })
+
+  it('uses the static line without calling AI when no model is configured', async () => {
+    const wrapper = await mountDock()
+    await flushPromises()
+    const store = useCompanionStore()
+    store.aiReady = false
+
+    await wrapper.get('.companion-dock__character').trigger('click')
+    await flushPromises()
+    expect(requestCompanionDialogue).not.toHaveBeenCalled()
+    expect(PET_REACTION_LINES.some((line) => wrapper.text().includes(line))).toBe(true)
+  })
+
+  it('requests the greeting AI line with the local greeting key at 22:00', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 10, 20, 22, 0, 0))
+    vi.mocked(requestCompanionDialogue).mockResolvedValue({
+      source: 'ai',
+      line: '夜间 AI',
+      remainingToday: 29,
+    } as never)
+    try {
+      const wrapper = await mountDock()
+      const store = useCompanionStore()
+      store.aiReady = true
+      await vi.advanceTimersByTimeAsync(2100)
+      await flushPromises()
+      expect(requestCompanionDialogue).toHaveBeenCalledWith(
+        expect.objectContaining({ trigger: 'greet', greetingKey: 'greet.night' }),
+        expect.any(AbortSignal),
+      )
+      expect(wrapper.text()).toContain('夜间 AI')
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('sends at most three idle lines per hour in lively mode', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 10, 20, 10, 0, 0))
+    localStorage.setItem('kapoj.companion.greeting', '2026-11-20')
+    vi.mocked(requestCompanionDialogue).mockResolvedValue({
+      source: 'ai',
+      line: '闲话',
+      remainingToday: 20,
+    } as never)
+    try {
+      const wrapper = await mountDock()
+      await flushPromises()
+      const store = useCompanionStore()
+      store.aiReady = true
+      store.setActivityLevel('lively')
+      await wrapper.vm.$nextTick()
+
+      await vi.advanceTimersByTimeAsync(4 * 60_000)
+      await flushPromises()
+      expect(
+        vi.mocked(requestCompanionDialogue).mock.calls.filter((call) => call[0]?.trigger === 'idle'),
+      ).toHaveLength(1)
+
+      await vi.advanceTimersByTimeAsync(3 * 60_000)
+      await flushPromises()
+      expect(
+        vi.mocked(requestCompanionDialogue).mock.calls.filter((call) => call[0]?.trigger === 'idle'),
+      ).toHaveLength(3)
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('greets once per day after a short delay and stays quiet in quiet mode', async () => {

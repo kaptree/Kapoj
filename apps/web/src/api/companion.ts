@@ -1,5 +1,7 @@
 import { http } from './client'
 import type {
+  CompanionDialogueRequest,
+  CompanionDialogueResult,
   CompanionEvent,
   CompanionPetResult,
   CompanionSettingsPatch,
@@ -33,3 +35,10 @@ export const petCompanion = () => http.post<CompanionPetResult>('/companion/pet'
 /** Public companion summary for a user's profile; private profiles return 404. */
 export const getUserCompanion = (userID: number) =>
   http.get<UserCompanion>(`/users/${userID}/companion`)
+
+
+/** Generate one AI companion line; the server falls back to a static lineKey. */
+export const requestCompanionDialogue = (
+  input: CompanionDialogueRequest,
+  signal?: AbortSignal,
+) => http.post<CompanionDialogueResult>('/companion/dialogue', input, { signal })

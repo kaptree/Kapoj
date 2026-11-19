@@ -9700,6 +9700,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/companion/dialogue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 生成伙伴互动台词（登录）
+         * @description 配置了 AI 时生成一句伙伴台词；未配置、AI 关闭、超限或上游失败时返回 HTTP 200
+         *     + source=default + lineKey，由前端回退到静态台词。trigger 仅接受 pet/greet/idle；
+         *     recentLines 最多保留 3 条、每条最多 80 字符。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CompanionDialogueRequest"];
+                };
+            };
+            responses: {
+                /** @description AI 台词或静态回退 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CompanionDialogueResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/certificate-types": {
         parameters: {
             query?: never;
@@ -14078,6 +14125,14 @@ export interface components {
             publicProfile: boolean;
             equippedSkin: string;
             unlockedSkins: string[];
+            /** @description 用户自定义性格提示词，空串表示使用系统默认 */
+            personalityPrompt?: string;
+            /** @description 是否允许 AI 生成互动台词 */
+            aiDialogueEnabled?: boolean;
+            /** @description 用户是否配置了可用的 AI 模型 */
+            aiReady?: boolean;
+            /** @description 今日剩余 AI 台词次数；未接入 AI 时为 0 */
+            aiRemainingToday?: number;
             /** @description 未读事件数 */
             unreadCount: number;
             /** @description 今日事件明细，按 id 升序 */
@@ -14091,6 +14146,9 @@ export interface components {
             publicProfile?: boolean;
             /** @description 皮肤标识，按字符数最多 40 个 */
             equippedSkin?: string;
+            /** @description 性格提示词，按字符数最多 500 个 */
+            personalityPrompt?: string;
+            aiDialogueEnabled?: boolean;
         };
         /** @description 标记事件已读请求；最多 100 个 id，省略 ids 视为空列表。 */
         CompanionMarkReadRequest: {
@@ -14102,6 +14160,28 @@ export interface components {
             awarded: boolean;
             bond: number;
             level: number;
+        };
+        /** @description 伙伴互动台词请求；trigger 必填，其余字段仅作为提示词上下文。 */
+        CompanionDialogueRequest: {
+            /** @enum {string} */
+            trigger: "pet" | "greet" | "idle";
+            /** @enum {string} */
+            expression?: "neutral" | "happy" | "shy" | "pout" | "surprised" | "sleepy" | "smug";
+            /** @enum {string} */
+            greetingKey?: "greet.morning" | "greet.afternoon" | "greet.night";
+            recentLines?: string[];
+        };
+        /** @description AI 台词或静态兜底；AI 不可用/超限/失败时返回 source=default + lineKey。 */
+        CompanionDialogueResult: {
+            /** @enum {string} */
+            source: "ai" | "default";
+            line?: string;
+            lineKey?: string;
+            reason?: string;
+            remainingToday: number;
+        };
+        CompanionDialogueResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["CompanionDialogueResult"];
         };
         CompanionStateResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["CompanionState"];

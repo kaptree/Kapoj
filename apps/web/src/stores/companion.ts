@@ -139,6 +139,10 @@ export const useCompanionStore = defineStore('companion', () => {
   const latestEventLine = ref('')
   const globalEnabled = ref(true)
   const publicProfile = ref(false)
+  const personalityPrompt = ref('')
+  const aiDialogueEnabled = ref(true)
+  const aiReady = ref(false)
+  const aiRemainingToday = ref(0)
   const name = ref('Kapo')
   const contestMute = ref(true)
   const allowUserDisable = ref(true)
@@ -250,6 +254,17 @@ export const useCompanionStore = defineStore('companion', () => {
     if (typeof state.publicProfile === 'boolean') {
       publicProfile.value = state.publicProfile
     }
+    if (typeof state.personalityPrompt === 'string') {
+      personalityPrompt.value = state.personalityPrompt
+    }
+    if (typeof state.aiDialogueEnabled === 'boolean') {
+      aiDialogueEnabled.value = state.aiDialogueEnabled
+    }
+    if (typeof state.aiReady === 'boolean') {
+      aiReady.value = state.aiReady
+    }
+    const nextRemaining = nonNegativeInt(state.aiRemainingToday)
+    if (nextRemaining !== null) aiRemainingToday.value = nextRemaining
 
     let prefsChanged = false
     if (ACTIVITY_LEVELS.includes(state.activityLevel as CompanionActivityLevel)) {
@@ -306,6 +321,10 @@ export const useCompanionStore = defineStore('companion', () => {
     latestEventLine,
     globalEnabled,
     publicProfile,
+    personalityPrompt,
+    aiDialogueEnabled,
+    aiReady,
+    aiRemainingToday,
     name,
     contestMute,
     allowUserDisable,

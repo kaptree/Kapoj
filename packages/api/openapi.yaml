@@ -4111,6 +4111,27 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/CompanionPetResponse' }
         '401': { $ref: '#/components/responses/Error' }
+  /companion/dialogue:
+    post:
+      summary: 生成伙伴互动台词（登录）
+      description: |
+        配置了 AI 时生成一句伙伴台词；未配置、AI 关闭、超限或上游失败时返回 HTTP 200
+        + source=default + lineKey，由前端回退到静态台词。trigger 仅接受 pet/greet/idle；
+        recentLines 最多保留 3 条、每条最多 80 字符。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompanionDialogueRequest' }
+      responses:
+        '200':
+          description: AI 台词或静态回退
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CompanionDialogueResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
   /certificate-types:
     get:
       summary: 启用的证书类型列表（公开）
@@ -8126,6 +8147,10 @@ components:
         unlockedSkins:
           type: array
           items: { type: string }
+        personalityPrompt: { type: string, description: 用户自定义性格提示词，空串表示使用系统默认 }
+        aiDialogueEnabled: { type: boolean, description: 是否允许 AI 生成互动台词 }
+        aiReady: { type: boolean, description: 用户是否配置了可用的 AI 模型 }
+        aiRemainingToday: { type: integer, description: 今日剩余 AI 台词次数；未接入 AI 时为 0 }
         unreadCount: { type: integer, description: 未读事件数 }
         todayEvents:
           type: array
@@ -8139,6 +8164,8 @@ components:
         dockEnabled: { type: boolean }
         publicProfile: { type: boolean }
         equippedSkin: { type: string, maxLength: 40, description: 皮肤标识，按字符数最多 40 个 }
+        personalityPrompt: { type: string, maxLength: 500, description: 性格提示词，按字符数最多 500 个 }
+        aiDialogueEnabled: { type: boolean }
     CompanionMarkReadRequest:
       type: object
       description: 标记事件已读请求；最多 100 个 id，省略 ids 视为空列表。
@@ -8155,6 +8182,35 @@ components:
         awarded: { type: boolean, description: 本次调用是否获得羁绊 }
         bond: { type: integer }
         level: { type: integer, minimum: 0, maximum: 6 }
+    CompanionDialogueRequest:
+      type: object
+      description: 伙伴互动台词请求；trigger 必填，其余字段仅作为提示词上下文。
+      required: [trigger]
+      properties:
+        trigger: { type: string, enum: [pet, greet, idle] }
+        expression: { type: string, enum: [neutral, happy, shy, pout, surprised, sleepy, smug] }
+        greetingKey: { type: string, enum: [greet.morning, greet.afternoon, greet.night] }
+        recentLines:
+          type: array
+          maxItems: 3
+          items: { type: string, maxLength: 80 }
+    CompanionDialogueResult:
+      type: object
+      description: AI 台词或静态兜底；AI 不可用/超限/失败时返回 source=default + lineKey。
+      required: [source, remainingToday]
+      properties:
+        source: { type: string, enum: [ai, default] }
+        line: { type: string }
+        lineKey: { type: string }
+        reason: { type: string }
+        remainingToday: { type: integer }
+    CompanionDialogueResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/CompanionDialogueResult' }
     CompanionStateResponse:
       allOf:
         - $ref: '#/components/schemas/Envelope'

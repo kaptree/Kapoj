@@ -6,6 +6,7 @@ import { getCompanion, petCompanion } from '../../api/companion'
 import { getActivitySummary, signInActivity } from '../../api/leaderboard'
 import type { ActivitySummary } from '../../api/types'
 import { useCompanionMute } from '../../composables/useCompanionMute'
+import { useCompanionDialogue, type DialogueGreetingKey } from '../../composables/useCompanionDialogue'
 import { useCompanionGaze } from '../../composables/useCompanionGaze'
 import type { CompanionLineKey } from '../../content/companion/lines.zh-CN'
 import { pickCompanionLine } from '../../content/companion/lines.zh-CN'
@@ -36,6 +37,10 @@ const PET_LINE_KEYS: Record<CompanionQExpression, CompanionLineKey> = {
   smug: 'pet.smug',
 }
 
+const IDLE_CHECK_MS = 60_000
+const IDLE_AFTER_MS = 4 * 60_000
+const IDLE_MAX_PER_HOUR = 3
+
 const auth = useAuthStore()
 const store = useCompanionStore()
 const { muted, checking } = useCompanionMute()
@@ -52,17 +57,28 @@ const petting = ref(false)
 const petError = ref(false)
 const petLine = ref('')
 const greetingLine = ref('')
+const idleLine = ref('')
 const expression = ref<CompanionQExpression>('neutral')
 const blinking = ref(false)
 const toggleRef = ref<HTMLButtonElement | null>(null)
 const characterRef = ref<HTMLButtonElement | null>(null)
 const panelRef = ref<HTMLElement | null>(null)
 
+const { request: requestDialogue } = useCompanionDialogue()
+
 let petCooldownUntil = 0
+let lastInteractionAt = Date.now()
+let dialogueToken = 0
+let greetingToken = 0
+let idleToken = 0
+let petFallbackTimer: number | undefined
 let expressionTimer: number | undefined
 let greetingTimer: number | undefined
 let blinkOnTimer: number | undefined
 let blinkOffTimer: number | undefined
+let idleTimer: number | undefined
+let idleHour = -1
+let idleCount = 0
 
 const visible = computed(
   () =>
@@ -87,12 +103,13 @@ const line = computed(
   () =>
     petLine.value ||
     greetingLine.value ||
+    idleLine.value ||
     store.latestEventLine ||
     pickCompanionLine(signedInToday.value === false ? 'signin' : 'greeting', localDateKey()),
 )
 
 /** Only spontaneous/pet lines float above the character; the default remains in the panel. */
-const characterLine = computed(() => petLine.value || greetingLine.value)
+const characterLine = computed(() => petLine.value || greetingLine.value || idleLine.value)
 
 async function loadSummary(): Promise<void> {
   if (!visible.value) return
@@ -109,6 +126,7 @@ async function loadSummary(): Promise<void> {
 async function handleSignIn(): Promise<void> {
   if (signingIn.value) return
 
+  lastInteractionAt = Date.now()
   signingIn.value = true
   signInError.value = false
   try {
@@ -136,6 +154,13 @@ function scheduleNeutral(): void {
   }, 3000)
 }
 
+function clearPetFallback(): void {
+  if (petFallbackTimer !== undefined) {
+    window.clearTimeout(petFallbackTimer)
+    petFallbackTimer = undefined
+  }
+}
+
 /**
  * Pets once per interaction with an 800ms client-side guard. The server still
  * owns the once-per-day bond award; this guard only prevents a burst of
@@ -146,6 +171,9 @@ async function handlePet(): Promise<void> {
 
   petting.value = true
   petError.value = false
+  lastInteractionAt = Date.now()
+  idleLine.value = ''
+  idleToken += 1
   cancelGreeting()
   const nextExpression = pickPetExpression(Math.random, expression.value)
   expression.value = nextExpression
@@ -155,12 +183,30 @@ async function handlePet(): Promise<void> {
     const result = await petCompanion()
     store.bond = result.bond
     store.level = result.level
-    petLine.value = result.awarded
+    const staticLine = result.awarded
       ? pickCompanionLine(PET_LINE_KEYS[nextExpression], seed, petLine.value)
       : pickCompanionLine('pet.already', seed)
     // The pet response omits the level name, next threshold and daily gain, so
     // an awarded pet refreshes the full state to keep the meter honest.
     if (result.awarded) void refreshProgress()
+
+    clearPetFallback()
+    if (store.aiReady && store.aiDialogueEnabled) {
+      const token = ++dialogueToken
+      petLine.value = '……'
+      petFallbackTimer = window.setTimeout(() => {
+        if (token === dialogueToken) petLine.value = staticLine
+      }, 1200)
+      void requestDialogue({ trigger: 'pet', expression: nextExpression }).then((line) => {
+        if (token !== dialogueToken) return
+        clearPetFallback()
+        if (petLine.value === '……' || petLine.value === staticLine) {
+          petLine.value = line.line
+        }
+      })
+    } else {
+      petLine.value = staticLine
+    }
   } catch {
     petError.value = true
     petLine.value = pickCompanionLine('pet', seed)
@@ -186,7 +232,7 @@ function clearGreetingTimer(): void {
   }
 }
 
-function greetingKeyFor(hour: number): CompanionLineKey {
+function greetingKeyFor(hour: number): DialogueGreetingKey {
   if (hour >= 5 && hour < 12) return 'greet.morning'
   if (hour >= 12 && hour < 18) return 'greet.afternoon'
   return 'greet.night'
@@ -197,15 +243,24 @@ function scheduleGreeting(): void {
   if (!visible.value || store.activityLevel === 'quiet' || !store.shouldGreet()) return
   greetingTimer = window.setTimeout(() => {
     const key = greetingKeyFor(new Date().getHours())
-    greetingLine.value = pickCompanionLine(key, localDateKey())
+    const staticLine = pickCompanionLine(key, localDateKey())
+    greetingLine.value = staticLine
     store.markGreeted()
     greetingTimer = undefined
+    if (store.aiReady && store.aiDialogueEnabled) {
+      const token = ++greetingToken
+      void requestDialogue({ trigger: 'greet', greetingKey: key }).then((line) => {
+        if (token !== greetingToken) return
+        if (greetingLine.value === staticLine) greetingLine.value = line.line
+      })
+    }
   }, 2000)
 }
 
 /** User interaction before the 2s greeting cancels it for today. */
 function cancelGreeting(): void {
   clearGreetingTimer()
+  greetingToken += 1
   if (!greetingLine.value) return
   greetingLine.value = ''
 }
@@ -228,6 +283,37 @@ function scheduleBlink(): void {
       scheduleBlink()
     }, 120)
   }, 3000 + Math.random() * 4000)
+}
+
+function stopIdleTimer(): void {
+  if (idleTimer !== undefined) {
+    window.clearInterval(idleTimer)
+    idleTimer = undefined
+  }
+}
+
+function tickIdle(): void {
+  if (!visible.value || store.activityLevel !== 'lively' || muted.value) return
+  const hour = new Date().getHours()
+  if (hour !== idleHour) {
+    idleHour = hour
+    idleCount = 0
+  }
+  if (Date.now() - lastInteractionAt < IDLE_AFTER_MS || idleCount >= IDLE_MAX_PER_HOUR) return
+  idleCount += 1
+  const token = ++idleToken
+  const staticLine = pickCompanionLine('idle.lively', String(Date.now()))
+  idleLine.value = staticLine
+  if (!store.aiReady || !store.aiDialogueEnabled) return
+  void requestDialogue({ trigger: 'idle' }).then((line) => {
+    if (token === idleToken && idleLine.value === staticLine) idleLine.value = line.line
+  })
+}
+
+function startIdleTimer(): void {
+  stopIdleTimer()
+  if (!visible.value || store.activityLevel !== 'lively') return
+  idleTimer = window.setInterval(tickIdle, IDLE_CHECK_MS)
 }
 
 function close(): void {
@@ -253,6 +339,9 @@ function toggle(): void {
   }
 
   open.value = true
+  lastInteractionAt = Date.now()
+  idleLine.value = ''
+  idleToken += 1
   void nextTick(focusPanel)
 }
 
@@ -267,18 +356,28 @@ watch(
       open.value = false
       clearGreetingTimer()
       clearBlink()
+      stopIdleTimer()
+      idleLine.value = ''
       return
     }
     void loadSummary()
     scheduleGreeting()
     scheduleBlink()
+    startIdleTimer()
   },
   { immediate: true },
 )
 
 watch(
   () => store.activityLevel,
-  () => scheduleGreeting(),
+  () => {
+    scheduleGreeting()
+    startIdleTimer()
+    if (store.activityLevel !== 'lively') {
+      idleLine.value = ''
+      idleToken += 1
+    }
+  },
 )
 
 watch(reducedMotion, () => scheduleBlink())
@@ -288,6 +387,8 @@ watch(
   () => {
     open.value = false
     cancelGreeting()
+    idleLine.value = ''
+    idleToken += 1
   },
 )
 
@@ -309,6 +410,11 @@ onBeforeUnmount(() => {
   clearExpressionTimer()
   clearGreetingTimer()
   clearBlink()
+  clearPetFallback()
+  stopIdleTimer()
+  dialogueToken += 1
+  greetingToken += 1
+  idleToken += 1
 })
 </script>
 
