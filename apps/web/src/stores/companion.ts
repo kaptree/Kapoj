@@ -267,14 +267,7 @@ export const useCompanionStore = defineStore('companion', () => {
     if (typeof state.personalityPrompt === 'string') {
       personalityPrompt.value = state.personalityPrompt
     }
-    if (typeof state.aiDialogueEnabled === 'boolean') {
-      aiDialogueEnabled.value = state.aiDialogueEnabled
-    }
-    if (typeof state.aiReady === 'boolean') {
-      aiReady.value = state.aiReady
-    }
-    const nextRemaining = nonNegativeInt(state.aiRemainingToday)
-    if (nextRemaining !== null) aiRemainingToday.value = nextRemaining
+    applyAIStatus(state)
 
     let prefsChanged = false
     if (ACTIVITY_LEVELS.includes(state.activityLevel as CompanionActivityLevel)) {
@@ -287,6 +280,21 @@ export const useCompanionStore = defineStore('companion', () => {
       prefsChanged = true
     }
     if (prefsChanged) persistPrefs()
+  }
+
+  /**
+   * Applies only the server-derived AI fields. Used when the AI settings may
+   * have changed outside the initial login sync, without touching the local
+   * activity/dock preferences or the wardrobe state.
+   */
+  function applyAIStatus(state: CompanionState | null | undefined): void {
+    if (!state) return
+    if (typeof state.aiReady === 'boolean') aiReady.value = state.aiReady
+    if (typeof state.aiDialogueEnabled === 'boolean') {
+      aiDialogueEnabled.value = state.aiDialogueEnabled
+    }
+    const nextRemaining = nonNegativeInt(state.aiRemainingToday)
+    if (nextRemaining !== null) aiRemainingToday.value = nextRemaining
   }
 
   /** Applies the site-wide switch; a missing config is treated as enabled. */
@@ -342,6 +350,7 @@ export const useCompanionStore = defineStore('companion', () => {
     allowUserDisable,
     effectiveEnabled,
     applyRemoteState,
+    applyAIStatus,
     applyGlobalConfig,
     setLatestEventLine,
   }

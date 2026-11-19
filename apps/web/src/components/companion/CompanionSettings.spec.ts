@@ -2,13 +2,16 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { updateCompanionSettings } from '@/api/companion'
+import { getCompanion, updateCompanionSettings } from '@/api/companion'
 import { useCompanionStore } from '@/stores/companion'
 import CompanionSettings from './CompanionSettings.vue'
 
 const auth = vi.hoisted(() => ({ isLoggedIn: false }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => auth }))
-vi.mock('@/api/companion', () => ({ updateCompanionSettings: vi.fn() }))
+vi.mock('@/api/companion', () => ({
+  getCompanion: vi.fn(),
+  updateCompanionSettings: vi.fn(),
+}))
 
 /** Site config with the companion switched off site-wide. */
 const GLOBAL_OFF = {
@@ -56,6 +59,8 @@ function mountSettings(before?: (store: ReturnType<typeof useCompanionStore>) =>
 beforeEach(() => {
   localStorage.clear()
   auth.isLoggedIn = false
+  vi.mocked(getCompanion).mockReset()
+  vi.mocked(getCompanion).mockRejectedValue(new Error('not used'))
   vi.mocked(updateCompanionSettings).mockReset()
   // Mirror the server: the partial patch is merged into the returned state.
   vi.mocked(updateCompanionSettings).mockImplementation((patch) =>
@@ -207,6 +212,30 @@ describe('CompanionSettings', () => {
 
     expect(updateCompanionSettings).toHaveBeenCalledWith({ equippedSkin: 'outfit-3' })
     expect(useCompanionStore().equippedSkin).toBe('outfit-3')
+  })
+
+  it('refreshes AI readiness when the settings page opens', async () => {
+    auth.isLoggedIn = true
+    vi.mocked(getCompanion).mockResolvedValue(
+      remoteState({ aiReady: true, aiDialogueEnabled: true, aiRemainingToday: 12 }) as never,
+    )
+
+    const wrapper = mountSettings()
+    expect(useCompanionStore().aiReady).toBe(false)
+
+    await flushPromises()
+
+    expect(getCompanion).toHaveBeenCalledTimes(1)
+    expect(useCompanionStore().aiReady).toBe(true)
+    const toggle = wrapper.get('[data-test="ai-dialogue-toggle"]')
+    expect(toggle.attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).toContain('今日剩余 12 次')
+  })
+
+  it('does not refresh remote state for guests', async () => {
+    mountSettings()
+    await flushPromises()
+    expect(getCompanion).not.toHaveBeenCalled()
   })
 
   it('saves the personality prompt and AI toggle remotely', async () => {

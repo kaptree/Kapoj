@@ -243,6 +243,32 @@ describe('companion store', () => {
     expect(store.globalEnabled).toBe(true)
   })
 
+  it('applies only AI fields and leaves local preferences alone', () => {
+    const store = useCompanionStore()
+    store.load()
+    store.setActivityLevel('lively')
+    store.setEnabled(false)
+    store.personalityPrompt = '旧性格'
+
+    store.applyAIStatus(
+      remoteState({
+        aiReady: true,
+        aiDialogueEnabled: false,
+        aiRemainingToday: 7,
+        activityLevel: 'quiet',
+        dockEnabled: true,
+        personalityPrompt: '别改我',
+      }),
+    )
+
+    expect(store.aiReady).toBe(true)
+    expect(store.aiDialogueEnabled).toBe(false)
+    expect(store.aiRemainingToday).toBe(7)
+    expect(store.activityLevel).toBe('lively')
+    expect(store.enabled).toBe(false)
+    expect(store.personalityPrompt).toBe('旧性格')
+  })
+
   it('hydrates server-owned activity and dock prefs and persists them', () => {
     const store = useCompanionStore()
     store.load()

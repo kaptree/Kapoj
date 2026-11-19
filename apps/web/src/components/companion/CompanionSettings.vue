@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
-import { updateCompanionSettings } from '@/api/companion'
+import { getCompanion, updateCompanionSettings } from '@/api/companion'
 import type { CompanionSettingsPatch } from '@/api/types'
 import AppSurface from '@/components/ui/AppSurface.vue'
 import { COMPANION_OUTFITS } from '@/content/companion/manifest'
@@ -16,6 +16,18 @@ const store = useCompanionStore()
 
 // Preferences live in this browser; loading once keeps every surface in sync.
 store.load()
+
+/**
+ * AI readiness is derived from the user's active model and can change on the
+ * AI settings page without remounting this layout. Refresh it on entry so the
+ * toggle is not stuck disabled until a full reload.
+ */
+onMounted(() => {
+  if (!auth.isLoggedIn) return
+  void getCompanion()
+    .then((state) => store.applyAIStatus(state))
+    .catch(() => undefined)
+})
 
 const syncError = ref('')
 
