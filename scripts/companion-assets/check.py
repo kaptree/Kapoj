@@ -122,7 +122,7 @@ def check_sample() -> None:
     print("sample assets ok")
 
 
-def check_production() -> None:
+def check_production(show_sizes: bool = False) -> None:
     if not PRODUCTION_DIR.is_dir():
         fail("missing apps/web/public/companion")
     assets_path = ROOT / "apps/web/src/content/companion/assets.json"
@@ -194,6 +194,9 @@ def check_production() -> None:
         print(f"WARN: initial Q set is {initial / 1024:.1f}K, above the 180K target")
 
     check_webp_sizes(PRODUCTION_DIR, PUBLIC_MAX_BYTES, "public")
+    if show_sizes:
+        for path in sorted(PRODUCTION_DIR.rglob("*.webp")):
+            print(f"{path.stat().st_size / 1024:7.1f}K  {path.relative_to(ROOT)}")
     print(f"production assets ok (5 outfits, Q rig, initial {initial / 1024:.1f}K)")
 
 
@@ -208,7 +211,7 @@ def main() -> None:
         check_sample()
         return
     if args.production:
-        check_production()
+        check_production(show_sizes=args.sizes)
         return
     parser.print_help()
     sys.exit(2)

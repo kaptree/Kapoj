@@ -9,7 +9,9 @@ withDefaults(
 </script>
 
 <template>
-  <p class="companion-bubble" :class="`companion-bubble--${tone}`">{{ text }}</p>
+  <p class="companion-bubble" :class="`companion-bubble--${tone}`" role="status" aria-live="polite">
+    {{ text }}
+  </p>
 </template>
 
 <style scoped>

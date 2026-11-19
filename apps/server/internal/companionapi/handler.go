@@ -185,6 +185,14 @@ func (h *handler) dialogue(c *gin.Context) {
 		httpx.Fail(c, httpx.ErrValidation("互动类型无效"))
 		return
 	}
+	if req.Expression != "" && !companion.ValidDialogueExpression(req.Expression) {
+		httpx.Fail(c, httpx.ErrValidation("表情类型无效"))
+		return
+	}
+	if req.GreetingKey != "" && !companion.ValidDialogueGreetingKey(req.GreetingKey) {
+		httpx.Fail(c, httpx.ErrValidation("问候时段无效"))
+		return
+	}
 	result, err := h.svc.Dialogue(c.Request.Context(), userID, req)
 	if err != nil {
 		httpx.Fail(c, err)

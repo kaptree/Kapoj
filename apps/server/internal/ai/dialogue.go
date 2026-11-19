@@ -22,6 +22,9 @@ func (s *Service) Chat(ctx context.Context, userID int64, messages []ChatMessage
 	req.MaxTokens = maxTokens
 	out, err := s.client.Chat(ctx, req)
 	if err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
 		return "", httpx.ErrBadGateway
 	}
 	return out, nil

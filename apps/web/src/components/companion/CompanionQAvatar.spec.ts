@@ -77,3 +77,33 @@ describe('CompanionQAvatar', () => {
     expect(rendered).not.toContain(COMPANION_Q.layers.irisLeft.src)
   })
 })
+
+describe('CompanionQAvatar fallbacks', () => {
+  it('falls back to eye-open when the happy eye patch 404s', async () => {
+    const wrapper = mount(CompanionQAvatar, { props: { expression: 'happy' } })
+    const eye = wrapper
+      .findAll('img')
+      .find((img) => img.attributes('src') === COMPANION_Q.layers.eyes.happy.src)
+    expect(eye).toBeTruthy()
+    await eye!.trigger('error')
+    await nextTick()
+    expect(srcs(wrapper)).toContain(COMPANION_Q.layers.eyeOpen.src)
+  })
+
+  it('hides an optional mouth layer that 404s', async () => {
+    const wrapper = mount(CompanionQAvatar, { props: { expression: 'happy' } })
+    const mouth = wrapper
+      .findAll('img')
+      .find((img) => img.attributes('src') === COMPANION_Q.layers.mouths.smile.src)
+    expect(mouth).toBeTruthy()
+    await mouth!.trigger('error')
+    await nextTick()
+    expect(srcs(wrapper)).not.toContain(COMPANION_Q.layers.mouths.smile.src)
+  })
+
+  it('keeps iris movement proportional to the canvas', () => {
+    const wrapper = mount(CompanionQAvatar, { props: { lookX: 1, lookY: -1 } })
+    const style = wrapper.findAll('.companion-q-avatar__iris')[0].attributes('style') ?? ''
+    expect(style).toContain('translate(1%, -0.7%)')
+  })
+})

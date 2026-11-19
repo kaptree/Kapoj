@@ -122,3 +122,14 @@ describe('CompanionProfileCard', () => {
     expect(wrapper.text()).toBe('')
   })
 })
+
+describe('CompanionProfileCard image fallbacks', () => {
+  it('falls back to outfit-1 when the outfit image 404s', async () => {
+    const wrapper = mountCard({ equippedSkin: 'outfit-3' })
+    const image = wrapper.get('img.companion-profile-card__outfit')
+    await image.trigger('error')
+    expect(wrapper.get('img.companion-profile-card__outfit').attributes('src')).toBe(
+      '/companion/outfits/outfit-1.webp',
+    )
+  })
+})

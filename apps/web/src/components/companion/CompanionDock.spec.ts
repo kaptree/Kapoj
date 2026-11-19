@@ -576,3 +576,88 @@ describe('CompanionDock', () => {
     expect(wrapper.get('.companion-dock__panel').attributes('aria-label')).toBe('小助手')
   })
 })
+
+describe('CompanionDock interaction lifecycle', () => {
+  it('does not let a slow first pet overwrite a newer pet', async () => {
+    const petResolvers: Array<(value: unknown) => void> = []
+    vi.mocked(petCompanion).mockImplementation(
+      () => new Promise((resolve) => petResolvers.push(resolve)) as never,
+    )
+    const aiResolvers: Array<(value: unknown) => void> = []
+    vi.mocked(requestCompanionDialogue).mockImplementation(
+      () => new Promise((resolve) => aiResolvers.push(resolve)) as never,
+    )
+    const wrapper = await mountDock()
+    await flushPromises()
+    const store = useCompanionStore()
+    store.aiReady = true
+    const character = wrapper.get('.companion-dock__character')
+
+    await character.trigger('click')
+    petResolvers[0]({ awarded: true, bond: 121, level: 3 })
+    await flushPromises()
+    expect(aiResolvers).toHaveLength(1)
+
+    await new Promise((resolve) => setTimeout(resolve, 850))
+    await character.trigger('click')
+    expect(petResolvers).toHaveLength(2)
+
+    // The first AI lands while the second pet API is still pending. Its token
+    // is stale and must not overwrite the newer interaction.
+    aiResolvers[0]({ source: 'ai', line: '旧 AI', remainingToday: 28 })
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('旧 AI')
+
+    petResolvers[1]({ awarded: true, bond: 122, level: 3 })
+    await flushPromises()
+    aiResolvers[1]({ source: 'ai', line: '新 AI', remainingToday: 27 })
+    await flushPromises()
+    expect(wrapper.text()).toContain('新 AI')
+  })
+
+  it('aborts an in-flight AI request and clears the bubble when hidden', async () => {
+    let signal: AbortSignal | undefined
+    vi.mocked(requestCompanionDialogue).mockImplementation((_input, requestSignal) => {
+      signal = requestSignal
+      return new Promise((_resolve, reject) => {
+        requestSignal?.addEventListener('abort', () =>
+          reject(new DOMException('Aborted', 'AbortError')),
+        )
+      })
+    })
+    const wrapper = await mountDock()
+    await flushPromises()
+    const store = useCompanionStore()
+    store.aiReady = true
+
+    await wrapper.get('.companion-dock__character').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('……')
+
+    store.setEnabled(false)
+    await wrapper.vm.$nextTick()
+    expect(signal?.aborted).toBe(true)
+
+    store.setEnabled(true)
+    await flushPromises()
+    expect(wrapper.find('.companion-dock__floating-bubble').exists()).toBe(false)
+  })
+
+  it('expires transient bubbles and lets a newer event line take over', async () => {
+    const wrapper = await mountDock()
+    await flushPromises()
+    await wrapper.get('.companion-dock__character').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.companion-dock__floating-bubble').exists()).toBe(true)
+
+    const store = useCompanionStore()
+    store.setLatestEventLine('新的系统事件')
+    await wrapper.vm.$nextTick()
+    await wrapper.get('.companion-dock__menu').trigger('click')
+    expect(wrapper.get('.companion-dock__panel').text()).toContain('新的系统事件')
+
+    await new Promise((resolve) => setTimeout(resolve, 3600))
+    await flushPromises()
+    expect(wrapper.find('.companion-dock__floating-bubble').exists()).toBe(false)
+  })
+})

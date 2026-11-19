@@ -67,13 +67,14 @@ const toggleRef = ref<HTMLButtonElement | null>(null)
 const characterRef = ref<HTMLButtonElement | null>(null)
 const panelRef = ref<HTMLElement | null>(null)
 
-const { request: requestDialogue } = useCompanionDialogue()
+const { request: requestDialogue, cancel: cancelDialogue } = useCompanionDialogue()
 
 let petCooldownUntil = 0
 let lastInteractionAt = Date.now()
 let dialogueToken = 0
 let greetingToken = 0
 let idleToken = 0
+let bubbleTimer: number | undefined
 let petFallbackTimer: number | undefined
 let expressionTimer: number | undefined
 let greetingTimer: number | undefined
@@ -107,9 +108,9 @@ const { lookX, lookY } = useCompanionGaze({ target: characterRef, enabled: gazeE
 const line = computed(
   () =>
     petLine.value ||
+    store.latestEventLine ||
     greetingLine.value ||
     idleLine.value ||
-    store.latestEventLine ||
     pickCompanionLine(signedInToday.value === false ? 'signin' : 'greeting', localDateKey()),
 )
 
@@ -156,6 +157,7 @@ function scheduleNeutral(): void {
   expressionTimer = window.setTimeout(() => {
     expression.value = 'neutral'
     expressionTimer = undefined
+    scheduleBlink()
   }, 3000)
 }
 
@@ -166,6 +168,23 @@ function clearPetFallback(): void {
   }
 }
 
+function clearBubbleTimer(): void {
+  if (bubbleTimer !== undefined) {
+    window.clearTimeout(bubbleTimer)
+    bubbleTimer = undefined
+  }
+}
+
+function scheduleBubbleClear(): void {
+  clearBubbleTimer()
+  bubbleTimer = window.setTimeout(() => {
+    petLine.value = ''
+    greetingLine.value = ''
+    idleLine.value = ''
+    bubbleTimer = undefined
+  }, 3500)
+}
+
 /**
  * Pets once per interaction with an 800ms client-side guard. The server still
  * owns the once-per-day bond award; this guard only prevents a burst of
@@ -174,6 +193,9 @@ function clearPetFallback(): void {
 async function handlePet(): Promise<void> {
   if (petting.value || Date.now() < petCooldownUntil) return
 
+  const token = ++dialogueToken
+  clearPetFallback()
+  clearBubbleTimer()
   petting.value = true
   petError.value = false
   lastInteractionAt = Date.now()
@@ -186,6 +208,7 @@ async function handlePet(): Promise<void> {
   const seed = String(Date.now())
   try {
     const result = await petCompanion()
+    if (token !== dialogueToken) return
     store.bond = result.bond
     store.level = result.level
     const staticLine = result.awarded
@@ -197,27 +220,36 @@ async function handlePet(): Promise<void> {
 
     clearPetFallback()
     if (store.aiReady && store.aiDialogueEnabled) {
-      const token = ++dialogueToken
       petLine.value = '……'
+      scheduleBubbleClear()
       petFallbackTimer = window.setTimeout(() => {
-        if (token === dialogueToken) petLine.value = staticLine
+        if (token === dialogueToken) {
+          petLine.value = staticLine
+          scheduleBubbleClear()
+        }
       }, 1200)
       void requestDialogue({ trigger: 'pet', expression: nextExpression }).then((line) => {
         if (token !== dialogueToken) return
         clearPetFallback()
         if (petLine.value === '……' || petLine.value === staticLine) {
           petLine.value = line.line
+          scheduleBubbleClear()
         }
       })
     } else {
       petLine.value = staticLine
+      scheduleBubbleClear()
     }
   } catch {
+    if (token !== dialogueToken) return
     petError.value = true
     petLine.value = pickCompanionLine('pet', seed)
+    scheduleBubbleClear()
   } finally {
-    petting.value = false
-    scheduleNeutral()
+    if (token === dialogueToken) {
+      petting.value = false
+      scheduleNeutral()
+    }
   }
 }
 
@@ -250,13 +282,17 @@ function scheduleGreeting(): void {
     const key = greetingKeyFor(new Date().getHours())
     const staticLine = pickCompanionLine(key, localDateKey())
     greetingLine.value = staticLine
+    scheduleBubbleClear()
     store.markGreeted()
     greetingTimer = undefined
     if (store.aiReady && store.aiDialogueEnabled) {
       const token = ++greetingToken
       void requestDialogue({ trigger: 'greet', greetingKey: key }).then((line) => {
         if (token !== greetingToken) return
-        if (greetingLine.value === staticLine) greetingLine.value = line.line
+        if (greetingLine.value === staticLine) {
+          greetingLine.value = line.line
+          scheduleBubbleClear()
+        }
       })
     }
   }, 2000)
@@ -283,6 +319,10 @@ function scheduleBlink(): void {
   if (!visible.value || reducedMotion.value) return
   blinkOnTimer = window.setTimeout(
     () => {
+      if (expression.value !== 'neutral') {
+        scheduleBlink()
+        return
+      }
       blinking.value = true
       blinkOffTimer = window.setTimeout(() => {
         blinking.value = false
@@ -312,9 +352,13 @@ function tickIdle(): void {
   const token = ++idleToken
   const staticLine = pickCompanionLine('idle.lively', String(Date.now()))
   idleLine.value = staticLine
+  scheduleBubbleClear()
   if (!store.aiReady || !store.aiDialogueEnabled) return
   void requestDialogue({ trigger: 'idle' }).then((line) => {
-    if (token === idleToken && idleLine.value === staticLine) idleLine.value = line.line
+    if (token === idleToken && idleLine.value === staticLine) {
+      idleLine.value = line.line
+      scheduleBubbleClear()
+    }
   })
 }
 
@@ -322,6 +366,25 @@ function startIdleTimer(): void {
   stopIdleTimer()
   if (!visible.value || store.activityLevel !== 'lively') return
   idleTimer = window.setInterval(tickIdle, IDLE_CHECK_MS)
+}
+
+function resetTransientState(): void {
+  clearPetFallback()
+  clearBubbleTimer()
+  clearGreetingTimer()
+  clearBlink()
+  stopIdleTimer()
+  clearExpressionTimer()
+  cancelDialogue()
+  dialogueToken += 1
+  greetingToken += 1
+  idleToken += 1
+  petLine.value = ''
+  greetingLine.value = ''
+  idleLine.value = ''
+  expression.value = 'neutral'
+  petting.value = false
+  petError.value = false
 }
 
 function close(): void {
@@ -362,10 +425,7 @@ watch(
   (value) => {
     if (!value) {
       open.value = false
-      clearGreetingTimer()
-      clearBlink()
-      stopIdleTimer()
-      idleLine.value = ''
+      resetTransientState()
       return
     }
     void loadSummary()
@@ -394,9 +454,7 @@ watch(
   () => route.fullPath,
   () => {
     open.value = false
-    cancelGreeting()
-    idleLine.value = ''
-    idleToken += 1
+    resetTransientState()
   },
 )
 
@@ -404,8 +462,15 @@ watch(
 // line it takes over the bubble again.
 watch(
   () => store.latestEventLine,
-  () => {
+  (line) => {
+    if (!line) return
+    clearPetFallback()
+    clearBubbleTimer()
+    clearGreetingTimer()
     petLine.value = ''
+    greetingLine.value = ''
+    idleLine.value = ''
+    idleToken += 1
   },
 )
 
@@ -415,14 +480,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onWindowKeydown)
-  clearExpressionTimer()
-  clearGreetingTimer()
-  clearBlink()
-  clearPetFallback()
-  stopIdleTimer()
-  dialogueToken += 1
-  greetingToken += 1
-  idleToken += 1
+  resetTransientState()
 })
 </script>
 
@@ -450,7 +508,7 @@ onBeforeUnmount(() => {
           :expression="expression"
           :look-x="lookX"
           :look-y="lookY"
-          :blinking="blinking"
+          :blinking="blinking && expression === 'neutral'"
           frame="dock"
           :reduced-motion="reducedMotion"
         />
@@ -468,6 +526,8 @@ onBeforeUnmount(() => {
         <span class="companion-dock__dot" aria-hidden="true" />
       </button>
     </div>
+
+    <p v-if="!open && petError" class="companion-dock__floating-error">……线路断了。</p>
 
     <CompanionBubble
       v-if="!open && characterLine"
@@ -525,6 +585,9 @@ onBeforeUnmount(() => {
       <div class="companion-dock__links">
         <RouterLink class="companion-dock__link" to="/problems">去刷题</RouterLink>
         <RouterLink class="companion-dock__link" to="/appearance">伙伴设置</RouterLink>
+        <span class="companion-dock__ai-status">
+          {{ store.aiReady && store.aiDialogueEnabled ? 'AI 台词' : '默认台词' }}
+        </span>
       </div>
 
       <div class="companion-dock__actions">
@@ -553,7 +616,7 @@ onBeforeUnmount(() => {
 .companion-dock {
   position: fixed;
   right: var(--kapoj-space-5);
-  bottom: var(--kapoj-space-5);
+  bottom: calc(var(--kapoj-space-5) + env(safe-area-inset-bottom, 0px));
   z-index: 25;
   display: flex;
   flex-direction: column-reverse;
@@ -636,6 +699,18 @@ onBeforeUnmount(() => {
 .companion-dock__floating-bubble {
   max-width: 220px;
   margin: 0 4px 2px;
+}
+
+.companion-dock__floating-error {
+  margin: 0 4px;
+  font-size: 0.78rem;
+  color: var(--kapoj-kapo-text);
+}
+
+.companion-dock__ai-status {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--kapoj-text-muted);
 }
 
 .companion-dock__panel {
@@ -765,7 +840,7 @@ onBeforeUnmount(() => {
 @media (max-width: 640px) {
   .companion-dock {
     right: 16px;
-    bottom: 16px;
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
   }
 
   .companion-dock__character {

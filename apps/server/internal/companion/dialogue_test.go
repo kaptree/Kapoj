@@ -145,6 +145,29 @@ func TestDialogueUpstreamError(t *testing.T) {
 	assert.Equal(t, "greet.night", result.LineKey)
 	assert.Equal(t, "upstream_error", result.Reason)
 	assert.Equal(t, 1, gen.calls)
+
+	result, err = svc.Dialogue(context.Background(), uid, companion.DialogueRequest{Trigger: "greet", GreetingKey: "greet.night"})
+	require.NoError(t, err)
+	assert.Equal(t, "rate_limited", result.Reason)
+	assert.Equal(t, 1, gen.calls)
+}
+
+func TestDialogueTimeout(t *testing.T) {
+	gen := &fakeDialogueGenerator{err: context.DeadlineExceeded}
+	svc, g := newDialogueService(t, gen, fakeAIStatus{ready: true})
+	uid := newUser(t, g, "dialogue_timeout")
+
+	result, err := svc.Dialogue(context.Background(), uid, companion.DialogueRequest{Trigger: "pet", Expression: "shy"})
+	require.NoError(t, err)
+	assert.Equal(t, "default", result.Source)
+	assert.Equal(t, "timeout", result.Reason)
+	assert.Equal(t, 1, gen.calls)
+
+	// The failed attempt consumed one quota slot; an immediate retry is rate-limited.
+	result, err = svc.Dialogue(context.Background(), uid, companion.DialogueRequest{Trigger: "pet", Expression: "shy"})
+	require.NoError(t, err)
+	assert.Equal(t, "rate_limited", result.Reason)
+	assert.Equal(t, 1, gen.calls)
 }
 
 func TestDialogueInvalidOutput(t *testing.T) {
@@ -168,6 +191,7 @@ func TestDialogueFallbackKeys(t *testing.T) {
 		key string
 	}{
 		{companion.DialogueRequest{Trigger: "pet", Expression: "unknown"}, "pet"},
+		{companion.DialogueRequest{Trigger: "pet", Expression: "neutral"}, "pet"},
 		{companion.DialogueRequest{Trigger: "greet", GreetingKey: "greet.night"}, "greet.night"},
 		{companion.DialogueRequest{Trigger: "greet"}, "greeting"},
 		{companion.DialogueRequest{Trigger: "idle"}, "idle.lively"},

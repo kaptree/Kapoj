@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import type { UserCompanion } from '@/api/types'
@@ -22,6 +22,23 @@ const fillPercent = computed(() => {
 
 const maxThreshold = computed(() => Math.max(0, props.state?.nextThreshold ?? 0))
 const currentOutfit = computed(() => resolveCompanionOutfit(props.state?.equippedSkin ?? ''))
+const outfitSrc = ref(currentOutfit.value.src)
+const outfitAlt = ref(currentOutfit.value.name)
+const outfitFailed = ref(false)
+
+watch(currentOutfit, (outfit) => {
+  outfitSrc.value = outfit.src
+  outfitAlt.value = outfit.name
+  outfitFailed.value = false
+})
+
+function onOutfitError(): void {
+  if (outfitFailed.value) return
+  outfitFailed.value = true
+  outfitSrc.value = COMPANION_OUTFITS[0].src
+  outfitAlt.value = COMPANION_OUTFITS[0].name
+}
+
 const unlockedOutfitCount = computed(
   () => COMPANION_OUTFITS.filter((outfit) => props.state?.unlockedSkins.includes(outfit.id)).length,
 )
@@ -65,10 +82,11 @@ const bondValue = computed(() => {
     <div class="companion-profile-card__portrait">
       <img
         class="companion-profile-card__outfit"
-        :src="currentOutfit.src"
-        :alt="currentOutfit.name"
+        :src="outfitSrc"
+        :alt="outfitAlt"
         loading="lazy"
         decoding="async"
+        @error="onOutfitError"
       />
     </div>
 

@@ -470,6 +470,18 @@ func TestCompanionDialogueDefaultAndValidation(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	assert.EqualValues(t, 40001, resp["code"])
 
+	w, resp = f.do(http.MethodPost, "/api/companion/dialogue", tok, map[string]any{
+		"trigger": "pet", "expression": "not-an-expression",
+	})
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	w, resp = f.do(http.MethodPost, "/api/companion/dialogue", tok, map[string]any{
+		"trigger": "greet", "greetingKey": "greet.noon",
+	})
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
 	// Four recent lines are accepted; the service keeps the first three.
 	w, _ = f.do(http.MethodPost, "/api/companion/dialogue", tok, map[string]any{
 		"trigger": "pet", "expression": "happy",

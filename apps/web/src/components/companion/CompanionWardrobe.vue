@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 
-import { resolveCompanionOutfit } from '@/content/companion/manifest'
+import { COMPANION_OUTFITS, resolveCompanionOutfit } from '@/content/companion/manifest'
 import type { CompanionOutfit } from '@/content/companion/types'
 
 const props = defineProps<{
@@ -14,6 +14,29 @@ const props = defineProps<{
 const emit = defineEmits<{ equip: [outfitId: string] }>()
 
 const current = computed(() => resolveCompanionOutfit(props.equippedSkin))
+const previewSrc = ref(current.value.src)
+const previewFailed = ref(false)
+const failedThumbs = ref<Record<string, boolean>>({})
+
+watch(current, (outfit) => {
+  previewSrc.value = outfit.src
+  previewFailed.value = false
+})
+
+function onPreviewError(): void {
+  if (previewFailed.value) return
+  previewFailed.value = true
+  previewSrc.value = COMPANION_OUTFITS[0].src
+}
+
+function thumbSrc(outfit: CompanionOutfit): string {
+  return failedThumbs.value[outfit.id] ? COMPANION_OUTFITS[0].card : outfit.card
+}
+
+function onThumbError(outfit: CompanionOutfit): void {
+  if (failedThumbs.value[outfit.id]) return
+  failedThumbs.value = { ...failedThumbs.value, [outfit.id]: true }
+}
 
 function isUnlocked(outfit: CompanionOutfit): boolean {
   return (
@@ -39,10 +62,11 @@ function select(outfit: CompanionOutfit): void {
     <div class="companion-wardrobe__preview">
       <img
         class="companion-wardrobe__preview-image"
-        :src="current.src"
+        :src="previewSrc"
         :alt="current.name"
         loading="lazy"
         decoding="async"
+        @error="onPreviewError"
       />
       <span class="companion-wardrobe__preview-name">{{ current.name }}</span>
     </div>
@@ -65,10 +89,11 @@ function select(outfit: CompanionOutfit): void {
       >
         <img
           class="companion-wardrobe__thumb"
-          :src="outfit.card"
+          :src="thumbSrc(outfit)"
           :alt="outfit.name"
           loading="lazy"
           decoding="async"
+          @error="onThumbError(outfit)"
         />
         <span class="companion-wardrobe__name">{{ outfit.name }}</span>
         <span v-if="!isUnlocked(outfit)" class="companion-wardrobe__lock">

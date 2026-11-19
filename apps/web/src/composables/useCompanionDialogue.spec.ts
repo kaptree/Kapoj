@@ -101,3 +101,53 @@ describe('useCompanionDialogue', () => {
     expect(dialogue.recentLines.value).toEqual([])
   })
 })
+
+describe('useCompanionDialogue race handling', () => {
+  it('invalidates a pending AI request when a later request is static', async () => {
+    let resolveFirst!: (value: unknown) => void
+    vi.mocked(requestCompanionDialogue).mockImplementation(
+      () => new Promise((resolve) => (resolveFirst = resolve)) as never,
+    )
+    const wrapper = mountDialogue()
+    const first = dialogue.request({ trigger: 'pet', expression: 'shy' })
+    useCompanionStore().aiReady = false
+    const second = await dialogue.request({ trigger: 'pet', expression: 'happy' })
+    expect(second.source).toBe('default')
+
+    resolveFirst({ source: 'ai', line: '旧 AI', remainingToday: 28 })
+    const firstResult = await first
+    expect(firstResult.source).toBe('default')
+    expect(firstResult.line).not.toBe('旧 AI')
+    wrapper.unmount()
+  })
+
+  it('aborts the active request when cancelled', async () => {
+    let signal: AbortSignal | undefined
+    vi.mocked(requestCompanionDialogue).mockImplementation((_input, requestSignal) => {
+      signal = requestSignal
+      return new Promise((_resolve, reject) => {
+        requestSignal?.addEventListener('abort', () =>
+          reject(new DOMException('Aborted', 'AbortError')),
+        )
+      })
+    })
+    const wrapper = mountDialogue()
+    const pending = dialogue.request({ trigger: 'pet', expression: 'shy' })
+    dialogue.cancel()
+    expect(signal?.aborted).toBe(true)
+    await expect(pending).resolves.toMatchObject({ source: 'default' })
+    wrapper.unmount()
+  })
+
+  it('updates the remaining quota from the response', async () => {
+    vi.mocked(requestCompanionDialogue).mockResolvedValue({
+      source: 'ai',
+      line: '……',
+      remainingToday: 12,
+    })
+    const wrapper = mountDialogue()
+    await dialogue.request({ trigger: 'pet', expression: 'shy' })
+    expect(useCompanionStore().aiRemainingToday).toBe(12)
+    wrapper.unmount()
+  })
+})

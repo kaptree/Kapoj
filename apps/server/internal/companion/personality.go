@@ -29,6 +29,8 @@ var (
 	leadingSpeaker = regexp.MustCompile(`^\s*[^：:\n]{1,12}[：:]\s*`)
 	urlPattern     = regexp.MustCompile(`(?i)https?://|www\.`)
 	emailPattern   = regexp.MustCompile(`[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}`)
+	phonePattern   = regexp.MustCompile(`\+?\d[\d\s-]{5,}\d`)
+	solicitation   = regexp.MustCompile(`(?i)密码|验证码|口令|password|verification code|转账|汇款`)
 	injection      = regexp.MustCompile(`(?i)忽略以上规则|ignore\s+(all\s+)?(previous|above)\s+instructions`)
 )
 
@@ -83,14 +85,24 @@ func CleanDialogueLine(raw string) (string, bool) {
 	// Reject URLs/emails/injection before removing a possible "名字：" prefix:
 	// otherwise "https:" itself looks like a speaker prefix and would hide the
 	// URL from the safety check.
-	if s == "" || urlPattern.MatchString(s) || emailPattern.MatchString(s) || injection.MatchString(s) {
+	if s == "" ||
+		urlPattern.MatchString(s) ||
+		emailPattern.MatchString(s) ||
+		phonePattern.MatchString(s) ||
+		solicitation.MatchString(s) ||
+		injection.MatchString(s) {
 		return "", false
 	}
 	s = leadingSpeaker.ReplaceAllString(s, "")
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	s = strings.ReplaceAll(s, "\n", " ")
 	s = strings.Join(strings.Fields(s), " ")
-	if s == "" || urlPattern.MatchString(s) || emailPattern.MatchString(s) || injection.MatchString(s) {
+	if s == "" ||
+		urlPattern.MatchString(s) ||
+		emailPattern.MatchString(s) ||
+		phonePattern.MatchString(s) ||
+		solicitation.MatchString(s) ||
+		injection.MatchString(s) {
 		return "", false
 	}
 	if utf8.RuneCountInString(s) > 60 {

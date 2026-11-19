@@ -59,3 +59,22 @@ describe('CompanionWardrobe', () => {
     )
   })
 })
+
+describe('CompanionWardrobe image fallbacks', () => {
+  it('falls back to outfit-1 when the preview 404s', async () => {
+    const wrapper = mountWardrobe({ equippedSkin: 'outfit-3' })
+    const preview = wrapper.get('.companion-wardrobe__preview-image')
+    await preview.trigger('error')
+    expect(wrapper.get('.companion-wardrobe__preview-image').attributes('src')).toBe(
+      '/companion/outfits/outfit-1.webp',
+    )
+  })
+
+  it('falls back to the outfit-1 card when a thumbnail 404s', async () => {
+    const wrapper = mountWardrobe()
+    const card = wrapper.get('[data-test="wardrobe-outfit-outfit-3"]')
+    const thumb = card.get('img')
+    await thumb.trigger('error')
+    expect(card.get('img').attributes('src')).toBe('/companion/outfits/outfit-1-card.webp')
+  })
+})

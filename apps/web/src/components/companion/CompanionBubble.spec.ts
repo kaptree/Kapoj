@@ -7,11 +7,15 @@ describe('CompanionBubble', () => {
     const wrapper = mount(CompanionBubble, { props: { text: '又 WA 了？', tone: 'tsun' } })
     expect(wrapper.text()).toContain('又 WA 了？')
     expect(wrapper.classes()).toContain('companion-bubble--tsun')
+    expect(wrapper.attributes('role')).toBe('status')
+    expect(wrapper.attributes('aria-live')).toBe('polite')
   })
 
   it('defaults to the tsun tone', () => {
     const wrapper = mount(CompanionBubble, { props: { text: '再来一次。' } })
     expect(wrapper.classes()).toContain('companion-bubble--tsun')
+    expect(wrapper.attributes('role')).toBe('status')
+    expect(wrapper.attributes('aria-live')).toBe('polite')
   })
 
   it('supports a neutral tone', () => {

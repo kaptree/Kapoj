@@ -46,6 +46,10 @@ OUTFIT_META = (
     ("outfit-4", "白夜大衣", 4),
     ("outfit-5", "深海制服", 6),
 )
+
+# Sources 4 and 5 are full-body while 1-3 are already cut at the thighs. Crop
+# 4/5 at the upper-thigh line so the whole wardrobe keeps the same framing.
+OUTFIT_CROP_BOTTOM = {"outfit-4": 0.72, "outfit-5": 0.72}
 ASSETS_JSON = ROOT / "apps/web/src/content/companion/assets.json"
 
 # Eye centers/radii are measured from the blue iris components of the source.
@@ -652,7 +656,13 @@ def resize_layer(layer: Image.Image, size: int = Q_OUT) -> Image.Image:
     return Image.fromarray(arr, "RGBA")
 
 
-def build_outfit(source: Image.Image, session, width: int = OUTFIT_SIZE[0], height: int = OUTFIT_SIZE[1]) -> Image.Image:
+def build_outfit(
+    source: Image.Image,
+    session,
+    width: int = OUTFIT_SIZE[0],
+    height: int = OUTFIT_SIZE[1],
+    crop_bottom: float | None = None,
+) -> Image.Image:
     rgba = matte(source, session)
     alpha = np.array(rgba.getchannel("A"))
     alpha[alpha < 8] = 0
@@ -660,6 +670,8 @@ def build_outfit(source: Image.Image, session, width: int = OUTFIT_SIZE[0], heig
     if bbox is None:
         raise SystemExit("matte produced an empty image")
     x0, y0, x1, y1 = bbox
+    if crop_bottom is not None:
+        y1 = y0 + max(1, int((y1 - y0) * crop_bottom))
     pad = max(8, int(max(x1 - x0, y1 - y0) * 0.02))
     x0, y0 = max(0, x0 - pad), max(0, y0 - pad)
     x1, y1 = min(rgba.width, x1 + pad), min(rgba.height, y1 + pad)
@@ -736,7 +748,11 @@ def run_outfits() -> None:
     print(f"{'id':10} {'full':>9} {'quality':>9} {'ssim':>7} {'card':>8}")
     for outfit_id, name, level in OUTFIT_META:
         index = int(outfit_id.split("-")[1])
-        image = build_outfit(Image.open(OUTFIT_SOURCES[index - 1]).convert("RGB"), session)
+        image = build_outfit(
+            Image.open(OUTFIT_SOURCES[index - 1]).convert("RGB"),
+            session,
+            crop_bottom=OUTFIT_CROP_BOTTOM.get(outfit_id),
+        )
         full_path = outfit_dir / f"{outfit_id}.webp"
         full_size, quality, score = save_budget_webp(
             image, full_path, OUTFIT_MAX_BYTES, start_quality=95, min_ssim=0.95

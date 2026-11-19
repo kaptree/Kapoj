@@ -497,6 +497,16 @@ func (s *Service) MarkEventsRead(ctx context.Context, userID int64, ids []int64)
 	return s.repo.MarkRead(ctx, userID, ids)
 }
 
+func ValidDialogueExpression(expression string) bool {
+	_, ok := validPetExpressions[expression]
+	return ok
+}
+
+func ValidDialogueGreetingKey(key string) bool {
+	_, ok := validGreetingKeys[key]
+	return ok
+}
+
 var validPetExpressions = map[string]struct{}{
 	"neutral": {}, "happy": {}, "shy": {}, "pout": {},
 	"surprised": {}, "sleepy": {}, "smug": {},
@@ -527,6 +537,9 @@ func normalizeRecentLines(lines []string) []string {
 func defaultLineKey(req DialogueRequest) string {
 	switch req.Trigger {
 	case "pet":
+		if req.Expression == "neutral" {
+			return "pet"
+		}
 		if _, ok := validPetExpressions[req.Expression]; ok {
 			return "pet." + req.Expression
 		}

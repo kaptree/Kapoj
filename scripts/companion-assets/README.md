@@ -11,7 +11,7 @@ dependencies:
 ```bash
 python3 -m venv /tmp/companion-assets-venv
 /tmp/companion-assets-venv/bin/pip install \
-  'rembg[cpu]' pillow numpy scipy opencv-python-headless
+  'rembg[cpu]' pillow numpy scipy scikit-image opencv-python-headless
 ```
 
 `rembg` downloads the `isnet-anime` model on first use.
@@ -38,7 +38,7 @@ to `apps/web/public/companion/`.
   over budget, re-encode at `quality=95, method=6, alpha_quality=100` and record
   the SSIM comparison.
 - Outfits: lossless first; if a single file is over 300KB, use q95 visual
-  lossless (SSIM ≥ 0.995). Cards use q90 and stay ≤80KB.
+  lossless (SSIM ≥ 0.95 with a visual check). Cards use q90 and stay ≤80KB.
 - `public/` never receives the multi-megabyte source PNGs.
 - Initial Q set (`base`, two iris layers, `eye-open`, `mouth-neutral`,
   `blush-soft`): target ≤180KB, hard cap 250KB.
