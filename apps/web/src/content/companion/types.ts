@@ -21,3 +21,14 @@ export interface CompanionAsset {
 export type CompanionAssetPack = Partial<
   Record<CompanionPose, Partial<Record<CompanionExpression, CompanionAsset>>>
 >
+
+/** One wearable full-body outfit. Levels match the companion bond table. */
+export interface CompanionOutfit {
+  id: string
+  name: string
+  level: number
+  src: string
+  card: string
+  width: number
+  height: number
+}

@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "outfits": [
+    {
+      "id": "outfit-1",
+      "name": "红莓礼帽",
+      "level": 0,
+      "src": "/companion/outfits/outfit-1.webp",
+      "card": "/companion/outfits/outfit-1-card.webp",
+      "width": 768,
+      "height": 1024
+    },
+    {
+      "id": "outfit-2",
+      "name": "沙棕旅装",
+      "level": 1,
+      "src": "/companion/outfits/outfit-2.webp",
+      "card": "/companion/outfits/outfit-2-card.webp",
+      "width": 768,
+      "height": 1024
+    },
+    {
+      "id": "outfit-3",
+      "name": "冰蓝礼装",
+      "level": 2,
+      "src": "/companion/outfits/outfit-3.webp",
+      "card": "/companion/outfits/outfit-3-card.webp",
+      "width": 768,
+      "height": 1024
+    },
+    {
+      "id": "outfit-4",
+      "name": "白夜大衣",
+      "level": 4,
+      "src": "/companion/outfits/outfit-4.webp",
+      "card": "/companion/outfits/outfit-4-card.webp",
+      "width": 768,
+      "height": 1024
+    },
+    {
+      "id": "outfit-5",
+      "name": "深海制服",
+      "level": 6,
+      "src": "/companion/outfits/outfit-5.webp",
+      "card": "/companion/outfits/outfit-5-card.webp",
+      "width": 768,
+      "height": 1024
+    }
+  ]
+}

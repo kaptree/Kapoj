@@ -1,7 +1,9 @@
+import assets from './assets.json'
 import type {
   CompanionAsset,
   CompanionAssetPack,
   CompanionExpression,
+  CompanionOutfit,
   CompanionPose,
 } from './types'
 
@@ -31,4 +33,13 @@ export function resolveCompanionAsset(
 ): CompanionAsset | null {
   if (!COMPANION_PACK_AVAILABLE) return null
   return pack[pose]?.[expression] ?? pack[pose]?.neutral ?? null
+}
+
+
+/** The five wearable portraits, in display/unlock order. */
+export const COMPANION_OUTFITS: readonly CompanionOutfit[] = assets.outfits
+
+/** Resolve an outfit id; unknown and empty ids fall back to outfit-1. */
+export function resolveCompanionOutfit(id: string): CompanionOutfit {
+  return COMPANION_OUTFITS.find((outfit) => outfit.id === id) ?? COMPANION_OUTFITS[0]
 }

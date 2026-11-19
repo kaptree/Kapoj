@@ -12,6 +12,8 @@ scipy and opencv are dev-only tools and are not app dependencies.
 from __future__ import annotations
 
 import argparse
+import io
+import json
 import math
 import sys
 from pathlib import Path
@@ -20,6 +22,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 from scipy import ndimage
+from skimage.metrics import structural_similarity
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "Koj伙伴素材"
@@ -33,6 +36,17 @@ Q_MASTER = 1536
 Q_OUT = 768
 OUTFIT_SIZE = (768, 1024)
 CARD_SIZE = (384, 512)
+OUTFIT_MAX_BYTES = 300 * 1024
+CARD_MAX_BYTES = 80 * 1024
+
+OUTFIT_META = (
+    ("outfit-1", "红莓礼帽", 0),
+    ("outfit-2", "沙棕旅装", 1),
+    ("outfit-3", "冰蓝礼装", 2),
+    ("outfit-4", "白夜大衣", 4),
+    ("outfit-5", "深海制服", 6),
+)
+ASSETS_JSON = ROOT / "apps/web/src/content/companion/assets.json"
 
 # Eye centers/radii are measured from the blue iris components of the source.
 # They are kept here so every run aligns the layers the same way.
@@ -390,6 +404,104 @@ def build_outfit(source: Image.Image, session, width: int = OUTFIT_SIZE[0], heig
     return canvas
 
 
+def _webp_bytes(image: Image.Image, **kwargs) -> bytes:
+    buffer = io.BytesIO()
+    image.save(buffer, "WEBP", method=6, **kwargs)
+    return buffer.getvalue()
+
+
+def _ssim(reference: Image.Image, candidate: Image.Image) -> float:
+    reference_rgb = np.array(reference.convert("RGB"))
+    candidate_rgb = np.array(candidate.convert("RGB"))
+    return float(
+        structural_similarity(reference_rgb, candidate_rgb, channel_axis=2, data_range=255)
+    )
+
+
+def save_budget_webp(
+    image: Image.Image,
+    path: Path,
+    max_bytes: int,
+    start_quality: int = 95,
+    min_ssim: float = 0.995,
+) -> tuple[int, str, float]:
+    """Persist the smallest acceptable WebP.
+
+    Lossless is always tried first. If it exceeds max_bytes, try increasing
+    lossy qualities until both the byte budget and the SSIM floor are met.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lossless = _webp_bytes(image, lossless=True)
+    if len(lossless) <= max_bytes:
+        path.write_bytes(lossless)
+        return len(lossless), "lossless", 1.0
+
+    for quality in range(start_quality, 100):
+        data = _webp_bytes(image, quality=quality, alpha_quality=100)
+        if len(data) > max_bytes:
+            continue
+        decoded = Image.open(io.BytesIO(data)).convert("RGBA")
+        score = _ssim(image, decoded)
+        if score >= min_ssim:
+            path.write_bytes(data)
+            return len(data), f"q{quality}", score
+
+    # The budget is the hard requirement; keep the start quality and report
+    # the score so the oversized/below-target case is visible in the table.
+    data = _webp_bytes(image, quality=start_quality, alpha_quality=100)
+    path.write_bytes(data)
+    decoded = Image.open(io.BytesIO(data)).convert("RGBA")
+    return len(data), f"q{start_quality}*", _ssim(image, decoded)
+
+
+def run_outfits() -> None:
+    outfit_dir = PUBLIC_DIR / "outfits"
+    outfit_dir.mkdir(parents=True, exist_ok=True)
+    session = _rembg_session()
+    entries: list[dict[str, object]] = []
+    print(f"{'id':10} {'full':>9} {'quality':>9} {'ssim':>7} {'card':>8}")
+    for outfit_id, name, level in OUTFIT_META:
+        index = int(outfit_id.split("-")[1])
+        image = build_outfit(Image.open(OUTFIT_SOURCES[index - 1]).convert("RGB"), session)
+        full_path = outfit_dir / f"{outfit_id}.webp"
+        full_size, quality, score = save_budget_webp(
+            image, full_path, OUTFIT_MAX_BYTES, start_quality=95, min_ssim=0.95
+        )
+        card = image.resize(CARD_SIZE, Image.Resampling.LANCZOS)
+        card_path = outfit_dir / f"{outfit_id}-card.webp"
+        card_size, card_quality, _ = save_budget_webp(
+            card, card_path, CARD_MAX_BYTES, start_quality=90, min_ssim=0.95
+        )
+        entries.append(
+            {
+                "id": outfit_id,
+                "name": name,
+                "level": level,
+                "src": f"/companion/outfits/{outfit_id}.webp",
+                "card": f"/companion/outfits/{outfit_id}-card.webp",
+                "width": OUTFIT_SIZE[0],
+                "height": OUTFIT_SIZE[1],
+            }
+        )
+        print(
+            f"{outfit_id:10} {full_size / 1024:8.1f}K {quality:>9} {score:7.4f} "
+            f"{card_size / 1024:7.1f}K ({card_quality})"
+        )
+
+    payload: dict[str, object] = {"version": 1, "outfits": entries}
+    if ASSETS_JSON.exists():
+        try:
+            existing = json.loads(ASSETS_JSON.read_text())
+            existing["version"] = 1
+            existing["outfits"] = entries
+            payload = existing
+        except json.JSONDecodeError:
+            pass
+    ASSETS_JSON.parent.mkdir(parents=True, exist_ok=True)
+    ASSETS_JSON.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+    print(f"manifest written to {ASSETS_JSON.relative_to(ROOT)}")
+
+
 def save_png(image: Image.Image, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     image.save(path, "PNG")
@@ -433,7 +545,8 @@ def main() -> None:
     if args.command == "q":
         raise SystemExit("full Q pack is generated in Task 3")
     if args.command == "outfits":
-        raise SystemExit("outfit pack is generated in Task 2")
+        run_outfits()
+        return
     parser.print_help()
     sys.exit(2)
 

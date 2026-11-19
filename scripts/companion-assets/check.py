@@ -9,6 +9,7 @@ alongside the full asset pipeline in Tasks 2-3.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[2]
 SAMPLE_DIR = ROOT / "tmp" / "companion-sample"
 PRODUCTION_DIR = ROOT / "apps" / "web" / "public" / "companion"
+WEB_PUBLIC = ROOT / "apps" / "web" / "public"
 
 Q_SIZE = (768, 768)
 OUTFIT_SIZE = (768, 1024)
@@ -123,10 +125,37 @@ def check_sample() -> None:
 def check_production() -> None:
     if not PRODUCTION_DIR.is_dir():
         fail("missing apps/web/public/companion")
-    # Task 2/3 extend this to read assets.json and verify every referenced
-    # file, dimensions, and the Q initial-set budget.
+    assets_path = ROOT / "apps/web/src/content/companion/assets.json"
+    if not assets_path.is_file():
+        fail("missing apps/web/src/content/companion/assets.json")
+    try:
+        assets = json.loads(assets_path.read_text())
+    except json.JSONDecodeError as exc:
+        fail(f"assets.json is invalid: {exc}")
+
+    outfits = assets.get("outfits")
+    if not isinstance(outfits, list) or len(outfits) != 5:
+        fail("assets.json must contain five outfits")
+
+    for outfit in outfits:
+        outfit_id = outfit.get("id", "?")
+        src = Path(str(outfit.get("src", "")))
+        card = Path(str(outfit.get("card", "")))
+        full_path = WEB_PUBLIC / str(src).lstrip("/")
+        card_path = WEB_PUBLIC / str(card).lstrip("/")
+        image = require_rgba(full_path, OUTFIT_SIZE)
+        corners_transparent(image, f"{outfit_id} full")
+        alpha_bbox_nonempty(image, f"{outfit_id} full")
+        if full_path.stat().st_size > OUTFIT_MAX_BYTES:
+            fail(f"{outfit_id} full is over {OUTFIT_MAX_BYTES} bytes")
+        card_image = require_rgba(card_path, (384, 512))
+        corners_transparent(card_image, f"{outfit_id} card")
+        alpha_bbox_nonempty(card_image, f"{outfit_id} card")
+        if card_path.stat().st_size > CARD_MAX_BYTES:
+            fail(f"{outfit_id} card is over {CARD_MAX_BYTES} bytes")
+
     check_webp_sizes(PRODUCTION_DIR, PUBLIC_MAX_BYTES, "public")
-    print("production assets ok (basic size scan)")
+    print("production assets ok (5 outfits)")
 
 
 def main() -> None:
