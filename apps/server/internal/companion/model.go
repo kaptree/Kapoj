@@ -9,19 +9,24 @@ import (
 // State is the per-user companion state. The user's row is created lazily and
 // updated in place; bond and level are denormalized for cheap reads.
 type State struct {
-	UserID        int64                `gorm:"primaryKey"`
-	Bond          int                  `gorm:"not null;default:0"`
-	Level         int                  `gorm:"not null;default:0"`
-	DailyGain     int                  `gorm:"not null;default:0"`
-	DailyDate     string               `gorm:"size:10;not null;default:''"`
-	ActivityLevel string               `gorm:"size:10;not null;default:'normal'"`
-	DockEnabled   bool                 `gorm:"not null;default:true"`
-	PublicProfile bool                 `gorm:"not null;default:false"`
-	EquippedSkin  string               `gorm:"size:40;not null;default:''"`
-	UnlockedSkins dbtypes.List[string] `gorm:"column:unlocked_skins_json;type:jsonb;not null;default:'[]'"`
-	LastPetDate   string               `gorm:"size:10;not null;default:''"`
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	UserID            int64                `gorm:"primaryKey"`
+	Bond              int                  `gorm:"not null;default:0"`
+	Level             int                  `gorm:"not null;default:0"`
+	DailyGain         int                  `gorm:"not null;default:0"`
+	DailyDate         string               `gorm:"size:10;not null;default:''"`
+	ActivityLevel     string               `gorm:"size:10;not null;default:'normal'"`
+	DockEnabled       bool                 `gorm:"not null;default:true"`
+	PublicProfile     bool                 `gorm:"not null;default:false"`
+	EquippedSkin      string               `gorm:"size:40;not null;default:''"`
+	UnlockedSkins     dbtypes.List[string] `gorm:"column:unlocked_skins_json;type:jsonb;not null;default:'[]'"`
+	LastPetDate       string               `gorm:"size:10;not null;default:''"`
+	PersonalityPrompt string               `gorm:"column:personality_prompt;size:1000;not null;default:''"`
+	AIDialogueEnabled bool                 `gorm:"column:ai_dialogue_enabled;not null;default:true"`
+	AIDailyCount      int                  `gorm:"column:ai_daily_count;not null;default:0"`
+	AIDailyDate       string               `gorm:"column:ai_daily_date;size:10;not null;default:''"`
+	LastAIAt          *time.Time           `gorm:"column:last_ai_at;type:timestamptz"`
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 // TableName keeps the table name from the design document.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -654,4 +655,85 @@ func TestUpdateSettingsPatchConcurrentFields(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "quiet", st.ActivityLevel, "activity patch must survive")
 	assert.False(t, st.DockEnabled, "dock patch must survive")
+}
+
+func TestReserveAIDialogueAllowsFirstThenCooldown(t *testing.T) {
+	g := testutil.PG(t)
+	repo := companion.NewGormRepository(g)
+	ctx := context.Background()
+	uid := newUser(t, g, "ai_dialogue_cooldown")
+	date := "2026-11-19"
+	now := time.Date(2026, 11, 19, 10, 0, 0, 0, time.Local)
+
+	allowed, remaining, err := repo.ReserveAIDialogue(ctx, uid, date, now, 5*time.Second, 30)
+	require.NoError(t, err)
+	assert.True(t, allowed)
+	assert.Equal(t, 29, remaining)
+
+	allowed, remaining, err = repo.ReserveAIDialogue(ctx, uid, date, now.Add(time.Second), 5*time.Second, 30)
+	require.NoError(t, err)
+	assert.False(t, allowed)
+	assert.Equal(t, 29, remaining)
+
+	allowed, remaining, err = repo.ReserveAIDialogue(ctx, uid, date, now.Add(6*time.Second), 5*time.Second, 30)
+	require.NoError(t, err)
+	assert.True(t, allowed)
+	assert.Equal(t, 28, remaining)
+}
+
+func TestReserveAIDialogueDailyCapAndDateReset(t *testing.T) {
+	g := testutil.PG(t)
+	repo := companion.NewGormRepository(g)
+	ctx := context.Background()
+	uid := newUser(t, g, "ai_dialogue_cap")
+	date := "2026-11-19"
+	now := time.Date(2026, 11, 19, 10, 0, 0, 0, time.Local)
+
+	for i := 0; i < 30; i++ {
+		allowed, _, err := repo.ReserveAIDialogue(ctx, uid, date, now.Add(time.Duration(i)*6*time.Second), time.Second, 30)
+		require.NoError(t, err)
+		require.True(t, allowed, "call %d should be allowed", i)
+	}
+	allowed, remaining, err := repo.ReserveAIDialogue(ctx, uid, date, now.Add(31*6*time.Second), time.Second, 30)
+	require.NoError(t, err)
+	assert.False(t, allowed)
+	assert.Zero(t, remaining)
+
+	allowed, remaining, err = repo.ReserveAIDialogue(ctx, uid, "2026-11-20", now.Add(48*time.Hour), time.Second, 30)
+	require.NoError(t, err)
+	assert.True(t, allowed)
+	assert.Equal(t, 29, remaining)
+}
+
+func TestReserveAIDialogueConcurrent(t *testing.T) {
+	g := testutil.PG(t)
+	repo := companion.NewGormRepository(g)
+	ctx := context.Background()
+	uid := newUser(t, g, "ai_dialogue_race")
+	date := "2026-11-19"
+	now := time.Date(2026, 11, 19, 10, 0, 0, 0, time.Local)
+
+	var allowedCount int32
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			defer wg.Done()
+			<-start
+			allowed, _, err := repo.ReserveAIDialogue(ctx, uid, date, now, 5*time.Second, 30)
+			if err == nil && allowed {
+				atomic.AddInt32(&allowedCount, 1)
+			}
+			errs <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+	assert.Equal(t, int32(1), allowedCount, "only one concurrent reservation may win")
 }

@@ -392,6 +392,29 @@ func TestMigrateCreatesCompanionSchema(t *testing.T) {
 	assert.Error(t, g.Create(duplicate).Error, "同一用户同一 key 只能有一条伙伴事件")
 }
 
+func TestMigrateCreatesCompanionAIFields(t *testing.T) {
+	dsn := os.Getenv("KAPOJ_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("KAPOJ_TEST_DATABASE_URL not set; skipping database test")
+	}
+	g, err := open(dsn, io.Discard)
+	require.NoError(t, err)
+	require.NoError(t, Migrate(g))
+	sqlDB, err := g.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	for _, column := range []string{
+		"personality_prompt",
+		"ai_dialogue_enabled",
+		"ai_daily_count",
+		"ai_daily_date",
+		"last_ai_at",
+	} {
+		assert.True(t, g.Migrator().HasColumn(&companion.State{}, column), "缺少 companion_states.%s", column)
+	}
+}
+
 func TestMigrateCreatesDifficultySchema(t *testing.T) {
 	dsn := os.Getenv("KAPOJ_TEST_DATABASE_URL")
 	if dsn == "" {

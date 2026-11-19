@@ -146,6 +146,62 @@ func (r *Repository) UpdateSettingsPatch(ctx context.Context, userID int64, patc
 	return &out, nil
 }
 
+// ReserveAIDialogue atomically checks the per-user cooldown and daily cap and
+// increments the usage counters. It returns whether the caller may call the
+// model and the remaining daily budget. A date change resets the counter.
+func (r *Repository) ReserveAIDialogue(
+	ctx context.Context,
+	userID int64,
+	date string,
+	now time.Time,
+	cooldown time.Duration,
+	dailyCap int,
+) (bool, int, error) {
+	if dailyCap < 0 {
+		dailyCap = 0
+	}
+	allowed := false
+	remaining := 0
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(insertStateSQL, userID).Error; err != nil {
+			return err
+		}
+		var st State
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("user_id = ?", userID).First(&st).Error; err != nil {
+			return err
+		}
+
+		count := st.AIDailyCount
+		if st.AIDailyDate != date {
+			count = 0
+		}
+		if st.LastAIAt != nil && now.Sub(*st.LastAIAt) < cooldown {
+			remaining = dailyCap - count
+			if remaining < 0 {
+				remaining = 0
+			}
+			return nil
+		}
+		if count >= dailyCap {
+			return nil
+		}
+
+		count++
+		remaining = dailyCap - count
+		if err := tx.Model(&State{}).Where("user_id = ?", userID).Updates(map[string]any{
+			"ai_daily_count": count,
+			"ai_daily_date":  date,
+			"last_ai_at":     now,
+		}).Error; err != nil {
+			return err
+		}
+		allowed = true
+		return nil
+	})
+	return allowed, remaining, err
+}
+
 // ApplyEvent records one bond event inside a single transaction that locks the
 // user's state row. It enforces the daily natural cap, the per-type sub-cap and
 // the (user_id, key) uniqueness. It returns the event and whether it was newly
