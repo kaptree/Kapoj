@@ -22,8 +22,8 @@ const fillPercent = computed(() => {
 
 const maxThreshold = computed(() => Math.max(0, props.state?.nextThreshold ?? 0))
 const currentOutfit = computed(() => resolveCompanionOutfit(props.state?.equippedSkin ?? ''))
-const unlockedOutfitCount = computed(() =>
-  COMPANION_OUTFITS.filter((outfit) => props.state?.unlockedSkins.includes(outfit.id)).length,
+const unlockedOutfitCount = computed(
+  () => COMPANION_OUTFITS.filter((outfit) => props.state?.unlockedSkins.includes(outfit.id)).length,
 )
 const showPrivateHint = computed(() =>
   Boolean(props.state && props.isSelf && !props.state.publicProfile),

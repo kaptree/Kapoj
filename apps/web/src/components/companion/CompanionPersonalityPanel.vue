@@ -66,7 +66,9 @@ function toggleAI(): void {
 <template>
   <section class="companion-personality" aria-labelledby="companion-personality-title">
     <div class="companion-personality__head">
-      <span id="companion-personality-title" class="companion-personality__title">性格与 AI 台词</span>
+      <span id="companion-personality-title" class="companion-personality__title"
+        >性格与 AI 台词</span
+      >
       <span class="companion-personality__hint">留空使用系统默认的傲娇可爱性格。</span>
     </div>
 
@@ -85,7 +87,9 @@ function toggleAI(): void {
     />
     <div class="companion-personality__meta">
       <span class="companion-personality__hint">最多 500 字，只影响语气，不会覆盖安全规则。</span>
-      <span data-test="personality-count" class="companion-personality__count">{{ count }}/500</span>
+      <span data-test="personality-count" class="companion-personality__count"
+        >{{ count }}/500</span
+      >
     </div>
 
     <div class="companion-personality__ai">
@@ -93,8 +97,8 @@ function toggleAI(): void {
         <span class="companion-personality__label">AI 生成互动台词</span>
         <span class="companion-personality__hint">
           <template v-if="aiReady">
-            已接入 AI；抚摸、问候和活泼模式的闲话会由 AI 生成，失败自动回退默认台词。
-            今日剩余 {{ remainingToday }} 次。
+            已接入 AI；抚摸、问候和活泼模式的闲话会由 AI 生成，失败自动回退默认台词。 今日剩余
+            {{ remainingToday }} 次。
           </template>
           <template v-else>
             尚未接入 AI，所有互动使用默认台词。先去

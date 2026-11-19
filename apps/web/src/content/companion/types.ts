@@ -35,13 +35,7 @@ export interface CompanionOutfit {
 
 /** The seven Q-avatar reactions used by the dock. */
 export type CompanionQExpression =
-  | 'neutral'
-  | 'happy'
-  | 'shy'
-  | 'pout'
-  | 'surprised'
-  | 'sleepy'
-  | 'smug'
+  'neutral' | 'happy' | 'shy' | 'pout' | 'surprised' | 'sleepy' | 'smug'
 
 export type CompanionEyeState = 'open' | 'closed' | 'happy' | 'wide' | 'half' | 'teary' | 'angry'
 export type CompanionMouthState = 'neutral' | 'smile' | 'open' | 'pout' | 'wavy' | 'o'

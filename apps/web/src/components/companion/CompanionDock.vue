@@ -6,7 +6,10 @@ import { getCompanion, petCompanion } from '../../api/companion'
 import { getActivitySummary, signInActivity } from '../../api/leaderboard'
 import type { ActivitySummary } from '../../api/types'
 import { useCompanionMute } from '../../composables/useCompanionMute'
-import { useCompanionDialogue, type DialogueGreetingKey } from '../../composables/useCompanionDialogue'
+import {
+  useCompanionDialogue,
+  type DialogueGreetingKey,
+} from '../../composables/useCompanionDialogue'
 import { useCompanionGaze } from '../../composables/useCompanionGaze'
 import type { CompanionLineKey } from '../../content/companion/lines.zh-CN'
 import { pickCompanionLine } from '../../content/companion/lines.zh-CN'
@@ -91,8 +94,10 @@ const visible = computed(
 
 const reducedMotion = computed(() => {
   if (store.motion === 'reduce') return true
-  return typeof window.matchMedia === 'function' &&
+  return (
+    typeof window.matchMedia === 'function' &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  )
 })
 
 const gazeEnabled = computed(() => visible.value && !reducedMotion.value)
@@ -276,13 +281,16 @@ function clearBlink(): void {
 function scheduleBlink(): void {
   clearBlink()
   if (!visible.value || reducedMotion.value) return
-  blinkOnTimer = window.setTimeout(() => {
-    blinking.value = true
-    blinkOffTimer = window.setTimeout(() => {
-      blinking.value = false
-      scheduleBlink()
-    }, 120)
-  }, 3000 + Math.random() * 4000)
+  blinkOnTimer = window.setTimeout(
+    () => {
+      blinking.value = true
+      blinkOffTimer = window.setTimeout(() => {
+        blinking.value = false
+        scheduleBlink()
+      }, 120)
+    },
+    3000 + Math.random() * 4000,
+  )
 }
 
 function stopIdleTimer(): void {
@@ -479,11 +487,7 @@ onBeforeUnmount(() => {
       tabindex="-1"
     >
       <div class="companion-dock__intro">
-        <CompanionQAvatar
-          :expression="expression"
-          :size="64"
-          :reduced-motion="reducedMotion"
-        />
+        <CompanionQAvatar :expression="expression" :size="64" :reduced-motion="reducedMotion" />
         <CompanionBubble :text="line" />
       </div>
 

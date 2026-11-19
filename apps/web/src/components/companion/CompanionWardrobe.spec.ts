@@ -24,9 +24,13 @@ describe('CompanionWardrobe', () => {
     expect(cards.map((card) => card.attributes('data-test'))).toEqual(
       COMPANION_OUTFITS.map((outfit) => `wardrobe-outfit-${outfit.id}`),
     )
-    expect(wrapper.get('[data-test="wardrobe-outfit-outfit-1"]').attributes('disabled')).toBeUndefined()
+    expect(
+      wrapper.get('[data-test="wardrobe-outfit-outfit-1"]').attributes('disabled'),
+    ).toBeUndefined()
     expect(wrapper.get('[data-test="wardrobe-outfit-outfit-4"]').text()).toContain('Lv.4 解锁')
-    expect(wrapper.get('[data-test="wardrobe-outfit-outfit-4"]').attributes('disabled')).toBeDefined()
+    expect(
+      wrapper.get('[data-test="wardrobe-outfit-outfit-4"]').attributes('disabled'),
+    ).toBeDefined()
   })
 
   it('emits equip for an unlocked outfit', async () => {
@@ -50,6 +54,8 @@ describe('CompanionWardrobe', () => {
     expect(wrapper.get('.companion-wardrobe__preview-image').attributes('src')).toBe(
       '/companion/outfits/outfit-1.webp',
     )
-    expect(wrapper.get('[data-test="wardrobe-outfit-outfit-1"]').attributes('aria-current')).toBe('true')
+    expect(wrapper.get('[data-test="wardrobe-outfit-outfit-1"]').attributes('aria-current')).toBe(
+      'true',
+    )
   })
 })

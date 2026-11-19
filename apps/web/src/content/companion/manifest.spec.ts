@@ -62,7 +62,6 @@ describe('companion outfits', () => {
   })
 })
 
-
 describe('companion Q rig', () => {
   it('defines a complete Q rig on one canvas', () => {
     expect(COMPANION_Q.canvas).toEqual({ width: 768, height: 768 })

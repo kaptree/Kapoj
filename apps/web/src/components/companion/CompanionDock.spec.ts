@@ -507,13 +507,17 @@ describe('CompanionDock', () => {
       await vi.advanceTimersByTimeAsync(4 * 60_000)
       await flushPromises()
       expect(
-        vi.mocked(requestCompanionDialogue).mock.calls.filter((call) => call[0]?.trigger === 'idle'),
+        vi
+          .mocked(requestCompanionDialogue)
+          .mock.calls.filter((call) => call[0]?.trigger === 'idle'),
       ).toHaveLength(1)
 
       await vi.advanceTimersByTimeAsync(3 * 60_000)
       await flushPromises()
       expect(
-        vi.mocked(requestCompanionDialogue).mock.calls.filter((call) => call[0]?.trigger === 'idle'),
+        vi
+          .mocked(requestCompanionDialogue)
+          .mock.calls.filter((call) => call[0]?.trigger === 'idle'),
       ).toHaveLength(3)
       wrapper.unmount()
     } finally {

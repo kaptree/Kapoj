@@ -36,7 +36,6 @@ export function resolveCompanionAsset(
   return pack[pose]?.[expression] ?? pack[pose]?.neutral ?? null
 }
 
-
 /** The five wearable portraits, in display/unlock order. */
 export const COMPANION_OUTFITS: readonly CompanionOutfit[] = assets.outfits
 
@@ -44,7 +43,6 @@ export const COMPANION_OUTFITS: readonly CompanionOutfit[] = assets.outfits
 export function resolveCompanionOutfit(id: string): CompanionOutfit {
   return COMPANION_OUTFITS.find((outfit) => outfit.id === id) ?? COMPANION_OUTFITS[0]
 }
-
 
 /** Layered Q-avatar rig and expression presets for the dock. */
 export const COMPANION_Q = assets.q as unknown as CompanionQAssets

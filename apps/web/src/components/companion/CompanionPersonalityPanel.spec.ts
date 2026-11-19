@@ -23,9 +23,9 @@ function mountPanel(overrides: Record<string, unknown> = {}) {
 describe('CompanionPersonalityPanel', () => {
   it('renders the current prompt, count and AI quota', () => {
     const wrapper = mountPanel()
-    expect((wrapper.get('[data-test="personality-prompt"]').element as HTMLTextAreaElement).value).toBe(
-      '再温柔一点',
-    )
+    expect(
+      (wrapper.get('[data-test="personality-prompt"]').element as HTMLTextAreaElement).value,
+    ).toBe('再温柔一点')
     expect(wrapper.get('[data-test="personality-count"]').text()).toBe('5/500')
     expect(wrapper.text()).toContain('今日剩余 27 次')
   })
@@ -34,7 +34,9 @@ describe('CompanionPersonalityPanel', () => {
     const wrapper = mountPanel()
     await wrapper.get('[data-test="personality-reset"]').trigger('click')
 
-    expect((wrapper.get('[data-test="personality-prompt"]').element as HTMLTextAreaElement).value).toBe('')
+    expect(
+      (wrapper.get('[data-test="personality-prompt"]').element as HTMLTextAreaElement).value,
+    ).toBe('')
     expect(wrapper.emitted('reset')).toHaveLength(1)
     expect(wrapper.emitted('save')?.[0]).toEqual([
       { personalityPrompt: '', aiDialogueEnabled: true },

@@ -34,10 +34,15 @@ describe('CompanionQAvatar', () => {
     const dock = mount(CompanionQAvatar, { props: { frame: 'dock' } })
     const viewport = dock.find('.companion-q-avatar__viewport')
     const expectedWidth = (COMPANION_Q.canvas.width / COMPANION_Q.dockViewport.width) * 100
-    expect(Number.parseFloat((viewport.element as HTMLElement).style.width)).toBeCloseTo(expectedWidth, 1)
+    expect(Number.parseFloat((viewport.element as HTMLElement).style.width)).toBeCloseTo(
+      expectedWidth,
+      1,
+    )
 
     const full = mount(CompanionQAvatar, { props: { frame: 'full' } })
-    expect((full.find('.companion-q-avatar__viewport').element as HTMLElement).style.width).toBe('100%')
+    expect((full.find('.companion-q-avatar__viewport').element as HTMLElement).style.width).toBe(
+      '100%',
+    )
   })
 
   it('disables iris movement and blinking when motion is reduced', () => {

@@ -10,7 +10,10 @@ afterEach(() => {
 
 describe('gazeVector', () => {
   it('returns 0,0 at the centre', () => {
-    expect(gazeVector(500, 500, { left: 0, top: 0, width: 1000, height: 1000 })).toEqual({ x: 0, y: 0 })
+    expect(gazeVector(500, 500, { left: 0, top: 0, width: 1000, height: 1000 })).toEqual({
+      x: 0,
+      y: 0,
+    })
   })
 
   it('clamps to -1..1', () => {
@@ -30,7 +33,17 @@ describe('useCompanionGaze', () => {
 
     const target = ref<HTMLElement | null>(document.createElement('div'))
     target.value!.getBoundingClientRect = () =>
-      ({ left: 0, top: 0, width: 1000, height: 1000, right: 1000, bottom: 1000, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect
+      ({
+        left: 0,
+        top: 0,
+        width: 1000,
+        height: 1000,
+        right: 1000,
+        bottom: 1000,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }) as DOMRect
     const enabled = ref(true)
 
     const Comp = defineComponent({

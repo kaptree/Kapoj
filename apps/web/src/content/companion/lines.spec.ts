@@ -21,9 +21,17 @@ describe('companion lines', () => {
 describe('pet expressions', () => {
   it('has 3-5 lines for every new reaction key', () => {
     const keys = [
-      'pet.happy', 'pet.shy', 'pet.pout', 'pet.surprised', 'pet.sleepy',
-      'pet.smug', 'pet.already', 'greet.morning', 'greet.afternoon',
-      'greet.night', 'idle.lively',
+      'pet.happy',
+      'pet.shy',
+      'pet.pout',
+      'pet.surprised',
+      'pet.sleepy',
+      'pet.smug',
+      'pet.already',
+      'greet.morning',
+      'greet.afternoon',
+      'greet.night',
+      'idle.lively',
     ] as const
     for (const key of keys) {
       expect(COMPANION_LINES[key].length).toBeGreaterThanOrEqual(3)

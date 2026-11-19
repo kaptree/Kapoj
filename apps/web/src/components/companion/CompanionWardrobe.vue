@@ -16,7 +16,11 @@ const emit = defineEmits<{ equip: [outfitId: string] }>()
 const current = computed(() => resolveCompanionOutfit(props.equippedSkin))
 
 function isUnlocked(outfit: CompanionOutfit): boolean {
-  return outfit.id === 'outfit-1' || props.unlockedSkins.includes(outfit.id) || props.level >= outfit.level
+  return (
+    outfit.id === 'outfit-1' ||
+    props.unlockedSkins.includes(outfit.id) ||
+    props.level >= outfit.level
+  )
 }
 
 function select(outfit: CompanionOutfit): void {
@@ -114,12 +118,32 @@ function select(outfit: CompanionOutfit): void {
   aspect-ratio: 3 / 4;
   overflow: hidden;
   background:
-    linear-gradient(45deg, color-mix(in srgb, var(--kapoj-border) 45%, transparent) 25%, transparent 25%),
-    linear-gradient(-45deg, color-mix(in srgb, var(--kapoj-border) 45%, transparent) 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, color-mix(in srgb, var(--kapoj-border) 45%, transparent) 75%),
-    linear-gradient(-45deg, transparent 75%, color-mix(in srgb, var(--kapoj-border) 45%, transparent) 75%),
+    linear-gradient(
+      45deg,
+      color-mix(in srgb, var(--kapoj-border) 45%, transparent) 25%,
+      transparent 25%
+    ),
+    linear-gradient(
+      -45deg,
+      color-mix(in srgb, var(--kapoj-border) 45%, transparent) 25%,
+      transparent 25%
+    ),
+    linear-gradient(
+      45deg,
+      transparent 75%,
+      color-mix(in srgb, var(--kapoj-border) 45%, transparent) 75%
+    ),
+    linear-gradient(
+      -45deg,
+      transparent 75%,
+      color-mix(in srgb, var(--kapoj-border) 45%, transparent) 75%
+    ),
     var(--kapoj-bg-elevated);
-  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  background-position:
+    0 0,
+    0 8px,
+    8px -8px,
+    -8px 0;
   background-size: 16px 16px;
   border: 1px solid var(--kapoj-border);
   border-radius: var(--kapoj-radius-md);

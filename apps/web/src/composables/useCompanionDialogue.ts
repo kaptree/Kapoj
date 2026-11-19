@@ -1,7 +1,11 @@
 import { onBeforeUnmount, ref } from 'vue'
 
 import { requestCompanionDialogue } from '@/api/companion'
-import { COMPANION_LINES, pickCompanionLine, type CompanionLineKey } from '@/content/companion/lines.zh-CN'
+import {
+  COMPANION_LINES,
+  pickCompanionLine,
+  type CompanionLineKey,
+} from '@/content/companion/lines.zh-CN'
 import type { CompanionQExpression } from '@/content/companion/types'
 import { useCompanionStore } from '@/stores/companion'
 
@@ -32,7 +36,7 @@ const PET_FALLBACK_KEYS: Record<CompanionQExpression, CompanionLineKey> = {
 function fallbackKey(input: DialogueInput): CompanionLineKey {
   if (input.trigger === 'greet') return input.greetingKey ?? 'greeting'
   if (input.trigger === 'idle') return 'idle.lively'
-  return input.expression ? PET_FALLBACK_KEYS[input.expression] ?? 'pet' : 'pet'
+  return input.expression ? (PET_FALLBACK_KEYS[input.expression] ?? 'pet') : 'pet'
 }
 
 function clampLine(line: string): string {

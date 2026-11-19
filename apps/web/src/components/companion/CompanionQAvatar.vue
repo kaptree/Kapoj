@@ -23,6 +23,7 @@ const props = withDefaults(
     lookY: 0,
     blinking: false,
     frame: 'full',
+    size: 0,
     reducedMotion: false,
     alt: '',
   },
@@ -124,19 +125,9 @@ const accessibleLabel = computed(() => props.alt.trim())
           @error="irisFailed = true"
         />
       </template>
-      <img
-        v-else-if="eyeLayer"
-        class="companion-q-avatar__layer"
-        :src="eyeLayer.src"
-        alt=""
-      />
+      <img v-else-if="eyeLayer" class="companion-q-avatar__layer" :src="eyeLayer.src" alt="" />
       <img class="companion-q-avatar__layer" :src="mouth.src" alt="" />
-      <img
-        v-if="blush"
-        class="companion-q-avatar__layer"
-        :src="blush.src"
-        alt=""
-      />
+      <img v-if="blush" class="companion-q-avatar__layer" :src="blush.src" alt="" />
       <img v-if="fx" class="companion-q-avatar__layer" :src="fx.src" alt="" />
     </div>
   </div>
