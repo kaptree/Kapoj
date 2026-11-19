@@ -48,9 +48,6 @@ jobs:
           --health-timeout 3s
           --health-retries 10
     env:
-      POSTGRES_USER: kapoj
-      POSTGRES_PASSWORD: kapoj_ci_postgres
-      POSTGRES_DB: kapoj
       KAPOJ_TEST_DATABASE_URL: postgres://kapoj:kapoj_ci_postgres@127.0.0.1:5433/kapoj_test?sslmode=disable
     steps:
       - uses: actions/checkout@v7
@@ -62,6 +59,10 @@ jobs:
           cache-dependency-path: apps/server/go.sum
 
       - name: Create test database
+        env:
+          POSTGRES_USER: kapoj
+          POSTGRES_PASSWORD: kapoj_ci_postgres
+          POSTGRES_DB: kapoj
         run: |
           docker run --rm --network host \
             -e PGPASSWORD="$POSTGRES_PASSWORD" \
@@ -122,9 +123,6 @@ jobs:
           --health-timeout 3s
           --health-retries 10
     env:
-      POSTGRES_USER: kapoj
-      POSTGRES_PASSWORD: kapoj_ci_postgres
-      POSTGRES_DB: kapoj
       KAPOJ_TEST_DATABASE_URL: postgres://kapoj:kapoj_ci_postgres@127.0.0.1:5433/kapoj_test?sslmode=disable
     steps:
       - uses: actions/checkout@v7
@@ -134,6 +132,10 @@ jobs:
           cache-dependency-path: apps/judge/go.sum
 
       - name: Create test database
+        env:
+          POSTGRES_USER: kapoj
+          POSTGRES_PASSWORD: kapoj_ci_postgres
+          POSTGRES_DB: kapoj
         run: |
           docker run --rm --network host \
             -e PGPASSWORD="$POSTGRES_PASSWORD" \
@@ -325,7 +327,7 @@ jobs:
             --data '{"username":"m2badmin","email":"m2badmin@example.com","password":"correct-horse"}' \
             >/dev/null
 
-          docker exec kapoj-postgres-1 psql -U kapoj -d kapoj -v ON_ERROR_STOP=1 <<'SQL'
+          docker exec -i kapoj-postgres-1 psql -U kapoj -d kapoj -v ON_ERROR_STOP=1 <<'SQL'
           INSERT INTO users (username, nickname, email, email_verified_at, password_hash, salt, role, rating, coins, bio, status, created_at, updated_at)
           SELECT 'm2bsolver1', 'm2bsolver1', 'm2bsolver1@example.com', now(), password_hash, salt, 'user', 1500, 0, '', 'active', now(), now()
           FROM users WHERE username = 'm2badmin'
