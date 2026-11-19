@@ -5,6 +5,7 @@ import type {
   CompanionExpression,
   CompanionOutfit,
   CompanionPose,
+  CompanionQAssets,
 } from './types'
 
 /**
@@ -43,3 +44,7 @@ export const COMPANION_OUTFITS: readonly CompanionOutfit[] = assets.outfits
 export function resolveCompanionOutfit(id: string): CompanionOutfit {
   return COMPANION_OUTFITS.find((outfit) => outfit.id === id) ?? COMPANION_OUTFITS[0]
 }
+
+
+/** Layered Q-avatar rig and expression presets for the dock. */
+export const COMPANION_Q = assets.q as unknown as CompanionQAssets

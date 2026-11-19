@@ -154,8 +154,47 @@ def check_production() -> None:
         if card_path.stat().st_size > CARD_MAX_BYTES:
             fail(f"{outfit_id} card is over {CARD_MAX_BYTES} bytes")
 
+    q = assets.get("q")
+    if not isinstance(q, dict):
+        fail("assets.json must contain the Q rig")
+    if q.get("canvas") != {"width": 768, "height": 768}:
+        fail("Q canvas must be 768x768")
+    viewport = q.get("dockViewport", {})
+    if viewport.get("width", 0) <= 0 or viewport.get("x", 0) + viewport.get("width", 0) > 768:
+        fail("dockViewport is outside the Q canvas")
+
+    layers = q.get("layers", {})
+    named_layers: list[tuple[str, dict]] = [
+        ("base", layers.get("base", {})),
+        ("irisLeft", layers.get("irisLeft", {})),
+        ("irisRight", layers.get("irisRight", {})),
+        ("eyeOpen", layers.get("eyeOpen", {})),
+        ("eyeClosed", layers.get("eyeClosed", {})),
+    ]
+    for group in ("eyes", "mouths", "blush", "fx"):
+        named_layers.extend((f"{group}.{key}", value) for key, value in layers.get(group, {}).items())
+
+    for name, ref in named_layers:
+        src = WEB_PUBLIC / str(ref.get("src", "")).lstrip("/")
+        image = require_rgba(src, (768, 768))
+        if name != "mouths.neutral":
+            has_transparency_and_content(image, name)
+        if src.stat().st_size > PUBLIC_MAX_BYTES:
+            fail(f"{name} is {src.stat().st_size} bytes, over {PUBLIC_MAX_BYTES}")
+
+    initial_keys = ("base", "irisLeft", "irisRight", "eyeOpen", "mouths.neutral", "blush.soft")
+    initial_sizes = {
+        key: (WEB_PUBLIC / str(dict(named_layers)[key].get("src", "")).lstrip("/")).stat().st_size
+        for key in initial_keys
+    }
+    initial = sum(initial_sizes.values())
+    if initial > 250 * 1024:
+        fail(f"initial Q set is {initial} bytes, over the 250KB hard cap")
+    if initial > 180 * 1024:
+        print(f"WARN: initial Q set is {initial / 1024:.1f}K, above the 180K target")
+
     check_webp_sizes(PRODUCTION_DIR, PUBLIC_MAX_BYTES, "public")
-    print("production assets ok (5 outfits)")
+    print(f"production assets ok (5 outfits, Q rig, initial {initial / 1024:.1f}K)")
 
 
 def main() -> None:

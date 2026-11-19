@@ -46,5 +46,186 @@
       "width": 768,
       "height": 1024
     }
-  ]
+  ],
+  "q": {
+    "canvas": {
+      "width": 768,
+      "height": 768
+    },
+    "dockViewport": {
+      "x": 128,
+      "y": 60,
+      "width": 513,
+      "height": 513
+    },
+    "layers": {
+      "base": {
+        "src": "/companion/q/base.webp",
+        "width": 768,
+        "height": 768
+      },
+      "irisLeft": {
+        "src": "/companion/q/iris-left.webp",
+        "width": 768,
+        "height": 768
+      },
+      "irisRight": {
+        "src": "/companion/q/iris-right.webp",
+        "width": 768,
+        "height": 768
+      },
+      "eyeOpen": {
+        "src": "/companion/q/eye-open.webp",
+        "width": 768,
+        "height": 768
+      },
+      "eyeClosed": {
+        "src": "/companion/q/eye-closed.webp",
+        "width": 768,
+        "height": 768
+      },
+      "eyes": {
+        "happy": {
+          "src": "/companion/q/eye-happy.webp",
+          "width": 768,
+          "height": 768
+        },
+        "wide": {
+          "src": "/companion/q/eye-wide.webp",
+          "width": 768,
+          "height": 768
+        },
+        "half": {
+          "src": "/companion/q/eye-half.webp",
+          "width": 768,
+          "height": 768
+        },
+        "teary": {
+          "src": "/companion/q/eye-teary.webp",
+          "width": 768,
+          "height": 768
+        },
+        "angry": {
+          "src": "/companion/q/eye-angry.webp",
+          "width": 768,
+          "height": 768
+        }
+      },
+      "mouths": {
+        "neutral": {
+          "src": "/companion/q/mouth-neutral.webp",
+          "width": 768,
+          "height": 768
+        },
+        "smile": {
+          "src": "/companion/q/mouth-smile.webp",
+          "width": 768,
+          "height": 768
+        },
+        "open": {
+          "src": "/companion/q/mouth-open.webp",
+          "width": 768,
+          "height": 768
+        },
+        "pout": {
+          "src": "/companion/q/mouth-pout.webp",
+          "width": 768,
+          "height": 768
+        },
+        "wavy": {
+          "src": "/companion/q/mouth-wavy.webp",
+          "width": 768,
+          "height": 768
+        },
+        "o": {
+          "src": "/companion/q/mouth-o.webp",
+          "width": 768,
+          "height": 768
+        }
+      },
+      "blush": {
+        "soft": {
+          "src": "/companion/q/blush-soft.webp",
+          "width": 768,
+          "height": 768
+        },
+        "strong": {
+          "src": "/companion/q/blush-strong.webp",
+          "width": 768,
+          "height": 768
+        }
+      },
+      "fx": {
+        "sparkle": {
+          "src": "/companion/q/fx-sparkle.webp",
+          "width": 768,
+          "height": 768
+        },
+        "heart": {
+          "src": "/companion/q/fx-heart.webp",
+          "width": 768,
+          "height": 768
+        },
+        "sweat": {
+          "src": "/companion/q/fx-sweat.webp",
+          "width": 768,
+          "height": 768
+        },
+        "anger": {
+          "src": "/companion/q/fx-anger.webp",
+          "width": 768,
+          "height": 768
+        },
+        "zzz": {
+          "src": "/companion/q/fx-zzz.webp",
+          "width": 768,
+          "height": 768
+        }
+      }
+    },
+    "expressions": {
+      "neutral": {
+        "eye": "open",
+        "mouth": "neutral",
+        "blush": "none",
+        "fx": "none"
+      },
+      "happy": {
+        "eye": "happy",
+        "mouth": "smile",
+        "blush": "strong",
+        "fx": "sparkle"
+      },
+      "shy": {
+        "eye": "open",
+        "mouth": "wavy",
+        "blush": "strong",
+        "fx": "heart"
+      },
+      "pout": {
+        "eye": "half",
+        "mouth": "pout",
+        "blush": "soft",
+        "fx": "anger"
+      },
+      "surprised": {
+        "eye": "wide",
+        "mouth": "o",
+        "blush": "none",
+        "fx": "sweat"
+      },
+      "sleepy": {
+        "eye": "half",
+        "mouth": "o",
+        "blush": "soft",
+        "fx": "zzz"
+      },
+      "smug": {
+        "eye": "open",
+        "mouth": "smile",
+        "blush": "soft",
+        "fx": "sparkle"
+      }
+    }
+  }
 }

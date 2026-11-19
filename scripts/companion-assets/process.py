@@ -261,8 +261,25 @@ def build_q_layers(source: Image.Image, session) -> dict[str, Image.Image]:
         "iris-left": iris_layers[0],
         "iris-right": iris_layers[1],
         "eye-open": eye_open,
+        "eye-closed": build_eye_closed(rgb),
         "eye-happy": build_happy_eyes(rgb),
+        "eye-wide": build_eye_wide(iris_layers),
+        "eye-half": build_eye_half(iris_layers, rgb),
+        "eye-teary": build_eye_teary(iris_layers),
+        "eye-angry": build_eye_angry(iris_layers),
+        "mouth-neutral": build_mouth_neutral(),
         "mouth-smile": build_smile(rgb),
+        "mouth-open": build_mouth_open(rgb),
+        "mouth-pout": build_mouth_pout(rgb),
+        "mouth-wavy": build_mouth_wavy(rgb),
+        "mouth-o": build_mouth_o(rgb),
+        "blush-soft": build_blush(35),
+        "blush-strong": build_blush(75),
+        "fx-sparkle": build_fx_sparkle(),
+        "fx-heart": build_fx_heart(),
+        "fx-sweat": build_fx_sweat(),
+        "fx-anger": build_fx_anger(),
+        "fx-zzz": build_fx_zzz(),
     }
 
 
@@ -369,6 +386,263 @@ def build_smile(rgb: np.ndarray) -> Image.Image:
     patch.alpha_composite(overlay)
     patch.putalpha(_feather(mask, 6))
     return patch
+
+
+def _eye_cover_layer(blush: bool = True) -> Image.Image:
+    h = w = Q_MASTER
+    layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    if blush:
+        halo = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        hd = ImageDraw.Draw(halo)
+        for eye in EYES:
+            cx, cy, rx, ry = eye["cx"], eye["cy"], eye["rx"], eye["ry"]
+            hd.ellipse(
+                (cx - rx * 1.95, cy - ry * 1.75, cx + rx * 1.95, cy + ry * 1.85),
+                fill=(255, 150, 150, 50),
+            )
+        layer.alpha_composite(halo.filter(ImageFilter.GaussianBlur(28)))
+
+    cover = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    cd = ImageDraw.Draw(cover)
+    for eye in EYES:
+        cx, cy, rx, ry = eye["cx"], eye["cy"], eye["rx"], eye["ry"]
+        cd.ellipse(
+            (cx - rx * 1.36, cy - ry * 1.30, cx + rx * 1.36, cy + ry * 1.30),
+            fill=(252, 214, 208, 255),
+        )
+        cd.ellipse(
+            (cx - rx * 0.95, cy - ry * 0.85, cx + rx * 0.95, cy + ry * 0.85),
+            fill=(252, 232, 226, 255),
+        )
+    layer.alpha_composite(cover)
+    return layer
+
+
+def build_eye_closed(rgb: np.ndarray) -> Image.Image:
+    layer = _eye_cover_layer(blush=False)
+    draw = ImageDraw.Draw(layer)
+    for index, eye in enumerate(EYES):
+        cx, cy, rx, ry = eye["cx"], eye["cy"], eye["rx"], eye["ry"]
+        points: list[tuple[float, float]] = []
+        widths: list[float] = []
+        for i in range(25):
+            t = i / 24
+            points.append((cx - rx * 0.80 + 1.60 * rx * t, cy + ry * 0.02 - math.sin(math.pi * t) * ry * 0.22))
+            widths.append(3.0 + 6.0 * math.sin(math.pi * t))
+        draw.polygon(_tapered_polygon(points, widths), fill=(38, 30, 38, 255))
+        sign = -1.0 if index == 0 else 1.0
+        flick = [
+            (cx + sign * rx * 0.80, cy + ry * 0.02),
+            (cx + sign * rx * 0.98, cy - ry * 0.22),
+        ]
+        draw.polygon(_tapered_polygon(flick, [4.5, 0.6]), fill=(38, 30, 38, 255))
+    return layer
+
+
+def _iris_composite(iris_layers: list[Image.Image]) -> Image.Image:
+    out = Image.new("RGBA", (Q_MASTER, Q_MASTER), (0, 0, 0, 0))
+    for layer in iris_layers:
+        out.alpha_composite(layer)
+    return out
+
+
+def _scaled_irises(iris_layers: list[Image.Image], scale: float) -> Image.Image:
+    out = Image.new("RGBA", (Q_MASTER, Q_MASTER), (0, 0, 0, 0))
+    for layer, eye in zip(iris_layers, EYES):
+        cx, cy, rx, ry = eye["cx"], eye["cy"], eye["rx"], eye["ry"]
+        box = (int(cx - rx * 1.7), int(cy - ry * 1.7), int(cx + rx * 1.7), int(cy + ry * 1.7))
+        crop = layer.crop(box)
+        new_size = (max(1, round(crop.width * scale)), max(1, round(crop.height * scale)))
+        crop = crop.resize(new_size, Image.Resampling.LANCZOS)
+        out.alpha_composite(crop, (int(cx - new_size[0] / 2), int(cy - new_size[1] / 2)))
+    return out
+
+
+def build_eye_wide(iris_layers: list[Image.Image]) -> Image.Image:
+    return _scaled_irises(iris_layers, 1.08)
+
+
+def build_eye_half(iris_layers: list[Image.Image], rgb: np.ndarray) -> Image.Image:
+    out = _iris_composite(iris_layers)
+    h = w = Q_MASTER
+    yy, xx = np.ogrid[:h, :w]
+    mask = np.zeros((h, w), dtype=bool)
+    edges: list[list[tuple[float, float]]] = []
+    for eye in EYES:
+        cx, cy, rx, ry = eye["cx"], eye["cy"], eye["rx"], eye["ry"]
+        ellipse = ((xx - cx) / (rx * 1.35)) ** 2 + ((yy - cy) / (ry * 1.55)) ** 2 <= 1.0
+        edge: list[tuple[float, float]] = []
+        for i in range(31):
+            t = i / 30
+            edge.append((cx - rx * 1.05 + 2.10 * rx * t, cy - math.sin(math.pi * t) * ry * 0.28))
+        edge_y = np.interp(np.arange(w), [p[0] for p in edge], [p[1] for p in edge])
+        mask |= ellipse & (yy < edge_y[None, :])
+        edges.append(edge)
+
+    skin = _skin_colour(rgb, SOCKETS)
+    fill = Image.new("RGBA", (w, h), (*skin, 255))
+    fill.putalpha(_feather(mask, 3))
+    out.alpha_composite(fill)
+    draw = ImageDraw.Draw(out)
+    for index, edge in enumerate(edges):
+        widths = [3.5 + 6.0 * math.sin(math.pi * (i / (len(edge) - 1))) for i in range(len(edge))]
+        draw.polygon(_tapered_polygon(edge, widths), fill=(38, 30, 38, 255))
+        sign = -1.0 if index == 0 else 1.0
+        eye = EYES[index]
+        cx, cy, rx, ry = eye["cx"], eye["cy"], eye["rx"], eye["ry"]
+        flick = [(cx + sign * rx * 1.02, cy), (cx + sign * rx * 1.2, cy - ry * 0.2)]
+        draw.polygon(_tapered_polygon(flick, [4.5, 0.6]), fill=(38, 30, 38, 255))
+    return out
+
+
+def _tear(draw: ImageDraw.ImageDraw, x: float, y: float, size: float) -> None:
+    draw.polygon(
+        [(x, y - size), (x + size * 0.7, y + size * 0.2), (x, y + size), (x - size * 0.7, y + size * 0.2)],
+        fill=(130, 200, 255, 205),
+    )
+    draw.ellipse((x - size * 0.25, y - size * 0.25, x + size * 0.1, y + size * 0.1), fill=(240, 250, 255, 220))
+
+
+def build_eye_teary(iris_layers: list[Image.Image]) -> Image.Image:
+    out = _iris_composite(iris_layers)
+    draw = ImageDraw.Draw(out)
+    for index, eye in enumerate(EYES):
+        sign = -1.0 if index == 0 else 1.0
+        _tear(draw, eye["cx"] + sign * eye["rx"] * 0.95, eye["cy"] + eye["ry"] * 0.9, 16)
+        _tear(draw, eye["cx"] + sign * eye["rx"] * 1.15, eye["cy"] + eye["ry"] * 0.55, 10)
+    return out
+
+
+def build_eye_angry(iris_layers: list[Image.Image]) -> Image.Image:
+    out = _iris_composite(iris_layers)
+    draw = ImageDraw.Draw(out)
+    for index, eye in enumerate(EYES):
+        sign = -1.0 if index == 0 else 1.0
+        cx, cy, rx, ry = eye["cx"], eye["cy"], eye["rx"], eye["ry"]
+        inner = (cx - sign * rx * 0.55, cy - ry * 0.10)
+        outer = (cx + sign * rx * 0.62, cy - ry * 0.58)
+        draw.polygon(_tapered_polygon([inner, outer], [9.0, 5.0]), fill=(38, 30, 38, 255))
+    return out
+
+
+def _mouth_patch(rgb: np.ndarray, shape) -> Image.Image:
+    h, w = rgb.shape[:2]
+    mask = _ellipse_mask((h, w), MOUTH["cx"], MOUTH["cy"], MOUTH["rx"], MOUTH["ry"])
+    patch = _inpaint_patch(rgb, mask, 5)
+    draw = ImageDraw.Draw(patch)
+    shape(draw, MOUTH["cx"], MOUTH["cy"])
+    patch.putalpha(_feather(mask, 6))
+    return patch
+
+
+def build_mouth_neutral() -> Image.Image:
+    return Image.new("RGBA", (Q_MASTER, Q_MASTER), (0, 0, 0, 0))
+
+
+def build_mouth_open(rgb: np.ndarray) -> Image.Image:
+    def shape(draw: ImageDraw.ImageDraw, cx: int, cy: int) -> None:
+        draw.ellipse((cx - 22, cy - 6, cx + 22, cy + 24), fill=(92, 32, 38, 255), outline=(55, 18, 24, 255), width=3)
+        draw.ellipse((cx - 13, cy + 10, cx + 13, cy + 23), fill=(232, 120, 132, 255))
+
+    return _mouth_patch(rgb, shape)
+
+
+def build_mouth_pout(rgb: np.ndarray) -> Image.Image:
+    def shape(draw: ImageDraw.ImageDraw, cx: int, cy: int) -> None:
+        draw.arc((cx - 24, cy - 10, cx, cy + 12), 0, 180, fill=(118, 45, 52, 255), width=5)
+        draw.arc((cx, cy - 10, cx + 24, cy + 12), 0, 180, fill=(118, 45, 52, 255), width=5)
+
+    return _mouth_patch(rgb, shape)
+
+
+def build_mouth_wavy(rgb: np.ndarray) -> Image.Image:
+    def shape(draw: ImageDraw.ImageDraw, cx: int, cy: int) -> None:
+        points: list[tuple[float, float]] = []
+        widths: list[float] = []
+        for i in range(25):
+            t = i / 24
+            points.append((cx - 26 + 52 * t, cy + math.sin(math.pi * 4 * t) * 7))
+            widths.append(2.0 + 3.0 * math.sin(math.pi * t))
+        draw.polygon(_tapered_polygon(points, widths), fill=(118, 45, 52, 255))
+
+    return _mouth_patch(rgb, shape)
+
+
+def build_mouth_o(rgb: np.ndarray) -> Image.Image:
+    def shape(draw: ImageDraw.ImageDraw, cx: int, cy: int) -> None:
+        draw.ellipse((cx - 14, cy - 4, cx + 14, cy + 26), fill=(92, 32, 38, 255), outline=(55, 18, 24, 255), width=3)
+        draw.ellipse((cx - 7, cy + 8, cx + 7, cy + 20), fill=(180, 80, 92, 255))
+
+    return _mouth_patch(rgb, shape)
+
+
+def build_blush(alpha: int) -> Image.Image:
+    layer = Image.new("RGBA", (Q_MASTER, Q_MASTER), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    for cx, cy in ((390, 930), (890, 960)):
+        draw.ellipse((cx - 100, cy - 55, cx + 100, cy + 55), fill=(255, 140, 150, alpha))
+    return layer.filter(ImageFilter.GaussianBlur(30))
+
+
+def _star(draw: ImageDraw.ImageDraw, cx: float, cy: float, radius: float) -> None:
+    draw.polygon(
+        [
+            (cx, cy - radius),
+            (cx + radius * 0.25, cy - radius * 0.25),
+            (cx + radius, cy),
+            (cx + radius * 0.25, cy + radius * 0.25),
+            (cx, cy + radius),
+            (cx - radius * 0.25, cy + radius * 0.25),
+            (cx - radius, cy),
+            (cx - radius * 0.25, cy - radius * 0.25),
+        ],
+        fill=(255, 235, 160, 225),
+    )
+    draw.ellipse((cx - radius * 0.15, cy - radius * 0.15, cx + radius * 0.15, cy + radius * 0.15), fill=(255, 255, 255, 235))
+
+
+def build_fx_sparkle() -> Image.Image:
+    layer = Image.new("RGBA", (Q_MASTER, Q_MASTER), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    for cx, cy, radius in ((300, 260, 34), (1210, 320, 42), (1250, 850, 28), (280, 850, 26)):
+        _star(draw, cx, cy, radius)
+    return layer
+
+
+def build_fx_heart() -> Image.Image:
+    layer = Image.new("RGBA", (Q_MASTER, Q_MASTER), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    for cx, cy, r in ((300, 430, 28), (1210, 470, 34)):
+        draw.polygon(
+            [(cx, cy + r), (cx - r, cy - r * 0.1), (cx - r * 0.5, cy - r * 0.7), (cx, cy - r * 0.25), (cx + r * 0.5, cy - r * 0.7), (cx + r, cy - r * 0.1)],
+            fill=(255, 120, 150, 225),
+        )
+    return layer
+
+
+def build_fx_sweat() -> Image.Image:
+    layer = Image.new("RGBA", (Q_MASTER, Q_MASTER), (0, 0, 0, 0))
+    _tear(ImageDraw.Draw(layer), 1130, 520, 22)
+    return layer
+
+
+def build_fx_anger() -> Image.Image:
+    layer = Image.new("RGBA", (Q_MASTER, Q_MASTER), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    cx, cy = 1130, 320
+    for dx, dy in ((0, -30), (0, 30), (-30, 0), (30, 0)):
+        draw.line((cx, cy, cx + dx, cy + dy), fill=(230, 60, 70, 225), width=9)
+    return layer
+
+
+def build_fx_zzz() -> Image.Image:
+    layer = Image.new("RGBA", (Q_MASTER, Q_MASTER), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    for index, (cx, cy, size) in enumerate(((1080, 260, 26), (1140, 180, 32), (1205, 100, 38))):
+        draw.line((cx - size, cy - size, cx + size, cy - size), fill=(180, 220, 255, 230), width=6)
+        draw.line((cx + size, cy - size, cx - size, cy + size), fill=(180, 220, 255, 230), width=6)
+        draw.line((cx - size, cy + size, cx + size, cy + size), fill=(180, 220, 255, 230), width=6)
+    return layer
 
 
 def resize_layer(layer: Image.Image, size: int = Q_OUT) -> Image.Image:
@@ -502,6 +776,90 @@ def run_outfits() -> None:
     print(f"manifest written to {ASSETS_JSON.relative_to(ROOT)}")
 
 
+def _layer_ref(name: str) -> dict[str, object]:
+    return {"src": f"/companion/q/{name}.webp", "width": Q_OUT, "height": Q_OUT}
+
+
+def run_q() -> None:
+    q_dir = PUBLIC_DIR / "q"
+    q_dir.mkdir(parents=True, exist_ok=True)
+    session = _rembg_session()
+    layers = build_q_layers(Image.open(Q_SOURCE).convert("RGB"), session)
+
+    sizes: dict[str, int] = {}
+    print(f"{'layer':16} {'size':>9} {'quality':>9} {'ssim':>7}")
+    for name, layer in layers.items():
+        path = q_dir / f"{name}.webp"
+        size, quality, score = save_budget_webp(
+            resize_layer(layer),
+            path,
+            OUTFIT_MAX_BYTES,
+            start_quality=95,
+            min_ssim=0.95,
+        )
+        sizes[name] = size
+        print(f"{name:16} {size / 1024:8.1f}K {quality:>9} {score:7.4f}")
+
+    initial = sum(sizes[key] for key in ("base", "iris-left", "iris-right", "eye-open", "mouth-neutral", "blush-soft"))
+    print(f"initial Q set: {initial / 1024:.1f}K (target 180K, hard 250K)")
+
+    q = {
+        "canvas": {"width": Q_OUT, "height": Q_OUT},
+        "dockViewport": {"x": 128, "y": 60, "width": 513, "height": 513},
+        "layers": {
+            "base": _layer_ref("base"),
+            "irisLeft": _layer_ref("iris-left"),
+            "irisRight": _layer_ref("iris-right"),
+            "eyeOpen": _layer_ref("eye-open"),
+            "eyeClosed": _layer_ref("eye-closed"),
+            "eyes": {
+                "happy": _layer_ref("eye-happy"),
+                "wide": _layer_ref("eye-wide"),
+                "half": _layer_ref("eye-half"),
+                "teary": _layer_ref("eye-teary"),
+                "angry": _layer_ref("eye-angry"),
+            },
+            "mouths": {
+                "neutral": _layer_ref("mouth-neutral"),
+                "smile": _layer_ref("mouth-smile"),
+                "open": _layer_ref("mouth-open"),
+                "pout": _layer_ref("mouth-pout"),
+                "wavy": _layer_ref("mouth-wavy"),
+                "o": _layer_ref("mouth-o"),
+            },
+            "blush": {"soft": _layer_ref("blush-soft"), "strong": _layer_ref("blush-strong")},
+            "fx": {
+                "sparkle": _layer_ref("fx-sparkle"),
+                "heart": _layer_ref("fx-heart"),
+                "sweat": _layer_ref("fx-sweat"),
+                "anger": _layer_ref("fx-anger"),
+                "zzz": _layer_ref("fx-zzz"),
+            },
+        },
+        "expressions": {
+            "neutral": {"eye": "open", "mouth": "neutral", "blush": "none", "fx": "none"},
+            "happy": {"eye": "happy", "mouth": "smile", "blush": "strong", "fx": "sparkle"},
+            "shy": {"eye": "open", "mouth": "wavy", "blush": "strong", "fx": "heart"},
+            "pout": {"eye": "half", "mouth": "pout", "blush": "soft", "fx": "anger"},
+            "surprised": {"eye": "wide", "mouth": "o", "blush": "none", "fx": "sweat"},
+            "sleepy": {"eye": "half", "mouth": "o", "blush": "soft", "fx": "zzz"},
+            "smug": {"eye": "open", "mouth": "smile", "blush": "soft", "fx": "sparkle"},
+        },
+    }
+
+    payload: dict[str, object] = {"version": 1, "outfits": []}
+    if ASSETS_JSON.exists():
+        try:
+            payload = json.loads(ASSETS_JSON.read_text())
+        except json.JSONDecodeError:
+            pass
+    payload["version"] = 1
+    payload["q"] = q
+    ASSETS_JSON.parent.mkdir(parents=True, exist_ok=True)
+    ASSETS_JSON.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+    print(f"Q manifest written to {ASSETS_JSON.relative_to(ROOT)}")
+
+
 def save_png(image: Image.Image, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     image.save(path, "PNG")
@@ -543,7 +901,8 @@ def main() -> None:
         run_sample()
         return
     if args.command == "q":
-        raise SystemExit("full Q pack is generated in Task 3")
+        run_q()
+        return
     if args.command == "outfits":
         run_outfits()
         return

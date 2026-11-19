@@ -3,6 +3,7 @@ import {
   COMPANION_ASSETS,
   COMPANION_OUTFITS,
   COMPANION_PACK_AVAILABLE,
+  COMPANION_Q,
   resolveCompanionAsset,
   resolveCompanionOutfit,
 } from './manifest'
@@ -58,5 +59,30 @@ describe('companion outfits', () => {
   it('falls back to outfit-1 for empty or unknown ids', () => {
     expect(resolveCompanionOutfit('')).toBe(COMPANION_OUTFITS[0])
     expect(resolveCompanionOutfit('missing')).toBe(COMPANION_OUTFITS[0])
+  })
+})
+
+
+describe('companion Q rig', () => {
+  it('defines a complete Q rig on one canvas', () => {
+    expect(COMPANION_Q.canvas).toEqual({ width: 768, height: 768 })
+    expect(COMPANION_Q.dockViewport.width).toBeGreaterThan(0)
+    expect(COMPANION_Q.dockViewport.x + COMPANION_Q.dockViewport.width).toBeLessThanOrEqual(768)
+    for (const layer of [COMPANION_Q.layers.base, COMPANION_Q.layers.irisLeft]) {
+      expect(layer.width).toBe(768)
+      expect(layer.height).toBe(768)
+    }
+  })
+
+  it('has presets for every expression', () => {
+    expect(Object.keys(COMPANION_Q.expressions).sort()).toEqual([
+      'happy',
+      'neutral',
+      'pout',
+      'shy',
+      'sleepy',
+      'smug',
+      'surprised',
+    ])
   })
 })
