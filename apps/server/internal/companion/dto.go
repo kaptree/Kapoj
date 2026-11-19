@@ -5,10 +5,12 @@ import "time"
 // SettingsInput is the user-editable companion settings payload. The service
 // layer validates and defaults these before the repository persists them.
 type SettingsInput struct {
-	ActivityLevel string
-	DockEnabled   bool
-	PublicProfile bool
-	EquippedSkin  string
+	ActivityLevel     string
+	DockEnabled       bool
+	PublicProfile     bool
+	EquippedSkin      string
+	PersonalityPrompt string
+	AIDialogueEnabled bool
 }
 
 // SettingsPatch is a partial settings update. Only non-nil fields are written,
@@ -16,10 +18,12 @@ type SettingsInput struct {
 // The service validates the activity enum and the skin length before the
 // repository applies the patch under a state-row lock.
 type SettingsPatch struct {
-	ActivityLevel *string `json:"activityLevel"`
-	DockEnabled   *bool   `json:"dockEnabled"`
-	PublicProfile *bool   `json:"publicProfile"`
-	EquippedSkin  *string `json:"equippedSkin"`
+	ActivityLevel     *string `json:"activityLevel"`
+	DockEnabled       *bool   `json:"dockEnabled"`
+	PublicProfile     *bool   `json:"publicProfile"`
+	EquippedSkin      *string `json:"equippedSkin"`
+	PersonalityPrompt *string `json:"personalityPrompt"`
+	AIDialogueEnabled *bool   `json:"aiDialogueEnabled"`
 }
 
 // EventInput describes one bond event to apply. EventDate is a YYYY-MM-DD
@@ -52,19 +56,23 @@ type SubmissionInfo struct {
 // carries the denormalized progress plus the unread event count and today's
 // gain breakdown for the dock bond meter.
 type StateView struct {
-	Bond          int         `json:"bond"`
-	Level         int         `json:"level"`
-	LevelName     string      `json:"levelName"`
-	NextThreshold int         `json:"nextThreshold"`
-	DailyGain     int         `json:"dailyGain"`
-	DailyCap      int         `json:"dailyCap"`
-	ActivityLevel string      `json:"activityLevel"`
-	DockEnabled   bool        `json:"dockEnabled"`
-	PublicProfile bool        `json:"publicProfile"`
-	EquippedSkin  string      `json:"equippedSkin"`
-	UnlockedSkins []string    `json:"unlockedSkins"`
-	UnreadCount   int         `json:"unreadCount"`
-	TodayEvents   []EventView `json:"todayEvents"`
+	Bond              int         `json:"bond"`
+	Level             int         `json:"level"`
+	LevelName         string      `json:"levelName"`
+	NextThreshold     int         `json:"nextThreshold"`
+	DailyGain         int         `json:"dailyGain"`
+	DailyCap          int         `json:"dailyCap"`
+	ActivityLevel     string      `json:"activityLevel"`
+	DockEnabled       bool        `json:"dockEnabled"`
+	PublicProfile     bool        `json:"publicProfile"`
+	EquippedSkin      string      `json:"equippedSkin"`
+	UnlockedSkins     []string    `json:"unlockedSkins"`
+	PersonalityPrompt string      `json:"personalityPrompt"`
+	AIDialogueEnabled bool        `json:"aiDialogueEnabled"`
+	AIReady           bool        `json:"aiReady"`
+	AIRemainingToday  int         `json:"aiRemainingToday"`
+	UnreadCount       int         `json:"unreadCount"`
+	TodayEvents       []EventView `json:"todayEvents"`
 }
 
 // PublicStateView is the privacy-filtered companion summary shown on a user's

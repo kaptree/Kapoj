@@ -120,7 +120,7 @@ func TestCompanionStateDefaults(t *testing.T) {
 	assert.Equal(t, true, data["dockEnabled"])
 	assert.Equal(t, false, data["publicProfile"])
 	assert.Equal(t, "", data["equippedSkin"])
-	assert.Empty(t, data["unlockedSkins"])
+	assert.Equal(t, []any{"outfit-1"}, data["unlockedSkins"])
 	assert.EqualValues(t, 0, data["unreadCount"])
 	assert.Empty(t, data["todayEvents"])
 }
@@ -204,13 +204,37 @@ func TestCompanionSettingsPersist(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "", dataOf(t, resp)["equippedSkin"])
 
-	skin := strings.Repeat("皮", 40)
+	skin := "outfit-1"
 	w, resp = f.do(http.MethodPost, "/api/companion/settings", tok, map[string]any{
 		"equippedSkin": skin,
 	})
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	assert.Equal(t, skin, dataOf(t, resp)["equippedSkin"])
 	assert.Equal(t, "quiet", dataOf(t, resp)["activityLevel"], "skin patch keeps other fields")
+
+	// A level-locked outfit cannot be equipped at bond 0.
+	w, resp = f.do(http.MethodPost, "/api/companion/settings", tok, map[string]any{
+		"equippedSkin": "outfit-3",
+	})
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	w, resp = f.do(http.MethodPost, "/api/companion/settings", tok, map[string]any{
+		"personalityPrompt": "再可爱一点",
+		"aiDialogueEnabled": false,
+	})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	personality := dataOf(t, resp)
+	assert.Equal(t, "再可爱一点", personality["personalityPrompt"])
+	assert.Equal(t, false, personality["aiDialogueEnabled"])
+
+	w, resp = f.do(http.MethodGet, "/api/companion", tok, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	state = dataOf(t, resp)
+	assert.Equal(t, "再可爱一点", state["personalityPrompt"])
+	assert.Equal(t, false, state["aiDialogueEnabled"])
+	assert.Equal(t, false, state["aiReady"])
+	assert.EqualValues(t, 0, state["aiRemainingToday"])
 }
 
 // 4. Unread events are listed newest-last with a clamped limit, and marking them
@@ -351,6 +375,10 @@ func TestCompanionPublicState(t *testing.T) {
 	assert.NotContains(t, data, "activityLevel", "summary must not leak private settings")
 	assert.NotContains(t, data, "dailyGain")
 	assert.NotContains(t, data, "unreadCount")
+	assert.NotContains(t, data, "personalityPrompt")
+	assert.NotContains(t, data, "aiDialogueEnabled")
+	assert.NotContains(t, data, "aiReady")
+	assert.NotContains(t, data, "aiRemainingToday")
 
 	// Publishing the profile exposes it to guests and other signed-in users.
 	w, _ = f.do(http.MethodPost, "/api/companion/settings", ownerTok, map[string]any{

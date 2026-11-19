@@ -463,7 +463,7 @@ func TestPublicStatePrivacy(t *testing.T) {
 	assert.Equal(t, "认识", view.LevelName)
 	assert.Equal(t, 50, view.NextThreshold)
 	assert.Equal(t, "culture-festival", view.EquippedSkin)
-	assert.Equal(t, []string{"culture-festival"}, view.UnlockedSkins)
+	assert.Equal(t, []string{"outfit-1", "outfit-2", "culture-festival"}, view.UnlockedSkins)
 	assert.False(t, view.PublicProfile)
 	assert.Equal(t, "boost", view.FavoriteEventType)
 
@@ -551,7 +551,14 @@ func TestServiceUpdateSettingsValidation(t *testing.T) {
 	assertSettingsValidation(t, err)
 
 	// varchar(40) counts characters, not bytes, so exactly 40 CJK runes fit.
+	// Store it as a legacy unlocked skin so the new ownership check accepts it.
 	skin := strings.Repeat("皮", 40)
+	_, err = svc.State(ctx, uid)
+	require.NoError(t, err)
+	require.NoError(t, g.Exec(
+		`UPDATE companion_states SET unlocked_skins_json = ?::jsonb WHERE user_id = ?`,
+		fmt.Sprintf(`["%s"]`, skin), uid,
+	).Error)
 	view, err := svc.UpdateSettings(ctx, uid, companion.SettingsInput{
 		ActivityLevel: "normal",
 		DockEnabled:   true,
@@ -583,4 +590,110 @@ func TestServiceUpdateSettingsValidation(t *testing.T) {
 	assert.False(t, view.DockEnabled)
 	assert.Equal(t, "normal", view.ActivityLevel)
 	assert.Equal(t, skin, view.EquippedSkin)
+}
+
+func TestUpdateSettingsValidatesPersonality(t *testing.T) {
+	g := testutil.PG(t)
+	svc := newService(t, g)
+	ctx := context.Background()
+	uid := newUser(t, g, "svc_personality")
+
+	prompt := strings.Repeat("字", 500)
+	view, err := svc.UpdateSettings(ctx, uid, companion.SettingsInput{
+		ActivityLevel:     "normal",
+		DockEnabled:       true,
+		PersonalityPrompt: prompt,
+		AIDialogueEnabled: true,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, prompt, view.PersonalityPrompt)
+	assert.True(t, view.AIDialogueEnabled)
+
+	_, err = svc.UpdateSettings(ctx, uid, companion.SettingsInput{
+		ActivityLevel:     "normal",
+		DockEnabled:       true,
+		PersonalityPrompt: prompt + "字",
+		AIDialogueEnabled: true,
+	})
+	assertSettingsValidation(t, err)
+}
+
+func TestUpdateSettingsRejectsLockedSkin(t *testing.T) {
+	g := testutil.PG(t)
+	repo := companion.NewGormRepository(g)
+	svc := companion.NewService(repo)
+	ctx := context.Background()
+	uid := newUser(t, g, "svc_locked_skin")
+
+	_, err := svc.UpdateSettings(ctx, uid, companion.SettingsInput{
+		ActivityLevel:     "normal",
+		DockEnabled:       true,
+		EquippedSkin:      "outfit-3",
+		AIDialogueEnabled: true,
+	})
+	assertSettingsValidation(t, err)
+
+	_, created, err := repo.ApplyEvent(ctx, companion.EventInput{
+		UserID: uid, Key: "seed:level2", Type: "boost", Bond: 50,
+		EventDate: "2026-11-19", DailyCapBypass: true, Payload: map[string]any{},
+	})
+	require.NoError(t, err)
+	require.True(t, created)
+
+	view, err := svc.UpdateSettings(ctx, uid, companion.SettingsInput{
+		ActivityLevel:     "normal",
+		DockEnabled:       true,
+		EquippedSkin:      "outfit-3",
+		AIDialogueEnabled: true,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "outfit-3", view.EquippedSkin)
+}
+
+func TestUpdateSettingsKeepsExistingSkinOnOtherPatch(t *testing.T) {
+	g := testutil.PG(t)
+	svc := newService(t, g)
+	ctx := context.Background()
+	uid := newUser(t, g, "svc_patch_skin")
+
+	_, err := svc.UpdateSettings(ctx, uid, companion.SettingsInput{
+		ActivityLevel:     "normal",
+		DockEnabled:       true,
+		EquippedSkin:      "outfit-1",
+		PersonalityPrompt: "温柔一点",
+		AIDialogueEnabled: true,
+	})
+	require.NoError(t, err)
+
+	dock := false
+	view, err := svc.UpdateSettingsPatch(ctx, uid, companion.SettingsPatch{DockEnabled: &dock})
+	require.NoError(t, err)
+	assert.Equal(t, "outfit-1", view.EquippedSkin)
+	assert.Equal(t, "温柔一点", view.PersonalityPrompt)
+	assert.True(t, view.AIDialogueEnabled)
+}
+
+func TestStateIncludesPersonalityAndLevelUnlocks(t *testing.T) {
+	g := testutil.PG(t)
+	repo := companion.NewGormRepository(g)
+	svc := companion.NewService(repo)
+	ctx := context.Background()
+	uid := newUser(t, g, "svc_state_ai")
+
+	prompt := "再可爱一点"
+	view, err := svc.UpdateSettingsPatch(ctx, uid, companion.SettingsPatch{PersonalityPrompt: &prompt})
+	require.NoError(t, err)
+	assert.Equal(t, prompt, view.PersonalityPrompt)
+	assert.False(t, view.AIReady)
+	assert.Zero(t, view.AIRemainingToday)
+
+	_, _, err = repo.ApplyEvent(ctx, companion.EventInput{
+		UserID: uid, Key: "seed:state_level", Type: "boost", Bond: 50,
+		EventDate: "2026-11-19", DailyCapBypass: true, Payload: map[string]any{},
+	})
+	require.NoError(t, err)
+
+	view, err = svc.State(ctx, uid)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"outfit-1", "outfit-2", "outfit-3"}, view.UnlockedSkins)
 }

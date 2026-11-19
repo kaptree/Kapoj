@@ -77,19 +77,23 @@ func (s *Service) State(ctx context.Context, userID int64) (*StateView, error) {
 		dailyGain = 0
 	}
 	return &StateView{
-		Bond:          st.Bond,
-		Level:         lvl.Level,
-		LevelName:     lvl.Name,
-		NextThreshold: lvl.Next,
-		DailyGain:     dailyGain,
-		DailyCap:      dailyCap,
-		ActivityLevel: st.ActivityLevel,
-		DockEnabled:   st.DockEnabled,
-		PublicProfile: st.PublicProfile,
-		EquippedSkin:  st.EquippedSkin,
-		UnlockedSkins: []string(st.UnlockedSkins),
-		UnreadCount:   unread,
-		TodayEvents:   eventViews(todayEvents),
+		Bond:              st.Bond,
+		Level:             lvl.Level,
+		LevelName:         lvl.Name,
+		NextThreshold:     lvl.Next,
+		DailyGain:         dailyGain,
+		DailyCap:          dailyCap,
+		ActivityLevel:     st.ActivityLevel,
+		DockEnabled:       st.DockEnabled,
+		PublicProfile:     st.PublicProfile,
+		EquippedSkin:      st.EquippedSkin,
+		UnlockedSkins:     mergeUnlockedSkins([]string(st.UnlockedSkins), st.Bond),
+		PersonalityPrompt: st.PersonalityPrompt,
+		AIDialogueEnabled: st.AIDialogueEnabled,
+		AIReady:           false,
+		AIRemainingToday:  0,
+		UnreadCount:       unread,
+		TodayEvents:       eventViews(todayEvents),
 	}, nil
 }
 
@@ -109,10 +113,7 @@ func (s *Service) PublicState(ctx context.Context, userID, viewerID int64) (*Pub
 		return nil, httpx.ErrNotFound
 	}
 	lvl := LevelForBond(st.Bond)
-	skins := []string(st.UnlockedSkins)
-	if skins == nil {
-		skins = []string{}
-	}
+	skins := mergeUnlockedSkins([]string(st.UnlockedSkins), st.Bond)
 	// The favorite quote is a nice-to-have; a stats failure must not hide the
 	// profile card.
 	favorite, _ := s.repo.MostFrequentEventType(ctx, userID)
@@ -176,13 +177,42 @@ func validateEquippedSkin(skin string) error {
 	return nil
 }
 
+const personalityMaxRunes = 500
+
+func validatePersonality(prompt string) error {
+	if utf8.RuneCountInString(prompt) > personalityMaxRunes {
+		return httpx.ErrValidation("性格提示词不能超过 500 个字符")
+	}
+	return nil
+}
+
+func validateEquippedSkinAvailable(skin string, available []string) error {
+	if skin == "" {
+		return nil
+	}
+	if !skinAvailable(available, skin) {
+		return httpx.ErrValidation("该换装尚未解锁")
+	}
+	return nil
+}
+
 // UpdateSettings persists the whole user-editable settings set and returns the
 // fresh view. It validates through the same helpers as UpdateSettingsPatch.
 func (s *Service) UpdateSettings(ctx context.Context, userID int64, in SettingsInput) (*StateView, error) {
 	if err := validateActivityLevel(in.ActivityLevel); err != nil {
 		return nil, err
 	}
+	if err := validatePersonality(in.PersonalityPrompt); err != nil {
+		return nil, err
+	}
 	if err := validateEquippedSkin(in.EquippedSkin); err != nil {
+		return nil, err
+	}
+	st, err := s.repo.EnsureState(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateEquippedSkinAvailable(in.EquippedSkin, mergeUnlockedSkins([]string(st.UnlockedSkins), st.Bond)); err != nil {
 		return nil, err
 	}
 	if _, err := s.repo.UpdateSettings(ctx, userID, in); err != nil {
@@ -200,9 +230,23 @@ func (s *Service) UpdateSettingsPatch(ctx context.Context, userID int64, patch S
 			return nil, err
 		}
 	}
+	if patch.PersonalityPrompt != nil {
+		if err := validatePersonality(*patch.PersonalityPrompt); err != nil {
+			return nil, err
+		}
+	}
 	if patch.EquippedSkin != nil {
 		if err := validateEquippedSkin(*patch.EquippedSkin); err != nil {
 			return nil, err
+		}
+		if *patch.EquippedSkin != "" {
+			st, err := s.repo.EnsureState(ctx, userID)
+			if err != nil {
+				return nil, err
+			}
+			if err := validateEquippedSkinAvailable(*patch.EquippedSkin, mergeUnlockedSkins([]string(st.UnlockedSkins), st.Bond)); err != nil {
+				return nil, err
+			}
 		}
 	}
 	if _, err := s.repo.UpdateSettingsPatch(ctx, userID, patch); err != nil {

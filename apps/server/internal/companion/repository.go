@@ -87,10 +87,12 @@ func (r *Repository) UpdateSettings(ctx context.Context, userID int64, in Settin
 		return nil, err
 	}
 	if err := r.db.WithContext(ctx).Model(&State{}).Where("user_id = ?", userID).Updates(map[string]any{
-		"activity_level": in.ActivityLevel,
-		"dock_enabled":   in.DockEnabled,
-		"public_profile": in.PublicProfile,
-		"equipped_skin":  in.EquippedSkin,
+		"activity_level":      in.ActivityLevel,
+		"dock_enabled":        in.DockEnabled,
+		"public_profile":      in.PublicProfile,
+		"equipped_skin":       in.EquippedSkin,
+		"personality_prompt":  in.PersonalityPrompt,
+		"ai_dialogue_enabled": in.AIDialogueEnabled,
 	}).Error; err != nil {
 		return nil, err
 	}
@@ -115,7 +117,7 @@ func (r *Repository) UpdateSettingsPatch(ctx context.Context, userID int64, patc
 			Where("user_id = ?", userID).First(&st).Error; err != nil {
 			return err
 		}
-		updates := make(map[string]any, 4)
+		updates := make(map[string]any, 6)
 		if patch.ActivityLevel != nil {
 			updates["activity_level"] = *patch.ActivityLevel
 		}
@@ -127,6 +129,12 @@ func (r *Repository) UpdateSettingsPatch(ctx context.Context, userID int64, patc
 		}
 		if patch.EquippedSkin != nil {
 			updates["equipped_skin"] = *patch.EquippedSkin
+		}
+		if patch.PersonalityPrompt != nil {
+			updates["personality_prompt"] = *patch.PersonalityPrompt
+		}
+		if patch.AIDialogueEnabled != nil {
+			updates["ai_dialogue_enabled"] = *patch.AIDialogueEnabled
 		}
 		if len(updates) > 0 {
 			if err := tx.Model(&State{}).Where("user_id = ?", userID).Updates(updates).Error; err != nil {
