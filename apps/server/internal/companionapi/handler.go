@@ -33,6 +33,7 @@ func RegisterRoutes(r gin.IRouter, s *companion.Service) {
 	r.POST("/companion/events/read", auth, h.markRead)
 	r.POST("/companion/settings", auth, h.updateSettings)
 	r.POST("/companion/pet", auth, h.pet)
+	r.POST("/companion/dialogue", auth, h.dialogue)
 	r.GET("/users/:id/companion", h.publicState)
 }
 
@@ -155,6 +156,36 @@ func (h *handler) pet(c *gin.Context) {
 	// and event-date handling.
 	date := time.Now().In(time.Local).Format("2006-01-02")
 	result, err := h.svc.Pet(c.Request.Context(), userID, date)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, result)
+}
+
+func validDialogueTrigger(trigger string) bool {
+	switch trigger {
+	case "pet", "greet", "idle":
+		return true
+	default:
+		return false
+	}
+}
+
+func (h *handler) dialogue(c *gin.Context) {
+	userID, ok := currentUserID(c)
+	if !ok {
+		return
+	}
+	req, ok := httpx.BindJSON[companion.DialogueRequest](c)
+	if !ok {
+		return
+	}
+	if !validDialogueTrigger(req.Trigger) {
+		httpx.Fail(c, httpx.ErrValidation("互动类型无效"))
+		return
+	}
+	result, err := h.svc.Dialogue(c.Request.Context(), userID, req)
 	if err != nil {
 		httpx.Fail(c, err)
 		return

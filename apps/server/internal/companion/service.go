@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -44,13 +46,51 @@ var streakMilestones = []struct {
 // method returns an error so callers can decide whether a companion failure is
 // fatal (async gamequeue) or best-effort (sign-in, submission, task, achievement).
 type Service struct {
-	repo *Repository
+	repo         *Repository
+	dialogue     DialogueGenerator
+	aiStatus     AIStatus
+	nameProvider CompanionNameProvider
+}
+
+// Option configures optional companion dependencies.
+type Option func(*Service)
+
+// WithDialogue wires the AI generator used by the dialogue endpoint.
+func WithDialogue(g DialogueGenerator) Option {
+	return func(s *Service) { s.dialogue = g }
+}
+
+// WithAIStatus wires the active-model check used by state and dialogue.
+func WithAIStatus(status AIStatus) Option {
+	return func(s *Service) { s.aiStatus = status }
 }
 
 // NewService returns a Service backed by repo.
-func NewService(repo *Repository) *Service {
-	return &Service{repo: repo}
+func NewService(repo *Repository, opts ...Option) *Service {
+	s := &Service{repo: repo}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
+
+// SetDialogueGenerator wires AI dialogue after the service has been built.
+// This is used by main because the companion service is constructed before the
+// AI service, while game services need the companion service first.
+func (s *Service) SetDialogueGenerator(g DialogueGenerator) { s.dialogue = g }
+
+// SetAIStatus wires the active-model check after construction.
+func (s *Service) SetAIStatus(status AIStatus) { s.aiStatus = status }
+
+// SetCompanionNameProvider wires the site-configured display name.
+func (s *Service) SetCompanionNameProvider(p CompanionNameProvider) { s.nameProvider = p }
+
+const (
+	aiDialogueDailyCap  = 30
+	aiDialogueMaxTokens = 120
+	aiDialogueCooldown  = 5 * time.Second
+	aiDialogueTimeout   = 4 * time.Second
+)
 
 // State returns the user's companion state view, including the level title,
 // next threshold, unread event count and today's gain breakdown.
@@ -76,6 +116,28 @@ func (s *Service) State(ctx context.Context, userID int64) (*StateView, error) {
 	if st.DailyDate != today {
 		dailyGain = 0
 	}
+
+	aiReady := false
+	aiRemaining := 0
+	if s.aiStatus != nil {
+		ready, statusErr := s.aiStatus.HasActiveModel(ctx, userID)
+		if statusErr != nil {
+			slog.Warn("companion: check AI status failed", "err", statusErr)
+		} else {
+			aiReady = ready
+		}
+	}
+	if aiReady {
+		aiCount := st.AIDailyCount
+		if st.AIDailyDate != today {
+			aiCount = 0
+		}
+		aiRemaining = aiDialogueDailyCap - aiCount
+		if aiRemaining < 0 {
+			aiRemaining = 0
+		}
+	}
+
 	return &StateView{
 		Bond:              st.Bond,
 		Level:             lvl.Level,
@@ -90,8 +152,8 @@ func (s *Service) State(ctx context.Context, userID int64) (*StateView, error) {
 		UnlockedSkins:     mergeUnlockedSkins([]string(st.UnlockedSkins), st.Bond),
 		PersonalityPrompt: st.PersonalityPrompt,
 		AIDialogueEnabled: st.AIDialogueEnabled,
-		AIReady:           false,
-		AIRemainingToday:  0,
+		AIReady:           aiReady,
+		AIRemainingToday:  aiRemaining,
 		UnreadCount:       unread,
 		TodayEvents:       eventViews(todayEvents),
 	}, nil
@@ -433,6 +495,135 @@ func (s *Service) UnreadEvents(ctx context.Context, userID int64, limit int) ([]
 // MarkEventsRead marks the given event ids as read for the user.
 func (s *Service) MarkEventsRead(ctx context.Context, userID int64, ids []int64) error {
 	return s.repo.MarkRead(ctx, userID, ids)
+}
+
+var validPetExpressions = map[string]struct{}{
+	"neutral": {}, "happy": {}, "shy": {}, "pout": {},
+	"surprised": {}, "sleepy": {}, "smug": {},
+}
+
+var validGreetingKeys = map[string]struct{}{
+	"greet.morning": {}, "greet.afternoon": {}, "greet.night": {},
+}
+
+func normalizeRecentLines(lines []string) []string {
+	out := make([]string, 0, 3)
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if utf8.RuneCountInString(line) > 80 {
+			line = string([]rune(line)[:80])
+		}
+		out = append(out, line)
+		if len(out) == 3 {
+			break
+		}
+	}
+	return out
+}
+
+func defaultLineKey(req DialogueRequest) string {
+	switch req.Trigger {
+	case "pet":
+		if _, ok := validPetExpressions[req.Expression]; ok {
+			return "pet." + req.Expression
+		}
+		return "pet"
+	case "greet":
+		if _, ok := validGreetingKeys[req.GreetingKey]; ok {
+			return req.GreetingKey
+		}
+		return "greeting"
+	case "idle":
+		return "idle.lively"
+	default:
+		return "greeting"
+	}
+}
+
+func defaultDialogue(req DialogueRequest, reason string, remaining int) *DialogueResult {
+	return &DialogueResult{
+		Source:         "default",
+		LineKey:        defaultLineKey(req),
+		Reason:         reason,
+		RemainingToday: remaining,
+	}
+}
+
+func (s *Service) companionName(ctx context.Context) string {
+	if s.nameProvider != nil {
+		name, err := s.nameProvider.CompanionName(ctx)
+		if err != nil {
+			slog.Warn("companion: resolve display name failed", "err", err)
+		} else if trimmed := strings.TrimSpace(name); trimmed != "" {
+			return trimmed
+		}
+	}
+	return "Koj"
+}
+
+// Dialogue returns an AI-generated companion line or a static fallback key.
+// AI failures and quota limits deliberately return a 200-friendly result; only
+// storage errors are propagated.
+func (s *Service) Dialogue(ctx context.Context, userID int64, req DialogueRequest) (*DialogueResult, error) {
+	st, err := s.repo.EnsureState(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if !st.AIDialogueEnabled {
+		return defaultDialogue(req, "disabled", 0), nil
+	}
+	if s.dialogue == nil || s.aiStatus == nil {
+		return defaultDialogue(req, "no_ai", 0), nil
+	}
+	ready, err := s.aiStatus.HasActiveModel(ctx, userID)
+	if err != nil {
+		slog.Warn("companion: check AI status failed", "err", err)
+		return defaultDialogue(req, "no_ai", 0), nil
+	}
+	if !ready {
+		return defaultDialogue(req, "no_ai", 0), nil
+	}
+
+	now := time.Now()
+	date := now.In(time.Local).Format("2006-01-02")
+	allowed, remaining, err := s.repo.ReserveAIDialogue(ctx, userID, date, now, aiDialogueCooldown, aiDialogueDailyCap)
+	if err != nil {
+		return nil, err
+	}
+	if !allowed {
+		return defaultDialogue(req, "rate_limited", remaining), nil
+	}
+
+	level := LevelForBond(st.Bond)
+	messages := BuildDialoguePrompt(PromptInput{
+		Name:        s.companionName(ctx),
+		Personality: st.PersonalityPrompt,
+		Trigger:     req.Trigger,
+		Expression:  req.Expression,
+		GreetingKey: req.GreetingKey,
+		Level:       level.Level,
+		LevelName:   level.Name,
+		RecentLines: normalizeRecentLines(req.RecentLines),
+	})
+	chatCtx, cancel := context.WithTimeout(ctx, aiDialogueTimeout)
+	defer cancel()
+	line, err := s.dialogue.Chat(chatCtx, userID, messages, aiDialogueMaxTokens)
+	if err != nil {
+		reason := "upstream_error"
+		if errors.Is(err, context.DeadlineExceeded) {
+			reason = "timeout"
+		}
+		slog.Warn("companion: AI dialogue failed", "reason", reason, "err", err)
+		return defaultDialogue(req, reason, remaining), nil
+	}
+	clean, ok := CleanDialogueLine(line)
+	if !ok {
+		return defaultDialogue(req, "invalid_output", remaining), nil
+	}
+	return &DialogueResult{Source: "ai", Line: clean, RemainingToday: remaining}, nil
 }
 
 func eventViews(events []Event) []EventView {

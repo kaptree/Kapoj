@@ -1,6 +1,11 @@
 package companion
 
-import "time"
+import (
+	"context"
+	"time"
+
+	"github.com/kaptree/kapoj/apps/server/internal/ai"
+)
 
 // SettingsInput is the user-editable companion settings payload. The service
 // layer validates and defaults these before the repository persists them.
@@ -24,6 +29,40 @@ type SettingsPatch struct {
 	EquippedSkin      *string `json:"equippedSkin"`
 	PersonalityPrompt *string `json:"personalityPrompt"`
 	AIDialogueEnabled *bool   `json:"aiDialogueEnabled"`
+}
+
+// DialogueGenerator is the AI seam used by the companion dialogue service.
+type DialogueGenerator interface {
+	Chat(ctx context.Context, userID int64, messages []ai.ChatMessage, maxTokens int) (string, error)
+}
+
+// AIStatus reports whether the user has a usable AI model configuration.
+type AIStatus interface {
+	HasActiveModel(ctx context.Context, userID int64) (bool, error)
+}
+
+// CompanionNameProvider returns the site-configured companion name.
+type CompanionNameProvider interface {
+	CompanionName(ctx context.Context) (string, error)
+}
+
+// DialogueRequest is one companion interaction. The client owns the visual
+// expression; the server uses it only as prompt context.
+type DialogueRequest struct {
+	Trigger     string   `json:"trigger"`
+	Expression  string   `json:"expression"`
+	GreetingKey string   `json:"greetingKey"`
+	RecentLines []string `json:"recentLines"`
+}
+
+// DialogueResult is either an AI line or a static fallback key. The endpoint
+// always returns 200 for AI unavailability; only malformed requests fail.
+type DialogueResult struct {
+	Source         string `json:"source"`
+	Line           string `json:"line,omitempty"`
+	LineKey        string `json:"lineKey,omitempty"`
+	Reason         string `json:"reason,omitempty"`
+	RemainingToday int    `json:"remainingToday"`
 }
 
 // EventInput describes one bond event to apply. EventDate is a YYYY-MM-DD

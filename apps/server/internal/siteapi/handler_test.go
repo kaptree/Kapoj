@@ -219,7 +219,7 @@ func TestSiteCompanionHTTP(t *testing.T) {
 	_, resp := f.do(http.MethodGet, "/api/site", "", nil)
 	publicCompanion := resp["data"].(map[string]any)["companion"].(map[string]any)
 	assert.Equal(t, true, publicCompanion["enabled"])
-	assert.Equal(t, "Kapo", publicCompanion["name"])
+	assert.Equal(t, "Koj", publicCompanion["name"])
 	assert.Equal(t, "normal", publicCompanion["defaultActivityLevel"])
 	assert.Equal(t, true, publicCompanion["contestMute"])
 	assert.Equal(t, true, publicCompanion["allowUserDisable"])
@@ -235,7 +235,7 @@ func TestSiteCompanionHTTP(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	data := resp["data"].(map[string]any)
 	assert.Equal(t, true, data["enabled"])
-	assert.Equal(t, "Kapo", data["name"])
+	assert.Equal(t, "Koj", data["name"])
 	assert.Equal(t, "normal", data["defaultActivityLevel"])
 	assert.Equal(t, true, data["contestMute"])
 	assert.Equal(t, true, data["allowUserDisable"])
@@ -270,7 +270,7 @@ func TestSiteCompanionHTTP(t *testing.T) {
 
 	// 非法活动级别与名称返回 400 / 40001。
 	w, resp = f.do(http.MethodPut, "/api/admin/site/companion", managerToken, map[string]any{
-		"name": "Kapo", "defaultActivityLevel": "chaotic",
+		"name": "Koj", "defaultActivityLevel": "chaotic",
 	})
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	assert.EqualValues(t, 40001, resp["code"])

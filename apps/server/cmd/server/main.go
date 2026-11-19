@@ -202,6 +202,8 @@ func run() error {
 	aiSvc := ai.NewService(g, keyMgr,
 		ai.NewRedisLimiter(rdb, cfg.AICooldown),
 		aiClient)
+	companionSvc.SetDialogueGenerator(aiSvc)
+	companionSvc.SetAIStatus(aiSvc)
 	aiSettings := ai.NewSettingsService(g, keyMgr, cfg.AIKeyFile)
 	platformSvc := ai.NewPlatformService(g, keyMgr, aiClient, aiSettings)
 	testcaseGenSvc := testcasegen.NewService(

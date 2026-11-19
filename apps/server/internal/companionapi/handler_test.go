@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/kaptree/kapoj/apps/server/internal/ai"
 	"github.com/kaptree/kapoj/apps/server/internal/companion"
 	"github.com/kaptree/kapoj/apps/server/internal/config"
 	"github.com/kaptree/kapoj/apps/server/internal/router"
@@ -28,6 +29,21 @@ type noopQueue struct{}
 
 func (noopQueue) Enqueue(context.Context, int64) error { return nil }
 
+type fakeDialogue struct {
+	line string
+	err  error
+}
+
+func (f fakeDialogue) Chat(context.Context, int64, []ai.ChatMessage, int) (string, error) {
+	return f.line, f.err
+}
+
+type fakeAIStatus struct{ ready bool }
+
+func (f fakeAIStatus) HasActiveModel(context.Context, int64) (bool, error) {
+	return f.ready, nil
+}
+
 type fx struct {
 	t   *testing.T
 	h   http.Handler
@@ -37,11 +53,16 @@ type fx struct {
 
 func newFx(t *testing.T) *fx {
 	t.Helper()
+	return newFxWithOptions(t)
+}
+
+func newFxWithOptions(t *testing.T, opts ...companion.Option) *fx {
+	t.Helper()
 	g := testutil.PG(t)
 	mr := miniredis.RunT(t)
 	store, err := storage.NewLocal(t.TempDir())
 	require.NoError(t, err)
-	svc := companion.NewService(companion.NewGormRepository(g))
+	svc := companion.NewService(companion.NewGormRepository(g), opts...)
 	h := router.New(router.Deps{
 		DB: g, Redis: redis.NewClient(&redis.Options{Addr: mr.Addr()}), Storage: store,
 		Config: &config.Config{
@@ -423,4 +444,65 @@ func TestCompanionMarkReadBatchLimit(t *testing.T) {
 		map[string]any{"activityLevel": "quiet", "publicProfile": "yes"})
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	assert.EqualValues(t, 40000, resp["code"])
+}
+
+func TestCompanionDialogueDefaultAndValidation(t *testing.T) {
+	f := newFx(t)
+	_, tok := f.register("dialogue_default")
+
+	w, resp := f.do(http.MethodPost, "/api/companion/dialogue", "", map[string]any{
+		"trigger": "pet", "expression": "shy",
+	})
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.EqualValues(t, 40100, resp["code"])
+
+	w, resp = f.do(http.MethodPost, "/api/companion/dialogue", tok, map[string]any{
+		"trigger": "pet", "expression": "shy",
+	})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data := dataOf(t, resp)
+	assert.Equal(t, "default", data["source"])
+	assert.Equal(t, "pet.shy", data["lineKey"])
+	assert.Equal(t, "no_ai", data["reason"])
+	assert.EqualValues(t, 0, data["remainingToday"])
+
+	w, resp = f.do(http.MethodPost, "/api/companion/dialogue", tok, map[string]any{"trigger": "nap"})
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+
+	// Four recent lines are accepted; the service keeps the first three.
+	w, _ = f.do(http.MethodPost, "/api/companion/dialogue", tok, map[string]any{
+		"trigger": "pet", "expression": "happy",
+		"recentLines": []string{"a", "b", "c", "d"},
+	})
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	w, resp = f.do(http.MethodPost, "/api/companion/dialogue", tok, map[string]any{
+		"trigger": "pet", "recentLines": []any{"a", 2},
+	})
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40000, resp["code"])
+}
+
+func TestCompanionDialogueAI(t *testing.T) {
+	f := newFxWithOptions(t,
+		companion.WithDialogue(fakeDialogue{line: "……就一下。再多我可要生气了。"}),
+		companion.WithAIStatus(fakeAIStatus{ready: true}),
+	)
+	_, tok := f.register("dialogue_ai")
+
+	w, resp := f.do(http.MethodPost, "/api/companion/dialogue", tok, map[string]any{
+		"trigger": "pet", "expression": "shy",
+	})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	data := dataOf(t, resp)
+	assert.Equal(t, "ai", data["source"])
+	assert.Equal(t, "……就一下。再多我可要生气了。", data["line"])
+	assert.EqualValues(t, 29, data["remainingToday"])
+
+	w, resp = f.do(http.MethodGet, "/api/companion", tok, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	state := dataOf(t, resp)
+	assert.Equal(t, true, state["aiReady"])
+	assert.EqualValues(t, 29, state["aiRemainingToday"])
 }

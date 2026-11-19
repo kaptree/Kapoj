@@ -108,7 +108,7 @@ func DefaultFooterInput() FooterInput {
 func DefaultCompanionSettings() CompanionSettings {
 	return CompanionSettings{
 		Enabled:              true,
-		Name:                 "Kapo",
+		Name:                 "Koj",
 		DefaultActivityLevel: "normal",
 		ContestMute:          true,
 		AllowUserDisable:     true,

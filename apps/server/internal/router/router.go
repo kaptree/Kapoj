@@ -3,6 +3,7 @@ package router
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -199,6 +200,9 @@ func New(d Deps) *gin.Engine {
 		certificateapi.RegisterRoutes(public, api, uploads, d.Certificate, certificateapi.Options{RBAC: d.RBAC})
 	}
 	siteSvc := site.NewService(site.NewGormRepository(d.DB), d.Storage)
+	if d.Companion != nil {
+		d.Companion.SetCompanionNameProvider(siteCompanionName{svc: siteSvc})
+	}
 	siteapi.RegisterRoutes(public, api, uploads, siteSvc, d.RBAC)
 	if d.Mail != nil {
 		mailapi.RegisterRoutes(api, d.Mail, d.RBAC)
@@ -302,3 +306,16 @@ func (p dbPinger) Ping(ctx context.Context) error {
 type redisPinger struct{ rdb *redis.Client }
 
 func (p redisPinger) Ping(ctx context.Context) error { return p.rdb.Ping(ctx).Err() }
+
+type siteCompanionName struct{ svc *site.Service }
+
+func (p siteCompanionName) CompanionName(ctx context.Context) (string, error) {
+	view, err := p.svc.Public(ctx)
+	if err != nil {
+		return "Koj", err
+	}
+	if name := strings.TrimSpace(view.Companion.Name); name != "" {
+		return name, nil
+	}
+	return "Koj", nil
+}

@@ -215,7 +215,7 @@ func TestSiteCompanionDefaults(t *testing.T) {
 
 	want := site.CompanionSettings{
 		Enabled:              true,
-		Name:                 "Kapo",
+		Name:                 "Koj",
 		DefaultActivityLevel: "normal",
 		ContestMute:          true,
 		AllowUserDisable:     true,
@@ -281,8 +281,8 @@ func TestSiteCompanionUpdateAndValidation(t *testing.T) {
 		{Name: "", DefaultActivityLevel: "normal"},
 		{Name: "   ", DefaultActivityLevel: "normal"},
 		{Name: strings.Repeat("名", 21), DefaultActivityLevel: "normal"},
-		{Name: "Kapo", DefaultActivityLevel: "chaotic"},
-		{Name: "Kapo", DefaultActivityLevel: ""},
+		{Name: "Koj", DefaultActivityLevel: "chaotic"},
+		{Name: "Koj", DefaultActivityLevel: ""},
 	} {
 		_, err := svc.UpdateCompanion(ctx, 1, bad)
 		assertCode(t, err, 40001)
