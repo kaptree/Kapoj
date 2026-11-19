@@ -37,6 +37,7 @@ type RunResult struct {
 	TimedOut        bool
 	OOMKilled       bool
 	TimeMS          int
+	CPUTimeMS       int
 	MemoryKB        int
 	OutputTruncated bool
 }

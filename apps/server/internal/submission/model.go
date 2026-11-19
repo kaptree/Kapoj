@@ -14,6 +14,7 @@ type JudgeCaseResult struct {
 	TestcaseID int64  `json:"testcaseId"`
 	Status     Status `json:"status"`
 	TimeMS     int    `json:"timeMs"`
+	CPUTimeMS  int    `json:"cpuMs"`
 	MemoryKB   int    `json:"memoryKb"`
 	Message    string `json:"message,omitempty"`
 	// Score is nil for historical rows written before per-testcase scores were
@@ -35,6 +36,7 @@ type Submission struct {
 	Answer          string                        `gorm:"type:text;not null;default:''"`
 	Status          Status                        `gorm:"size:30;not null;default:pending;index:idx_submissions_problem_status,priority:2"`
 	TimeUsedMS      int                           `gorm:"column:time_used_ms;not null;default:0"`
+	CPUUsedMS       int                           `gorm:"column:cpu_time_ms;not null;default:0"`
 	MemoryUsedKB    int                           `gorm:"column:memory_used_kb;not null;default:0"`
 	Score           int                           `gorm:"not null;default:0"`
 	CodeLength      int                           `gorm:"column:code_length;not null;default:0"`

@@ -84,6 +84,7 @@ type JudgeCaseResult struct {
 	TestcaseID int64  `json:"testcaseId"`
 	Status     Status `json:"status"`
 	TimeMS     int    `json:"timeMs"`
+	CPUTimeMS  int    `json:"cpuMs"`
 	MemoryKB   int    `json:"memoryKb"`
 	Message    string `json:"message,omitempty"`
 	Score      int    `json:"score,omitempty"`

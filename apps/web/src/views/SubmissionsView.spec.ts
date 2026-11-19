@@ -52,6 +52,7 @@ function item(overrides: Partial<SubmissionListItem> = {}): SubmissionListItem {
     language: 'cpp',
     status: 'accepted',
     timeUsedMs: 100,
+    cpuUsedMs: 80,
     memoryUsedKb: 1024,
     score: 100,
     codeLength: 13,
@@ -67,7 +68,15 @@ function detail(overrides: Partial<SubmissionDetail> = {}): SubmissionDetail {
     codeHidden: false,
     answerHidden: false,
     judgeResult: [
-      { testcaseId: 1, status: 'accepted', timeMs: 10, memoryKb: 512, message: 'ok', score: 100 },
+      {
+        testcaseId: 1,
+        status: 'accepted',
+        timeMs: 10,
+        cpuMs: 8,
+        memoryKb: 512,
+        message: 'ok',
+        score: 100,
+      },
     ],
     ...overrides,
   }
@@ -288,6 +297,8 @@ describe('SubmissionsView', () => {
     expect(body).toContain('int main() {}')
     expect(body).toContain('测试点')
     expect(body).toContain('通过')
+    expect(body).toContain('CPU 时间')
+    expect(body).toContain('80 ms')
     expect(body).toContain('测试点总分：100')
     expect(body).toContain('100')
     wrapper.unmount()

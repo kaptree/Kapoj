@@ -137,6 +137,7 @@ func (s *Service) Detail(ctx context.Context, v Viewer, id int64) (*Detail, erro
 		detail.ErrorMessage = ""
 		detail.JudgeResult = []JudgeCaseResult{}
 		detail.TimeUsedMS = 0
+		detail.CPUUsedMS = 0
 		detail.MemoryUsedKB = 0
 		detail.Score = 0
 		return detail, nil
@@ -216,6 +217,7 @@ func (s *Service) Rejudge(ctx context.Context, v Viewer, id int64) (*Submission,
 	}
 	sub.Status = StatusPending
 	sub.TimeUsedMS = 0
+	sub.CPUUsedMS = 0
 	sub.MemoryUsedKB = 0
 	sub.Score = 0
 	sub.ErrorMessage = ""

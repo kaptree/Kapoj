@@ -179,8 +179,15 @@ func (p *Pipeline) Run(ctx context.Context, submissionID int64) error {
 		return judgeErr
 	}
 	status, timeMS, memoryKB, score := verdict.Aggregate(results)
+	cpuMS := 0
+	for _, result := range results {
+		if result.CPUTimeMS > cpuMS {
+			cpuMS = result.CPUTimeMS
+		}
+	}
 	return p.finish(ctx, sub, db.FinishInput{
-		Status: status, TimeUsedMS: timeMS, MemoryUsedKB: memoryKB, Score: score, Cases: results,
+		Status: status, TimeUsedMS: timeMS, CPUUsedMS: cpuMS,
+		MemoryUsedKB: memoryKB, Score: score, Cases: results,
 	})
 }
 
@@ -230,9 +237,12 @@ func (p *Pipeline) judgeRun(
 	if err != nil {
 		return model.JudgeCaseResult{}, fmt.Errorf("read answer %s: %w", tc.OutputFile, err)
 	}
-	result := model.JudgeCaseResult{TestcaseID: tc.ID, TimeMS: run.TimeMS, MemoryKB: run.MemoryKB, Score: tc.Score}
+	result := model.JudgeCaseResult{
+		TestcaseID: tc.ID, TimeMS: run.TimeMS, CPUTimeMS: run.CPUTimeMS,
+		MemoryKB: run.MemoryKB, Score: tc.Score,
+	}
 	switch {
-	case run.TimedOut || run.TimeMS > prob.TimeLimitMS:
+	case run.TimedOut || run.CPUTimeMS > prob.TimeLimitMS:
 		result.Status, result.Message = model.StatusTimeLimitExceeded, "运行超时"
 	case run.OOMKilled || (run.ExitCode != 0 && looksLikeOOM(run.Stderr)):
 		result.Status, result.Message = model.StatusMemoryLimitExceeded, "内存超限"
@@ -276,7 +286,7 @@ func (p *Pipeline) checkSpecial(
 	if err != nil {
 		return "", "", fmt.Errorf("run checker for testcase %d: %w", tc.ID, err)
 	}
-	if run.TimedOut || run.TimeMS > checkerTimeLimitMS {
+	if run.TimedOut || run.CPUTimeMS > checkerTimeLimitMS {
 		return "", "", fmt.Errorf("checker timed out on testcase %d", tc.ID)
 	}
 	if run.OOMKilled {

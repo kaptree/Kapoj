@@ -536,6 +536,12 @@ onBeforeUnmount(() => {
             </dd>
           </div>
           <div>
+            <dt>CPU 时间</dt>
+            <dd class="num">
+              {{ detail.language === 'answer' ? '—' : `${detail.cpuUsedMs ?? 0} ms` }}
+            </dd>
+          </div>
+          <div>
             <dt>内存</dt>
             <dd class="num">
               {{ detail.language === 'answer' ? '—' : `${detail.memoryUsedKb} KB` }}
@@ -606,6 +612,11 @@ onBeforeUnmount(() => {
               <Column header="耗时 (ms)" style="width: 110px">
                 <template #body="{ data }"
                   ><span class="num">{{ data.timeMs }}</span></template
+                >
+              </Column>
+              <Column header="CPU (ms)" style="width: 100px">
+                <template #body="{ data }"
+                  ><span class="num">{{ data.cpuMs ?? 0 }}</span></template
                 >
               </Column>
               <Column header="内存 (KB)" style="width: 110px">

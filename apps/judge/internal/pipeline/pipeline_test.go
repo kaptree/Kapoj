@@ -319,7 +319,8 @@ func TestPipelineMapsUserVerdicts(t *testing.T) {
 		want model.Status
 	}{
 		{"timeout flag", sandbox.RunResult{TimedOut: true}, model.StatusTimeLimitExceeded},
-		{"time over limit", sandbox.RunResult{TimeMS: 1001}, model.StatusTimeLimitExceeded},
+		{"cpu over limit", sandbox.RunResult{TimeMS: 10, CPUTimeMS: 1001}, model.StatusTimeLimitExceeded},
+		{"wall over limit but cpu under", sandbox.RunResult{TimeMS: 5000, CPUTimeMS: 10, Output: []byte("9\n")}, model.StatusWrongAnswer},
 		{"oom", sandbox.RunResult{OOMKilled: true, ExitCode: 137}, model.StatusMemoryLimitExceeded},
 		{"jvm oom", sandbox.RunResult{ExitCode: 1, Stderr: []byte("Exception in thread \"main\" java.lang.OutOfMemoryError: Java heap space")}, model.StatusMemoryLimitExceeded},
 		{"runtime error", sandbox.RunResult{ExitCode: 1, Stderr: []byte("boom")}, model.StatusRuntimeError},

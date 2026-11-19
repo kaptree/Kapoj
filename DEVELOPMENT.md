@@ -340,7 +340,9 @@ problem_solution_replies (
 submissions (
   id, user_id, problem_id, contest_id,   -- contest_id 可空（练习）
   language, code, status,                -- 取值见下方「判题状态」
-  time_used_ms, memory_used_kb,
+  time_used_ms,                           -- 墙钟耗时，用于展示/诊断
+  cpu_time_ms,                            -- CPU 时间，TLE 判定口径
+  memory_used_kb,
   score, error_message, judge_result_json,
   created_at, judged_at
 )
@@ -350,15 +352,17 @@ submissions (
 -- contest_id 暂不设外键，M2 建 contests 表后补；
 -- 索引名为 idx_submissions_problem_status、idx_submissions_user_created、idx_submissions_contest_user；
 -- judge_result_json 为 jsonb 数组，元素形如
---   {"testcaseId":1,"status":"accepted","timeMs":12,"memoryKb":345,"message":"..."}；
+--   {"testcaseId":1,"status":"accepted","timeMs":12,"cpuMs":9,"memoryKb":345,"message":"..."}；
 -- submit_count 在创建提交的同一事务中 +1；accept_count 只在 judging -> accepted 时 +1，
 --   且 Finish 带 status='judging' 条件，重复任务不会重复计数；
 -- 提交代码上限 64 KiB；创建提交按用户限流（默认冷却 3 秒）。
+-- 实现差异（CPU 计时）：cpu_time_ms 由 GORM AutoMigrate 自动添加（default 0），历史提交为 0；
+--   新提交由 judge 写入；TLE 以 CPU 时间为准，time_used_ms 保留墙钟用于展示与诊断。
 -- Agent 扩展（2026-11-18）：agent_id / agent_attempt_id 可空，agent_settled 默认 false；
 --   非空 agent_id 表示 Agent 提交，人类列表/统计/题目计数/难度重算一律排除，详见 §3.11、§6.10。
 -- 实现差异（M2-B）：
 -- contest_id 为空/0 表示练习，>0 表示比赛提交；创建时校验比赛进行中、已报名、题目属于比赛；
--- 比赛进行中，非本人/非管理员查询他人比赛提交时不返回代码、错误信息、测试点详情、耗时、内存、得分；
+-- 比赛进行中，非本人/非管理员查询他人比赛提交时不返回代码、错误信息、测试点详情、耗时、CPU 时间、内存、得分；
 -- 比赛结束后恢复完整详情；OI 赛时非管理员榜单只返回本人行；
 -- 比赛已有提交时禁止删除；比赛开始后禁止整体替换题目列表。
 ```
@@ -868,16 +872,16 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 - 语言与镜像：C/C++ `gcc:14`、Python3 `python:3.12-slim`、Java `eclipse-temurin:21-jdk`、Go `golang:1.26`；镜像可用 `KAPOJ_JUDGE_*_IMAGE` 覆盖。
 - 沙盒：一次传统题提交只创建编译容器 1 个 + 运行容器 1 个；全部测试点在运行容器内依次执行，输入按轮覆盖 `/work/input.txt`，编译产物与 wrapper 只传输一次。`--network none`、`--read-only`、`--cap-drop ALL`、`--pids-limit`、`--cpus 1`、`--memory/--memory-swap` 不变，`/work`、`/tmp`、`/out` 使用 tmpfs。源码、编译产物、输入通过 `docker exec` + tar/cat 流传输，不使用宿主机 bind mount，因此 judge 自身在容器中也能运行。
 - 批量执行：新增 `sandbox.RunBatch`；每轮先清理 `/out` 测量文件、`/tmp` 与 `/dev/shm` 残留和上一轮 UID 65532 进程，再写入本轮输入并执行 wrapper。单轮 RE/TLE/MLE/OOM 只产生该轮结果，`RunBatch` 默认继续后续轮次；pipeline 仍保留“第一个非 AC 后停止后续测试点”的既有语义（通过逐轮回调提前结束）。
-- 计时防篡改：运行容器的 wrapper 以 root 启动，`/out`、`/work` 归 root 且选手进程不可写；选手程序通过 `setpriv` 降权到 UID 65532，只有 `/tmp` 与 Docker 默认的 `/dev/shm` 可写，两者均每轮清理。耗时、内存峰值、OOM 计数由 root wrapper 写入；测量文件缺失或无法解析视为系统错误，不当作 0。每轮用 `timeout --signal=KILL` 执行用户程序，外层 context 以题目限制 + 3 秒宽限兜底；`docker exec` 失败会清理残留进程后重试一次，仍失败则返回基础设施错误并删除运行容器。
-- 资源：编译超时 30 秒、编译内存 1 GiB；运行时间上限为题目限制 + 3 秒容器宽限，实际耗时在容器内测量；输出上限 1 MiB。内存峰值每轮优先写 `memory.peak=0` 后读取 cgroup v2 峰值；Docker 默认把 `/sys/fs/cgroup` 以只读挂载，此时由 root wrapper 每 10ms 采样 `memory.current` 作为本轮近似峰值。OOM 通过 `memory.events` 的 `oom_kill` 逐轮差值判定；若 OOM killer 同时杀死 root wrapper，wrapper 预先写入的 `/out/oom_before` 与当前 `memory.events` 会在 exec 137 后用于恢复 OOM 结果，避免误判为系统错误。若内核不提供 cgroup v2，内存峰值记为 0，但 OOM 仍通过退出码识别；Java/Python/Go/C++ 的 OOM 堆栈（如 `OutOfMemoryError`、`MemoryError`、`std::bad_alloc`）也会判定为 MLE。
-- 结论：编译失败 `compile_error`；运行超时 `time_limit_exceeded`；OOM `memory_limit_exceeded`；非零退出 `runtime_error`；输出超限或文本比对失败 `wrong_answer`；全部通过 `accepted`。系统原因（Docker/存储/DB/checker 编译失败）重试，耗尽后 `system_error`。
+- 计时防篡改：运行容器的 wrapper 以 root 启动，`/out`、`/work` 归 root 且选手进程不可写；选手程序通过 `setpriv` 降权到 UID 65532，只有 `/tmp` 与 Docker 默认的 `/dev/shm` 可写，两者均每轮清理。墙钟、CPU 时间、内存峰值、OOM 计数由 root wrapper 写入；必需的墙钟/内存/OOM/exit 测量缺失或无法解析视为系统错误，不当作 0；`cpu_ms` 缺失或不可用时回退墙钟并记录一次 warn。每轮用 `timeout --signal=KILL` 执行用户程序，外层 context 以题目限制 + 3 秒宽限兜底；`docker exec` 失败会清理残留进程后重试一次，仍失败则返回基础设施错误并删除运行容器。
+- 资源：编译超时 30 秒、编译内存 1 GiB；运行时间上限为题目限制 + 3 秒容器宽限，实际耗时在容器内测量；输出上限 1 MiB。墙钟记录在 `time_ms`；CPU 时间读取 cgroup v2 `cpu.stat` 的 `usage_usec` 每轮差值写入 `cpu_ms`，pipeline 以 CPU 时间判定 TLE，墙钟保留展示与诊断。cgroup v1 或读取失败时回退墙钟，并只记录一次 warn。内存峰值每轮优先写 `memory.peak=0` 后读取 cgroup v2 峰值；Docker 默认把 `/sys/fs/cgroup` 以只读挂载，此时由 root wrapper 每 10ms 采样 `memory.current` 作为本轮近似峰值。OOM 通过 `memory.events` 的 `oom_kill` 逐轮差值判定；若 OOM killer 同时杀死 root wrapper，wrapper 预先写入的 `/out/oom_before` 与当前 `memory.events` 会在 exec 137 后用于恢复 OOM 结果，避免误判为系统错误。若内核不提供 cgroup v2，内存峰值记为 0，但 OOM 仍通过退出码识别；Java/Python/Go/C++ 的 OOM 堆栈（如 `OutOfMemoryError`、`MemoryError`、`std::bad_alloc`）也会判定为 MLE。
+- 结论：编译失败 `compile_error`；CPU 时间超限 `time_limit_exceeded`；OOM `memory_limit_exceeded`；非零退出 `runtime_error`；输出超限或文本比对失败 `wrong_answer`；全部通过 `accepted`。系统原因（Docker/存储/DB/checker 编译失败）重试，耗尽后 `system_error`。`submissions.cpu_time_ms` 保存所有执行测试点的最大 CPU 时间，`judge_result_json[].cpuMs` 保存单点 CPU 时间。
 - 特判：checker 以 C++ 编译，argv 为 `<checker> <输入> <选手输出> <标准答案>`；退出 0 通过，退出 1 答案错误，其他退出码（含信号、126/127）或输出超限属于系统错误；checker 超时/OOM/编译失败也属于系统错误。checker 编译诊断不写入日志或 `error_message`，避免泄露判题逻辑。
 - 超时与重试：任务在 Asynq 中设置 10 分钟超时，最多重试 3 次；judge 的 `ShutdownTimeout` 为 2 分钟，进程启动与关闭时都会按实例标签清扫容器。实例标签取 `KAPOJ_JUDGE_INSTANCE`（默认主机名），多实例部署时必须各不相同。
 - 崩溃恢复：judge 启动后及每分钟扫描一次：创建超过 1 分钟仍为 `pending`、或超过 15 分钟仍为 `judging` 的提交会重新入队；`Claim`/`Finish` 的幂等性保证不会重复计数。这同时覆盖“数据库已提交但入队前进程崩溃”和异步队列丢失两种情况。
 - 日志脱敏：GORM 使用 `ParameterizedQueries`，慢查询/错误日志只出现占位符，不包含源代码或密码哈希。
 - 前端提交页：`/problems/:id/submit` 使用 Monaco（本地 worker、无 CDN），支持 c/cpp/python3/java/go，代码草稿按题目与语言保存在浏览器本地；提交后跳转测评记录。
 - 统计：`submit_count` 创建提交时递增；`accept_count` 仅在首次把提交从 `judging` 改为 `accepted` 时递增。
-- 已知限制：M1 不评测交互题；Java 堆上限按题内存减 64 MB（最低 16 MB）；运行时间按墙钟计时而非 CPU 时间；Docker socket 等价于宿主机 root 权限，生产需独立评测主机或 rootless Docker。传统题的测试点共用运行容器；special judge 的 checker 仍按测试点单独运行（用户程序已批量执行）。cgroup 只读时内存峰值为采样近似值，不是内核 `memory.peak` 的精确值。
+- 已知限制：M1 不评测交互题；Java 堆上限按题内存减 64 MB（最低 16 MB）；wall timeout 仍作为挂起程序的硬保护，CPU 时间不可用时 TLE 回退墙钟；Docker socket 等价于宿主机 root 权限，生产需独立评测主机或 rootless Docker。传统题的测试点共用运行容器；special judge 的 checker 仍按测试点单独运行（用户程序已批量执行）。cgroup 只读时内存峰值为采样近似值，不是内核 `memory.peak` 的精确值。
 
 **Codex 提示词（代码测评沙盒）**
 

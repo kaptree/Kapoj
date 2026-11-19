@@ -147,6 +147,7 @@ func (r *gormRepository) ResetForRejudge(ctx context.Context, id int64, now time
 		updates := map[string]any{
 			"status":            StatusPending,
 			"time_used_ms":      0,
+			"cpu_time_ms":       0,
 			"memory_used_kb":    0,
 			"score":             0,
 			"error_message":     "",

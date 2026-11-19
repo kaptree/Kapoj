@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -27,6 +28,8 @@ const (
 	outputOverhead     = 4 << 20 // /out headroom for stderr and measurement files
 	minOutTmpfs        = 8 << 20 // floor so submission/checker runs keep ample room
 )
+
+var cpuFallbackOnce sync.Once
 
 type Docker struct {
 	bin      string
@@ -306,6 +309,13 @@ func (d *Docker) runRound(ctx context.Context, name, inputPath string, timeLimit
 	if err != nil {
 		return RunResult{}, err
 	}
+	cpuMS, cpuErr := measurementInt(files, "cpu_ms")
+	if cpuErr != nil || cpuMS < 0 {
+		cpuFallbackOnce.Do(func() {
+			slog.Warn("cgroup CPU time unavailable; falling back to wall clock")
+		})
+		cpuMS = timeMS
+	}
 	memoryKB, err := measurementInt(files, "memory_kb")
 	if err != nil {
 		return RunResult{}, err
@@ -327,7 +337,7 @@ func (d *Docker) runRound(ctx context.Context, name, inputPath string, timeLimit
 		Output: output, Stderr: stderr, ExitCode: exitCode,
 		TimedOut:  timedOut != 0,
 		OOMKilled: oomKills > 0 || exitCode == 137,
-		TimeMS:    timeMS, MemoryKB: memoryKB, OutputTruncated: truncated,
+		TimeMS:    timeMS, CPUTimeMS: cpuMS, MemoryKB: memoryKB, OutputTruncated: truncated,
 	}, nil
 }
 
@@ -600,7 +610,7 @@ for p in /proc/[0-9]*; do
     fi
   done < "$p/status"
 done
-rm -f /out/stdout /out/stderr /out/time_ms /out/memory_kb /out/oom_kill /out/oom_before /out/exit_code /out/timed_out /out/memory_peak_bytes 2>/dev/null
+rm -f /out/stdout /out/stderr /out/time_ms /out/cpu_ms /out/memory_kb /out/oom_kill /out/oom_before /out/exit_code /out/timed_out /out/memory_peak_bytes 2>/dev/null
 rm -rf /tmp/* /tmp/.[!.]* /tmp/..?* 2>/dev/null
 rm -rf /dev/shm/* /dev/shm/.[!.]* /dev/shm/..?* 2>/dev/null
 cd /tmp
@@ -626,6 +636,17 @@ if [ -r /sys/fs/cgroup/memory.events ]; then
   done < /sys/fs/cgroup/memory.events
 fi
 echo "$oom_before" > /out/oom_before
+
+cpu_before=0
+cpu_ok=0
+if [ -r /sys/fs/cgroup/cpu.stat ]; then
+  while read -r key value; do
+    if [ "$key" = "usage_usec" ]; then
+      cpu_before=$value
+      cpu_ok=1
+    fi
+  done < /sys/fs/cgroup/cpu.stat
+fi
 
 # cgroup v2 memory.peak is the exact per-round high-water mark when writable.
 # Docker mounts /sys/fs/cgroup read-only by default, so fall back to sampling
@@ -671,6 +692,20 @@ if [ -r /sys/fs/cgroup/memory.events ]; then
 fi
 echo $(( oom_after - oom_before )) > /out/oom_kill
 
+if [ "$cpu_ok" -eq 1 ] && [ -r /sys/fs/cgroup/cpu.stat ]; then
+  cpu_after=0
+  while read -r key value; do
+    [ "$key" = "usage_usec" ] && cpu_after=$value
+  done < /sys/fs/cgroup/cpu.stat
+  if [ "$cpu_after" -ge "$cpu_before" ]; then
+    echo $(( (cpu_after - cpu_before) / 1000 )) > /out/cpu_ms
+  else
+    echo -1 > /out/cpu_ms
+  fi
+else
+  echo -1 > /out/cpu_ms
+fi
+
 if [ "$reset_peak" -eq 1 ]; then
   peak=$(cat /sys/fs/cgroup/memory.peak 2>/dev/null || echo 0)
 else
@@ -698,7 +733,7 @@ func roundCleanupScript() string {
 done
 rm -rf /tmp/* /tmp/.[!.]* /tmp/..?* 2>/dev/null || true
 rm -rf /dev/shm/* /dev/shm/.[!.]* /dev/shm/..?* 2>/dev/null || true
-rm -f /out/stdout /out/stderr /out/time_ms /out/memory_kb /out/oom_kill /out/oom_before /out/exit_code /out/timed_out /out/memory_peak_bytes 2>/dev/null || true
+rm -f /out/stdout /out/stderr /out/time_ms /out/cpu_ms /out/memory_kb /out/oom_kill /out/oom_before /out/exit_code /out/timed_out /out/memory_peak_bytes 2>/dev/null || true
 `
 }
 

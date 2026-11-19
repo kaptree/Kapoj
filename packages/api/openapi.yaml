@@ -5804,6 +5804,7 @@ components:
         testcaseId: { type: integer, format: int64 }
         status: { $ref: '#/components/schemas/SubmissionStatus' }
         timeMs: { type: integer }
+        cpuMs: { type: integer, description: CPU 时间；历史提交或 cgroup 不可用时为 0 或墙钟回退值 }
         memoryKb: { type: integer }
         message: { type: string }
         score:
@@ -5851,6 +5852,7 @@ components:
         language: { $ref: '#/components/schemas/SubmissionLanguage' }
         status: { $ref: '#/components/schemas/SubmissionStatus' }
         timeUsedMs: { type: integer }
+        cpuUsedMs: { type: integer, description: CPU 时间；历史提交为 0 }
         memoryUsedKb: { type: integer }
         score: { type: integer }
         codeLength: { type: integer, description: 代码按 UTF-8 字节数；客观题为答案文本字节数 }

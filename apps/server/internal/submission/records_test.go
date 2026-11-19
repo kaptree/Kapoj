@@ -156,8 +156,8 @@ func TestDetailVisibility(t *testing.T) {
 	).Error)
 	practiceSub := insertRecord(t, e.db, e.alice, e.problem1.ID, "cpp", "public", "accepted", nil, now)
 	require.NoError(t, e.db.Exec(
-		`UPDATE submissions SET time_used_ms = 11, memory_used_kb = 22, score = 7,
-		 judge_result_json = '[{"testcaseId":1,"status":"accepted","timeMs":11,"memoryKb":22,"score":7}]'::jsonb
+		`UPDATE submissions SET time_used_ms = 11, cpu_time_ms = 9, memory_used_kb = 22, score = 7,
+		 judge_result_json = '[{"testcaseId":1,"status":"accepted","timeMs":11,"cpuMs":9,"memoryKb":22,"score":7}]'::jsonb
 		 WHERE id = ?`, practiceSub,
 	).Error)
 	otherProblemSub := insertRecord(t, e.db, e.alice, e.problem2.ID, "cpp", "other-problem", "accepted", nil, now)
@@ -188,6 +188,7 @@ func TestDetailVisibility(t *testing.T) {
 	assert.True(t, blocked.CodeHidden)
 	assert.Empty(t, blocked.Code)
 	assert.Equal(t, 11, blocked.TimeUsedMS)
+	assert.Equal(t, 9, blocked.CPUUsedMS)
 	assert.Equal(t, 22, blocked.MemoryUsedKB)
 	assert.Equal(t, 7, blocked.Score)
 	require.Len(t, blocked.JudgeResult, 1)
@@ -310,20 +311,21 @@ func TestListHidesContestDetailsWhileRunning(t *testing.T) {
 	contest := insertContest(t, e.db, now.Add(-time.Hour), now.Add(time.Hour))
 	subID := insertRecord(t, e.db, e.alice, e.problem1.ID, "cpp", "secret", "accepted", &contest, now)
 	require.NoError(t, e.db.Exec(
-		`UPDATE submissions SET time_used_ms = 10, memory_used_kb = 20, score = 100 WHERE id = ?`, subID,
+		`UPDATE submissions SET time_used_ms = 10, cpu_time_ms = 8, memory_used_kb = 20, score = 100 WHERE id = ?`, subID,
 	).Error)
 
 	other, err := e.svc.List(context.Background(), submission.Viewer{UserID: e.bob}, submission.ListQuery{ContestID: &contest}, 1, 10)
 	require.NoError(t, err)
 	require.Len(t, other.Items, 1)
 	assert.Zero(t, other.Items[0].TimeUsedMS)
+	assert.Zero(t, other.Items[0].CPUUsedMS)
 	assert.Zero(t, other.Items[0].MemoryUsedKB)
 	assert.Zero(t, other.Items[0].Score)
 
 	owner, err := e.svc.List(context.Background(), submission.Viewer{UserID: e.alice}, submission.ListQuery{ContestID: &contest}, 1, 10)
 	require.NoError(t, err)
 	require.Len(t, owner.Items, 1)
-	assert.NotZero(t, owner.Items[0].Score+owner.Items[0].TimeUsedMS+owner.Items[0].MemoryUsedKB)
+	assert.NotZero(t, owner.Items[0].Score+owner.Items[0].TimeUsedMS+owner.Items[0].CPUUsedMS+owner.Items[0].MemoryUsedKB)
 }
 
 func TestHiddenProblemSubmissionsAreScoped(t *testing.T) {
@@ -414,6 +416,7 @@ func TestSubmissionLiveContestUsesPermission(t *testing.T) {
 	assert.Empty(t, other.ErrorMessage)
 	assert.Empty(t, other.JudgeResult)
 	assert.Zero(t, other.TimeUsedMS)
+	assert.Zero(t, other.CPUUsedMS)
 	assert.Zero(t, other.MemoryUsedKB)
 	assert.Zero(t, other.Score)
 

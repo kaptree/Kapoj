@@ -21,6 +21,7 @@ var (
 type FinishInput struct {
 	Status       model.Status
 	TimeUsedMS   int
+	CPUUsedMS    int
 	MemoryUsedKB int
 	Score        int
 	ErrorMessage string
@@ -144,10 +145,11 @@ func (r *Repository) Finish(ctx context.Context, id int64, in FinishInput) error
 		UPDATE submissions SET
 			status = $2::varchar,
 			time_used_ms = $3,
-			memory_used_kb = $4,
-			score = $5,
-			error_message = $6,
-			judge_result_json = $7::jsonb,
+			cpu_time_ms = $4,
+			memory_used_kb = $5,
+			score = $6,
+			error_message = $7,
+			judge_result_json = $8::jsonb,
 			accepted_counted = CASE
 				WHEN $2::varchar = 'accepted' AND agent_id IS NULL THEN true
 				ELSE accepted_counted
@@ -155,7 +157,7 @@ func (r *Repository) Finish(ctx context.Context, id int64, in FinishInput) error
 			judged_at = now()
 		WHERE id = $1 AND status = 'judging'
 		RETURNING problem_id`,
-		id, string(in.Status), in.TimeUsedMS, in.MemoryUsedKB, in.Score, in.ErrorMessage, string(raw),
+		id, string(in.Status), in.TimeUsedMS, in.CPUUsedMS, in.MemoryUsedKB, in.Score, in.ErrorMessage, string(raw),
 	).Scan(&problemID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return tx.Commit(ctx)

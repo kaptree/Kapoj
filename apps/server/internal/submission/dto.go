@@ -31,6 +31,7 @@ type ListItem struct {
 	Language       Language                    `json:"language"`
 	Status         Status                      `json:"status"`
 	TimeUsedMS     int                         `json:"timeUsedMs"`
+	CPUUsedMS      int                         `json:"cpuUsedMs"`
 	MemoryUsedKB   int                         `json:"memoryUsedKb"`
 	Score          int                         `json:"score"`
 	CodeLength     int                         `json:"codeLength"`
@@ -57,7 +58,7 @@ func toListItem(row ListRow) ListItem {
 		EquippedBadges: []gamification.BadgeSummary{}, EquippedTitle: nil,
 		ProblemID: s.ProblemID, ProblemTitle: row.ProblemTitle, ProblemSlug: row.ProblemSlug,
 		ContestID: s.ContestID, Language: s.Language, Status: s.Status,
-		TimeUsedMS: s.TimeUsedMS, MemoryUsedKB: s.MemoryUsedKB, Score: s.Score,
+		TimeUsedMS: s.TimeUsedMS, CPUUsedMS: s.CPUUsedMS, MemoryUsedKB: s.MemoryUsedKB, Score: s.Score,
 		CodeLength: s.CodeLength,
 		CreatedAt:  s.CreatedAt, JudgedAt: s.JudgedAt,
 	}

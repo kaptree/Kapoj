@@ -12165,6 +12165,8 @@ export interface components {
             testcaseId: number;
             status: components["schemas"]["SubmissionStatus"];
             timeMs: number;
+            /** @description CPU 时间；历史提交或 cgroup 不可用时为 0 或墙钟回退值 */
+            cpuMs?: number;
             memoryKb: number;
             message?: string;
             /** @description 该测试点得分；历史提交可能缺少此字段，前端显示“—”而不是 0 */
@@ -12190,6 +12192,8 @@ export interface components {
             language: components["schemas"]["SubmissionLanguage"];
             status: components["schemas"]["SubmissionStatus"];
             timeUsedMs: number;
+            /** @description CPU 时间；历史提交为 0 */
+            cpuUsedMs?: number;
             memoryUsedKb: number;
             score: number;
             /** @description 代码按 UTF-8 字节数；客观题为答案文本字节数 */

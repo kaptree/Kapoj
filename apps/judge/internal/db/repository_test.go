@@ -76,10 +76,11 @@ func TestFinishIsIdempotentAndCountsAcceptOnce(t *testing.T) {
 	in := db.FinishInput{
 		Status:       model.StatusAccepted,
 		TimeUsedMS:   12,
+		CPUUsedMS:    9,
 		MemoryUsedKB: 345,
 		Score:        10,
 		Cases: []model.JudgeCaseResult{
-			{TestcaseID: 1, Status: model.StatusAccepted, TimeMS: 12, MemoryKB: 345, Score: 10},
+			{TestcaseID: 1, Status: model.StatusAccepted, TimeMS: 12, CPUTimeMS: 9, MemoryKB: 345, Score: 10},
 		},
 	}
 	require.NoError(t, repo.Finish(context.Background(), sub, in))
@@ -91,12 +92,15 @@ func TestFinishIsIdempotentAndCountsAcceptOnce(t *testing.T) {
 	assert.NotNil(t, got.JudgedAt)
 
 	var raw []byte
+	var cpuMS int
 	require.NoError(t, pool.QueryRow(context.Background(),
-		`SELECT judge_result_json FROM submissions WHERE id = $1`, sub).Scan(&raw))
+		`SELECT judge_result_json, cpu_time_ms FROM submissions WHERE id = $1`, sub).Scan(&raw, &cpuMS))
+	assert.Equal(t, 9, cpuMS)
 	var cases []model.JudgeCaseResult
 	require.NoError(t, json.Unmarshal(raw, &cases))
 	require.Len(t, cases, 1)
 	assert.Equal(t, model.StatusAccepted, cases[0].Status)
+	assert.Equal(t, 9, cases[0].CPUTimeMS, "per-testcase CPU time must be persisted")
 	assert.Equal(t, 10, cases[0].Score, "per-testcase score must be persisted")
 
 	require.NoError(t, repo.Finish(context.Background(), sub, in))

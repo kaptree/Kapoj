@@ -357,6 +357,32 @@ exec '` + dockerBin + `' "$@"
 	assertNoJudgeContainers(t)
 }
 
+func TestDockerSandboxCPUTime(t *testing.T) {
+	d := newTestDocker(t)
+
+	compute := `#include <iostream>
+int main() {
+  volatile long long n = 0;
+  for (long long i = 0; i < 300000000; ++i) n += i;
+  std::cout << (n > 0 ? "ok\n" : "bad\n");
+}
+`
+	run, _ := compileAndRun(t, d, "cpp", compute, "", 5000, 256, 1<<20)
+	require.Equal(t, 0, run.ExitCode, string(run.Stderr))
+	assert.Positive(t, run.CPUTimeMS)
+	assert.Greater(t, run.TimeMS, 0)
+	assert.InDelta(t, run.TimeMS, run.CPUTimeMS, 150,
+		"CPU-bound program should have CPU time close to wall time")
+
+	sleep := "#include <unistd.h>\nint main(){usleep(300000);}\n"
+	run, _ = compileAndRun(t, d, "cpp", sleep, "", 5000, 256, 1<<20)
+	require.Equal(t, 0, run.ExitCode, string(run.Stderr))
+	assert.GreaterOrEqual(t, run.TimeMS, 250)
+	assert.Less(t, run.CPUTimeMS, 100,
+		"sleep must consume much less CPU than wall time")
+	assertNoJudgeContainers(t)
+}
+
 func assertNoJudgeContainers(t *testing.T) {
 	t.Helper()
 	out, err := exec.Command("docker", "ps", "-a", "--filter", "label=kapoj.judge=1", "--format", "{{.Names}}").Output()
