@@ -1,6 +1,7 @@
 # kapOJ
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![CI](https://github.com/kaptree/Kapoj/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/kaptree/Kapoj/actions/workflows/ci.yml)
 
 打造最有趣味的 Online Judge 平台：题目、比赛、评测之外，还有金币、徽章、称号、Rating 天梯、学习路线、AI 辅助与证书认证。规格见 [`DEVELOPMENT.md`](DEVELOPMENT.md)，操作指南见 [`运行手册.md`](运行手册.md)，进度见 [`docs/任务清单.md`](docs/任务清单.md) 与 [`docs/开发日志.md`](docs/开发日志.md)。
 
@@ -143,6 +144,8 @@ sudo bash deploy.sh --domain oj.example.com   # 或填域名，自动签发 Let'
 | [`docs/性能测试报告.md`](docs/性能测试报告.md) · [`docs/数据备份与恢复.md`](docs/数据备份与恢复.md) | 性能基线、备份恢复操作 |
 
 ## 测试与检查
+
+CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）在 push 与 PR 到 `main` 时并行运行 `backend`、`judge`、`web` 三个基础 Job，任一失败即整体失败；PR 与手动触发时额外运行 `e2e`（Docker Compose 全栈 + Playwright，失败报告保留 7 天）。手动触发可通过 `skip_sandbox_tests` 跳过 Docker 沙盒集成测试。
 
 后端（数据库相关测试需要 `-p 1`，因为各包共用同一个测试库）：
 

@@ -1,0 +1,371 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      skip_sandbox_tests:
+        description: Skip Docker sandbox integration tests
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  backend:
+    name: backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: kapoj
+          POSTGRES_PASSWORD: kapoj_ci_postgres
+          POSTGRES_DB: kapoj
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U kapoj -d kapoj"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      POSTGRES_USER: kapoj
+      POSTGRES_PASSWORD: kapoj_ci_postgres
+      POSTGRES_DB: kapoj
+      KAPOJ_REDIS_ADDR: 127.0.0.1:6380
+      KAPOJ_TEST_DATABASE_URL: postgres://kapoj:kapoj_ci_postgres@127.0.0.1:5433/kapoj_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.x'
+          cache-dependency-path: apps/server/go.sum
+
+      - name: Create test database
+        run: |
+          docker run --rm --network host \
+            -e PGPASSWORD="$POSTGRES_PASSWORD" \
+            postgres:17 psql -h 127.0.0.1 -p 5433 -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+            -v ON_ERROR_STOP=1 -c 'CREATE DATABASE kapoj_test'
+
+      - name: gofmt
+        working-directory: apps/server
+        run: |
+          files="$(gofmt -l .)"
+          if [ -n "$files" ]; then
+            echo "::error::gofmt found unformatted files:"
+            echo "$files"
+            exit 1
+          fi
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.15.0
+          working-directory: apps/server
+
+      - name: go vet
+        working-directory: apps/server
+        run: go vet ./...
+
+      - name: go test
+        working-directory: apps/server
+        run: go test -p 1 ./...
+
+  judge:
+    name: judge
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: kapoj
+          POSTGRES_PASSWORD: kapoj_ci_postgres
+          POSTGRES_DB: kapoj
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U kapoj -d kapoj"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      POSTGRES_USER: kapoj
+      POSTGRES_PASSWORD: kapoj_ci_postgres
+      POSTGRES_DB: kapoj
+      KAPOJ_REDIS_ADDR: 127.0.0.1:6380
+      KAPOJ_TEST_DATABASE_URL: postgres://kapoj:kapoj_ci_postgres@127.0.0.1:5433/kapoj_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.x'
+          cache-dependency-path: apps/judge/go.sum
+
+      - name: Create test database
+        run: |
+          docker run --rm --network host \
+            -e PGPASSWORD="$POSTGRES_PASSWORD" \
+            postgres:17 psql -h 127.0.0.1 -p 5433 -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+            -v ON_ERROR_STOP=1 -c 'CREATE DATABASE kapoj_test'
+
+      - name: go test
+        working-directory: apps/judge
+        run: go test -p 1 ./...
+
+      - name: Pre-pull sandbox language images
+        if: github.event_name != 'workflow_dispatch' || inputs.skip_sandbox_tests != true
+        run: |
+          for image in gcc:14 python:3.12-slim eclipse-temurin:21-jdk golang:1.26; do
+            echo "Pulling $image"
+            for attempt in 1 2 3; do
+              if docker pull "$image"; then
+                break
+              fi
+              if [ "$attempt" -eq 3 ]; then
+                exit 1
+              fi
+              sleep 15
+            done
+          done
+
+      - name: Sandbox integration tests
+        if: github.event_name != 'workflow_dispatch' || inputs.skip_sandbox_tests != true
+        continue-on-error: false
+        working-directory: apps/judge
+        env:
+          KAPOJ_DOCKER_TESTS: '1'
+        run: go test -p 1 ./internal/sandbox/
+
+  web:
+    name: web
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Resolve pnpm store
+        id: pnpm-store
+        run: echo "path=$(corepack pnpm store path)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies
+        run: corepack pnpm install --frozen-lockfile
+
+      - name: Detect OpenAPI spec changes
+        id: openapi
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          changed=false
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            changed=true
+          elif [ -n "$BASE_SHA" ] && [ "$BASE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            if git diff --name-only "$BASE_SHA...HEAD" -- packages/api/openapi.yaml | grep -q .; then
+              changed=true
+            fi
+          elif git diff --name-only HEAD^ HEAD -- packages/api/openapi.yaml | grep -q .; then
+            changed=true
+          fi
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+
+      - name: Verify generated OpenAPI types
+        if: steps.openapi.outputs.changed == 'true'
+        run: |
+          corepack pnpm gen:api
+          git diff --exit-code || {
+            echo "::error::Generated API types are out of date. Run 'corepack pnpm gen:api' and commit the result."
+            exit 1
+          }
+
+      - name: Lint
+        run: corepack pnpm lint:web
+
+      - name: Unit tests
+        run: corepack pnpm test:web
+
+      - name: Build
+        run: corepack pnpm build:web
+
+  e2e:
+    name: e2e
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Resolve pnpm store
+        id: pnpm-store
+        run: echo "path=$(corepack pnpm store path)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies
+        run: corepack pnpm install --frozen-lockfile
+
+      - name: Prepare .env with random secrets
+        run: |
+          cp .env.example .env
+          python3 - <<'PY'
+          import base64
+          import re
+          import secrets
+
+          path = ".env"
+          text = open(path, encoding="utf-8").read()
+
+          def replace(key, value):
+              global text
+              text = re.sub(rf"^{re.escape(key)}=.*$", f"{key}={value}", text, flags=re.M)
+
+          replace("POSTGRES_PASSWORD", secrets.token_hex(16))
+          replace("MINIO_ROOT_PASSWORD", secrets.token_hex(16))
+          replace("KAPOJ_JWT_SECRET", base64.b64encode(secrets.token_bytes(48)).decode())
+          replace("KAPOJ_AI_ENCRYPTION_KEY", base64.b64encode(secrets.token_bytes(32)).decode())
+          replace("KAPOJ_MAIL_ENCRYPTION_KEY", base64.b64encode(secrets.token_bytes(32)).decode())
+
+          open(path, "w", encoding="utf-8").write(text)
+          PY
+          chmod 600 .env
+
+      - name: Start full stack
+        run: |
+          docker compose \
+            -f docker/docker-compose.yml \
+            -f docker/docker-compose.prod.yml \
+            --profile app up -d --build
+
+      - name: Wait for backend and web health
+        run: |
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8080/health >/dev/null \
+              && curl -fsS http://127.0.0.1/health >/dev/null; then
+              exit 0
+            fi
+            sleep 5
+          done
+          docker compose \
+            -f docker/docker-compose.yml \
+            -f docker/docker-compose.prod.yml \
+            --profile app ps
+          docker compose \
+            -f docker/docker-compose.yml \
+            -f docker/docker-compose.prod.yml \
+            --profile app logs --no-color --tail=200
+          exit 1
+
+      - name: Seed E2E accounts
+        run: |
+          curl -fsS -X POST http://127.0.0.1:8080/api/auth/register \
+            -H 'Content-Type: application/json' \
+            --data '{"username":"m2badmin","email":"m2badmin@example.com","password":"correct-horse"}' \
+            >/dev/null
+
+          docker exec kapoj-postgres-1 psql -U kapoj -d kapoj -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO users (username, nickname, email, email_verified_at, password_hash, salt, role, rating, coins, bio, status, created_at, updated_at)
+          SELECT 'm2bsolver1', 'm2bsolver1', 'm2bsolver1@example.com', now(), password_hash, salt, 'user', 1500, 0, '', 'active', now(), now()
+          FROM users WHERE username = 'm2badmin'
+          ON CONFLICT (username) DO NOTHING;
+
+          INSERT INTO users (username, nickname, email, email_verified_at, password_hash, salt, role, rating, coins, bio, status, created_at, updated_at)
+          SELECT 'm2bsolver2', 'm2bsolver2', 'm2bsolver2@example.com', now(), password_hash, salt, 'user', 1500, 0, '', 'active', now(), now()
+          FROM users WHERE username = 'm2badmin'
+          ON CONFLICT (username) DO NOTHING;
+
+          INSERT INTO user_roles (user_id, role_id, assigned_at)
+          SELECT u.id, r.id, now()
+          FROM users u CROSS JOIN roles r
+          WHERE u.username = 'm2badmin' AND r.code = 'super_admin'
+          ON CONFLICT (user_id, role_id) DO NOTHING;
+          SQL
+
+      - name: Run Playwright E2E
+        env:
+          E2E_API_URL: http://127.0.0.1:8080
+          E2E_BASE_URL: http://127.0.0.1
+        run: corepack pnpm test:e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Dump compose logs on failure
+        if: failure()
+        run: |
+          docker compose \
+            -f docker/docker-compose.yml \
+            -f docker/docker-compose.prod.yml \
+            --profile app logs --no-color --tail=300
+
+      - name: Stop stack
+        if: always()
+        run: |
+          docker compose \
+            -f docker/docker-compose.yml \
+            -f docker/docker-compose.prod.yml \
+            --profile app down -v
