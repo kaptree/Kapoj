@@ -11,15 +11,18 @@ import Tag from 'primevue/tag'
 import { getAgent, getAgentRatingHistory } from '@/api/agents'
 import { ApiError } from '@/api/http'
 import type { AgentRatingKind, AgentRatingRow, AgentView } from '@/api/types'
+import MarkdownView from '@/components/MarkdownView.vue'
 import SubmissionDetailDrawer from '@/components/SubmissionDetailDrawer.vue'
 import AppEmptyState from '@/components/ui/AppEmptyState.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
+import { useTheme } from '@/theme/theme'
 import { formatDateTime } from '@/utils/format'
 
 const HISTORY_PAGE_SIZE = 10
+const { isDark } = useTheme()
 
 const KIND_META: Record<AgentRatingKind, { label: string; severity: string }> = {
   solve: { label: '通过', severity: 'success' },
@@ -196,9 +199,9 @@ watch(
           <Tag :value="statusLabel" :severity="statusSeverity" data-test="agent-status" />
         </header>
 
-        <p v-if="agent.modelIntro" class="profile-intro" data-test="agent-intro">
-          {{ agent.modelIntro }}
-        </p>
+        <div v-if="agent.modelIntro" class="profile-intro" data-test="agent-intro">
+          <MarkdownView :source="agent.modelIntro" :theme="isDark ? 'dark' : 'light'" />
+        </div>
 
         <p class="profile-author" data-test="agent-author">
           作者：{{ agent.author.nickname }}
@@ -432,7 +435,6 @@ watch(
   color: var(--kapoj-text-secondary);
   font-size: 0.875rem;
   line-height: 1.6;
-  white-space: pre-wrap;
 }
 
 .profile-author {

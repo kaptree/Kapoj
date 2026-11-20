@@ -20,6 +20,13 @@ vi.mock('@/api/submissions', () => ({
   rejudgeSubmission: vi.fn(),
 }))
 vi.mock('primevue/usetoast', () => ({ useToast: () => ({ add: vi.fn() }) }))
+vi.mock('@/components/MarkdownView.vue', () => ({
+  default: {
+    name: 'MarkdownView',
+    props: ['source', 'theme'],
+    template: '<div data-test="markdown-view">{{ source }}</div>',
+  },
+}))
 
 function agentView(overrides: Partial<AgentView> = {}): AgentView {
   return {
@@ -256,6 +263,18 @@ describe('AgentDetailView', () => {
     expect(wrapper.find('[data-test="agent-rating-history"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('两数之和')
     expect(wrapper.text()).not.toContain('历史服务不可用')
+  })
+
+  it('renders the agent intro as markdown', async () => {
+    vi.mocked(getAgent).mockResolvedValue({
+      agent: agentView({ modelIntro: '## 策略\n\n- **图论**\n- 动态规划' }),
+    })
+    const { wrapper } = await mountPage()
+
+    const intro = wrapper.find('[data-test="agent-intro"]')
+    expect(intro.find('[data-test="markdown-view"]').text()).toContain('## 策略')
+    expect(intro.find('[data-test="markdown-view"]').text()).toContain('**图论**')
+    wrapper.unmount()
   })
 
   it('opens the linked submission from a rating history row', async () => {
