@@ -108,6 +108,14 @@ func requirePermission(s *rbac.Service, code string) []gin.HandlerFunc {
 	}
 }
 
+func requireAllPermissions(s *rbac.Service, codes ...string) []gin.HandlerFunc {
+	handlers := []gin.HandlerFunc{middleware.RequireAuth()}
+	for _, code := range codes {
+		handlers = append(handlers, middleware.RequirePermission(s, code))
+	}
+	return handlers
+}
+
 func (h *handler) listPermissions(c *gin.Context) {
 	httpx.OK(c, h.svc.ListPermissions(c.Request.Context()))
 }

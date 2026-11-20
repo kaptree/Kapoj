@@ -21,7 +21,7 @@
 - 直接保存 `PasswordHash` + `Salt`，不重新哈希；导入时 `EmailVerifiedAt = now()`。
 - 导入用户 `Role=user`、`Status=active`、`Rating=1500`、`Coins=0`；不导入角色/金币/Rating。
 - 不新增数据库列/表；不保留旧 `_id`。
-- 新权限码 `user.import`，默认仅 super_admin；不隐含 `user.read`。
+- 新权限码 `user.import`，默认仅 super_admin；导入接口同时要求 `user.read` 和 `user.import`（预览/映射含邮箱）。
 - 响应、日志、审计不包含 `hash`/`salt`；审计只记录成功/跳过/失败计数。
 - 真实 `hydro-users.csv` 不提交仓库，必须加入 `.gitignore`；测试只用合成 CSV。
 - 预览/结果接口最多返回 500 条 issues、20 条 samples；`mapping` 只含 `generated=true` 且可导入/已导入的行，最多 5000 条。
@@ -459,7 +459,7 @@ Tests:
 
 ```go
 func TestAdminUserImportRequiresPermission(t *testing.T) {
-    // plain user -> 403; super -> 200 for dryRun=true.
+    // plain -> 403; import-only -> 403; read+import -> 200; super -> 200.
 }
 
 func TestAdminUserImportPreviewAndCommit(t *testing.T) {
@@ -498,7 +498,8 @@ Expected: FAIL because the route/handler/permission do not exist.
 
 - `RegisterUserImportRoute` constructs `&handler{svc: s, userImport: svc}` and registers:
   ```go
-  api.POST("/admin/users/import", append(requirePermission(s, string(rbac.PermUserImport)), h.importUsers)...)
+  handlers := append(requireAllPermissions(s, string(rbac.PermUserRead), string(rbac.PermUserImport)), h.importUsers)
+  api.POST("/admin/users/import", handlers...)
   ```
 - `importUsers`:
   - `c.Request.ParseMultipartForm(1 << 20)`; on `*http.MaxBytesError` return `httpx.ErrPayloadTooLarge`, else `httpx.ErrBadRequest`; defer `MultipartForm.RemoveAll()`.

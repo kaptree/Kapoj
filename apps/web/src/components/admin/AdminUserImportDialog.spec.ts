@@ -87,6 +87,16 @@ async function click(testid: string): Promise<void> {
   await flushPromises()
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
 async function selectFile(file: File): Promise<void> {
   const input = q<HTMLInputElement>('[data-test="import-file"]')
   Object.defineProperty(input, 'files', { value: [file], configurable: true })
@@ -196,6 +206,65 @@ describe('AdminUserImportDialog', () => {
     expect(importAdminUsers).toHaveBeenCalledWith(file)
     expect(wrapper.emitted('imported')).toHaveLength(1)
     expect(dialog().textContent).toContain('成功 2')
+    wrapper.unmount()
+  })
+
+  it('resets on close and ignores a late preview response', async () => {
+    const pending = deferred<AdminUserImportResult>()
+    api.previewAdminUsersImport.mockReturnValue(pending.promise)
+    const wrapper = await mountDialog()
+    await selectFile(new File(['x'], 'users.csv', { type: 'text/csv' }))
+    await click('import-preview')
+
+    await wrapper.setProps({ visible: false })
+    await wrapper.setProps({ visible: true })
+    pending.resolve(fixture())
+    await flushPromises()
+
+    expect(dialog().querySelector('[data-test="import-summary"]')).toBeNull()
+    expect(q('[data-test="import-confirm"]').hasAttribute('disabled')).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('disables the file input while previewing and closing while importing', async () => {
+    const previewPending = deferred<AdminUserImportResult>()
+    api.previewAdminUsersImport.mockReturnValue(previewPending.promise)
+    const wrapper = await mountDialog()
+    await selectFile(new File(['x'], 'users.csv', { type: 'text/csv' }))
+    await click('import-preview')
+
+    expect(q<HTMLInputElement>('[data-test="import-file"]').disabled).toBe(true)
+    previewPending.resolve(fixture())
+    await flushPromises()
+
+    const importPending = deferred<AdminUserImportResult>()
+    api.importAdminUsers.mockReturnValue(importPending.promise)
+    await click('import-confirm')
+
+    expect(dialog().querySelector('.p-dialog-close-button')).toBeNull()
+    const cancel = Array.from(dialog().querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '取消',
+    ) as HTMLButtonElement | undefined
+    expect(cancel?.disabled).toBe(true)
+
+    importPending.resolve(
+      fixture({
+        dryRun: false,
+        summary: {
+          total: 3,
+          valid: 2,
+          conflicts: 1,
+          invalid: 0,
+          generatedUsernames: 1,
+          imported: 2,
+          skipped: 1,
+          failed: 0,
+        },
+        issues: [],
+        samples: [],
+      }),
+    )
+    await flushPromises()
     wrapper.unmount()
   })
 

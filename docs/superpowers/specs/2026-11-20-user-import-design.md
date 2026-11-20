@@ -110,7 +110,7 @@ user.import  批量导入用户
 
 - 分组：用户与角色。
 - 默认只有 `super_admin` 可用（走 super 绕过）；其他角色需要管理员在 RBAC 权限矩阵里显式授予。
-- `user.import` 不隐含 `user.read`；给自定义角色授予导入权限时，需要同时授予 `user.read` 才能进入 `/admin/users` 页面。super_admin 不受影响。
+- 导入接口**同时要求 `user.read` 和 `user.import`**：预览/映射响应包含邮箱，只有 `user.import` 的角色返回 403；只有 `user.read` 也不能导入。super_admin 不受影响。
 - 前端 `PERM.user.import` 新增同名键。
 - 后端路由使用 `RequirePermission(rbac.PermUserImport)`。
 - 审计 action 使用 `user.import`，只记录统计数字，不记录邮箱、哈希、CSV 内容。
@@ -410,6 +410,7 @@ _id,uname,mail,username
 - `_id` 是旧 Hydro ID；`uname` 是原用户名/昵称；`mail` 是邮箱；`username` 是新登录名。
 - 使用标准 CSV 转义（逗号、双引号、换行）；UTF-8 BOM 可选，默认不加。
 - 只包含生成用户名的可导入行；不包含 `hash`/`salt`，不包含未改名用户。
+- 以 `=`, `+`, `-`, `@` 开头的 `uname` 前加 `'`，防止表格软件把旧用户名当公式执行。
 - 不写入 localStorage；下载后由管理员自行保管。
 
 ## 8. 权限与安全

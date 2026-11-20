@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import Button from 'primevue/button'
 import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
@@ -24,9 +24,13 @@ const SAMPLE_CSV = `_id,uname,mail,hash,salt,hashType
 
 const open = computed({
   get: () => props.visible,
-  set: (value: boolean) => emit('update:visible', value),
+  set: (value: boolean) => {
+    if (importing.value) return
+    emit('update:visible', value)
+  },
 })
 
+const fileInput = ref<HTMLInputElement | null>(null)
 const file = ref<File | null>(null)
 const preview = ref<AdminUserImportResult | null>(null)
 const result = ref<AdminUserImportResult | null>(null)
@@ -34,6 +38,25 @@ const previewing = ref(false)
 const importing = ref(false)
 const helpOpen = ref(false)
 const error = ref('')
+let previewSeq = 0
+
+function reset(): void {
+  previewSeq += 1
+  file.value = null
+  preview.value = null
+  result.value = null
+  previewing.value = false
+  error.value = ''
+  helpOpen.value = false
+  if (fileInput.value) fileInput.value.value = ''
+}
+
+watch(
+  () => props.visible,
+  (value) => {
+    if (!value && !importing.value) reset()
+  },
+)
 
 const summary = computed(() => result.value?.summary ?? preview.value?.summary ?? null)
 const issues = computed(() => result.value?.issues ?? preview.value?.issues ?? [])
@@ -59,7 +82,9 @@ function formatSize(bytes: number): string {
 }
 
 function onFileChange(event: Event): void {
+  if (importing.value) return
   const selected = (event.target as HTMLInputElement).files?.[0] ?? null
+  previewSeq += 1
   preview.value = null
   result.value = null
   error.value = ''
@@ -86,21 +111,31 @@ function errorMessage(reason: unknown, fallback: string): string {
 
 async function runPreview(): Promise<void> {
   if (!file.value || previewing.value || importing.value) return
+  const seq = ++previewSeq
   previewing.value = true
   result.value = null
   error.value = ''
   try {
-    preview.value = await previewAdminUsersImport(file.value)
+    const next = await previewAdminUsersImport(file.value)
+    if (seq !== previewSeq) return
+    preview.value = next
   } catch (reason) {
+    if (seq !== previewSeq) return
     preview.value = null
     error.value = errorMessage(reason, '预览失败，请稍后再试')
   } finally {
-    previewing.value = false
+    if (seq === previewSeq) previewing.value = false
   }
 }
 
 async function confirmImport(): Promise<void> {
-  if (!file.value || !preview.value || preview.value.summary.valid <= 0 || importing.value) {
+  if (
+    !file.value ||
+    !preview.value ||
+    preview.value.summary.valid <= 0 ||
+    importing.value ||
+    result.value
+  ) {
     return
   }
   importing.value = true
@@ -140,6 +175,9 @@ function close(): void {
     header="导入用户"
     modal
     :draggable="false"
+    :closable="!importing"
+    :close-on-escape="!importing"
+    :dismissable-mask="false"
     :style="{ width: 'min(94vw, 760px)' }"
   >
     <div class="admin-user-import">
@@ -151,9 +189,11 @@ function close(): void {
         <label class="admin-user-import__file">
           <span>选择 CSV</span>
           <input
+            ref="fileInput"
             data-test="import-file"
             type="file"
             accept=".csv,text/csv"
+            :disabled="previewing || importing"
             @change="onFileChange"
           />
         </label>
@@ -334,7 +374,9 @@ function close(): void {
           label="确认导入"
           data-test="import-confirm"
           :loading="importing"
-          :disabled="!file || !preview || preview.summary.valid <= 0 || importing || !!result"
+          :disabled="
+            !file || !preview || preview.summary.valid <= 0 || previewing || importing || !!result
+          "
           @click="confirmImport"
         />
       </div>

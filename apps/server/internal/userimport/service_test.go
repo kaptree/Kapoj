@@ -151,6 +151,26 @@ func TestProcessDuplicateRowsAllInvalid(t *testing.T) {
 	assert.Zero(t, countUsers(t, g))
 }
 
+func TestProcessDuplicateWithInvalidRowWritesNothing(t *testing.T) {
+	g := testutil.PG(t)
+	svc := NewService(g)
+	hash, salt, err := password.Hash("old-password")
+	require.NoError(t, err)
+	csv := csvText(
+		"2,Alice,a@example.com,"+hash+","+salt+",hydro",
+		"3,Bob,a@example.com,short,"+salt+",hydro",
+	)
+
+	preview, err := svc.Process(context.Background(), strings.NewReader(csv), true, nil)
+	require.NoError(t, err)
+	assert.Zero(t, preview.Summary.Valid)
+	assert.Equal(t, 2, preview.Summary.Invalid)
+
+	_, err = svc.Process(context.Background(), strings.NewReader(csv), false, nil)
+	require.NoError(t, err)
+	assert.Zero(t, countUsers(t, g))
+}
+
 func TestProcessEmailConflict(t *testing.T) {
 	g := testutil.PG(t)
 	svc := NewService(g)

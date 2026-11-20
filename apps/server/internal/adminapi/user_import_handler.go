@@ -23,8 +23,11 @@ func RegisterUserImportRoute(api gin.IRouter, s *rbac.Service, svc *userimport.S
 		return
 	}
 	h := &handler{svc: s, userImport: svc}
-	api.POST("/admin/users/import", append(
-		requirePermission(s, string(rbac.PermUserImport)), h.importUsers)...)
+	handlers := append(
+		requireAllPermissions(s, string(rbac.PermUserRead), string(rbac.PermUserImport)),
+		h.importUsers,
+	)
+	api.POST("/admin/users/import", handlers...)
 }
 
 func (h *handler) importUsers(c *gin.Context) {

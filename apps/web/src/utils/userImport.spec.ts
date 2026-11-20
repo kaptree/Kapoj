@@ -29,6 +29,25 @@ describe('mappingCsv', () => {
     ).toBe('_id,uname,mail,username\n7,"a""b",b@example.com,hydro_7\n')
   })
 
+  it('neutralizes spreadsheet formulas in uname', () => {
+    const csv = mappingCsv([
+      {
+        legacyId: 1,
+        uname: '=HYPERLINK("http://evil")',
+        email: 'a@example.com',
+        username: 'hydro_1',
+      },
+      { legacyId: 2, uname: '+cmd', email: 'b@example.com', username: 'hydro_2' },
+      { legacyId: 3, uname: '-1+1', email: 'c@example.com', username: 'hydro_3' },
+      { legacyId: 4, uname: '@SUM(A1)', email: 'd@example.com', username: 'hydro_4' },
+    ])
+    const lines = csv.split('\n')
+    expect(lines[1]).toContain("'=HYPERLINK")
+    expect(lines[2]).toContain("'+cmd")
+    expect(lines[3]).toContain("'-1+1")
+    expect(lines[4]).toContain("'@SUM(A1)")
+  })
+
   it('returns only the header for an empty mapping', () => {
     expect(mappingCsv([])).toBe('_id,uname,mail,username\n')
   })

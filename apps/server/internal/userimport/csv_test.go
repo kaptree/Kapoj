@@ -96,6 +96,35 @@ func TestParseHydroCSVDuplicateRowsAllInvalid(t *testing.T) {
 	assert.Contains(t, rows[1].reason, "重复")
 }
 
+func TestParseHydroCSVDuplicateWithInvalidRow(t *testing.T) {
+	valid := func(id, uname, email string) string {
+		return id + "," + uname + "," + email + "," + testHash + "," + testSalt + ",hydro"
+	}
+	shortHash := func(id, uname, email string) string {
+		return id + "," + uname + "," + email + ",short," + testSalt + ",hydro"
+	}
+	cases := []struct {
+		name   string
+		first  string
+		second string
+	}{
+		{"id", valid("2", "Alice", "a@example.com"), shortHash("2", "Bob", "b@example.com")},
+		{"email", valid("2", "Alice", "a@example.com"), shortHash("3", "Bob", "a@example.com")},
+		{"username", valid("2", "Alice", "a@example.com"), shortHash("3", "Alice", "b@example.com")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rows, err := parseHydroCSV(strings.NewReader(csvText(tc.first, tc.second)))
+			require.NoError(t, err)
+			require.Len(t, rows, 2)
+			assert.Equal(t, rowInvalid, rows[0].status)
+			assert.Equal(t, rowInvalid, rows[1].status)
+			assert.Contains(t, rows[0].reason, "重复")
+			assert.Contains(t, rows[1].reason, "重复")
+		})
+	}
+}
+
 func TestParseHydroCSVRejectsBadInput(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
 		_, err := parseHydroCSV(strings.NewReader(""))

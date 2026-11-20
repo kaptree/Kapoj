@@ -44,14 +44,23 @@ func TestAdminUserImportRequiresPermission(t *testing.T) {
 	w, resp = f.multipart("/api/admin/users/import?dryRun=true", superToken, "users.csv", csv)
 	requireStatus(t, w, resp, http.StatusOK)
 
-	// A custom role with only user.import can call the backend; the frontend
-	// still needs user.read to reach the page.
-	role, err := f.svc.CreateRole(context.Background(), rbac.AuditMeta{ActorID: 1}, rbac.RoleInput{
+	// The preview includes emails, so the endpoint requires user.read as well
+	// as user.import.
+	importOnly, err := f.svc.CreateRole(context.Background(), rbac.AuditMeta{ActorID: 1}, rbac.RoleInput{
 		Code: "import_only_role", Name: "仅导入用户", PermissionCodes: []string{string(rbac.PermUserImport)},
 	})
 	require.NoError(t, err)
-	_, importToken := f.user(t, "import_only", role.Code)
-	w, resp = f.multipart("/api/admin/users/import?dryRun=true", importToken, "users.csv", csv)
+	_, importOnlyToken := f.user(t, "import_only", importOnly.Code)
+	w, resp = f.multipart("/api/admin/users/import?dryRun=true", importOnlyToken, "users.csv", csv)
+	requireStatus(t, w, resp, http.StatusForbidden)
+
+	importReader, err := f.svc.CreateRole(context.Background(), rbac.AuditMeta{ActorID: 1}, rbac.RoleInput{
+		Code: "import_reader_role", Name: "查看并导入用户",
+		PermissionCodes: []string{string(rbac.PermUserRead), string(rbac.PermUserImport)},
+	})
+	require.NoError(t, err)
+	_, importReaderToken := f.user(t, "import_reader", importReader.Code)
+	w, resp = f.multipart("/api/admin/users/import?dryRun=true", importReaderToken, "users.csv", csv)
 	requireStatus(t, w, resp, http.StatusOK)
 }
 

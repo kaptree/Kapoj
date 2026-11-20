@@ -194,9 +194,6 @@ func markDuplicateRows(rows []*row) {
 	names := make(map[string][]*row)
 
 	for _, item := range rows {
-		if item.status != rowValid {
-			continue
-		}
 		if item.legacyID > 0 {
 			ids[item.legacyID] = append(ids[item.legacyID], item)
 		}
