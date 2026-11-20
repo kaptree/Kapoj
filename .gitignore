@@ -28,3 +28,6 @@ docker/caddy/certs/
 apps/web/playwright-report/
 apps/web/test-results/
 apps/web/blob-report/
+
+# 旧 OJ 用户导出（含邮箱与密码哈希，禁止提交）
+hydro-users.csv
