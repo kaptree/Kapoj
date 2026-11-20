@@ -316,7 +316,7 @@ func TestAgentPublicLeaderboardDetailAndHistory(t *testing.T) {
 	).Scan(&subID).Error)
 	require.NoError(t, f.db.Create(&agent.AgentRatingHistory{
 		AgentID: alpha.ID, ProblemID: p.ID, SubmissionID: &subID,
-		Kind: agent.RatingSolve,
+		Kind:       agent.RatingSolve,
 		Difficulty: 66, RatingBefore: 1500, RatingAfter: 1518, Delta: 18,
 		SolveTimeMS: 900, CreatedAt: now.Add(-2 * time.Hour),
 	}).Error)

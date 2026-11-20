@@ -425,7 +425,6 @@ onMounted(() => {
           </AppFormField>
 
           <AppFormField
-            v-slot="field"
             input-id="agent-model-intro"
             label="模型简介"
             :error="formErrors.modelIntro"
@@ -503,7 +502,6 @@ onMounted(() => {
           </AppFormField>
 
           <AppFormField
-            v-slot="field"
             input-id="agent-model-intro"
             label="模型简介"
             :error="formErrors.modelIntro"

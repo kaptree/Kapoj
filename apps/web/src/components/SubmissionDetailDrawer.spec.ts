@@ -88,9 +88,7 @@ describe('SubmissionDetailDrawer', () => {
   })
 
   it('shows agent metadata and never offers rejudge for agent submissions', async () => {
-    vi.mocked(getSubmission).mockResolvedValue(
-      detail({ agentId: 11, agentName: 'Arena Agent' }),
-    )
+    vi.mocked(getSubmission).mockResolvedValue(detail({ agentId: 11, agentName: 'Arena Agent' }))
     const wrapper = await mountDrawer({ canRejudge: true })
 
     expect(document.body.textContent).toContain('Arena Agent')

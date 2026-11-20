@@ -39,8 +39,8 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/secret"
 	"github.com/kaptree/kapoj/apps/server/internal/similarity"
 	"github.com/kaptree/kapoj/apps/server/internal/similarityqueue"
-	"github.com/kaptree/kapoj/apps/server/internal/submissionevents"
 	"github.com/kaptree/kapoj/apps/server/internal/storageaudit"
+	"github.com/kaptree/kapoj/apps/server/internal/submissionevents"
 	"github.com/kaptree/kapoj/apps/server/internal/testcasegen"
 )
 

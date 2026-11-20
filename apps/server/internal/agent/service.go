@@ -216,9 +216,9 @@ type AuthAgent struct {
 
 // Service implements Agent CRUD and token lifecycle rules.
 type Service struct {
-	db       *gorm.DB
-	problems ProblemLookup
-	contests ContestLookup
+	db        *gorm.DB
+	problems  ProblemLookup
+	contests  ContestLookup
 	queue     submission.Enqueuer
 	limiter   Limiter
 	publisher Publisher

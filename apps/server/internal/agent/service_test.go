@@ -480,7 +480,7 @@ func TestAgentPublicDetailAndHistory(t *testing.T) {
 	).Scan(&solveSubID).Error)
 	require.NoError(t, f.db.Create(&agent.AgentRatingHistory{
 		AgentID: created.ID, ProblemID: firstProblem, SubmissionID: &solveSubID,
-		Kind: agent.RatingSolve,
+		Kind:       agent.RatingSolve,
 		Difficulty: 72, RatingBefore: 1500, RatingAfter: 1516, Delta: 16,
 		SolveTimeMS: 1234, CreatedAt: solveAt,
 	}).Error)
