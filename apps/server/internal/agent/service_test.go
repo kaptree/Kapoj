@@ -468,8 +468,15 @@ func TestAgentPublicDetailAndHistory(t *testing.T) {
 	solveAt := base.Add(-3 * time.Hour)
 	abandonAt := base.Add(-2 * time.Hour)
 	resetAt := base.Add(-time.Hour)
+	var solveSubID int64
+	require.NoError(t, f.db.Raw(
+		`INSERT INTO submissions (user_id, problem_id, agent_id, language, code, status, created_at)
+		 VALUES (?, ?, ?, 'cpp', 'solution', 'accepted', ?) RETURNING id`,
+		owner, firstProblem, created.ID, solveAt,
+	).Scan(&solveSubID).Error)
 	require.NoError(t, f.db.Create(&agent.AgentRatingHistory{
-		AgentID: created.ID, ProblemID: firstProblem, Kind: agent.RatingSolve,
+		AgentID: created.ID, ProblemID: firstProblem, SubmissionID: &solveSubID,
+		Kind: agent.RatingSolve,
 		Difficulty: 72, RatingBefore: 1500, RatingAfter: 1516, Delta: 16,
 		SolveTimeMS: 1234, CreatedAt: solveAt,
 	}).Error)
@@ -484,7 +491,7 @@ func TestAgentPublicDetailAndHistory(t *testing.T) {
 		CreatedAt: resetAt,
 	}).Error)
 
-	page, err := f.svc.RatingHistory(ctx, created.ID, 1, 20)
+	page, err := f.svc.RatingHistory(ctx, created.ID, 0, 1, 20)
 	require.NoError(t, err)
 	assert.EqualValues(t, 3, page.Total)
 	require.Len(t, page.Items, 3)
@@ -506,6 +513,7 @@ func TestAgentPublicDetailAndHistory(t *testing.T) {
 	assert.Equal(t, "history-second", abandon.ProblemSlug)
 	assert.Equal(t, 35, abandon.Difficulty)
 	assert.Equal(t, -8, abandon.Delta)
+	assert.Nil(t, abandon.SubmissionID)
 
 	solve := page.Items[2]
 	assert.Equal(t, agent.RatingSolve, solve.Kind)
@@ -515,8 +523,11 @@ func TestAgentPublicDetailAndHistory(t *testing.T) {
 	assert.Equal(t, 72, solve.Difficulty)
 	assert.Equal(t, 16, solve.Delta)
 	assert.Equal(t, 1234, solve.SolveTimeMS)
+	require.NotNil(t, solve.SubmissionID)
+	assert.Equal(t, solveSubID, *solve.SubmissionID)
+	assert.Nil(t, reset.SubmissionID)
 
-	page, err = f.svc.RatingHistory(ctx, created.ID, 2, 2)
+	page, err = f.svc.RatingHistory(ctx, created.ID, 0, 2, 2)
 	require.NoError(t, err)
 	assert.EqualValues(t, 3, page.Total)
 	require.Len(t, page.Items, 1)
@@ -529,7 +540,7 @@ func TestAgentPublicDetailAndHistory(t *testing.T) {
 
 	_, err = f.svc.RatingHistoryForUser(ctx, f.user("detail-noagent", "active"), 1, 20)
 	requireAppError(t, err, 404, 40400)
-	_, err = f.svc.RatingHistory(ctx, 999999, 1, 20)
+	_, err = f.svc.RatingHistory(ctx, 999999, 0, 1, 20)
 	requireAppError(t, err, 404, 40400)
 }
 
@@ -545,15 +556,23 @@ func TestAgentRatingHistoryHidesNonPublicProblems(t *testing.T) {
 	ended := f.seedProblem(seedProblemOpts{Slug: "history-ended", Title: "Ended Title"})
 	f.lockProblem(ended, f.clock.now.Add(-time.Hour))
 
+	subIDs := make(map[int64]int64, 3)
 	for i, problemID := range []int64{hidden.ID, locked.ID, ended.ID} {
+		var subID int64
+		require.NoError(t, f.db.Raw(
+			`INSERT INTO submissions (user_id, problem_id, agent_id, language, code, status, created_at)
+			 VALUES (?, ?, ?, 'cpp', 'solution', 'accepted', ?) RETURNING id`,
+			owner, problemID, created.ID, f.clock.now.Add(time.Duration(i)*time.Minute),
+		).Scan(&subID).Error)
+		subIDs[problemID] = subID
 		require.NoError(t, f.db.Create(&agent.AgentRatingHistory{
-			AgentID: created.ID, ProblemID: problemID, Kind: agent.RatingSolve,
-			RatingBefore: 1500, RatingAfter: 1510, Delta: 10,
+			AgentID: created.ID, ProblemID: problemID, SubmissionID: &subID,
+			Kind: agent.RatingSolve, RatingBefore: 1500, RatingAfter: 1510, Delta: 10,
 			CreatedAt: f.clock.now.Add(time.Duration(i) * time.Minute),
 		}).Error)
 	}
 
-	page, err := f.svc.RatingHistory(ctx, created.ID, 1, 20)
+	page, err := f.svc.RatingHistory(ctx, created.ID, 0, 1, 20)
 	require.NoError(t, err)
 	require.Len(t, page.Items, 3)
 
@@ -571,6 +590,20 @@ func TestAgentRatingHistoryHidesNonPublicProblems(t *testing.T) {
 	endedRow := byID[ended.ID]
 	assert.Equal(t, "Ended Title", endedRow.ProblemTitle, "ended contests no longer lock the title")
 	assert.Equal(t, "history-ended", endedRow.ProblemSlug)
+
+	for _, problemID := range []int64{hidden.ID, locked.ID} {
+		assert.Nil(t, byID[problemID].SubmissionID,
+			"non-owner must not receive a redacted submission id")
+	}
+	require.NotNil(t, endedRow.SubmissionID)
+	assert.Equal(t, subIDs[ended.ID], *endedRow.SubmissionID)
+
+	ownerPage, err := f.svc.RatingHistory(ctx, created.ID, owner, 1, 20)
+	require.NoError(t, err)
+	for _, row := range ownerPage.Items {
+		require.NotNil(t, row.SubmissionID,
+			"the owner must still receive their agent submission id")
+	}
 }
 
 func TestAdminAgentUpdateDisablesAndResets(t *testing.T) {

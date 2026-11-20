@@ -143,6 +143,7 @@ type AgentRatingRow struct {
 	RatingAfter  int        `json:"ratingAfter"`
 	Delta        int        `json:"delta"`
 	SolveTimeMS  int        `json:"solveTimeMs"`
+	SubmissionID *int64     `json:"submissionId"`
 	CreatedAt    time.Time  `json:"createdAt"`
 }
 
@@ -369,11 +370,12 @@ func (s *Service) AgentDetail(ctx context.Context, id int64) (*AgentDetailView, 
 }
 
 // RatingHistory returns one page of an Agent's rating history, newest first,
-// with problem titles and slugs joined in.
+// with problem titles and slugs joined in. viewerID is the optional logged-in
+// user; the Agent owner still receives submission ids for redacted problems.
 func (s *Service) RatingHistory(
-	ctx context.Context, agentID int64, page, size int,
+	ctx context.Context, agentID, viewerID int64, page, size int,
 ) (httpx.Page[AgentRatingRow], error) {
-	return s.ratingHistoryPage(ctx, agentID, page, size)
+	return s.ratingHistoryPage(ctx, agentID, viewerID, page, size)
 }
 
 // RatingHistoryForUser resolves the current user's Agent and returns its
@@ -389,7 +391,7 @@ func (s *Service) RatingHistoryForUser(
 	if err != nil {
 		return httpx.Page[AgentRatingRow]{}, err
 	}
-	return s.ratingHistoryPage(ctx, a.ID, page, size)
+	return s.ratingHistoryPage(ctx, a.ID, userID, page, size)
 }
 
 // AdminList returns one page of Agents for the management UI.
@@ -677,10 +679,10 @@ func (r agentListRow) view() AgentView {
 }
 
 func (s *Service) ratingHistoryPage(
-	ctx context.Context, agentID int64, page, size int,
+	ctx context.Context, agentID, viewerID int64, page, size int,
 ) (httpx.Page[AgentRatingRow], error) {
 	var a Agent
-	err := s.db.WithContext(ctx).Select("id").First(&a, agentID).Error
+	err := s.db.WithContext(ctx).Select("id, user_id").First(&a, agentID).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return httpx.Page[AgentRatingRow]{}, httpx.ErrNotFound
 	}
@@ -700,25 +702,24 @@ func (s *Service) ratingHistoryPage(
 	var rows []ratingHistoryRow
 	now := s.now()
 	err = s.db.WithContext(ctx).Raw(`
-		SELECT h.id, COALESCE(h.problem_id, 0) AS problem_id,
-		       CASE WHEN p.id IS NOT NULL AND p.is_public
-		                  AND NOT EXISTS (
-		                      SELECT 1 FROM contest_problems cp
-		                      JOIN contests c ON c.id = cp.contest_id
-		                      WHERE cp.problem_id = p.id AND c.end_time > $2)
-		            THEN p.title ELSE '' END AS problem_title,
-		       CASE WHEN p.id IS NOT NULL AND p.is_public
-		                  AND NOT EXISTS (
-		                      SELECT 1 FROM contest_problems cp
-		                      JOIN contests c ON c.id = cp.contest_id
-		                      WHERE cp.problem_id = p.id AND c.end_time > $2)
-		            THEN p.slug ELSE '' END AS problem_slug,
-		       h.kind, h.difficulty, h.rating_before, h.rating_after,
-		       h.delta, h.solve_time_ms, h.created_at
-		FROM agent_rating_history h
-		LEFT JOIN problems p ON p.id = h.problem_id
-		WHERE h.agent_id = $1
-		ORDER BY h.created_at DESC, h.id DESC
+		WITH history AS (
+			SELECT h.*, p.title, p.slug, p.is_public,
+			       (p.id IS NOT NULL AND p.is_public AND NOT EXISTS (
+			           SELECT 1 FROM contest_problems cp
+			           JOIN contests c ON c.id = cp.contest_id
+			           WHERE cp.problem_id = p.id AND c.end_time > $2
+			       )) AS problem_visible
+			FROM agent_rating_history h
+			LEFT JOIN problems p ON p.id = h.problem_id
+			WHERE h.agent_id = $1
+		)
+		SELECT id, COALESCE(problem_id, 0) AS problem_id,
+		       CASE WHEN problem_visible THEN title ELSE '' END AS problem_title,
+		       CASE WHEN problem_visible THEN slug ELSE '' END AS problem_slug,
+		       problem_visible, submission_id, kind, difficulty, rating_before,
+		       rating_after, delta, solve_time_ms, created_at
+		FROM history
+		ORDER BY created_at DESC, id DESC
 		LIMIT $3 OFFSET $4`,
 		agentID, now, size, (page-1)*size).Scan(&rows).Error
 	if err != nil {
@@ -727,26 +728,32 @@ func (s *Service) ratingHistoryPage(
 
 	items := make([]AgentRatingRow, 0, len(rows))
 	for _, row := range rows {
-		items = append(items, row.view())
+		items = append(items, row.view(viewerID == a.UserID))
 	}
 	return httpx.Page[AgentRatingRow]{Total: total, Items: items}, nil
 }
 
 type ratingHistoryRow struct {
-	ID           int64      `gorm:"column:id"`
-	ProblemID    int64      `gorm:"column:problem_id"`
-	ProblemTitle string     `gorm:"column:problem_title"`
-	ProblemSlug  string     `gorm:"column:problem_slug"`
-	Kind         RatingKind `gorm:"column:kind"`
-	Difficulty   int        `gorm:"column:difficulty"`
-	RatingBefore int        `gorm:"column:rating_before"`
-	RatingAfter  int        `gorm:"column:rating_after"`
-	Delta        int        `gorm:"column:delta"`
-	SolveTimeMS  int        `gorm:"column:solve_time_ms"`
-	CreatedAt    time.Time  `gorm:"column:created_at"`
+	ID             int64      `gorm:"column:id"`
+	ProblemID      int64      `gorm:"column:problem_id"`
+	ProblemTitle   string     `gorm:"column:problem_title"`
+	ProblemSlug    string     `gorm:"column:problem_slug"`
+	ProblemVisible bool       `gorm:"column:problem_visible"`
+	SubmissionID   *int64     `gorm:"column:submission_id"`
+	Kind           RatingKind `gorm:"column:kind"`
+	Difficulty     int        `gorm:"column:difficulty"`
+	RatingBefore   int        `gorm:"column:rating_before"`
+	RatingAfter    int        `gorm:"column:rating_after"`
+	Delta          int        `gorm:"column:delta"`
+	SolveTimeMS    int        `gorm:"column:solve_time_ms"`
+	CreatedAt      time.Time  `gorm:"column:created_at"`
 }
 
-func (r ratingHistoryRow) view() AgentRatingRow {
+func (r ratingHistoryRow) view(ownerViewer bool) AgentRatingRow {
+	submissionID := r.SubmissionID
+	if !r.ProblemVisible && !ownerViewer {
+		submissionID = nil
+	}
 	return AgentRatingRow{
 		ID:           r.ID,
 		ProblemID:    r.ProblemID,
@@ -758,6 +765,7 @@ func (r ratingHistoryRow) view() AgentRatingRow {
 		RatingAfter:  r.RatingAfter,
 		Delta:        r.Delta,
 		SolveTimeMS:  r.SolveTimeMS,
+		SubmissionID: submissionID,
 		CreatedAt:    r.CreatedAt,
 	}
 }
