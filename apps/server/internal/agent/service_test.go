@@ -43,14 +43,18 @@ func (noopQueue) Enqueue(context.Context, int64) error { return nil }
 
 func newAgentFixtureWithDeps(
 	t *testing.T, queue submission.Enqueuer, limiter agent.Limiter,
+	opts ...agent.Option,
 ) *agentFixture {
 	t.Helper()
 	g := testutil.PG(t)
 	clock := &testClock{now: time.Date(2026, 5, 6, 7, 8, 9, 0, time.UTC)}
+	options := []agent.Option{
+		agent.WithClock(clock.time), agent.WithClaimTimeout(5 * time.Minute),
+	}
+	options = append(options, opts...)
 	svc := agent.NewService(g,
 		problem.NewGormRepository(g), contest.NewGormRepository(g),
-		queue, limiter,
-		agent.WithClock(clock.time), agent.WithClaimTimeout(5*time.Minute))
+		queue, limiter, options...)
 	return &agentFixture{t: t, db: g, svc: svc, clock: clock}
 }
 

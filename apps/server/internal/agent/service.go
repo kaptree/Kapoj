@@ -49,8 +49,20 @@ type Limiter interface {
 	Allow(ctx context.Context, agentID int64, action string) (bool, error)
 }
 
+// Publisher publishes new Agent submissions to the shared SSE channel.
+type Publisher interface {
+	Publish(ctx context.Context, submissionID int64)
+}
+
 // Option customizes a Service.
 type Option func(*Service)
+
+// WithPublisher publishes new Agent submissions to the shared SSE channel.
+func WithPublisher(p Publisher) Option {
+	return func(s *Service) {
+		s.publisher = p
+	}
+}
 
 // WithClock replaces the time source; tests use it for deterministic
 // timestamps and last_used_at throttling.
@@ -207,8 +219,9 @@ type Service struct {
 	db       *gorm.DB
 	problems ProblemLookup
 	contests ContestLookup
-	queue    submission.Enqueuer
-	limiter  Limiter
+	queue     submission.Enqueuer
+	limiter   Limiter
+	publisher Publisher
 
 	now          func() time.Time
 	claimTimeout time.Duration
@@ -944,6 +957,12 @@ func (s *Service) currentAttempt(ctx context.Context, agentID int64) (*AttemptVi
 		return nil, nil
 	}
 	return toAttemptView(row), nil
+}
+
+func (s *Service) publish(ctx context.Context, submissionID int64) {
+	if s.publisher != nil {
+		s.publisher.Publish(ctx, submissionID)
+	}
 }
 
 func (s *Service) agentView(ctx context.Context, a Agent) (*AgentView, error) {

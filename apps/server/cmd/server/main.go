@@ -39,6 +39,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/secret"
 	"github.com/kaptree/kapoj/apps/server/internal/similarity"
 	"github.com/kaptree/kapoj/apps/server/internal/similarityqueue"
+	"github.com/kaptree/kapoj/apps/server/internal/submissionevents"
 	"github.com/kaptree/kapoj/apps/server/internal/storageaudit"
 	"github.com/kaptree/kapoj/apps/server/internal/testcasegen"
 )
@@ -148,7 +149,8 @@ func run() error {
 	defer func() { _ = queue.Close() }()
 	agentSvc := agent.NewService(g,
 		problem.NewGormRepository(g), contest.NewGormRepository(g),
-		queue, agent.NewRedisLimiter(rdb))
+		queue, agent.NewRedisLimiter(rdb),
+		agent.WithPublisher(submissionevents.NewRedisPublisher(rdb)))
 	gamePublisher := gamequeue.NewPublisher(cfg.RedisAddr)
 	defer func() { _ = gamePublisher.Close() }()
 	companionSvc := companion.NewService(companion.NewGormRepository(g))
