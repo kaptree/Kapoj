@@ -1453,6 +1453,36 @@ paths:
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
+  /admin/problems/import/settings:
+    get:
+      summary: 题包导入大小设置（site.settings.manage）
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 当前设置
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProblemImportSettingsResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+    put:
+      summary: 更新题包导入大小设置（site.settings.manage）
+      description: 1–2048 MiB；解压上限自动为 max(1 GiB, 2 × 包上限)。更新写审计。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProblemImportSettingsInput' }
+      responses:
+        '200':
+          description: 更新后的设置
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProblemImportSettingsResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
   /admin/users:
     get:
       summary: 用户列表（user.read）
@@ -1989,11 +2019,24 @@ paths:
         '403': { $ref: '#/components/responses/Error' }
         '409': { $ref: '#/components/responses/Error' }
         '413': { $ref: '#/components/responses/Error' }
+  /problems/import/limits:
+    get:
+      summary: 当前题包导入大小上限（problem.create）
+      description: 导入页用于展示和客户端校验；未配置时返回默认 200 MiB / 1 GiB。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 当前上限
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProblemImportLimitsResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
   /problems/import/hydro:
     post:
       summary: 导入 HydroOJ 题包（problem.create）；支持 .out/.ans 与冲突覆盖
       description: >-
-        上传 HydroOJ 导出的 zip 题包（不超过 200MB），按题目文件夹解析 problem.yaml/problem_zh.md/testdata
+        上传 HydroOJ 导出的 zip 题包（不超过后台配置，默认 200 MiB、最大 2048 MiB），按题目文件夹解析 problem.yaml/problem_zh.md/testdata
         并创建下线题目，创建者为上传者。测试数据支持 .in/.out 与 .in/.ans；同名 .ans/.out 同时存在时使用 .out。
         conflictPolicy=ask 时若 slug 已存在只返回 conflicts 不写库；skip 跳过冲突；overwrite 按 overwriteSlugs/skipSlugs
         覆盖题面与测试数据，保留数字 ID、创建者、提交记录与统计，覆盖后强制下线。题包整体非法返回 40001。
@@ -2006,7 +2049,7 @@ paths:
               type: object
               required: [file]
               properties:
-                file: { type: string, format: binary, description: HydroOJ 导出的 .zip 题包，不超过 200 MiB }
+                file: { type: string, format: binary, description: HydroOJ 导出的 .zip 题包，不超过后台配置（默认 200 MiB、最大 2048 MiB） }
                 conflictPolicy: { type: string, enum: [ask, skip, overwrite], default: ask }
                 overwriteSlugs: { type: string, description: 'JSON 数组，选择覆盖的 slug；空表示覆盖全部冲突（仍需权限）' }
                 skipSlugs: { type: string, description: 'JSON 数组，选择跳过的 slug' }
@@ -2025,7 +2068,7 @@ paths:
     post:
       summary: 导入 kapOJ 题包或 HydroOJ 题包（problem.create）；自动识别格式
       description: >-
-        上传 kapOJ 单题/批量题包或 HydroOJ 题包（不超过 200MB）。kapOJ 题包包含题面、样例、测试数据、
+        上传 kapOJ 单题/批量题包或 HydroOJ 题包（不超过后台配置，默认 200 MiB、最大 2048 MiB）。kapOJ 题包包含题面、样例、测试数据、
         checker、附件、题面图片、客观题答案和官方题解。新建题目默认下线；conflictPolicy=ask 时只返回冲突。
         publish=true 需要 problem.publish；新建和覆盖题逐题尝试发布，发布失败保留题目并返回 publishError。
       security: [{ bearer: [] }]
@@ -2037,7 +2080,7 @@ paths:
               type: object
               required: [file]
               properties:
-                file: { type: string, format: binary, description: .zip 题包，不超过 200 MiB }
+                file: { type: string, format: binary, description: .zip 题包，不超过后台配置（默认 200 MiB、最大 2048 MiB） }
                 conflictPolicy: { type: string, enum: [ask, skip, overwrite], default: ask }
                 overwriteSlugs: { type: string, description: 'JSON 数组，选择覆盖的 slug；空表示覆盖全部冲突（仍需权限）' }
                 skipSlugs: { type: string, description: 'JSON 数组，选择跳过的 slug' }
@@ -6078,6 +6121,41 @@ components:
           required: [data]
           properties:
             data: { $ref: '#/components/schemas/ProblemDetail' }
+    ProblemImportLimits:
+      type: object
+      required: [maxPackageMb, maxUncompressedMb, maxPackageBytes, maxUncompressedBytes]
+      properties:
+        maxPackageMb: { type: integer, description: 压缩包上限（MiB） }
+        maxUncompressedMb: { type: integer, description: 解压后总上限（MiB） }
+        maxPackageBytes: { type: integer, format: int64 }
+        maxUncompressedBytes: { type: integer, format: int64 }
+    ProblemImportLimitsResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/ProblemImportLimits' }
+    ProblemImportSettings:
+      type: object
+      required: [maxPackageMb, maxZipBytes, maxUncompressedBytes, updatedAt]
+      properties:
+        maxPackageMb: { type: integer }
+        maxZipBytes: { type: integer, format: int64 }
+        maxUncompressedBytes: { type: integer, format: int64 }
+        updatedAt: { type: string, format: date-time }
+    ProblemImportSettingsInput:
+      type: object
+      required: [maxPackageMb]
+      properties:
+        maxPackageMb: { type: integer, minimum: 1, maximum: 2048 }
+    ProblemImportSettingsResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/ProblemImportSettings' }
     HydroImportedProblem:
       type: object
       description: 成功导入的题目摘要。

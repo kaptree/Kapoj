@@ -41,6 +41,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/problemapi"
+	"github.com/kaptree/kapoj/apps/server/internal/problemimport"
 	"github.com/kaptree/kapoj/apps/server/internal/rating"
 	"github.com/kaptree/kapoj/apps/server/internal/ratingapi"
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
@@ -61,10 +62,10 @@ import (
 )
 
 const (
-	maxBodyBytes        = 1 << 20   // JSON endpoints
-	maxProblemJSONBytes = 6 << 20   // problem create/update and inline testcase content
-	maxUploadBytes      = 40 << 20  // file upload endpoints: two 16 MiB files plus form fields
-	maxImportBodyBytes  = 210 << 20 // HydroOJ package upload: 200 MiB file plus multipart overhead
+	maxBodyBytes        = 1 << 20    // JSON endpoints
+	maxProblemJSONBytes = 6 << 20    // problem create/update and inline testcase content
+	maxUploadBytes      = 40 << 20   // file upload endpoints: two 16 MiB files plus form fields
+	maxImportBodyBytes  = 2064 << 20 // 2048 MiB package plus multipart overhead
 )
 
 type Deps struct {
@@ -165,11 +166,13 @@ func New(d Deps) *gin.Engine {
 		userOpts.IdentityLookup = d.Game
 	}
 	userapi.RegisterAvatarRoutes(public, uploads, userSvc)
+	problemImportSettings := problemimport.NewSettingsService(d.DB)
 	if d.RBAC != nil {
 		adminapi.RegisterUserImportRoute(uploads, d.RBAC, userimport.NewService(d.DB))
 		adminapi.RegisterRoutes(api, d.RBAC, adminapi.Options{
 			Game: d.Game, Rating: d.Rating, AI: d.AISettings,
 			AIPlatform: d.AIPlatform, Agent: d.Agent,
+			ProblemImport: problemImportSettings,
 		})
 	}
 	jobsapi.RegisterRoutes(api, d.Jobs, d.Difficulty, d.RBAC)
@@ -240,14 +243,15 @@ func New(d Deps) *gin.Engine {
 	socialSvc := social.NewService(d.DB, d.Activity)
 	socialapi.RegisterRoutes(api, socialSvc)
 	problemOpts := problemapi.Options{
-		RBAC:        d.RBAC,
-		Solutions:   problem.NewOfficialSolutionService(d.DB, problemRepo),
-		Discussions: problem.NewDiscussionService(d.DB, problemRepo),
-		Social:      socialSvc,
-		TestcaseGen: d.TestcaseGen,
-		Difficulty:  d.Difficulty,
-		AI:          d.DifficultyAI,
-		AISettings:  d.DifficultyAISettings,
+		ImportSettings: problemImportSettings,
+		RBAC:           d.RBAC,
+		Solutions:      problem.NewOfficialSolutionService(d.DB, problemRepo),
+		Discussions:    problem.NewDiscussionService(d.DB, problemRepo),
+		Social:         socialSvc,
+		TestcaseGen:    d.TestcaseGen,
+		Difficulty:     d.Difficulty,
+		AI:             d.DifficultyAI,
+		AISettings:     d.DifficultyAISettings,
 	}
 	if d.Game != nil {
 		problemOpts.IdentityLookup = d.Game

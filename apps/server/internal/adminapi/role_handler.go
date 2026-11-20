@@ -10,6 +10,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
+	"github.com/kaptree/kapoj/apps/server/internal/problemimport"
 	"github.com/kaptree/kapoj/apps/server/internal/rating"
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 	"github.com/kaptree/kapoj/apps/server/internal/userimport"
@@ -29,6 +30,7 @@ func RegisterRoutes(api gin.IRouter, s *rbac.Service, opts ...Options) {
 	h := &handler{
 		svc: s, game: o.Game, rating: o.Rating, ai: o.AI,
 		aiPlatform: o.AIPlatform, agentSvc: o.Agent,
+		problemImport: o.ProblemImport,
 	}
 
 	api.GET("/admin/stats", append(requirePermission(s, string(rbac.PermAdminDashboardView)), h.stats)...)
@@ -41,6 +43,10 @@ func RegisterRoutes(api gin.IRouter, s *rbac.Service, opts ...Options) {
 	api.DELETE("/admin/roles/:id", append(requirePermission(s, string(rbac.PermRoleDelete)), h.deleteRole)...)
 	api.PUT("/admin/roles/:id/permissions", append(requirePermission(s, string(rbac.PermRolePermissionsUpdate)), h.replaceRolePermissions)...)
 
+	if h.problemImport != nil {
+		api.GET("/admin/problems/import/settings", append(requirePermission(s, string(rbac.PermSiteSettingsManage)), h.getProblemImportSettings)...)
+		api.PUT("/admin/problems/import/settings", append(requirePermission(s, string(rbac.PermSiteSettingsManage)), h.updateProblemImportSettings)...)
+	}
 	api.GET("/admin/users", append(requirePermission(s, string(rbac.PermUserRead)), h.listUsers)...)
 	api.GET("/admin/users/:id", append(requirePermission(s, string(rbac.PermUserRead)), h.getUser)...)
 	api.PUT("/admin/users/:id", append(requirePermission(s, string(rbac.PermUserUpdate)), h.updateUser)...)
@@ -83,13 +89,14 @@ func RegisterRoutes(api gin.IRouter, s *rbac.Service, opts ...Options) {
 }
 
 type handler struct {
-	svc        *rbac.Service
-	game       *gamification.Service
-	rating     *rating.Service
-	ai         *ai.SettingsService
-	aiPlatform *ai.PlatformService
-	agentSvc   *agent.Service
-	userImport *userimport.Service
+	svc           *rbac.Service
+	game          *gamification.Service
+	rating        *rating.Service
+	ai            *ai.SettingsService
+	aiPlatform    *ai.PlatformService
+	agentSvc      *agent.Service
+	userImport    *userimport.Service
+	problemImport *problemimport.SettingsService
 }
 
 // roleUpdateRequest 是 PUT /admin/roles/:id 的请求体。Code 为可选字段：

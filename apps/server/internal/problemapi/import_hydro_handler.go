@@ -18,6 +18,10 @@ import (
 // and imports its problems as offline problems owned by the caller. A
 // per-problem audit (problem.create) is written best-effort for each success.
 func (h *handler) importHydro(c *gin.Context) {
+	maxZip, maxUncompressed, ok := h.prepareImportBody(c)
+	if !ok {
+		return
+	}
 	cleanup, ok := parseMultipart(c)
 	if !ok {
 		return
@@ -29,8 +33,8 @@ func (h *handler) importHydro(c *gin.Context) {
 		httpx.Fail(c, httpx.ErrValidation("缺少文件字段 file"))
 		return
 	}
-	if fh.Size > h.maxImportFileBytes {
-		httpx.Fail(c, httpx.ErrValidation(fmt.Sprintf("题包文件不能超过 %d MiB", h.maxImportFileBytes>>20)))
+	if fh.Size > maxZip {
+		httpx.Fail(c, httpx.ErrValidation(fmt.Sprintf("题包文件不能超过 %d MiB", (maxZip+(1<<20)-1)>>20)))
 		return
 	}
 	f, err := fh.Open()
@@ -53,12 +57,14 @@ func (h *handler) importHydro(c *gin.Context) {
 	access, _ := middleware.CurrentAccess(c)
 	canManageAll := access != nil && (access.IsSuper || access.Has(string(rbac.PermProblemManageAll)))
 	result, err := h.svc.ImportHydro(c.Request.Context(), claims.UserID, f, fh.Size, problem.HydroImportOptions{
-		ConflictPolicy: c.PostForm("conflictPolicy"),
-		OverwriteSlugs: parseHydroSlugList(c.PostForm("overwriteSlugs")),
-		SkipSlugs:      parseHydroSlugList(c.PostForm("skipSlugs")),
-		CanManageAll:   canManageAll,
-		Publish:        publish,
-		CanPublish:     canPublish,
+		ConflictPolicy:       c.PostForm("conflictPolicy"),
+		OverwriteSlugs:       parseHydroSlugList(c.PostForm("overwriteSlugs")),
+		SkipSlugs:            parseHydroSlugList(c.PostForm("skipSlugs")),
+		CanManageAll:         canManageAll,
+		Publish:              publish,
+		CanPublish:           canPublish,
+		MaxZipBytes:          maxZip,
+		MaxUncompressedBytes: maxUncompressed,
 	})
 	if err != nil {
 		httpx.Fail(c, err)

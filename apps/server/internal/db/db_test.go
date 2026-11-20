@@ -2,6 +2,7 @@ package db
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -21,6 +22,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/learning"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
+	"github.com/kaptree/kapoj/apps/server/internal/problemimport"
 	"github.com/kaptree/kapoj/apps/server/internal/rating"
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 	"github.com/kaptree/kapoj/apps/server/internal/site"
@@ -428,9 +430,9 @@ func TestMigrateCreatesProblemImportSettings(t *testing.T) {
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	require.True(t, g.Migrator().HasTable("problem_import_settings"))
-	var maxMB int
-	require.NoError(t, g.Raw("SELECT max_package_mb FROM problem_import_settings WHERE id = 1").Scan(&maxMB).Error)
-	assert.Equal(t, 200, maxMB)
+	view, err := problemimport.NewSettingsService(g).Get(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, 200, view.MaxPackageMB)
 }
 
 func TestMigrateCreatesDifficultySchema(t *testing.T) {

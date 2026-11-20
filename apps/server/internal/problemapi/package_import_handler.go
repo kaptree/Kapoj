@@ -16,6 +16,10 @@ import (
 // importPackage imports a kapOJ single/batch package or a HydroOJ package. The
 // publish option is allowed only for users holding problem.publish.
 func (h *handler) importPackage(c *gin.Context) {
+	maxZip, maxUncompressed, ok := h.prepareImportBody(c)
+	if !ok {
+		return
+	}
 	cleanup, ok := parseMultipart(c)
 	if !ok {
 		return
@@ -27,9 +31,9 @@ func (h *handler) importPackage(c *gin.Context) {
 		httpx.Fail(c, httpx.ErrValidation("缺少文件字段 file"))
 		return
 	}
-	if header.Size > h.maxImportFileBytes {
+	if header.Size > maxZip {
 		httpx.Fail(c, httpx.ErrValidation(
-			fmt.Sprintf("题包文件不能超过 %d MiB", h.maxImportFileBytes>>20)))
+			fmt.Sprintf("题包文件不能超过 %d MiB", (maxZip+(1<<20)-1)>>20)))
 		return
 	}
 	f, err := header.Open()
@@ -53,12 +57,14 @@ func (h *handler) importPackage(c *gin.Context) {
 
 	result, err := h.svc.ImportPackage(c.Request.Context(), claims.UserID, f, header.Size,
 		problem.PackageImportOptions{
-			ConflictPolicy: c.PostForm("conflictPolicy"),
-			OverwriteSlugs: parseHydroSlugList(c.PostForm("overwriteSlugs")),
-			SkipSlugs:      parseHydroSlugList(c.PostForm("skipSlugs")),
-			CanManageAll:   canManageAll,
-			Publish:        publish,
-			CanPublish:     canPublish,
+			ConflictPolicy:       c.PostForm("conflictPolicy"),
+			OverwriteSlugs:       parseHydroSlugList(c.PostForm("overwriteSlugs")),
+			SkipSlugs:            parseHydroSlugList(c.PostForm("skipSlugs")),
+			CanManageAll:         canManageAll,
+			Publish:              publish,
+			CanPublish:           canPublish,
+			MaxZipBytes:          maxZip,
+			MaxUncompressedBytes: maxUncompressed,
 		})
 	if err != nil {
 		httpx.Fail(c, err)

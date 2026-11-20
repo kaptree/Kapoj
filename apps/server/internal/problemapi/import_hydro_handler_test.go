@@ -3,6 +3,7 @@ package problemapi_test
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/json"
 	"mime/multipart"
 	"net/http"
@@ -19,11 +20,20 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/problemapi"
+	"github.com/kaptree/kapoj/apps/server/internal/problemimport"
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
+
+type fakeImportSettings struct {
+	view *problemimport.SettingsView
+}
+
+func (f fakeImportSettings) Get(context.Context) (*problemimport.SettingsView, error) {
+	return f.view, nil
+}
 
 func hydroZipBytes(t *testing.T, entries ...struct{ name, body string }) []byte {
 	t.Helper()
@@ -111,6 +121,11 @@ func TestImportHydroHandlerResultAndAudit(t *testing.T) {
 // body/file size checks can be exercised with tiny payloads.
 func newImportEngine(t *testing.T, maxFile, maxBody int64) (http.Handler, string, *problem.Service) {
 	t.Helper()
+	return newImportEngineOpts(t, maxFile, maxBody, nil)
+}
+
+func newImportEngineOpts(t *testing.T, maxFile, maxBody int64, settings problemapi.ImportLimitProvider) (http.Handler, string, *problem.Service) {
+	t.Helper()
 	g := testutil.PG(t)
 	rbacSvc := testutil.SeedRBAC(t, g)
 	store, err := storage.NewLocal(t.TempDir())
@@ -133,11 +148,16 @@ func newImportEngine(t *testing.T, maxFile, maxBody int64) (http.Handler, string
 	uploads := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(40<<20))
 	imports := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxBody))
 	problemapi.RegisterRoutes(api, problemJSON, uploads, imports, svc, nil, nil,
-		problemapi.Options{RBAC: rbacSvc, MaxImportFileBytes: maxFile})
+		problemapi.Options{RBAC: rbacSvc, MaxImportFileBytes: maxFile, ImportSettings: settings})
 	return r, token, svc
 }
 
 func importMultipart(t *testing.T, h http.Handler, token string, fileBody []byte) (*httptest.ResponseRecorder, map[string]any) {
+	t.Helper()
+	return importMultipartPath(t, h, token, "/api/problems/import/hydro", fileBody)
+}
+
+func importMultipartPath(t *testing.T, h http.Handler, token, path string, fileBody []byte) (*httptest.ResponseRecorder, map[string]any) {
 	t.Helper()
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
@@ -147,7 +167,7 @@ func importMultipart(t *testing.T, h http.Handler, token string, fileBody []byte
 	require.NoError(t, err)
 	require.NoError(t, mw.Close())
 
-	req := httptest.NewRequest(http.MethodPost, "/api/problems/import/hydro", &buf)
+	req := httptest.NewRequest(http.MethodPost, path, &buf)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -182,4 +202,37 @@ func TestImportHydroHandlerMissingFile(t *testing.T) {
 	w, resp := f.multipart("/api/problems/import/hydro", f.token("problem_admin"), nil)
 	assert.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
 	assert.EqualValues(t, 40001, resp["code"])
+}
+
+func TestImportLimitsEndpoint(t *testing.T) {
+	settings := fakeImportSettings{view: &problemimport.SettingsView{
+		MaxPackageMB: 2048, MaxZipBytes: 2048 << 20, MaxUncompressedBytes: 4 << 30,
+	}}
+	h, token, _ := newImportEngineOpts(t, 200<<20, 1<<20, settings)
+	req := httptest.NewRequest(http.MethodGet, "/api/problems/import/limits", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	data := resp["data"].(map[string]any)
+	assert.EqualValues(t, 2048, data["maxPackageMb"])
+	assert.EqualValues(t, 4096, data["maxUncompressedMb"])
+}
+
+func TestImportHandlersUseConfiguredLimit(t *testing.T) {
+	settings := fakeImportSettings{view: &problemimport.SettingsView{
+		MaxPackageMB: 1, MaxZipBytes: 1 << 10, MaxUncompressedBytes: 2 << 10,
+	}}
+	h, token, _ := newImportEngineOpts(t, 200<<20, 1<<20, settings)
+
+	for _, path := range []string{
+		"/api/problems/import/hydro",
+		"/api/problems/import/package",
+	} {
+		w, resp := importMultipartPath(t, h, token, path, bytes.Repeat([]byte("a"), (1<<10)+1))
+		assert.Equal(t, http.StatusBadRequest, w.Code, path+" "+w.Body.String())
+		assert.EqualValues(t, 40001, resp["code"], path)
+	}
 }

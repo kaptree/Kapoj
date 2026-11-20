@@ -3647,6 +3647,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/problems/import/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 题包导入大小设置（site.settings.manage） */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 当前设置 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProblemImportSettingsResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        /**
+         * 更新题包导入大小设置（site.settings.manage）
+         * @description 1–2048 MiB；解压上限自动为 max(1 GiB, 2 × 包上限)。更新写审计。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ProblemImportSettingsInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的设置 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProblemImportSettingsResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/users": {
         parameters: {
             query?: never;
@@ -4897,6 +4965,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/problems/import/limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 当前题包导入大小上限（problem.create）
+         * @description 导入页用于展示和客户端校验；未配置时返回默认 200 MiB / 1 GiB。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 当前上限 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProblemImportLimitsResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/problems/import/hydro": {
         parameters: {
             query?: never;
@@ -4908,7 +5017,7 @@ export interface paths {
         put?: never;
         /**
          * 导入 HydroOJ 题包（problem.create）；支持 .out/.ans 与冲突覆盖
-         * @description 上传 HydroOJ 导出的 zip 题包（不超过 200MB），按题目文件夹解析 problem.yaml/problem_zh.md/testdata 并创建下线题目，创建者为上传者。测试数据支持 .in/.out 与 .in/.ans；同名 .ans/.out 同时存在时使用 .out。 conflictPolicy=ask 时若 slug 已存在只返回 conflicts 不写库；skip 跳过冲突；overwrite 按 overwriteSlugs/skipSlugs 覆盖题面与测试数据，保留数字 ID、创建者、提交记录与统计，覆盖后强制下线。题包整体非法返回 40001。
+         * @description 上传 HydroOJ 导出的 zip 题包（不超过后台配置，默认 200 MiB、最大 2048 MiB），按题目文件夹解析 problem.yaml/problem_zh.md/testdata 并创建下线题目，创建者为上传者。测试数据支持 .in/.out 与 .in/.ans；同名 .ans/.out 同时存在时使用 .out。 conflictPolicy=ask 时若 slug 已存在只返回 conflicts 不写库；skip 跳过冲突；overwrite 按 overwriteSlugs/skipSlugs 覆盖题面与测试数据，保留数字 ID、创建者、提交记录与统计，覆盖后强制下线。题包整体非法返回 40001。
          */
         post: {
             parameters: {
@@ -4922,7 +5031,7 @@ export interface paths {
                     "multipart/form-data": {
                         /**
                          * Format: binary
-                         * @description HydroOJ 导出的 .zip 题包，不超过 200 MiB
+                         * @description HydroOJ 导出的 .zip 题包，不超过后台配置（默认 200 MiB、最大 2048 MiB）
                          */
                         file: string;
                         /**
@@ -4975,7 +5084,7 @@ export interface paths {
         put?: never;
         /**
          * 导入 kapOJ 题包或 HydroOJ 题包（problem.create）；自动识别格式
-         * @description 上传 kapOJ 单题/批量题包或 HydroOJ 题包（不超过 200MB）。kapOJ 题包包含题面、样例、测试数据、 checker、附件、题面图片、客观题答案和官方题解。新建题目默认下线；conflictPolicy=ask 时只返回冲突。 publish=true 需要 problem.publish；新建和覆盖题逐题尝试发布，发布失败保留题目并返回 publishError。
+         * @description 上传 kapOJ 单题/批量题包或 HydroOJ 题包（不超过后台配置，默认 200 MiB、最大 2048 MiB）。kapOJ 题包包含题面、样例、测试数据、 checker、附件、题面图片、客观题答案和官方题解。新建题目默认下线；conflictPolicy=ask 时只返回冲突。 publish=true 需要 problem.publish；新建和覆盖题逐题尝试发布，发布失败保留题目并返回 publishError。
          */
         post: {
             parameters: {
@@ -4989,7 +5098,7 @@ export interface paths {
                     "multipart/form-data": {
                         /**
                          * Format: binary
-                         * @description .zip 题包，不超过 200 MiB
+                         * @description .zip 题包，不超过后台配置（默认 200 MiB、最大 2048 MiB）
                          */
                         file: string;
                         /**
@@ -12429,6 +12538,34 @@ export interface components {
         };
         ProblemDetailResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["ProblemDetail"];
+        };
+        ProblemImportLimits: {
+            /** @description 压缩包上限（MiB） */
+            maxPackageMb: number;
+            /** @description 解压后总上限（MiB） */
+            maxUncompressedMb: number;
+            /** Format: int64 */
+            maxPackageBytes: number;
+            /** Format: int64 */
+            maxUncompressedBytes: number;
+        };
+        ProblemImportLimitsResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["ProblemImportLimits"];
+        };
+        ProblemImportSettings: {
+            maxPackageMb: number;
+            /** Format: int64 */
+            maxZipBytes: number;
+            /** Format: int64 */
+            maxUncompressedBytes: number;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ProblemImportSettingsInput: {
+            maxPackageMb: number;
+        };
+        ProblemImportSettingsResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["ProblemImportSettings"];
         };
         /** @description 成功导入的题目摘要。 */
         HydroImportedProblem: {
