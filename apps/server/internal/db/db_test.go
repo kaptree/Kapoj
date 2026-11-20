@@ -415,6 +415,24 @@ func TestMigrateCreatesCompanionAIFields(t *testing.T) {
 	}
 }
 
+func TestMigrateCreatesProblemImportSettings(t *testing.T) {
+	dsn := os.Getenv("KAPOJ_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("KAPOJ_TEST_DATABASE_URL not set; skipping database test")
+	}
+	g, err := open(dsn, io.Discard)
+	require.NoError(t, err)
+	require.NoError(t, Migrate(g))
+	sqlDB, err := g.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	require.True(t, g.Migrator().HasTable("problem_import_settings"))
+	var maxMB int
+	require.NoError(t, g.Raw("SELECT max_package_mb FROM problem_import_settings WHERE id = 1").Scan(&maxMB).Error)
+	assert.Equal(t, 200, maxMB)
+}
+
 func TestMigrateCreatesDifficultySchema(t *testing.T) {
 	dsn := os.Getenv("KAPOJ_TEST_DATABASE_URL")
 	if dsn == "" {
