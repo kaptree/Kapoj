@@ -6,7 +6,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { getAgent, getAgentRatingHistory } from '@/api/agents'
 import { ApiError } from '@/api/http'
-import type { AgentRatingRow, AgentView, Page } from '@/api/types'
+import { getSubmission } from '@/api/submissions'
+import type { AgentRatingRow, AgentView, Page, SubmissionDetail } from '@/api/types'
 import { formatDateTime } from '@/utils/format'
 import AgentDetailView from './AgentDetailView.vue'
 
@@ -14,6 +15,11 @@ vi.mock('@/api/agents', () => ({
   getAgent: vi.fn(),
   getAgentRatingHistory: vi.fn(),
 }))
+vi.mock('@/api/submissions', () => ({
+  getSubmission: vi.fn(),
+  rejudgeSubmission: vi.fn(),
+}))
+vi.mock('primevue/usetoast', () => ({ useToast: () => ({ add: vi.fn() }) }))
 
 function agentView(overrides: Partial<AgentView> = {}): AgentView {
   return {
@@ -52,9 +58,40 @@ function ratingRow(overrides: Partial<AgentRatingRow> = {}): AgentRatingRow {
   }
 }
 
+function submissionDetail(overrides: Partial<SubmissionDetail> = {}): SubmissionDetail {
+  return {
+    id: 42,
+    userId: 7,
+    username: 'alice',
+    nickname: 'Alice',
+    agentId: null,
+    agentName: '',
+    equippedBadges: [],
+    equippedTitle: null,
+    problemId: 3,
+    problemTitle: '两数之和',
+    problemSlug: 'two-sum',
+    language: 'cpp',
+    status: 'accepted',
+    timeUsedMs: 100,
+    cpuUsedMs: 80,
+    memoryUsedKb: 1024,
+    score: 100,
+    codeLength: 13,
+    createdAt: '2026-11-04T08:00:00Z',
+    code: 'int main() {}',
+    codeHidden: false,
+    answerHidden: false,
+    judgeResult: [],
+    ...overrides,
+  }
+}
+
 const routes = [
   { path: '/agents', name: 'agents', component: { template: '<div />' } },
   { path: '/agents/:id', name: 'agent-detail', component: { template: '<div />' } },
+  { path: '/users/:id', name: 'user-profile', component: { template: '<div />' } },
+  { path: '/problems/:id', name: 'problem-detail', component: { template: '<div />' } },
 ]
 
 async function mountPage(id = '11') {
@@ -71,10 +108,13 @@ function historyPage(items: AgentRatingRow[], total = items.length): Page<AgentR
 }
 
 beforeEach(() => {
+  document.body.innerHTML = ''
   vi.mocked(getAgent).mockReset()
   vi.mocked(getAgentRatingHistory).mockReset()
+  vi.mocked(getSubmission).mockReset()
   vi.mocked(getAgent).mockResolvedValue({ agent: agentView() })
   vi.mocked(getAgentRatingHistory).mockResolvedValue(historyPage([ratingRow()]))
+  vi.mocked(getSubmission).mockResolvedValue(submissionDetail())
 })
 
 describe('AgentDetailView', () => {
@@ -216,6 +256,32 @@ describe('AgentDetailView', () => {
     expect(wrapper.find('[data-test="agent-rating-history"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('两数之和')
     expect(wrapper.text()).not.toContain('历史服务不可用')
+  })
+
+  it('opens the linked submission from a rating history row', async () => {
+    vi.mocked(getAgentRatingHistory).mockResolvedValue(
+      historyPage([ratingRow({ submissionId: 42 })]),
+    )
+    const { wrapper } = await mountPage()
+
+    const link = wrapper.find('[data-test="rating-submission-link"]')
+    expect(link.exists()).toBe(true)
+    await link.trigger('click')
+    await flushPromises()
+
+    expect(getSubmission).toHaveBeenCalledWith(42)
+    expect(document.body.textContent).toContain('int main() {}')
+    wrapper.unmount()
+  })
+
+  it('shows no submission action when the row has no linked submission', async () => {
+    vi.mocked(getAgentRatingHistory).mockResolvedValue(
+      historyPage([ratingRow({ submissionId: null })]),
+    )
+    const { wrapper } = await mountPage()
+
+    expect(wrapper.find('[data-test="rating-submission-link"]').exists()).toBe(false)
+    wrapper.unmount()
   })
 
   it('shows the disabled status for a disabled agent', async () => {
