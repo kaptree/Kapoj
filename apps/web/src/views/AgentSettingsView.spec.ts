@@ -83,6 +83,7 @@ function ratingRow(overrides: Partial<AgentRatingRow> = {}): AgentRatingRow {
     ratingAfter: 1512,
     delta: 12,
     solveTimeMs: 65_000,
+    submissionId: null,
     createdAt: '2026-11-04T08:00:00Z',
     ...overrides,
   }

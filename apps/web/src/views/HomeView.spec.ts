@@ -61,6 +61,8 @@ const recentSubmission: SubmissionListItem = {
   userId: 7,
   username: 'alice',
   nickname: 'Alice',
+  agentId: null,
+  agentName: '',
   equippedBadges: [],
   equippedTitle: null,
   problemId: 42,

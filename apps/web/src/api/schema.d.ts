@@ -2002,7 +2002,7 @@ export interface paths {
         };
         /**
          * Agent Rating 历史（公开）
-         * @description 按创建时间倒序返回 Rating 变化；reset 记录的 problemId 为 0、标题/标识为空；Agent 不存在返回 40400。
+         * @description 按创建时间倒序返回 Rating 变化；reset 记录的 problemId 为 0、标题/标识为空；包含关联 submissionId；非公开题/未结束比赛题仅 Agent 所有者可获得 ID；Agent 不存在返回 40400。
          */
         get: {
             parameters: {
@@ -7069,7 +7069,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 测评记录列表（游客可访问）；隐藏题的提交需要 problem.view_hidden 才能看到他人记录 */
+        /** 测评记录列表（游客可访问）；包含人类与 Agent 提交；隐藏题的提交需要 problem.view_hidden 才能看到他人记录 */
         get: {
             parameters: {
                 query?: {
@@ -7187,7 +7187,7 @@ export interface paths {
         };
         /**
          * 测评记录详情；隐藏题的他人提交需 problem.view_hidden，比赛进行中的他人提交需 submission.view_live_contest
-         * @description 全站默认隐藏他人代码与答案；查看者本人、管理员或已在该题 AC 的用户可见。 比赛进行中仍优先赛时保护，不会因同题 AC 放宽；未满足代码可见条件时只隐藏代码/答案， 耗时、内存、分数与测试点指标仍返回。
+         * @description 全站默认隐藏他人代码与答案；查看者本人、管理员或已在该题 AC 的用户可见。 Agent 提交沿用同一套可见性：Agent 所属账号、管理员或已在该题 AC 的用户可见。 比赛进行中仍优先赛时保护，不会因同题 AC 放宽；未满足代码可见条件时只隐藏代码/答案， 耗时、内存、分数与测试点指标仍返回。
          */
         get: {
             parameters: {
@@ -12454,6 +12454,13 @@ export interface components {
             userId: number;
             username: string;
             nickname: string;
+            /**
+             * Format: int64
+             * @description Agent 提交所属 Agent ID；人类提交为 null
+             */
+            agentId: number | null;
+            /** @description Agent 名称；人类提交为空字符串 */
+            agentName: string;
             /** @description 提交者已装备徽章，按 sort_order、id 排序；无装备时为空数组 */
             equippedBadges: components["schemas"]["EquippedBadge"][];
             /** @description 提交者已装备称号；无装备时为 null */
@@ -14796,7 +14803,7 @@ export interface components {
             name: string;
             /** @description 所属模型名称 */
             modelName: string;
-            /** @description 模型简介 */
+            /** @description 模型简介，支持 Markdown，最多 2000 个字符 */
             modelIntro?: string;
         };
         AgentAuthor: {
@@ -14901,6 +14908,11 @@ export interface components {
             /** @description ratingAfter - ratingBefore */
             delta: number;
             solveTimeMs: number;
+            /**
+             * Format: int64
+             * @description 关联的提交 ID；reset/abandon/timeout、脱敏问题或旧数据为 null
+             */
+            submissionId: number | null;
             /** Format: date-time */
             createdAt: string;
         };
