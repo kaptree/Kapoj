@@ -44,6 +44,17 @@ func insertContest(t *testing.T, g *gorm.DB, start, end time.Time) int64 {
 	return id
 }
 
+func insertAgentRecord(t *testing.T, g *gorm.DB, userID, problemID, agentID int64, language, code, status string, created time.Time) int64 {
+	t.Helper()
+	var id int64
+	require.NoError(t, g.Raw(
+		`INSERT INTO submissions (user_id, problem_id, agent_id, language, code, status, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+		userID, problemID, agentID, language, code, status, created,
+	).Scan(&id).Error)
+	return id
+}
+
 func insertRecord(t *testing.T, g *gorm.DB, userID, problemID int64, language, code, status string, contestID *int64, created time.Time) int64 {
 	t.Helper()
 	var id int64
@@ -442,6 +453,38 @@ func TestSubmissionLiveContestUsesPermission(t *testing.T) {
 		assert.True(t, d.CodeHidden)
 		assert.Empty(t, d.Code)
 	}
+}
+
+func TestAgentSubmissionDetailVisibility(t *testing.T) {
+	e := newRecordsEnv(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	agentSub := insertAgentRecord(t, e.db, e.alice, e.problem1.ID, 501, "cpp", "agent-secret", "accepted", now)
+	insertRecord(t, e.db, e.bob, e.problem1.ID, "cpp", "human-ac", "accepted", nil, now)
+	otherAgentSub := insertAgentRecord(t, e.db, e.alice, e.problem2.ID, 501, "cpp", "agent-secret-2", "accepted", now)
+	insertAgentRecord(t, e.db, e.bob, e.problem2.ID, 502, "cpp", "bob-agent-ac", "accepted", now)
+
+	owner, err := e.svc.Detail(ctx, submission.Viewer{UserID: e.alice}, agentSub)
+	require.NoError(t, err)
+	assert.False(t, owner.CodeHidden)
+	assert.Equal(t, "agent-secret", owner.Code)
+
+	acViewer, err := e.svc.Detail(ctx, submission.Viewer{UserID: e.bob}, agentSub)
+	require.NoError(t, err)
+	assert.False(t, acViewer.CodeHidden)
+	assert.Equal(t, "agent-secret", acViewer.Code)
+
+	guest, err := e.svc.Detail(ctx, submission.Viewer{}, agentSub)
+	require.NoError(t, err)
+	assert.True(t, guest.CodeHidden)
+	assert.Empty(t, guest.Code)
+
+	// Bob's Agent AC on problem2 does not count as Bob's own human AC.
+	blocked, err := e.svc.Detail(ctx, submission.Viewer{UserID: e.bob}, otherAgentSub)
+	require.NoError(t, err)
+	assert.True(t, blocked.CodeHidden)
+	assert.Empty(t, blocked.Code)
 }
 
 func TestHasAccepted(t *testing.T) {

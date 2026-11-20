@@ -22,6 +22,8 @@ type ListItem struct {
 	UserID         int64                       `json:"userId"`
 	Username       string                      `json:"username"`
 	Nickname       string                      `json:"nickname"`
+	AgentID        *int64                      `json:"agentId"`
+	AgentName      string                      `json:"agentName"`
 	EquippedBadges []gamification.BadgeSummary `json:"equippedBadges"`
 	EquippedTitle  *gamification.TitleSummary  `json:"equippedTitle"`
 	ProblemID      int64                       `json:"problemId"`
@@ -55,6 +57,7 @@ func toListItem(row ListRow) ListItem {
 	s := row.Submission
 	return ListItem{
 		ID: s.ID, UserID: s.UserID, Username: row.Username, Nickname: row.Nickname,
+		AgentID: s.AgentID, AgentName: row.AgentName,
 		EquippedBadges: []gamification.BadgeSummary{}, EquippedTitle: nil,
 		ProblemID: s.ProblemID, ProblemTitle: row.ProblemTitle, ProblemSlug: row.ProblemSlug,
 		ContestID: s.ContestID, Language: s.Language, Status: s.Status,
