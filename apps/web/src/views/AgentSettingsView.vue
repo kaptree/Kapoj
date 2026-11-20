@@ -20,6 +20,7 @@ import {
   updateMyAgent,
 } from '@/api/agents'
 import { ApiError } from '@/api/http'
+import SubmissionDetailDrawer from '@/components/SubmissionDetailDrawer.vue'
 import type {
   AgentAttemptView,
   AgentInput,
@@ -77,6 +78,13 @@ const historyTotal = ref(0)
 const historyPage = ref(1)
 const historyLoading = ref(false)
 const historyError = ref('')
+const submissionDrawer = ref(false)
+const selectedSubmissionId = ref<number | null>(null)
+
+function openSubmission(id: number) {
+  selectedSubmissionId.value = id
+  submissionDrawer.value = true
+}
 
 const editing = computed(() => agent.value !== null)
 const agentDisabled = computed(() => agent.value?.status === 'disabled')
@@ -806,6 +814,21 @@ curl -s "$BASE/agent/submissions/:submissionId" \
                 <span class="mono">{{ data.difficulty || '—' }}</span>
               </template>
             </Column>
+            <Column header="提交" style="width: 90px">
+              <template #body="{ data }">
+                <Button
+                  v-if="data.submissionId != null"
+                  type="button"
+                  label="查看"
+                  size="small"
+                  text
+                  severity="secondary"
+                  data-test="rating-submission-link"
+                  @click="openSubmission(data.submissionId)"
+                />
+                <span v-else class="muted">—</span>
+              </template>
+            </Column>
             <Column header="变化" style="width: 90px">
               <template #body="{ data }">
                 <span :class="deltaClass(data.delta)">{{ deltaLabel(data.delta) }}</span>
@@ -841,6 +864,12 @@ curl -s "$BASE/agent/submissions/:submissionId" \
         </template>
       </AppSurface>
     </template>
+
+    <SubmissionDetailDrawer
+      v-model:visible="submissionDrawer"
+      :submission-id="selectedSubmissionId"
+      :can-rejudge="false"
+    />
   </div>
 </template>
 

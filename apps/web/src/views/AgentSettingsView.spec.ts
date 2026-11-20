@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
 import Paginator from 'primevue/paginator'
 import Textarea from 'primevue/textarea'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -13,12 +14,14 @@ import {
   updateMyAgent,
 } from '@/api/agents'
 import { ApiError } from '@/api/http'
+import { getSubmission } from '@/api/submissions'
 import type {
   AgentAttemptView,
   AgentRatingRow,
   AgentTokenView,
   AgentView,
   MyAgentView,
+  SubmissionDetail,
 } from '@/api/types'
 import { formatDateTime } from '@/utils/format'
 import AgentSettingsView from './AgentSettingsView.vue'
@@ -36,6 +39,10 @@ vi.mock('@/api/agents', () => ({
   generateAgentToken: vi.fn(),
   revokeAgentToken: vi.fn(),
   getMyAgentRatingHistory: vi.fn(),
+}))
+vi.mock('@/api/submissions', () => ({
+  getSubmission: vi.fn(),
+  rejudgeSubmission: vi.fn(),
 }))
 
 function emptyView(): MyAgentView {
@@ -107,10 +114,50 @@ function attemptView(overrides: Partial<AgentAttemptView> = {}): AgentAttemptVie
   }
 }
 
+const routes = [
+  { path: '/settings/agent', component: { template: '<div />' } },
+  { path: '/users/:id', name: 'user-profile', component: { template: '<div />' } },
+  { path: '/problems/:id', name: 'problem-detail', component: { template: '<div />' } },
+]
+
 async function mountPage() {
-  const wrapper = mount(AgentSettingsView, { global: { plugins: [PrimeVue] } })
+  const router = createRouter({ history: createMemoryHistory(), routes })
+  await router.push('/settings/agent')
+  await router.isReady()
+  const wrapper = mount(AgentSettingsView, {
+    global: { plugins: [router, PrimeVue] },
+  })
   await flushPromises()
   return wrapper
+}
+
+function submissionDetail(overrides: Partial<SubmissionDetail> = {}): SubmissionDetail {
+  return {
+    id: 42,
+    userId: 7,
+    username: 'alice',
+    nickname: 'Alice',
+    agentId: null,
+    agentName: '',
+    equippedBadges: [],
+    equippedTitle: null,
+    problemId: 3,
+    problemTitle: '两数之和',
+    problemSlug: 'two-sum',
+    language: 'cpp',
+    status: 'accepted',
+    timeUsedMs: 100,
+    cpuUsedMs: 80,
+    memoryUsedKb: 1024,
+    score: 100,
+    codeLength: 13,
+    createdAt: '2026-11-04T08:00:00Z',
+    code: 'int main() {}',
+    codeHidden: false,
+    answerHidden: false,
+    judgeResult: [],
+    ...overrides,
+  }
 }
 
 function setInput(wrapper: Awaited<ReturnType<typeof mountPage>>, selector: string, value: string) {
@@ -139,8 +186,10 @@ beforeEach(() => {
   vi.mocked(generateAgentToken).mockReset()
   vi.mocked(revokeAgentToken).mockReset()
   vi.mocked(getMyAgentRatingHistory).mockReset()
+  vi.mocked(getSubmission).mockReset()
   vi.mocked(getMyAgent).mockResolvedValue(emptyView())
   vi.mocked(getMyAgentRatingHistory).mockResolvedValue({ total: 0, items: [] })
+  vi.mocked(getSubmission).mockResolvedValue(submissionDetail())
   document.body.innerHTML = ''
 })
 
@@ -546,6 +595,28 @@ describe('AgentSettingsView', () => {
     expect(instructions.text()).toContain('/agent/submissions/:submissionId')
     expect(instructions.text()).not.toContain('kapoj_agent_prefix_only')
 
+    wrapper.unmount()
+  })
+
+  it('opens the linked submission from the rating history', async () => {
+    vi.mocked(getMyAgent).mockResolvedValue({
+      agent: agentView(),
+      token: null,
+      currentAttempt: null,
+    })
+    vi.mocked(getMyAgentRatingHistory).mockResolvedValue({
+      total: 1,
+      items: [ratingRow({ submissionId: 42 })],
+    })
+
+    const wrapper = await mountPage()
+    const link = wrapper.find('[data-test="rating-submission-link"]')
+    expect(link.exists()).toBe(true)
+    await link.trigger('click')
+    await flushPromises()
+
+    expect(getSubmission).toHaveBeenCalledWith(42)
+    expect(document.body.textContent).toContain('int main() {}')
     wrapper.unmount()
   })
 
