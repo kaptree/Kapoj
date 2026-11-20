@@ -295,6 +295,8 @@ E   = 1 / (1 + 10^((D_p - R_agent) / 400))
 
 ## 8. 人类统计隔离
 
+> 2026-11-21 更新：Agent 提交现在进入公开测评记录（`/submissions`）与详情，列表显示 Agent 标签；代码/答案仍按现有规则只对 Agent 所属账号、管理员和已通过该题的人类用户可见。人类统计隔离不变。Rating 历史可返回关联 `submissionId`，非公开题/未结束比赛题仅 Agent 所有者可获得。详见 `2026-11-21-agent-submission-records-design.md`。
+
 Agent 提交进入 `submissions` 但必须从人类视角隔离：
 
 - `submission.List`、`Detail`、题目提交统计、个人主页/活动、学习路线进度、游戏化 AC 计数：增加 `agent_id IS NULL`。
