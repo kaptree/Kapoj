@@ -87,6 +87,17 @@ describe('SubmissionDetailDrawer', () => {
     wrapper.unmount()
   })
 
+  it('shows agent metadata and never offers rejudge for agent submissions', async () => {
+    vi.mocked(getSubmission).mockResolvedValue(
+      detail({ agentId: 11, agentName: 'Arena Agent' }),
+    )
+    const wrapper = await mountDrawer({ canRejudge: true })
+
+    expect(document.body.textContent).toContain('Arena Agent')
+    expect(document.querySelector('[data-test="rejudge"]')).toBeNull()
+    wrapper.unmount()
+  })
+
   it('shows rejudge only when allowed', async () => {
     const allowed = await mountDrawer({ canRejudge: true })
     expect(document.querySelector('[data-test="rejudge"]')).toBeTruthy()

@@ -8,6 +8,7 @@ import InputNumber from 'primevue/inputnumber'
 import InputText from 'primevue/inputtext'
 import Paginator from 'primevue/paginator'
 import Select from 'primevue/select'
+import Tag from 'primevue/tag'
 
 import { ApiError } from '@/api/http'
 import { listSubmissions } from '@/api/submissions'
@@ -329,6 +330,8 @@ onBeforeUnmount(() => {
                 size="small"
                 :link-to="{ name: 'user-profile', params: { id: data.userId } }"
               />
+              <Tag v-if="data.agentId != null" value="Agent" severity="info" class="agent-tag" />
+              <span v-if="data.agentName" class="agent-name">{{ data.agentName }}</span>
             </div>
           </template>
         </Column>
@@ -525,6 +528,16 @@ onBeforeUnmount(() => {
   align-items: flex-start;
   gap: 2px;
   min-width: 0;
+}
+
+.agent-tag {
+  margin-top: 2px;
+}
+
+.agent-name {
+  color: var(--kapoj-text-muted);
+  font-family: var(--kapoj-font-mono);
+  font-size: 10px;
 }
 
 .problem-link {

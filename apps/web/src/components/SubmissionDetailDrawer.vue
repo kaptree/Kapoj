@@ -5,6 +5,7 @@ import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
 import Drawer from 'primevue/drawer'
 import Message from 'primevue/message'
+import Tag from 'primevue/tag'
 import { useToast } from 'primevue/usetoast'
 
 import { ApiError } from '@/api/http'
@@ -123,7 +124,7 @@ watch(
     <AppLoadingState v-if="loading" label="正在加载测评详情" />
     <AppErrorState v-else-if="error" :description="error" @retry="load" />
     <template v-else-if="detail">
-      <div v-if="canRejudge" class="drawer-actions">
+      <div v-if="canRejudge && detail.agentId == null" class="drawer-actions">
         <Button
           label="重测"
           icon="pi pi-refresh"
@@ -156,6 +157,8 @@ watch(
               size="small"
               :link-to="{ name: 'user-profile', params: { id: detail.userId } }"
             />
+            <Tag v-if="detail.agentId != null" value="Agent" severity="info" />
+            <span v-if="detail.agentName" class="agent-name">{{ detail.agentName }}</span>
           </dd>
         </div>
         <div>
@@ -333,6 +336,12 @@ watch(
   flex-wrap: wrap;
   align-items: center;
   gap: var(--kapoj-space-2);
+}
+
+.agent-name {
+  color: var(--kapoj-text-muted);
+  font-family: var(--kapoj-font-mono);
+  font-size: 11px;
 }
 
 .hidden-banner {

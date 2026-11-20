@@ -153,6 +153,18 @@ describe('SubmissionsView', () => {
     wrapper.unmount()
   })
 
+  it('tags Agent submissions and shows the agent name', async () => {
+    vi.mocked(listSubmissions).mockResolvedValue({
+      total: 1,
+      items: [item({ agentId: 11, agentName: 'Arena Agent' })],
+    })
+    const { wrapper } = await mountPage()
+
+    expect(wrapper.text()).toContain('Agent')
+    expect(wrapper.text()).toContain('Arena Agent')
+    wrapper.unmount()
+  })
+
   it('applies nickname filters and page changes through the URL', async () => {
     const { wrapper, router } = await mountPage()
 
