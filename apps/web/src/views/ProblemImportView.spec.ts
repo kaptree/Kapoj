@@ -11,6 +11,7 @@ import ProblemImportView from './ProblemImportView.vue'
 
 const problemsApi = vi.hoisted(() => ({
   importProblemPackage: vi.fn(),
+  getProblemImportLimits: vi.fn(),
 }))
 
 const auth = vi.hoisted(() => ({
@@ -19,6 +20,7 @@ const auth = vi.hoisted(() => ({
 
 vi.mock('@/api/problems', () => ({
   importProblemPackage: problemsApi.importProblemPackage,
+  getProblemImportLimits: problemsApi.getProblemImportLimits,
 }))
 
 vi.mock('@/stores/auth', () => ({
@@ -245,5 +247,30 @@ describe('ProblemImportView', () => {
     await setFile(wrapper, fileLike('big.zip', 200 * 1024 * 1024 + 1))
     expect(wrapper.text()).toContain('题包文件不能超过 200 MB')
     expect(problemsApi.importProblemPackage).not.toHaveBeenCalled()
+  })
+
+  it('uses the server-provided package limit', async () => {
+    problemsApi.getProblemImportLimits.mockResolvedValue({
+      maxPackageMb: 2048,
+      maxUncompressedMb: 4096,
+      maxPackageBytes: 2048 << 20,
+      maxUncompressedBytes: 4 << 30,
+    })
+    problemsApi.importProblemPackage.mockResolvedValue(result())
+    const { wrapper } = await mountView()
+
+    expect(wrapper.text()).toContain('2048 MB')
+    await setFile(wrapper, fileLike('large.zip', 200 * 1024 * 1024 + 1))
+    await button(wrapper, '开始导入').trigger('click')
+    await flushPromises()
+    expect(problemsApi.importProblemPackage).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it('falls back to 200 MB when the limit request fails', async () => {
+    problemsApi.getProblemImportLimits.mockRejectedValue(new Error('offline'))
+    const { wrapper } = await mountView()
+    expect(wrapper.text()).toContain('200 MB')
+    wrapper.unmount()
   })
 })

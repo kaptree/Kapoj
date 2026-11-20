@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import Button from 'primevue/button'
 import Checkbox from 'primevue/checkbox'
 import Column from 'primevue/column'
@@ -9,20 +9,36 @@ import Message from 'primevue/message'
 import Tag from 'primevue/tag'
 
 import { ApiError } from '@/api/http'
-import { importProblemPackage, type ProblemImportOptions } from '@/api/problems'
+import {
+  getProblemImportLimits,
+  importProblemPackage,
+  type ProblemImportOptions,
+} from '@/api/problems'
 import type { ProblemImportResult } from '@/api/types'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
 import { PERM } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 
-const MAX_FILE_MB = 200
-const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024
+const DEFAULT_MAX_FILE_MB = 200
+const maxFileMb = ref(DEFAULT_MAX_FILE_MB)
+const maxFileBytes = computed(() => maxFileMb.value * 1024 * 1024)
 
 const auth = useAuthStore()
 
 const canEdit = computed(() => auth.can(PERM.problem.update))
 const canPublish = computed(() => auth.can(PERM.problem.publish))
+
+onMounted(async () => {
+  try {
+    const limits = await getProblemImportLimits()
+    if (Number.isInteger(limits.maxPackageMb) && limits.maxPackageMb > 0) {
+      maxFileMb.value = limits.maxPackageMb
+    }
+  } catch {
+    // Keep the 200 MB fallback; the server still enforces the real limit.
+  }
+})
 
 const fileInput = ref<HTMLInputElement | null>(null)
 const file = ref<File | null>(null)
@@ -50,8 +66,8 @@ function pickFile(picked: File | null) {
     if (fileInput.value) fileInput.value.value = ''
     return
   }
-  if (picked.size > MAX_FILE_BYTES) {
-    error.value = `题包文件不能超过 ${MAX_FILE_MB} MB`
+  if (picked.size > maxFileBytes.value) {
+    error.value = `题包文件不能超过 ${maxFileMb.value} MB`
     if (fileInput.value) fileInput.value.value = ''
     return
   }
@@ -162,7 +178,7 @@ function reset() {
         <strong v-if="file">{{ file.name }}</strong>
         <span v-else>点击或拖拽题包到这里</span>
         <small v-if="file">{{ formatSize(file.size) }}</small>
-        <small v-else>支持 .zip，单个题包不超过 {{ MAX_FILE_MB }} MB</small>
+        <small v-else>支持 .zip，单个题包不超过 {{ maxFileMb }} MB</small>
         <input
           ref="fileInput"
           type="file"
