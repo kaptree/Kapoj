@@ -57,6 +57,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/testcasegen"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
 	"github.com/kaptree/kapoj/apps/server/internal/userapi"
+	"github.com/kaptree/kapoj/apps/server/internal/userimport"
 )
 
 const (
@@ -165,6 +166,7 @@ func New(d Deps) *gin.Engine {
 	}
 	userapi.RegisterAvatarRoutes(public, uploads, userSvc)
 	if d.RBAC != nil {
+		adminapi.RegisterUserImportRoute(uploads, d.RBAC, userimport.NewService(d.DB))
 		adminapi.RegisterRoutes(api, d.RBAC, adminapi.Options{
 			Game: d.Game, Rating: d.Rating, AI: d.AISettings,
 			AIPlatform: d.AIPlatform, Agent: d.Agent,

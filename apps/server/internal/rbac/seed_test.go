@@ -73,7 +73,7 @@ func countRows(t *testing.T, g *gorm.DB, model any) int64 {
 
 func TestCatalogDefinitions(t *testing.T) {
 	permissions := rbac.AllPermissions()
-	require.Len(t, permissions, 45)
+	require.Len(t, permissions, 46)
 
 	codes := make(map[string]struct{}, len(permissions))
 	for _, def := range permissions {
@@ -111,6 +111,7 @@ func TestPermissionCatalogExactCodes(t *testing.T) {
 		"system.backup.manage",
 		"system.jobs.manage",
 		"user.read",
+		"user.import",
 		"user.update",
 		"user.ban",
 		"user.coins.adjust",
@@ -151,7 +152,7 @@ func TestPermissionCatalogExactCodes(t *testing.T) {
 		"mail.settings.manage",
 		"guest.growth.view",
 	}
-	require.Len(t, expected, 45)
+	require.Len(t, expected, 46)
 
 	codes := make([]string, len(rbac.PermissionCodes))
 	for i, code := range rbac.PermissionCodes {
@@ -178,11 +179,11 @@ func TestSiteSettingsPermissionCatalog(t *testing.T) {
 	}
 	require.True(t, found, "权限目录必须包含 site.settings.manage")
 
-	require.Len(t, rbac.PermissionCodes, 45)
-	assert.Equal(t, rbac.PermCertificateManage, rbac.PermissionCodes[41])
-	assert.Equal(t, rbac.PermSiteSettingsManage, rbac.PermissionCodes[42])
-	assert.Equal(t, rbac.PermMailSettingsManage, rbac.PermissionCodes[43])
-	assert.Equal(t, rbac.PermGuestGrowthView, rbac.PermissionCodes[44], "游客权限应追加在目录最后")
+	require.Len(t, rbac.PermissionCodes, 46)
+	assert.Equal(t, rbac.PermCertificateManage, rbac.PermissionCodes[42])
+	assert.Equal(t, rbac.PermSiteSettingsManage, rbac.PermissionCodes[43])
+	assert.Equal(t, rbac.PermMailSettingsManage, rbac.PermissionCodes[44])
+	assert.Equal(t, rbac.PermGuestGrowthView, rbac.PermissionCodes[45], "游客权限应追加在目录最后")
 
 	g := testutil.PG(t)
 	require.NoError(t, rbac.Seed(context.Background(), g))
@@ -362,7 +363,7 @@ func TestSeedIsIdempotent(t *testing.T) {
 	assert.Equal(t, int64(1), userRoles)
 	assert.Equal(t, []string{"content_admin"}, userRoleCodes(t, g, legacyID))
 	assert.Equal(t, int64(9), roles, "内置角色应为 9 个")
-	assert.Equal(t, int64(45), permissions, "权限目录应为 45 项")
+	assert.Equal(t, int64(46), permissions, "权限目录应为 46 项")
 	assert.Empty(t, rolePermissionCodes(t, g, rbac.RoleCodeGuest), "重复 seed 后 guest 仍无权限")
 
 	var seedVersion string

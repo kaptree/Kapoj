@@ -12,6 +12,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
 	"github.com/kaptree/kapoj/apps/server/internal/rating"
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
+	"github.com/kaptree/kapoj/apps/server/internal/userimport"
 )
 
 // RegisterRoutes 挂载管理后台角色/权限接口；路由组需已运行
@@ -88,6 +89,7 @@ type handler struct {
 	ai         *ai.SettingsService
 	aiPlatform *ai.PlatformService
 	agentSvc   *agent.Service
+	userImport *userimport.Service
 }
 
 // roleUpdateRequest 是 PUT /admin/roles/:id 的请求体。Code 为可选字段：

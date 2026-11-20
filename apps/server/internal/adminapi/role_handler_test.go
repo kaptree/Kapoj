@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -24,11 +25,13 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
+	"github.com/kaptree/kapoj/apps/server/internal/userimport"
 )
 
 const testUserAgent = "kapoj-adminapi-test"
 
 type fixture struct {
+	t      *testing.T
 	engine *gin.Engine
 	db     *gorm.DB
 	issuer *auth.TokenIssuer
@@ -45,8 +48,10 @@ func newFixture(t *testing.T) *fixture {
 	r := gin.New()
 	r.Use(middleware.Authenticate(issuer))
 	svc := rbac.NewService(g)
+	userImportSvc := userimport.NewService(g)
+	adminapi.RegisterUserImportRoute(r.Group("/api"), svc, userImportSvc)
 	adminapi.RegisterRoutes(r.Group("/api"), svc)
-	return &fixture{engine: r, db: g, issuer: issuer, svc: svc}
+	return &fixture{t: t, engine: r, db: g, issuer: issuer, svc: svc}
 }
 
 func (f *fixture) user(t *testing.T, name string, roleCodes ...string) (int64, string) {
@@ -75,6 +80,31 @@ func (f *fixture) user(t *testing.T, name string, roleCodes ...string) (int64, s
 func (f *fixture) do(method, path, token, body string) (*httptest.ResponseRecorder, map[string]any) {
 	req := httptest.NewRequest(method, path, bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", testUserAgent)
+	req.RemoteAddr = "203.0.113.10:1234"
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	w := httptest.NewRecorder()
+	f.engine.ServeHTTP(w, req)
+	var resp map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	return w, resp
+}
+
+func (f *fixture) multipart(path, token, filename string, data []byte) (*httptest.ResponseRecorder, map[string]any) {
+	t := f.t
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	part, err := mw.CreateFormFile("file", filename)
+	require.NoError(t, err)
+	_, err = part.Write(data)
+	require.NoError(t, err)
+	require.NoError(t, mw.Close())
+
+	req := httptest.NewRequest(http.MethodPost, path, &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
 	req.Header.Set("User-Agent", testUserAgent)
 	req.RemoteAddr = "203.0.113.10:1234"
 	if token != "" {

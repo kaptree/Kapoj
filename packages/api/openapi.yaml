@@ -1473,6 +1473,35 @@ paths:
         '400': { $ref: '#/components/responses/Error' }
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
+  /admin/users/import:
+    post:
+      summary: 批量导入用户（user.import）
+      description: |
+        上传 HydroOJ 用户 CSV。dryRun=true 只解析、校验和查冲突，不写库；dryRun=false
+        在事务内创建可导入用户。已存在的用户名/邮箱跳过，不修改现有账号。响应和审计不包含
+        hash/salt。CSV 最大 5 MiB、最多 5000 个数据行，仅支持 UTF-8 和 hashType=hydro。
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: dryRun, in: query, schema: { type: boolean, default: false }, description: true 时只预览 }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary, description: HydroOJ 用户 CSV，≤5 MiB }
+      responses:
+        '200':
+          description: 预览或导入结果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminUserImportResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '413': { $ref: '#/components/responses/Error' }
   /admin/users/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
@@ -5500,6 +5529,72 @@ components:
       type: object
       properties:
         reason: { type: string, maxLength: 500, description: 封禁原因，非空时写入审计摘要 }
+    AdminUserImportSummary:
+      type: object
+      required: [total, valid, conflicts, invalid, generatedUsernames, imported, skipped, failed]
+      properties:
+        total: { type: integer, description: CSV 数据行数 }
+        valid: { type: integer, description: 可导入行数（预览时） }
+        conflicts: { type: integer, description: 用户名或邮箱已存在的行数 }
+        invalid: { type: integer, description: 格式无效的行数 }
+        generatedUsernames: { type: integer, description: 生成 hydro_<id> 的用户数 }
+        imported: { type: integer, description: 实际创建的用户数 }
+        skipped: { type: integer, description: 提交时跳过的行数 }
+        failed: { type: integer, description: 导入失败的行数；数据库异常会回滚整个事务 }
+    AdminUserImportIssue:
+      type: object
+      required: [line, legacyId, uname, email, status, reason]
+      properties:
+        line: { type: integer, description: CSV 行号（表头为第 1 行） }
+        legacyId: { type: integer, format: int64 }
+        uname: { type: string }
+        email: { type: string }
+        status: { type: string, enum: [invalid, conflict, failed] }
+        reason: { type: string, description: 中文原因，不包含密码哈希或盐 }
+    AdminUserImportMapping:
+      type: object
+      required: [legacyId, uname, email, username]
+      properties:
+        legacyId: { type: integer, format: int64 }
+        uname: { type: string }
+        email: { type: string }
+        username: { type: string, description: 生成的新登录名 }
+    AdminUserImportSample:
+      type: object
+      required: [line, legacyId, uname, email, username, generated]
+      properties:
+        line: { type: integer }
+        legacyId: { type: integer, format: int64 }
+        uname: { type: string }
+        email: { type: string }
+        username: { type: string }
+        generated: { type: boolean }
+    AdminUserImportResult:
+      type: object
+      required: [dryRun, summary, issues, issuesTruncated, mapping, samples]
+      properties:
+        dryRun: { type: boolean }
+        summary: { $ref: '#/components/schemas/AdminUserImportSummary' }
+        issues:
+          type: array
+          description: 最多 500 条
+          items: { $ref: '#/components/schemas/AdminUserImportIssue' }
+        issuesTruncated: { type: boolean }
+        mapping:
+          type: array
+          description: 只包含生成用户名且可导入/已导入的行
+          items: { $ref: '#/components/schemas/AdminUserImportMapping' }
+        samples:
+          type: array
+          description: 最多 20 条可导入样例
+          items: { $ref: '#/components/schemas/AdminUserImportSample' }
+    AdminUserImportResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/AdminUserImportResult' }
     AdminAuditItem:
       type: object
       required: [id, actorId, action, targetType, summary, ip, userAgent, createdAt]

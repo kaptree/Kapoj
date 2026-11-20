@@ -11,6 +11,7 @@ const (
 	PermSystemJobsManage     PermissionCode = "system.jobs.manage"
 
 	PermUserRead              PermissionCode = "user.read"
+	PermUserImport            PermissionCode = "user.import"
 	PermUserUpdate            PermissionCode = "user.update"
 	PermUserBan               PermissionCode = "user.ban"
 	PermUserCoinsAdjust       PermissionCode = "user.coins.adjust"
@@ -94,6 +95,7 @@ var permissionCatalog = []PermissionDef{
 	{Code: PermSystemJobsManage, Name: "管理定时任务", GroupName: PermissionGroupAdmin, Description: "配置定时任务、立即执行、查看运行历史与题目难度设置"},
 
 	{Code: PermUserRead, Name: "查看用户", GroupName: PermissionGroupUser, Description: "查看用户列表与用户详情"},
+	{Code: PermUserImport, Name: "批量导入用户", GroupName: PermissionGroupUser, Description: "通过 HydroOJ CSV 批量创建用户"},
 	{Code: PermUserUpdate, Name: "编辑用户资料", GroupName: PermissionGroupUser, Description: "编辑用户昵称、简介与头像链接"},
 	{Code: PermUserBan, Name: "封禁与解封用户", GroupName: PermissionGroupUser, Description: "封禁或解封用户账号"},
 	{Code: PermUserCoinsAdjust, Name: "调整用户金币", GroupName: PermissionGroupUser, Description: "增加或扣减用户金币"},

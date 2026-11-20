@@ -3696,6 +3696,64 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/users/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 批量导入用户（user.import）
+         * @description 上传 HydroOJ 用户 CSV。dryRun=true 只解析、校验和查冲突，不写库；dryRun=false
+         *     在事务内创建可导入用户。已存在的用户名/邮箱跳过，不修改现有账号。响应和审计不包含
+         *     hash/salt。CSV 最大 5 MiB、最多 5000 个数据行，仅支持 UTF-8 和 hashType=hydro。
+         */
+        post: {
+            parameters: {
+                query?: {
+                    /** @description true 时只预览 */
+                    dryRun?: boolean;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "multipart/form-data": {
+                        /**
+                         * Format: binary
+                         * @description HydroOJ 用户 CSV，≤5 MiB
+                         */
+                        file: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 预览或导入结果 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminUserImportResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                413: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/users/{id}": {
         parameters: {
             query?: never;
@@ -11921,6 +11979,67 @@ export interface components {
         AdminUserBanInput: {
             /** @description 封禁原因，非空时写入审计摘要 */
             reason?: string;
+        };
+        AdminUserImportSummary: {
+            /** @description CSV 数据行数 */
+            total: number;
+            /** @description 可导入行数（预览时） */
+            valid: number;
+            /** @description 用户名或邮箱已存在的行数 */
+            conflicts: number;
+            /** @description 格式无效的行数 */
+            invalid: number;
+            /** @description 生成 hydro_<id> 的用户数 */
+            generatedUsernames: number;
+            /** @description 实际创建的用户数 */
+            imported: number;
+            /** @description 提交时跳过的行数 */
+            skipped: number;
+            /** @description 导入失败的行数；数据库异常会回滚整个事务 */
+            failed: number;
+        };
+        AdminUserImportIssue: {
+            /** @description CSV 行号（表头为第 1 行） */
+            line: number;
+            /** Format: int64 */
+            legacyId: number;
+            uname: string;
+            email: string;
+            /** @enum {string} */
+            status: "invalid" | "conflict" | "failed";
+            /** @description 中文原因，不包含密码哈希或盐 */
+            reason: string;
+        };
+        AdminUserImportMapping: {
+            /** Format: int64 */
+            legacyId: number;
+            uname: string;
+            email: string;
+            /** @description 生成的新登录名 */
+            username: string;
+        };
+        AdminUserImportSample: {
+            line: number;
+            /** Format: int64 */
+            legacyId: number;
+            uname: string;
+            email: string;
+            username: string;
+            generated: boolean;
+        };
+        AdminUserImportResult: {
+            dryRun: boolean;
+            summary: components["schemas"]["AdminUserImportSummary"];
+            /** @description 最多 500 条 */
+            issues: components["schemas"]["AdminUserImportIssue"][];
+            issuesTruncated: boolean;
+            /** @description 只包含生成用户名且可导入/已导入的行 */
+            mapping: components["schemas"]["AdminUserImportMapping"][];
+            /** @description 最多 20 条可导入样例 */
+            samples: components["schemas"]["AdminUserImportSample"][];
+        };
+        AdminUserImportResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["AdminUserImportResult"];
         };
         AdminAuditItem: {
             /** Format: int64 */

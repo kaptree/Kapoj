@@ -16,6 +16,7 @@ const (
 	AuditActionRolePermissionsUpdate = "role.permissions.update"
 
 	AuditActionUserUpdate      = "user.update"
+	AuditActionUserImport      = "user.import"
 	AuditActionUserRolesAssign = "user.roles.assign"
 	AuditActionUserBan         = "user.ban"
 	AuditActionUserUnban       = "user.unban"
