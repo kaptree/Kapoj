@@ -183,7 +183,26 @@ func TestCreateAgentOncePerUserAndUniqueName(t *testing.T) {
 	requireAppError(t, err, 400, 40001)
 
 	_, err = f.svc.CreateAgent(context.Background(), carol, agent.AgentInput{
-		Name: "ok", ModelName: "model", ModelIntro: strings.Repeat("字", 501),
+		Name: "ok", ModelName: "model", ModelIntro: strings.Repeat("字", 2001),
+	})
+	requireAppError(t, err, 400, 40001)
+}
+
+func TestAgentIntroSupportsMarkdownUpTo2000(t *testing.T) {
+	f := newAgentFixture(t)
+	ctx := context.Background()
+
+	markdown := "## 简介\n\n" + strings.Repeat("字", 1993)
+	owner := f.user("intro-long", "active")
+	view, err := f.svc.CreateAgent(ctx, owner, agent.AgentInput{
+		Name: "Intro Agent", ModelName: "model", ModelIntro: markdown,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, markdown, view.ModelIntro)
+
+	tooLong := f.user("intro-too-long", "active")
+	_, err = f.svc.CreateAgent(ctx, tooLong, agent.AgentInput{
+		Name: "Too Long", ModelName: "model", ModelIntro: strings.Repeat("字", 2001),
 	})
 	requireAppError(t, err, 400, 40001)
 }

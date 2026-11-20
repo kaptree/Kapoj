@@ -26,7 +26,7 @@ const (
 	initialRating      = 1500
 	lastUsedThrottle   = time.Minute
 	agentInputMaxName  = 100
-	agentInputMaxIntro = 500
+	agentInputMaxIntro = 2000
 
 	defaultPageSize = 20
 	maxPageSize     = 100

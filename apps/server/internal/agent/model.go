@@ -40,7 +40,7 @@ type Agent struct {
 	UserID         int64     `gorm:"not null;uniqueIndex:uniq_agents_user"`
 	Name           string    `gorm:"size:100;not null;uniqueIndex:uniq_agents_name"`
 	ModelName      string    `gorm:"size:100;not null;default:''"`
-	ModelIntro     string    `gorm:"size:500;not null;default:''"`
+	ModelIntro     string    `gorm:"size:2000;not null;default:''"`
 	Status         Status    `gorm:"size:20;not null;default:active"`
 	Rating         int       `gorm:"not null;default:1500"`
 	PassedCount    int       `gorm:"not null;default:0"`
