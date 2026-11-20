@@ -7,6 +7,7 @@ import 'primeicons/primeicons.css'
 
 import App from './App.vue'
 import { router } from './router'
+import { installChunkLoadRecovery } from './router/chunkLoadRecovery'
 import { initTheme } from './theme/theme'
 import { KapojPreset } from './theme/preset'
 import { primeVueLocale } from './theme/primevue-locale'
@@ -16,6 +17,7 @@ import './styles.css'
 import './styles/companion.css'
 
 initTheme()
+installChunkLoadRecovery(router)
 
 const app = createApp(App)
 app.use(createPinia())

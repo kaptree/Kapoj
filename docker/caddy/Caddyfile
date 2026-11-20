@@ -6,14 +6,23 @@
 		reverse_proxy server:8080
 	}
 
-	handle {
+	# Hashed build output is immutable. Missing files must stay 404 instead of
+	# falling back to index.html, which browsers reject as a module MIME type.
+	handle /assets/* {
 		root * /srv
-		try_files {path} /index.html
+		header {
+			Cache-Control "public, max-age=31536000, immutable"
+			match status 2xx
+		}
 		file_server
 	}
 
-	@index path /index.html
-	header @index Cache-Control "no-cache"
-
-	header /assets/* Cache-Control "public, max-age=31536000, immutable"
+	# The SPA entry and client-side routes must revalidate so a deploy is picked
+	# up on the next navigation or refresh.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		header Cache-Control "no-cache"
+		file_server
+	}
 }
