@@ -29,9 +29,12 @@ func (h *handler) importLimits(ctx context.Context) (int64, int64, error) {
 	if zip <= 0 {
 		zip = problem.MaxHydroZipBytes
 	}
-	uncompressed := int64(problem.MaxHydroUncompressed)
-	if zip*2 > uncompressed {
-		uncompressed = zip * 2
+	uncompressed := h.maxImportUncompressedBytes
+	if uncompressed <= 0 {
+		uncompressed = int64(problem.MaxHydroUncompressed)
+		if zip*2 > uncompressed {
+			uncompressed = zip * 2
+		}
 	}
 	return zip, uncompressed, nil
 }

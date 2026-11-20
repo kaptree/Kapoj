@@ -711,3 +711,11 @@ func TestImportPackageHonorsRequestZipLimit(t *testing.T) {
 		problem.PackageImportOptions{MaxZipBytes: int64(len(data)) - 1})
 	requireImportErrorCode(t, err, 40001)
 }
+
+func TestImportPackageHonorsRequestUncompressedLimit(t *testing.T) {
+	e := newEnv(t)
+	data := buildZip(t, hydroProblem("7995", "包解压限制题", 1)...)
+	_, err := e.svc.ImportPackage(context.Background(), 1, bytes.NewReader(data), int64(len(data)),
+		problem.PackageImportOptions{MaxUncompressedBytes: 10})
+	requireImportErrorCode(t, err, 40001)
+}

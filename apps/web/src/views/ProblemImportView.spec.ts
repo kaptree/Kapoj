@@ -70,6 +70,13 @@ beforeEach(() => {
   auth.can.mockReset()
   auth.can.mockReturnValue(false)
   problemsApi.importProblemPackage.mockReset()
+  problemsApi.getProblemImportLimits.mockReset()
+  problemsApi.getProblemImportLimits.mockResolvedValue({
+    maxPackageMb: 200,
+    maxUncompressedMb: 1024,
+    maxPackageBytes: 200 << 20,
+    maxUncompressedBytes: 1 << 30,
+  })
 })
 
 describe('ProblemImportView', () => {

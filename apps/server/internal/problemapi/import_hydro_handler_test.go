@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -126,6 +127,11 @@ func newImportEngine(t *testing.T, maxFile, maxBody int64) (http.Handler, string
 
 func newImportEngineOpts(t *testing.T, maxFile, maxBody int64, settings problemapi.ImportLimitProvider) (http.Handler, string, *problem.Service) {
 	t.Helper()
+	return newImportEngineFull(t, maxFile, maxBody, settings, 0)
+}
+
+func newImportEngineFull(t *testing.T, maxFile, maxBody int64, settings problemapi.ImportLimitProvider, maxBatchBody int64) (http.Handler, string, *problem.Service) {
+	t.Helper()
 	g := testutil.PG(t)
 	rbacSvc := testutil.SeedRBAC(t, g)
 	store, err := storage.NewLocal(t.TempDir())
@@ -148,7 +154,7 @@ func newImportEngineOpts(t *testing.T, maxFile, maxBody int64, settings problema
 	uploads := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(40<<20))
 	imports := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(maxBody))
 	problemapi.RegisterRoutes(api, problemJSON, uploads, imports, svc, nil, nil,
-		problemapi.Options{RBAC: rbacSvc, MaxImportFileBytes: maxFile, ImportSettings: settings})
+		problemapi.Options{RBAC: rbacSvc, MaxImportFileBytes: maxFile, ImportSettings: settings, MaxBatchBodyBytes: maxBatchBody})
 	return r, token, svc
 }
 
@@ -235,4 +241,54 @@ func TestImportHandlersUseConfiguredLimit(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, w.Code, path+" "+w.Body.String())
 		assert.EqualValues(t, 40001, resp["code"], path)
 	}
+}
+
+func TestBatchTestcaseUploadKeepsSmallerBodyLimit(t *testing.T) {
+	h, token, svc := newImportEngineFull(t, 200<<20, 1<<20, nil, 4<<10)
+	p, err := svc.Create(context.Background(), 1, problem.Input{
+		Title: "batch limit", Slug: "batch-limit", StatementMD: "statement",
+		Type: problem.TypeTraditional, Difficulty: 1,
+	})
+	require.NoError(t, err)
+	w, resp := importMultipartPath(t, h, token, fmt.Sprintf("/api/problems/%d/testcases/batch", p.ID), bytes.Repeat([]byte("a"), 8<<10))
+	assert.Equal(t, http.StatusRequestEntityTooLarge, w.Code, w.Body.String())
+	assert.EqualValues(t, 41300, resp["code"])
+}
+
+func TestImportHandlerContentLengthPrecheck(t *testing.T) {
+	settings := fakeImportSettings{view: &problemimport.SettingsView{
+		MaxPackageMB: 1, MaxZipBytes: 1 << 10, MaxUncompressedBytes: 2 << 10,
+	}}
+	h, token, _ := newImportEngineOpts(t, 200<<20, 1<<20, settings)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/problems/import/hydro", bytes.NewReader([]byte("x")))
+	req.Header.Set("Content-Type", "multipart/form-data; boundary=x")
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.ContentLength = (1 << 10) + (16 << 20) + 1
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusRequestEntityTooLarge, w.Code, w.Body.String())
+}
+
+func TestImportHandlerMaxBytesReaderOnUnknownLength(t *testing.T) {
+	settings := fakeImportSettings{view: &problemimport.SettingsView{
+		MaxPackageMB: 1, MaxZipBytes: 1 << 10, MaxUncompressedBytes: 2 << 10,
+	}}
+	h, token, _ := newImportEngineFull(t, 200<<20, 32<<20, settings, 0)
+
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	part, err := mw.CreateFormFile("file", "p.zip")
+	require.NoError(t, err)
+	_, err = part.Write(bytes.Repeat([]byte("a"), (16<<20)+2048))
+	require.NoError(t, err)
+	require.NoError(t, mw.Close())
+
+	req := httptest.NewRequest(http.MethodPost, "/api/problems/import/hydro", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.ContentLength = -1
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusRequestEntityTooLarge, w.Code, w.Body.String())
 }

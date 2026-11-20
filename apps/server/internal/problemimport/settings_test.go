@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -68,5 +67,3 @@ func TestGetLazilyRecreatesMissingRow(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, DefaultMaxPackageMB, view.MaxPackageMB)
 }
-
-var _ = time.Now

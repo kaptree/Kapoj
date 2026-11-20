@@ -20,9 +20,8 @@ import (
 const (
 	// MaxHydroZipBytes caps an uploaded HydroOJ package file.
 	MaxHydroZipBytes = 200 << 20
-	// MaxHydroUncompressed caps the total decompressed bytes read from a
-	// HydroOJ package. It is the default for the configurable import budget
-	// and the fixed limit for the declared-size pre-scan.
+	// MaxHydroUncompressed is the default for the total decompressed bytes
+	// read from a HydroOJ package when no request-level limit is supplied.
 	MaxHydroUncompressed = 1 << 30
 )
 
@@ -194,8 +193,8 @@ func (s *Service) ImportHydro(ctx context.Context, createdBy int64, r io.ReaderA
 		Failed:   []HydroImportFailure{},
 	}
 
-	// The configurable budget governs actual decompressed bytes read; the
-	// declared-size pre-scan below stays fixed at maxHydroUncompressed.
+	// The resolved request limit governs both the declared-size pre-scan and
+	// actual decompressed reads.
 	limit := opt.MaxUncompressedBytes
 	if limit <= 0 {
 		limit = s.hydroUncompressedLimit

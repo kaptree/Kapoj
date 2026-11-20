@@ -74,6 +74,9 @@ type Options struct {
 	// ImportSettings provides the current admin-configured package size limit.
 	// When nil, MaxImportFileBytes / package defaults are used.
 	ImportSettings ImportLimitProvider
+	// MaxBatchBodyBytes caps the batch testcase multipart route. Zero means
+	// the historical 210 MiB cap.
+	MaxBatchBodyBytes int64
 	// TestcaseGen 是 AI 出题造数据服务；非 nil 时注册相关路由。
 	TestcaseGen *testcasegen.Service
 	// IdentityLookup 为提交统计明细补充公开徽章/称号。
@@ -101,7 +104,7 @@ func RegisterRoutes(
 	if o.MaxImportUncompressedBytes > 0 {
 		problem.WithHydroUncompressedLimit(o.MaxImportUncompressedBytes)(s)
 	}
-	h := &handler{svc: s, accepted: accepted, contests: contests, rbac: o.RBAC, solutions: o.Solutions, discussions: o.Discussions, social: o.Social, identities: o.IdentityLookup, maxImportFileBytes: maxImport, importSettings: o.ImportSettings, testcaseGen: o.TestcaseGen, difficulty: o.Difficulty, ai: o.AI, aiSettings: o.AISettings}
+	h := &handler{svc: s, accepted: accepted, contests: contests, rbac: o.RBAC, solutions: o.Solutions, discussions: o.Discussions, social: o.Social, identities: o.IdentityLookup, maxImportFileBytes: maxImport, maxImportUncompressedBytes: o.MaxImportUncompressedBytes, importSettings: o.ImportSettings, testcaseGen: o.TestcaseGen, difficulty: o.Difficulty, ai: o.AI, aiSettings: o.AISettings}
 
 	// resolver 为 nil 时 RequirePermission 会拒绝所有写操作，LoadAccess 为
 	// 空操作；生产环境 router 始终传入 RBAC service。
@@ -173,9 +176,14 @@ func RegisterRoutes(
 	}
 
 	api.GET("/problems/import/limits", load, require(string(rbac.PermProblemCreate)), h.importLimitsView)
+	maxBatchBody := o.MaxBatchBodyBytes
+	if maxBatchBody <= 0 {
+		maxBatchBody = 210 << 20
+	}
 	imports.POST("/problems/import/hydro", require(string(rbac.PermProblemCreate)), h.importHydro)
 	imports.POST("/problems/import/package", require(string(rbac.PermProblemCreate)), h.importPackage)
-	imports.POST("/problems/:id/testcases/batch", require(string(rbac.PermProblemTestcaseManage)), audit(string(rbac.PermProblemTestcaseManage)), h.addTestcasesBatch)
+	imports.POST("/problems/:id/testcases/batch", middleware.MaxBody(maxBatchBody),
+		require(string(rbac.PermProblemTestcaseManage)), audit(string(rbac.PermProblemTestcaseManage)), h.addTestcasesBatch)
 }
 
 type handler struct {
@@ -188,9 +196,10 @@ type handler struct {
 	social      *social.Service
 	identities  IdentityLookup
 
-	maxImportFileBytes int64
-	importSettings     ImportLimitProvider
-	testcaseGen        *testcasegen.Service
+	maxImportFileBytes         int64
+	maxImportUncompressedBytes int64
+	importSettings             ImportLimitProvider
+	testcaseGen                *testcasegen.Service
 
 	difficulty *difficulty.SettingsService
 	ai         DifficultyAssessor
