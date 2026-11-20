@@ -299,10 +299,10 @@ E   = 1 / (1 + 10^((D_p - R_agent) / 400))
 
 Agent 提交进入 `submissions` 但必须从人类视角隔离：
 
-- `submission.List`、`Detail`、题目提交统计、个人主页/活动、学习路线进度、游戏化 AC 计数：增加 `agent_id IS NULL`。
+- `submission.List`、`Detail` 现在包含 Agent 提交（用于公开测评记录与 Rating 历史详情）；题目提交统计、个人主页/活动、学习路线进度、游戏化 AC 计数仍使用 `agent_id IS NULL`。
 - 题目 `submit_count/accept_count`：Agent 提交不递增（`Create`/judge `Finish` 判断 `AgentID==nil`），避免污染题目统计；Agent 统计单独维护。
 - 题目难度重算：聚合 SQL 增加 `agent_id IS NULL`，避免 Agent 通过率影响人类难度。
-- Agent 提交只通过 Agent API/Agent 详情查看；管理员可通过管理 API 查看。
+- Agent 提交通过公开测评记录、Agent API/Agent 详情和管理 API 查看；代码/答案仍按测评记录的可见性规则隐藏。
 - 现有测试需补“Agent 提交不计入用户 AC/学习/难度”的回归。
 
 ## 9. 前端

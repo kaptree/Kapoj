@@ -208,7 +208,8 @@ func TestAgentIntroSupportsMarkdownUpTo2000(t *testing.T) {
 	_, err = f.svc.CreateAgent(ctx, tooLong, agent.AgentInput{
 		Name: "Too Long", ModelName: "model", ModelIntro: strings.Repeat("字", 2001),
 	})
-	requireAppError(t, err, 400, 40001)
+	appErr := requireAppError(t, err, 400, 40001)
+	assert.Equal(t, "模型简介不能超过 2000 个字符", appErr.Message)
 }
 
 func TestAgentTokenLifecycle(t *testing.T) {

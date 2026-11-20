@@ -1035,7 +1035,7 @@ func normalizeAgentInput(in AgentInput) (AgentInput, error) {
 		return in, httpx.ErrValidation("模型名称长度需为 1-100 个字符")
 	}
 	if utf8.RuneCountInString(in.ModelIntro) > agentInputMaxIntro {
-		return in, httpx.ErrValidation("模型简介不能超过 500 个字符")
+		return in, httpx.ErrValidation("模型简介不能超过 2000 个字符")
 	}
 	return in, nil
 }
