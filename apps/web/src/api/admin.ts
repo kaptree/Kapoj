@@ -17,6 +17,7 @@ import type {
   AdminStats,
   AdminUserBanInput,
   AdminUserDetail,
+  AdminUserImportResult,
   AdminUserItem,
   AdminUserRolesInput,
   AdminUserUpdateInput,
@@ -257,3 +258,17 @@ export const updateAdminCertificateType = (id: number | string, input: Certifica
 /** Delete an unreferenced certificate type (certificate.manage). */
 export const deleteAdminCertificateType = (id: number | string) =>
   http.delete<null>(`/admin/certificate-types/${id}`)
+
+function importForm(file: File): FormData {
+  const form = new FormData()
+  form.append('file', file)
+  return form
+}
+
+/** Parse and preview a HydroOJ user CSV without writing (user.import). */
+export const previewAdminUsersImport = (file: File) =>
+  http.postForm<AdminUserImportResult>('/admin/users/import?dryRun=true', importForm(file))
+
+/** Import the valid rows from a HydroOJ user CSV (user.import). */
+export const importAdminUsers = (file: File) =>
+  http.postForm<AdminUserImportResult>('/admin/users/import', importForm(file))

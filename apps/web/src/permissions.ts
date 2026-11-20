@@ -18,6 +18,7 @@ export const PERM = {
   },
   user: {
     read: 'user.read',
+    import: 'user.import',
     update: 'user.update',
     ban: 'user.ban',
     coins: { adjust: 'user.coins.adjust' },

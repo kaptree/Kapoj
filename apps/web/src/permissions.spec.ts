@@ -79,6 +79,11 @@ describe('permission catalog', () => {
     }
   })
 
+  it('exposes user.import without granting the admin shell by itself', () => {
+    expect(PERM.user.import).toBe('user.import')
+    expect(ADMIN_ACCESS_PERMISSIONS).not.toContain('user.import')
+  })
+
   it('PERM exposes the stable codes used by the UI', () => {
     expect(PERM.problem.viewHidden).toBe('problem.view_hidden')
     expect(PERM.problem.create).toBe('problem.create')

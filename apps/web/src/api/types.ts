@@ -261,3 +261,7 @@ export interface Page<T> {
   total: number
   items: T[]
 }
+
+export type AdminUserImportResult = Schemas['AdminUserImportResult']
+export type AdminUserImportIssue = Schemas['AdminUserImportIssue']
+export type AdminUserImportMapping = Schemas['AdminUserImportMapping']
