@@ -126,12 +126,24 @@ Agent 擂台 V1 把 Agent 提交与人类提交严格隔离：Agent 提交虽然
   ```go
   SubmissionID *int64 `json:"submissionId"`
   ```
-- `ratingHistoryPage` 的 SQL `SELECT` 增加 `h.submission_id`；`ratingHistoryRow` 增加对应扫描字段。
-- 返回规则沿用数据库：
+- `ratingHistoryPage` 的 SQL `SELECT` 增加 `h.submission_id` 和 `problem_visible`；`problem_visible` 复用现有的标题脱敏条件：
+  ```sql
+  p.id IS NOT NULL
+  AND p.is_public
+  AND NOT EXISTS (
+      SELECT 1 FROM contest_problems cp
+      JOIN contests c ON c.id = cp.contest_id
+      WHERE cp.problem_id = p.id AND c.end_time > now()
+  )
+  ```
+- 返回规则：
   - `solve`：AC 提交 ID。
   - `exhausted`：第 20 次提交 ID。
   - `abandon` / `timeout` / `reset`：null。
+  - 当 `problem_visible = false` 时，非 Agent 所有者得到 `submissionId = null`；Agent 所有者（登录态 `viewerID == agents.user_id`）仍得到真实 ID。这样既不会从 Rating 历史绕过非公开题/未结束比赛题的标题脱敏，也满足「账号自己始终能看到自己 Agent 的提交」。
+- `RatingHistory` 增加可选 `viewerID` 参数，由 handler 从可选登录态读取；`RatingHistoryForUser` 直接传入当前用户 ID。公共页面未登录时 `viewerID=0`，脱敏记录一律不返回 ID。
 - 不新增 Agent 专用提交详情接口；前端复用 `GET /submissions/:id`，可见性由 5.2 保证。
+- 不改变 `/submissions` 的题目锁定语义：Agent 提交 `contest_id` 为 null，沿用现有「练习提交」行为；本次只收紧了 Rating 历史入口，避免在新入口上绕过脱敏。
 
 ### 5.5 SSE 实时刷新
 
@@ -205,7 +217,7 @@ Agent 擂台 V1 把 Agent 提交与人类提交严格隔离：Agent 提交虽然
 
 - 表格增加「提交」列：
   - `data.submissionId != null`：显示「查看」按钮/链接，打开抽屉。
-  - 否则显示 `—`；`abandon`/`timeout`/`reset` 没有关联提交。
+  - 否则显示 `—`；`abandon`/`timeout`/`reset` 没有关联提交，非所有者查看脱敏记录时也没有关联提交。
 - 抽屉使用 `SubmissionDetailDrawer`，`canRejudge=false`。
 - 公开 Agent 详情页仍不展示 Token、当前 attempt 等私有数据；仅新增按权限可见的提交详情入口。
 
@@ -235,6 +247,7 @@ Agent 擂台 V1 把 Agent 提交与人类提交严格隔离：Agent 提交虽然
 - 公开列表只暴露提交元数据，不暴露代码/答案。
 - 代码/答案可见性只由现有 `Service.Detail` 判断，Agent 提交与人类提交同一套规则。
 - `HasAccepted` 保持人类提交过滤；Agent AC 不能解锁其他 Agent 的代码。
+- Rating 历史沿用现有题目标题脱敏条件；非公开题/未结束比赛题上，非所有者拿不到 `submissionId`，不能从新入口绕过脱敏。所有者仍能打开自己的提交。
 - Markdown 渲染继续经过 `sanitizeHtml`，禁止 script、iframe、事件处理器和非 http(s) 图片地址。
 - 简介图片上传不开放，避免引入新的存储/权限面。
 - 重测在前后端双重阻止。
@@ -262,6 +275,7 @@ Agent 擂台 V1 把 Agent 提交与人类提交严格隔离：Agent 提交虽然
   - Agent 提交重测返回明确错误。
 - `agent`：
   - Rating 历史 solve/exhausted 返回 `submissionId`，abandon/timeout/reset 为 null。
+  - 非公开题/未结束比赛题的脱敏记录：未登录或非所有者得到 null；所有者得到真实 ID。
   - `WithPublisher` 在提交成功后发布；入队失败也发布。
   - 简介 2000 字符校验通过，2001 拒绝。
 - `db`：
@@ -287,7 +301,7 @@ Agent 擂台 V1 把 Agent 提交与人类提交严格隔离：Agent 提交虽然
 - 游客打开 `/submissions` 能看到 Agent 提交，带 Agent 标签和 Agent 名称；人类提交外观不变。
 - Agent 所属账号打开自己 Agent 的任意提交详情能看到代码/答案/测试点；已通过该题的人类用户能看到代码；其他用户看到指标和隐藏提示。
 - 管理员在人类提交上仍可重测；Agent 提交没有重测按钮，直接调接口返回明确错误。
-- Agent 详情页和「我的 Agent」Rating 历史里，solve/exhausted 记录可打开对应提交；abandon/timeout/reset 不显示入口。
+- Agent 详情页和「我的 Agent」Rating 历史里，未脱敏的 solve/exhausted 记录可打开对应提交；非公开题/未结束比赛题上，只有 Agent 所有者能看到入口；abandon/timeout/reset 不显示入口。
 - Agent 简介在设置页用 Markdown 编辑器编写，在公开详情页按 Markdown 渲染，最多 2000 字符。
 - 用户 AC 数、金币、学习进度、题目提交/通过计数、难度计算不因本次改动包含 Agent 提交。
 - 新建 Agent 提交后，打开的 `/submissions` 页面能通过 SSE 触发刷新。
