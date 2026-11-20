@@ -40,6 +40,7 @@ import type {
   SiteHomeContent,
   SiteLink,
 } from '@/api/types'
+import AdminProblemImportSettings from '@/components/admin/AdminProblemImportSettings.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppFormField from '@/components/ui/AppFormField.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
@@ -821,6 +822,7 @@ onMounted(() => {
           <Tab value="branding">品牌</Tab>
           <Tab value="appearance">外观</Tab>
           <Tab value="companion">伙伴</Tab>
+          <Tab value="problem-import">题库导入</Tab>
           <Tab value="home">首页</Tab>
           <Tab value="footer">页脚</Tab>
           <Tab value="deployment">部署</Tab>
@@ -1278,6 +1280,10 @@ onMounted(() => {
                 />
               </div>
             </form>
+          </TabPanel>
+
+          <TabPanel value="problem-import">
+            <AdminProblemImportSettings />
           </TabPanel>
 
           <TabPanel value="home">

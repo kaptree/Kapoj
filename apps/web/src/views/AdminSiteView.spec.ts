@@ -121,7 +121,14 @@ function siteView(overrides: Partial<SiteAdminView> = {}): SiteAdminView {
 async function mountPage() {
   const pinia = createPinia()
   setActivePinia(pinia)
-  const wrapper = mount(AdminSiteView, { global: { plugins: [PrimeVue, pinia] } })
+  const wrapper = mount(AdminSiteView, {
+    global: {
+      plugins: [PrimeVue, pinia],
+      stubs: {
+        AdminProblemImportSettings: { template: '<div data-test="problem-import-settings" />' },
+      },
+    },
+  })
   await flushPromises()
   return wrapper
 }
@@ -627,13 +634,20 @@ describe('AdminSiteView', () => {
     await flushPromises()
 
     expect(getAdminSite).toHaveBeenCalledTimes(2)
-    expect(wrapper.findAll('[role="tab"]')).toHaveLength(6)
+    expect(wrapper.findAll('[role="tab"]')).toHaveLength(7)
     expect(wrapper.text()).toContain('品牌')
     expect(wrapper.text()).toContain('外观')
     expect(wrapper.text()).toContain('伙伴')
+    expect(wrapper.text()).toContain('题库导入')
     expect(wrapper.text()).toContain('首页')
     expect(wrapper.text()).toContain('页脚')
     expect(wrapper.text()).toContain('部署')
+    wrapper.unmount()
+  })
+
+  it('shows the problem import tab', async () => {
+    const wrapper = await mountPage()
+    expect(wrapper.text()).toContain('题库导入')
     wrapper.unmount()
   })
 })

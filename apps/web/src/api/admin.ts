@@ -34,6 +34,8 @@ import type {
   PlatformModelInput,
   PlatformModelTestResult,
   PlatformModelView,
+  ProblemImportSettings,
+  ProblemImportSettingsInput,
   RatingSettingsInput,
   RatingSettingsView,
   Status,
@@ -272,3 +274,11 @@ export const previewAdminUsersImport = (file: File) =>
 /** Import the valid rows from a HydroOJ user CSV (user.import). */
 export const importAdminUsers = (file: File) =>
   http.postForm<AdminUserImportResult>('/admin/users/import', importForm(file))
+
+/** Current problem package import size settings (site.settings.manage). */
+export const getAdminProblemImportSettings = () =>
+  http.get<ProblemImportSettings>('/admin/problems/import/settings')
+
+/** Update the problem package import size limit (site.settings.manage). */
+export const updateAdminProblemImportSettings = (input: ProblemImportSettingsInput) =>
+  http.put<ProblemImportSettings>('/admin/problems/import/settings', input)

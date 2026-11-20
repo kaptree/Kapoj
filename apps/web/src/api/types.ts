@@ -265,3 +265,7 @@ export interface Page<T> {
 export type AdminUserImportResult = Schemas['AdminUserImportResult']
 export type AdminUserImportIssue = Schemas['AdminUserImportIssue']
 export type AdminUserImportMapping = Schemas['AdminUserImportMapping']
+
+export type ProblemImportSettings = Schemas['ProblemImportSettings']
+export type ProblemImportSettingsInput = Schemas['ProblemImportSettingsInput']
+export type ProblemImportLimits = Schemas['ProblemImportLimits']

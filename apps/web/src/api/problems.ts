@@ -13,6 +13,7 @@ import type {
   ProblemImportResult,
   ProblemInput,
   ProblemListItem,
+  ProblemImportLimits,
   ProblemPackageInfo,
   ProblemStats,
   ProblemSubmissionMetric,
@@ -247,3 +248,6 @@ export const confirmTestcaseGeneration = (id: number | string, genId: number | s
 
 export const discardTestcaseGeneration = (id: number | string, genId: number | string) =>
   http.delete<null>(`/problems/${id}/testcase-generations/${genId}`)
+
+/** Current package import limits for the import page (problem.create). */
+export const getProblemImportLimits = () => http.get<ProblemImportLimits>('/problems/import/limits')
