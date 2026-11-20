@@ -5,7 +5,7 @@ import MultiSelect from 'primevue/multiselect'
 import Paginator from 'primevue/paginator'
 import Select from 'primevue/select'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
+import { defineComponent, nextTick } from 'vue'
 
 import {
   adjustAdminUserCoins,
@@ -45,6 +45,8 @@ vi.mock('@/api/admin', () => ({
   unbanAdminUser: vi.fn(),
   adjustAdminUserCoins: vi.fn(),
   listAdminRoles: vi.fn(),
+  previewAdminUsersImport: vi.fn(),
+  importAdminUsers: vi.fn(),
 }))
 vi.mock('@/api/users', () => ({ getProfile: vi.fn() }))
 
@@ -100,9 +102,19 @@ function profile(overrides: Partial<Profile> = {}): Profile {
   }
 }
 
+const ImportDialogStub = defineComponent({
+  name: 'AdminUserImportDialog',
+  props: { visible: Boolean },
+  emits: ['update:visible', 'imported'],
+  template: '<div v-if="visible" data-test="import-dialog" />',
+})
+
 async function mountPage() {
   const wrapper = mount(AdminUsersView, {
-    global: { plugins: [PrimeVue] },
+    global: {
+      plugins: [PrimeVue],
+      stubs: { AdminUserImportDialog: ImportDialogStub },
+    },
   })
   await flushPromises()
   return wrapper
@@ -183,6 +195,30 @@ describe('AdminUsersView', () => {
     wrapper.findComponent(Paginator).vm.$emit('page', { page: 1 })
     await flushPromises()
     expect(listAdminUsers).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 }))
+    wrapper.unmount()
+  })
+
+  it('shows the import action only with user.import', async () => {
+    auth.can.mockImplementation((code) => code === PERM.user.import)
+    const wrapper = await mountPage()
+    expect(wrapper.find('[data-test="import-users"]').exists()).toBe(true)
+    await wrapper.get('[data-test="import-users"]').trigger('click')
+    expect(wrapper.find('[data-test="import-dialog"]').exists()).toBe(true)
+    wrapper.unmount()
+
+    auth.can.mockReturnValue(false)
+    const hidden = await mountPage()
+    expect(hidden.find('[data-test="import-users"]').exists()).toBe(false)
+    hidden.unmount()
+  })
+
+  it('reloads users after a successful import', async () => {
+    auth.can.mockImplementation((code) => code === PERM.user.import)
+    const wrapper = await mountPage()
+    expect(listAdminUsers).toHaveBeenCalledTimes(1)
+    wrapper.findComponent(ImportDialogStub).vm.$emit('imported')
+    await flushPromises()
+    expect(listAdminUsers).toHaveBeenCalledTimes(2)
     wrapper.unmount()
   })
 

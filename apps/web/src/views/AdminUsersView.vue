@@ -27,6 +27,7 @@ import {
 import { ApiError } from '@/api/http'
 import type { AdminRoleItem, AdminUserItem, AdminUserUpdateInput, Status } from '@/api/types'
 import { getProfile } from '@/api/users'
+import AdminUserImportDialog from '@/components/admin/AdminUserImportDialog.vue'
 import AppEmptyState from '@/components/ui/AppEmptyState.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppFormField from '@/components/ui/AppFormField.vue'
@@ -51,6 +52,8 @@ const toast = useToast()
 const confirm = useConfirm()
 
 const canEdit = computed(() => auth.can(PERM.user.update))
+const canImport = computed(() => auth.can(PERM.user.import))
+const importVisible = ref(false)
 const canBan = computed(() => auth.can(PERM.user.ban))
 const canAdjustCoins = computed(() => auth.can(PERM.user.coins.adjust))
 const canRoleRead = computed(() => auth.can(PERM.role.read))
@@ -366,7 +369,17 @@ onMounted(() => {
       eyebrow="ADMIN // USERS"
       title="用户管理"
       description="搜索、查看用户，并维护其角色、金币与封禁状态。"
-    />
+    >
+      <template #actions>
+        <Button
+          v-if="canImport"
+          label="导入用户"
+          icon="pi pi-upload"
+          data-test="import-users"
+          @click="importVisible = true"
+        />
+      </template>
+    </AppPageHeader>
 
     <AppSurface padding="lg" class="admin-users__surface">
       <form class="filter-bar" role="search" @submit.prevent="search">
@@ -631,6 +644,8 @@ onMounted(() => {
         <Button label="保存" icon="pi pi-check" :loading="coinSaving" @click="saveCoins" />
       </template>
     </Dialog>
+
+    <AdminUserImportDialog v-model:visible="importVisible" @imported="load" />
   </div>
 </template>
 
