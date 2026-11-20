@@ -476,6 +476,20 @@ describe('HomeView', () => {
     expect(leaderboardApi.getActivitySummary).toHaveBeenCalled()
   })
 
+  it('marks agent submissions in recent practice', async () => {
+    auth.isLoggedIn = true
+    auth.user = baseUser
+    submissionsApi.listSubmissions.mockResolvedValue({
+      total: 1,
+      items: [{ ...recentSubmission, agentId: 11, agentName: 'Arena Agent' }],
+    })
+
+    const { wrapper } = await mountHome()
+
+    expect(wrapper.text()).toContain('Agent')
+    expect(wrapper.text()).toContain('Arena Agent')
+  })
+
   it('renders a fully real daily goal state instead of demo numbers', async () => {
     auth.isLoggedIn = true
     auth.user = baseUser
