@@ -589,3 +589,34 @@ func TestImportHydroRollbackPreservesOverwrittenProblem(t *testing.T) {
 	require.NoError(t, e.db.Model(&problem.Problem{}).Count(&count).Error)
 	assert.EqualValues(t, 1, count)
 }
+
+func requireImportErrorCode(t *testing.T, err error, code int) {
+	t.Helper()
+	require.Error(t, err)
+	var appErr *httpx.AppError
+	require.True(t, errors.As(err, &appErr), "expected AppError, got %T: %v", err, err)
+	assert.Equal(t, code, appErr.Code)
+}
+
+func TestImportHydroHonorsRequestLimits(t *testing.T) {
+	e := newEnv(t)
+	data := buildZip(t, hydroProblem("7991", "限制题", 1)...)
+
+	_, err := importZipOpts(t, e.svc, 1, data, problem.HydroImportOptions{
+		MaxZipBytes: int64(len(data)) - 1,
+	})
+	requireImportErrorCode(t, err, 40001)
+
+	_, err = importZipOpts(t, e.svc, 1, data, problem.HydroImportOptions{
+		MaxZipBytes:          int64(len(data)),
+		MaxUncompressedBytes: 1,
+	})
+	requireImportErrorCode(t, err, 40001)
+
+	res, err := importZipOpts(t, e.svc, 1, data, problem.HydroImportOptions{
+		MaxZipBytes:          int64(len(data)),
+		MaxUncompressedBytes: 1 << 20,
+	})
+	require.NoError(t, err)
+	require.Len(t, res.Imported, 1)
+}

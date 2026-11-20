@@ -73,6 +73,10 @@ type HydroImportOptions struct {
 	CanManageAll   bool
 	Publish        bool
 	CanPublish     bool
+	// MaxZipBytes and MaxUncompressedBytes are per-request limits. Zero keeps
+	// the backward-compatible defaults.
+	MaxZipBytes          int64
+	MaxUncompressedBytes int64
 }
 
 // HydroImportConflict describes an existing slug that blocks an ask-mode import.
@@ -170,8 +174,12 @@ func (s *Service) ImportHydro(ctx context.Context, createdBy int64, r io.ReaderA
 	if opt.Publish && !opt.CanPublish {
 		return nil, httpx.ErrForbidden
 	}
-	if size > maxHydroZipBytes {
-		return nil, httpx.ErrValidation(fmt.Sprintf("题包文件不能超过 %d MiB", maxHydroZipBytes>>20))
+	zipLimit := opt.MaxZipBytes
+	if zipLimit <= 0 {
+		zipLimit = maxHydroZipBytes
+	}
+	if size > zipLimit {
+		return nil, httpx.ErrValidation(fmt.Sprintf("题包文件不能超过 %d MiB", zipLimit>>20))
 	}
 	zr, err := zip.NewReader(r, size)
 	if err != nil {
@@ -188,7 +196,10 @@ func (s *Service) ImportHydro(ctx context.Context, createdBy int64, r io.ReaderA
 
 	// The configurable budget governs actual decompressed bytes read; the
 	// declared-size pre-scan below stays fixed at maxHydroUncompressed.
-	limit := s.hydroUncompressedLimit
+	limit := opt.MaxUncompressedBytes
+	if limit <= 0 {
+		limit = s.hydroUncompressedLimit
+	}
 	if limit <= 0 {
 		limit = maxHydroUncompressed
 	}
@@ -198,7 +209,7 @@ func (s *Service) ImportHydro(ctx context.Context, createdBy int64, r io.ReaderA
 	var declared int64
 	for _, f := range zr.File {
 		declared += int64(f.UncompressedSize64)
-		if declared > maxHydroUncompressed {
+		if declared > limit {
 			return nil, httpx.ErrValidation("题包解压后大小超过限制")
 		}
 		if err := validateHydroEntry(f); err != nil {

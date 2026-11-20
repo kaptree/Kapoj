@@ -24,6 +24,10 @@ type PackageImportOptions struct {
 	CanManageAll   bool
 	Publish        bool
 	CanPublish     bool
+	// MaxZipBytes and MaxUncompressedBytes are per-request limits. Zero keeps
+	// the backward-compatible defaults.
+	MaxZipBytes          int64
+	MaxUncompressedBytes int64
 }
 
 // PackageImportResult reports a kapOJ/HydroOJ import. Per-problem failures do
@@ -97,8 +101,12 @@ func (s *Service) ImportPackage(
 	if opt.Publish && !opt.CanPublish {
 		return nil, httpx.ErrForbidden
 	}
-	if size > maxHydroZipBytes {
-		return nil, httpx.ErrValidation(fmt.Sprintf("题包文件不能超过 %d MiB", maxHydroZipBytes>>20))
+	zipLimit := opt.MaxZipBytes
+	if zipLimit <= 0 {
+		zipLimit = maxHydroZipBytes
+	}
+	if size > zipLimit {
+		return nil, httpx.ErrValidation(fmt.Sprintf("题包文件不能超过 %d MiB", zipLimit>>20))
 	}
 	zr, err := zip.NewReader(r, size)
 	if err != nil {
@@ -108,7 +116,14 @@ func (s *Service) ImportPackage(
 		return nil, httpx.ErrValidation(fmt.Sprintf("题包条目数不能超过 %d", maxHydroEntries))
 	}
 
-	archive, err := newKapOJArchive(zr, s.hydroUncompressedLimit)
+	uncompressedLimit := opt.MaxUncompressedBytes
+	if uncompressedLimit <= 0 {
+		uncompressedLimit = s.hydroUncompressedLimit
+	}
+	if uncompressedLimit <= 0 {
+		uncompressedLimit = maxHydroUncompressed
+	}
+	archive, err := newKapOJArchive(zr, uncompressedLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -118,12 +133,14 @@ func (s *Service) ImportPackage(
 	}
 	if kind == "hydro" {
 		hydro, err := s.ImportHydro(ctx, createdBy, r, size, HydroImportOptions{
-			ConflictPolicy: opt.ConflictPolicy,
-			OverwriteSlugs: opt.OverwriteSlugs,
-			SkipSlugs:      opt.SkipSlugs,
-			CanManageAll:   opt.CanManageAll,
-			Publish:        opt.Publish,
-			CanPublish:     opt.CanPublish,
+			ConflictPolicy:       opt.ConflictPolicy,
+			OverwriteSlugs:       opt.OverwriteSlugs,
+			SkipSlugs:            opt.SkipSlugs,
+			CanManageAll:         opt.CanManageAll,
+			Publish:              opt.Publish,
+			CanPublish:           opt.CanPublish,
+			MaxZipBytes:          zipLimit,
+			MaxUncompressedBytes: uncompressedLimit,
 		})
 		if err != nil {
 			return nil, err
@@ -154,7 +171,7 @@ func newKapOJArchive(zr *zip.Reader, limit int64) (*kapOJArchive, error) {
 	var declared int64
 	for _, f := range zr.File {
 		declared += int64(f.UncompressedSize64)
-		if declared > maxHydroUncompressed {
+		if declared > limit {
 			return nil, httpx.ErrValidation("题包解压后大小超过限制")
 		}
 		if err := validateHydroEntry(f); err != nil {

@@ -703,3 +703,11 @@ func TestImportPackageInternalErrorIsNotValidation(t *testing.T) {
 	require.ErrorAs(t, err, &appErr)
 	assert.Equal(t, 50000, appErr.Code)
 }
+
+func TestImportPackageHonorsRequestZipLimit(t *testing.T) {
+	e := newEnv(t)
+	data := buildZip(t, hydroProblem("7992", "包限制题", 1)...)
+	_, err := e.svc.ImportPackage(context.Background(), 1, bytes.NewReader(data), int64(len(data)),
+		problem.PackageImportOptions{MaxZipBytes: int64(len(data)) - 1})
+	requireImportErrorCode(t, err, 40001)
+}
