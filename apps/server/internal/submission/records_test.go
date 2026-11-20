@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
+	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/submission"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
@@ -485,6 +486,18 @@ func TestAgentSubmissionDetailVisibility(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, blocked.CodeHidden)
 	assert.Empty(t, blocked.Code)
+}
+
+func TestAgentSubmissionRejudgeReturnsClearError(t *testing.T) {
+	e := newRecordsEnv(t)
+	id := insertAgentRecord(t, e.db, e.alice, e.problem1.ID, 501, "cpp", "code", "accepted", time.Now())
+
+	_, err := e.svc.Rejudge(context.Background(), submission.Viewer{CanRejudge: true}, id)
+	var appErr *httpx.AppError
+	require.ErrorAs(t, err, &appErr)
+	assert.Equal(t, 400, appErr.Status)
+	assert.Equal(t, 40001, appErr.Code)
+	assert.Equal(t, "Agent 提交不支持重测", appErr.Message)
 }
 
 func TestHasAccepted(t *testing.T) {
