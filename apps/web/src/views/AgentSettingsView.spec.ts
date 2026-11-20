@@ -1,7 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
 import Paginator from 'primevue/paginator'
-import Textarea from 'primevue/textarea'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -43,6 +42,15 @@ vi.mock('@/api/agents', () => ({
 vi.mock('@/api/submissions', () => ({
   getSubmission: vi.fn(),
   rejudgeSubmission: vi.fn(),
+}))
+vi.mock('@/components/MarkdownEditor.vue', () => ({
+  default: {
+    name: 'MarkdownEditor',
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template:
+      '<textarea data-test="agent-intro-editor" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
 }))
 
 function emptyView(): MyAgentView {
@@ -230,7 +238,7 @@ describe('AgentSettingsView', () => {
 
     setInput(wrapper, '#agent-name', '  新 Agent  ')
     setInput(wrapper, '#agent-model-name', 'gpt-5.1')
-    await wrapper.findComponent(Textarea).setValue('  外部 Agent  ')
+    await wrapper.find('[data-test="agent-intro-editor"]').setValue('  外部 Agent  ')
     await submitForm(wrapper)
 
     expect(createAgent).toHaveBeenCalledWith({
@@ -478,13 +486,13 @@ describe('AgentSettingsView', () => {
     expect((wrapper.find('#agent-model-name').element as HTMLInputElement).value).toBe(
       'deepseek-chat',
     )
-    expect((wrapper.find('#agent-model-intro').element as HTMLTextAreaElement).value).toBe(
-      '用于测试的外部 Agent',
-    )
+    expect(
+      (wrapper.find('[data-test="agent-intro-editor"]').element as HTMLTextAreaElement).value,
+    ).toBe('用于测试的外部 Agent')
 
     setInput(wrapper, '#agent-name', '改名 Agent')
     setInput(wrapper, '#agent-model-name', 'claude-sonnet')
-    await wrapper.findComponent(Textarea).setValue('新的简介')
+    await wrapper.find('[data-test="agent-intro-editor"]').setValue('新的简介')
     await submitForm(wrapper)
 
     expect(updateMyAgent).toHaveBeenCalledWith({
@@ -500,6 +508,24 @@ describe('AgentSettingsView', () => {
     wrapper.unmount()
   })
 
+  it('submits markdown intro source unchanged', async () => {
+    vi.mocked(getMyAgent).mockResolvedValue({
+      agent: agentView(),
+      token: null,
+      currentAttempt: null,
+    })
+    vi.mocked(updateMyAgent).mockResolvedValue(agentView({ modelIntro: '## 新简介' }))
+
+    const wrapper = await mountPage()
+    await wrapper.find('[data-test="agent-intro-editor"]').setValue('## 新简介\n\n- 列表')
+    await submitForm(wrapper)
+
+    expect(updateMyAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ modelIntro: '## 新简介\n\n- 列表' }),
+    )
+    wrapper.unmount()
+  })
+
   it('shows validation and server errors in Chinese', async () => {
     const wrapper = await mountPage()
 
@@ -511,13 +537,13 @@ describe('AgentSettingsView', () => {
 
     setInput(wrapper, '#agent-name', '重复的 Agent')
     setInput(wrapper, '#agent-model-name', 'gpt-5.1')
-    await wrapper.findComponent(Textarea).setValue('x'.repeat(501))
+    await wrapper.find('[data-test="agent-intro-editor"]').setValue('x'.repeat(2001))
     await submitForm(wrapper)
 
     expect(createAgent).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('模型简介不能超过 500 个字符')
+    expect(wrapper.text()).toContain('模型简介不能超过 2000 个字符')
 
-    await wrapper.findComponent(Textarea).setValue('合法简介')
+    await wrapper.find('[data-test="agent-intro-editor"]').setValue('合法简介')
     vi.mocked(createAgent).mockRejectedValue(new ApiError(400, 40001, 'Agent 名称已存在'))
     await submitForm(wrapper)
 
