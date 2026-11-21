@@ -730,12 +730,11 @@ cmd_promote() {
   "${COMPOSE[@]}" exec -T postgres sh -c '
     psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -v username="$1"
   ' sh "$user" <<'SQL'
-SELECT id FROM users WHERE username = :'username' \gset
-\if :{?id}
-\else
-  \echo '用户不存在或用户名为空'
-  \quit 1
+SELECT (count(*) = 0) AS user_missing FROM users WHERE username = :'username' \gset
+\if :user_missing
+  DO $$ BEGIN RAISE EXCEPTION '用户不存在或用户名为空'; END $$;
 \endif
+SELECT id FROM users WHERE username = :'username' \gset
 UPDATE users SET role = 'super_admin' WHERE id = :id;
 INSERT INTO user_roles (user_id, role_id, assigned_by, assigned_at)
 VALUES (:id, (SELECT id FROM roles WHERE code = 'super_admin'), NULL, now())
