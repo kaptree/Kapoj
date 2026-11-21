@@ -3,7 +3,9 @@
 #
 # 用法：
 #   sudo bash deploy.sh [install] [--domain oj.example.com] [--yes] [--skip-images]
+#   sudo bash deploy.sh install|update --domain <域名> --cert-crt <证书> --cert-key <私钥>
 #   sudo bash deploy.sh update [--pull]
+#   sudo bash deploy.sh promote <用户名>
 #   sudo bash deploy.sh status | logs [service...] | stop | restart
 #
 # install：安装 Docker（含国内镜像加速）→ 生成 .env（随机密钥）→ 构建启动全部服务
@@ -658,9 +660,9 @@ print_summary() {
   printf '%s\n' " MinIO Console : http://127.0.0.1:9001 （仅本机可达，SSH 隧道访问："
   printf '%s\n' "                 ssh -L 9001:127.0.0.1:9001 user@<服务器IP>，账号见 .env 的 MINIO_ROOT_USER）"
   printf '%s\n' ""
-  printf '%s\n' " 创建第一个管理员：先在前端注册账号，然后授予 super_admin（详见 运行手册 §11.4/§7.3）："
-  printf '%s\n' "   docker compose -f $BASE_COMPOSE exec -T postgres psql -U kapoj -d kapoj -c \"UPDATE users SET role='super_admin' WHERE username='<你的用户名>';\""
-  printf '%s\n' "   docker compose -f $BASE_COMPOSE exec -T postgres psql -U kapoj -d kapoj -c \"INSERT INTO user_roles (user_id, role_id, assigned_by, assigned_at) SELECT u.id, r.id, NULL, NOW() FROM users u JOIN roles r ON r.code='super_admin' WHERE u.username='<你的用户名>' ON CONFLICT DO NOTHING;\""
+  printf '%s\n' " 创建第一个管理员：先在前端注册账号，然后执行（详见 运行手册 §11.4/§7.3）："
+  printf '%s\n' "   sudo bash deploy.sh promote <你的用户名>"
+  printf '%s\n' " 外部数据库（KAPOJ_DATABASE_URL）需按运行手册手工执行 users.role + user_roles 两条 SQL。"
   printf '%s\n' ""
   if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
     printf '%s\n' " ⚠ 检测到 ufw 已启用：请放行 80/443 —— sudo ufw allow 80,443/tcp"
@@ -717,6 +719,32 @@ cmd_update() {
   print_summary
 }
 
+cmd_promote() {
+  local user="${1:-}"
+  [ -n "$user" ] || die "用法：sudo bash deploy.sh promote <用户名>"
+  [ -f "$ENV_FILE" ] || die "缺少 .env，请先运行 install"
+  if [ -n "$(env_get KAPOJ_DATABASE_URL)" ]; then
+    die "当前使用外部数据库（KAPOJ_DATABASE_URL），promote 只支持内置 postgres。请手工执行文档中的 SQL。"
+  fi
+
+  "${COMPOSE[@]}" exec -T postgres sh -c '
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -v username="$1"
+  ' sh "$user" <<'SQL'
+SELECT id FROM users WHERE username = :'username' \gset
+\if :{?id}
+\else
+  \echo '用户不存在或用户名为空'
+  \quit 1
+\endif
+UPDATE users SET role = 'super_admin' WHERE id = :id;
+INSERT INTO user_roles (user_id, role_id, assigned_by, assigned_at)
+VALUES (:id, (SELECT id FROM roles WHERE code = 'super_admin'), NULL, now())
+ON CONFLICT (user_id, role_id) DO NOTHING;
+\echo '已授予 super_admin，请退出后重新登录'
+SQL
+  ok "已提升 ${user} 为 super_admin"
+}
+
 cmd_status() {
   if ! command -v docker >/dev/null 2>&1; then
     warn "Docker 未安装（先运行 sudo bash deploy.sh install）"
@@ -746,7 +774,7 @@ cmd_restart(){ "${COMPOSE[@]}" restart; }
 
 # ---------- 入口 ----------
 usage() {
-  sed -n '2,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '2,21p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 main() {
@@ -754,7 +782,7 @@ main() {
   local args=()
   while [ $# -gt 0 ]; do
     case "$1" in
-      install|update|status|logs|stop|restart) cmd="$1"; shift ;;
+      install|update|status|logs|stop|restart|promote) cmd="$1"; shift ;;
       --domain)
         if [ $# -lt 2 ]; then die "--domain 需要一个参数，如 --domain oj.example.com"; fi
         DOMAIN="$2"; shift 2 ;;
@@ -772,7 +800,11 @@ main() {
       *) args+=("$1"); shift ;;
     esac
   done
-  [ "${#args[@]}" -eq 0 ] || die "未知参数：${args[*]}（--help 查看用法）"
+  if [ "$cmd" = "promote" ]; then
+    [ "${#args[@]}" -le 1 ] || die "promote 只接受一个用户名"
+  else
+    [ "${#args[@]}" -eq 0 ] || die "未知参数：${args[*]}（--help 查看用法）"
+  fi
   init_log
   if [ "${KAPOJ_JUDGE_DOCKER_DIRECT:-0}" = "1" ]; then
     [ -f "$DIRECT_COMPOSE" ] || die "缺少 ${DIRECT_COMPOSE}；无法启用直连回退模式。"
@@ -781,6 +813,7 @@ main() {
   case "$cmd" in
     install) need_root install; cmd_install ;;
     update)  cmd_update ;;
+    promote) need_root promote; cmd_promote "${args[0]:-}" ;;
     status)  cmd_status ;;
     logs)    cmd_logs "${args[@]+"${args[@]}"}" ;;
     stop)    need_root stop;   cmd_stop ;;

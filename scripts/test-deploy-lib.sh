@@ -122,4 +122,12 @@ grep -q '^KAPOJ_TLS_DIRECTIVE=tls /etc/caddy/certs/fullchain.pem /etc/caddy/cert
   || fail "TLS directive not written"
 pass "deploy_custom_cert copies files and writes directive"
 
+# 13. external database is refused
+declare -F cmd_promote >/dev/null || fail "cmd_promote is not defined"
+printf 'KAPOJ_DATABASE_URL=postgres://external/db\n' > "$ENV_FILE"
+if (cmd_promote someone >/dev/null 2>&1); then
+  fail "promote should refuse KAPOJ_DATABASE_URL"
+fi
+pass "promote refuses external database"
+
 echo "all deploy helper tests passed"
