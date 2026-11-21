@@ -47,4 +47,32 @@ ensure_env_symlink
 [ "$(cat "$TMP/docker/.env")" = "user-owned" ] || fail "regular file content changed"
 pass "ensure_env_symlink preserves regular file"
 
+# 6. OS release parsing
+printf 'ID=ubuntu\nVERSION_ID="26.04"\nPRETTY_NAME="Ubuntu 26.04 LTS"\n' > "$TMP/os-release"
+out=$(KAPOJ_OS_RELEASE_FILE="$TMP/os-release" check_os 2>&1)
+printf '%s' "$out" | grep -q "检测到 Ubuntu" || fail "check_os did not accept Ubuntu 26.04: $out"
+pass "check_os accepts Ubuntu 26.04"
+
+# 7. plugin repair: broken and old binaries moved aside
+PLUGINS="$TMP/plugins"
+mkdir -p "$PLUGINS"
+printf '#!/bin/sh\nexit 139\n' > "$PLUGINS/docker-compose"
+chmod +x "$PLUGINS/docker-compose"
+KAPOJ_COMPOSE_PLUGIN_DIRS="$PLUGINS" repair_compose_plugin
+[ ! -e "$PLUGINS/docker-compose" ] || fail "broken plugin not moved"
+ls "$PLUGINS"/docker-compose.broken.* >/dev/null 2>&1 || fail "broken backup missing"
+pass "repair_compose_plugin moves broken binary"
+
+printf '#!/bin/sh\n[ "$1" = version ] && echo v2.20.0\n' > "$PLUGINS/docker-compose"
+chmod +x "$PLUGINS/docker-compose"
+KAPOJ_COMPOSE_PLUGIN_DIRS="$PLUGINS" repair_compose_plugin
+[ ! -e "$PLUGINS/docker-compose" ] || fail "old plugin not moved"
+ls "$PLUGINS"/docker-compose.old.* >/dev/null 2>&1 || fail "old backup missing"
+pass "repair_compose_plugin moves old binary"
+
+# 8. compose always gets the repository .env explicitly
+grep -q -- '--env-file "$ENV_FILE"' "$ROOT_DIR/deploy.sh" \
+  || fail "COMPOSE does not pass --env-file"
+pass "compose passes --env-file"
+
 echo "all deploy helper tests passed"

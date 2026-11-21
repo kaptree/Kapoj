@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# kapOJ 一键部署脚本（目标系统：Ubuntu 20.04 LTS）
+# kapOJ 一键部署脚本（目标系统：Ubuntu 20.04+ LTS，含 26.04）
 #
 # 用法：
 #   sudo bash deploy.sh [install] [--domain oj.example.com] [--yes] [--skip-images]
@@ -18,7 +18,7 @@
 #   KAPOJ_JUDGE_DOCKER_DIRECT=1  跳过 socket-proxy，judge 直连 Docker socket（仅故障回退）
 #
 # 详细说明见 运行手册.md §11（生产部署）。
-set -euo pipefail
+set -Eeuo pipefail
 
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(pwd)"
@@ -27,7 +27,7 @@ ENV_FILE="$ROOT/.env"
 # ---------- 常量 ----------
 BASE_COMPOSE="docker/docker-compose.yml"
 PROD_COMPOSE="docker/docker-compose.prod.yml"
-COMPOSE=(docker compose -f "$BASE_COMPOSE" -f "$PROD_COMPOSE" --profile app)
+COMPOSE=(docker compose --env-file "$ENV_FILE" -f "$BASE_COMPOSE" -f "$PROD_COMPOSE" --profile app)
 DIRECT_COMPOSE="docker/docker-compose.direct.yml"
 SOCKET_PROXY_IMAGE="tecnativa/docker-socket-proxy:lts@sha256:be1ac64f33bd82043beb504822a17ba6b71668ea1ad7cf51a9a01d27bb7ab047"
 JUDGE_IMAGES=(gcc:14 python:3.12-slim eclipse-temurin:21-jdk golang:1.26)
@@ -57,23 +57,49 @@ warn() { printf '%s\n' "${C_YELLOW} ⚠  $*${C_OFF}" >&2; }
 die()  { printf '%s\n' "${C_RED} ✘  $*${C_OFF}" >&2; exit 1; }
 step() { STEP_NO=$((STEP_NO + 1)); printf '%s\n' "${C_BOLD}[ STEP $STEP_NO/$STEP_TOTAL ] $*${C_OFF}"; }
 
+LOG_FILE="${KAPOJ_DEPLOY_LOG:-}"
+ERROR_REPORTED=0
+
+init_log() {
+  [ -n "$LOG_FILE" ] || LOG_FILE="$(mktemp /tmp/kapoj-deploy-XXXXXX.log)"
+  exec > >(tee -a "$LOG_FILE") 2>&1
+  trap 'on_error' ERR
+}
+
+on_error() {
+  local code=$?
+  [ "$ERROR_REPORTED" -eq 0 ] || return 0
+  ERROR_REPORTED=1
+  warn "部署失败（退出码 ${code}，命令：${BASH_COMMAND}）"
+  warn "完整日志：$LOG_FILE"
+  warn "排查：docker compose ps；docker compose logs --tail=100；docker info"
+}
+
 # ---------- 前置检查 ----------
 need_root() {
   [ "$(id -u)" -eq 0 ] || die "请用 root 运行：sudo bash deploy.sh $*"
 }
 
 check_os() {
-  if [ -r /etc/os-release ]; then
-    # shellcheck disable=SC1091
-    . /etc/os-release
-    if [ "${ID:-}" = "ubuntu" ] && [ "${VERSION_ID:-}" = "20.04" ]; then
-      ok "检测到 Ubuntu 20.04 LTS（${PRETTY_NAME:-}）"
+  local os_release="${KAPOJ_OS_RELEASE_FILE:-/etc/os-release}"
+  if [ -r "$os_release" ]; then
+    # shellcheck disable=SC1090
+    . "$os_release"
+    if [ "${ID:-}" = "ubuntu" ] && version_ge "${VERSION_ID:-0}" "20.04"; then
+      ok "检测到 Ubuntu ${VERSION_ID} LTS（${PRETTY_NAME:-}）"
     else
-      warn "当前系统为 ${PRETTY_NAME:-未知}，本脚本按 Ubuntu 20.04 设计；将尽力而为，遇到问题参见运行手册 §11 手工部署。"
+      warn "当前系统为 ${PRETTY_NAME:-未知}，本脚本按 Ubuntu 20.04+ 设计；将尽力而为，遇到问题参见运行手册 §11 手工部署。"
     fi
   else
-    warn "未找到 /etc/os-release，无法识别系统版本，继续执行。"
+    warn "未找到 ${os_release}，无法识别系统版本，继续执行。"
   fi
+}
+
+check_arch() {
+  case "$(uname -m)" in
+    x86_64|aarch64) ;;
+    *) die "不支持的 CPU 架构：$(uname -m)（仅支持 x86_64/aarch64）" ;;
+  esac
 }
 
 check_resources() {
@@ -97,44 +123,141 @@ check_resources() {
   fi
 }
 
-compose_version() {
-  docker compose version --short 2>/dev/null | tr -d 'v' || echo "0"
-}
-
 version_ge() { # $1=实际版本 $2=最低版本
   [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -1)" = "$2" ]
 }
 
-install_docker() {
-  if command -v docker >/dev/null 2>&1 && version_ge "$(compose_version)" "$MIN_COMPOSE_VERSION"; then
-    ok "Docker 已安装（$(docker --version | awk '{print $3}' | tr -d ,)），compose $(docker compose version --short)"
-    return
-  fi
-  if command -v docker >/dev/null 2>&1; then
-    warn "检测到 compose $(compose_version) < ${MIN_COMPOSE_VERSION}（需要 !override 语法），将重装/升级。"
-  fi
-  step "安装 Docker Engine 与 compose 插件"
-  if curl -fsSL https://get.docker.com | sh >/tmp/kapoj-getdocker.log 2>&1; then
-    log "get.docker.com 安装完成"
+compose_version() {
+  docker compose version --short 2>/dev/null | sed 's/^v//' || true
+}
+
+compose_ok() {
+  local v
+  v="$(compose_version)"
+  [ -n "$v" ] && version_ge "$v" "$MIN_COMPOSE_VERSION"
+}
+
+apt_get() {
+  DEBIAN_FRONTEND=noninteractive apt-get \
+    -o Acquire::Retries=3 \
+    -o Acquire::http::Timeout=30 \
+    -o Acquire::https::Timeout=30 \
+    -y "$@"
+}
+
+ensure_base_packages() {
+  command -v apt-get >/dev/null 2>&1 || die "本脚本需要 apt-get（Ubuntu/Debian）"
+  apt_get update || warn "apt-get update 失败，继续尝试使用现有索引"
+  apt_get install ca-certificates curl gnupg openssl python3
+}
+
+repair_compose_plugin() {
+  local dirs=() dir f v
+  if [ -n "${KAPOJ_COMPOSE_PLUGIN_DIRS:-}" ]; then
+    read -r -a dirs <<< "$KAPOJ_COMPOSE_PLUGIN_DIRS"
   else
-    warn "get.docker.com 失败（见 /tmp/kapoj-getdocker.log），回退 Ubuntu 源 docker.io + compose 独立二进制"
-    export DEBIAN_FRONTEND=noninteractive
-    apt-get update -y
-    apt-get install -y docker.io
-    mkdir -p /usr/local/lib/docker/cli-plugins
-    if ! curl -fsSL "${KAPOJ_COMPOSE_URL:-https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64}" \
-        -o /usr/local/lib/docker/cli-plugins/docker-compose; then
-      die "compose v2 二进制下载失败。请手动安装 ≥ v${MIN_COMPOSE_VERSION} 后重试：参见 https://docs.docker.com/compose/install/ ；或在大陆网络下用 KAPOJ_COMPOSE_URL 指定可达的下载地址。"
-    fi
-    chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+    dirs=(
+      /usr/local/lib/docker/cli-plugins
+      /usr/local/libexec/docker/cli-plugins
+      /usr/lib/docker/cli-plugins
+      /usr/libexec/docker/cli-plugins
+      "${DOCKER_CONFIG:-$HOME/.docker}/cli-plugins"
+    )
   fi
+
+  for dir in "${dirs[@]}"; do
+    f="$dir/docker-compose"
+    [ -x "$f" ] || continue
+
+    local works=0
+    if command -v timeout >/dev/null 2>&1; then
+      timeout 5 "$f" version >/dev/null 2>&1 && works=1
+    else
+      "$f" version >/dev/null 2>&1 && works=1
+    fi
+    if [ "$works" -ne 1 ]; then
+      mv "$f" "$f.broken.$(date +%s)"
+      warn "已隔离损坏的 Compose 插件：${f}（备份为 .broken.*）"
+      continue
+    fi
+
+    v="$("$f" version --short 2>/dev/null | sed 's/^v//' || true)"
+    if [ -z "$v" ]; then
+      v="$("$f" version 2>/dev/null | sed -n 's/.*v\([0-9][0-9.]*\).*/\1/p' | head -1 || true)"
+    fi
+    if [ -n "$v" ] && ! version_ge "$v" "$MIN_COMPOSE_VERSION"; then
+      mv "$f" "$f.old.$(date +%s)"
+      warn "已隔离过旧的 Compose 插件：${f}（版本 $v < ${MIN_COMPOSE_VERSION}，备份为 .old.*）"
+    fi
+  done
+
+  if [ -x /usr/libexec/docker/cli-plugins/docker-compose ] \
+    && [ ! -e /usr/lib/docker/cli-plugins/docker-compose ]; then
+    mkdir -p /usr/lib/docker/cli-plugins
+    ln -s /usr/libexec/docker/cli-plugins/docker-compose /usr/lib/docker/cli-plugins/docker-compose
+  fi
+}
+
+install_compose_binary() {
+  local arch url dir
+  case "$(uname -m)" in
+    x86_64) arch="x86_64" ;;
+    aarch64) arch="aarch64" ;;
+    *) die "不支持的 CPU 架构：$(uname -m)" ;;
+  esac
+  url="${KAPOJ_COMPOSE_URL:-https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$arch}"
+  dir="/usr/local/lib/docker/cli-plugins"
+  mkdir -p "$dir"
+  log "下载 Compose 独立二进制：$url"
+  if ! curl -fL --connect-timeout 10 --max-time 180 "$url" -o "$dir/docker-compose"; then
+    die "Compose 二进制下载失败。请手动安装 ≥ v${MIN_COMPOSE_VERSION} 后重试，或用 KAPOJ_COMPOSE_URL 指定可达地址。"
+  fi
+  chmod +x "$dir/docker-compose"
+  if ! "$dir/docker-compose" version >/dev/null 2>&1; then
+    rm -f "$dir/docker-compose"
+    die "Compose 二进制校验失败（可能下载到了错误页面）。请用 KAPOJ_COMPOSE_URL 指定正确地址。"
+  fi
+}
+
+install_docker() {
+  ensure_base_packages
+
+  if command -v docker >/dev/null 2>&1; then
+    repair_compose_plugin
+    if ! compose_ok; then
+      warn "Docker 已安装，但 Compose $(compose_version) 不满足 ≥ ${MIN_COMPOSE_VERSION}；只修复 Compose，不安装 docker.io。"
+      if apt_get install docker-compose-plugin; then
+        repair_compose_plugin
+      else
+        warn "docker-compose-plugin 包不可用（可能缺少 Docker apt 源），将下载独立二进制。"
+      fi
+    fi
+  else
+    step "安装 Docker Engine 与 Compose 插件"
+    if apt_get install docker.io docker-compose-v2; then
+      log "已通过 Ubuntu 软件源安装 docker.io + docker-compose-v2"
+    else
+      warn "Ubuntu 软件源安装失败，尝试 get.docker.com"
+      if curl -fsSL https://get.docker.com | sh >/tmp/kapoj-getdocker.log 2>&1; then
+        log "get.docker.com 安装完成"
+        apt_get install docker-compose-plugin || warn "docker-compose-plugin 安装失败，将下载独立二进制。"
+      else
+        warn "get.docker.com 也失败（见 /tmp/kapoj-getdocker.log）"
+      fi
+    fi
+    repair_compose_plugin
+  fi
+
+  if ! compose_ok; then
+    install_compose_binary
+  fi
+
   systemctl enable docker >/dev/null 2>&1 || service docker start >/dev/null 2>&1 || true
   systemctl restart docker 2>/dev/null || service docker restart >/dev/null 2>&1 || true
   sleep 2
   command -v docker >/dev/null 2>&1 || die "Docker 安装后仍不可用，请查看上方日志手动安装。"
-  version_ge "$(compose_version)" "$MIN_COMPOSE_VERSION" \
-    || die "compose 版本 $(compose_version) < ${MIN_COMPOSE_VERSION}。请手动升级 docker compose 插件后重试。"
-  ok "Docker 就绪（compose $(docker compose version --short)）"
+  compose_ok || die "Compose 版本 $(compose_version) < ${MIN_COMPOSE_VERSION}。请检查插件路径后重试。"
+  ok "Docker 就绪（$(docker --version | awk '{print $3}' | tr -d ,)，compose $(docker compose version --short)）"
 }
 
 ensure_mirrors() {
@@ -450,12 +573,14 @@ print_summary() {
 cmd_install() {
   step "环境检查（root/系统/内存/磁盘）"
   check_os
+  check_arch
   check_resources
   load_entry_settings
   install_docker
   ensure_mirrors
   gen_env
-  [ -f "$PROD_COMPOSE" ] || die "缺少 $PROD_COMPOSE，请在仓库根目录运行本脚本。"
+  ensure_env_symlink
+  [ -f "$PROD_COMPOSE" ] || die "缺少 ${PROD_COMPOSE}，请在仓库根目录运行本脚本。"
   ensure_socket_proxy
   build_up
   pull_judge_images
@@ -472,7 +597,12 @@ cmd_update() {
       die "当前目录不是 git 仓库，无法 --pull。请重新上传最新代码后直接运行 ./deploy.sh update。"
     fi
   fi
+  check_os
+  check_arch
   load_entry_settings
+  install_docker
+  ensure_mirrors
+  ensure_env_symlink
   ensure_socket_proxy
   build_up
   docker image prune -f >/dev/null 2>&1 || true
@@ -529,8 +659,9 @@ main() {
     esac
   done
   [ "${#args[@]}" -eq 0 ] || die "未知参数：${args[*]}（--help 查看用法）"
+  init_log
   if [ "${KAPOJ_JUDGE_DOCKER_DIRECT:-0}" = "1" ]; then
-    [ -f "$DIRECT_COMPOSE" ] || die "缺少 $DIRECT_COMPOSE；无法启用直连回退模式。"
+    [ -f "$DIRECT_COMPOSE" ] || die "缺少 ${DIRECT_COMPOSE}；无法启用直连回退模式。"
     COMPOSE+=(-f "$DIRECT_COMPOSE")
   fi
   case "$cmd" in
