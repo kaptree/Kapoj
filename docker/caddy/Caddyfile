@@ -1,4 +1,5 @@
 {$KAPOJ_SITE_ADDRESS::80} {
+	{$KAPOJ_TLS_DIRECTIVE}
 	encode zstd gzip
 
 	@backend path /api/* /health

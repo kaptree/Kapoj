@@ -106,4 +106,20 @@ fi
 cmp -s "$TMP/daemon.json" "$TMP/daemon-before.json" || fail "daemon.json changed without python3"
 pass "ensure_mirrors refuses to overwrite without python3"
 
+# 12. custom cert copies files and writes directive
+mkdir -p "$TMP/docker/caddy/certs"
+printf 'cert\n' > "$TMP/fullchain.pem"
+printf 'key\n' > "$TMP/privkey.pem"
+printf 'KAPOJ_DOMAIN=\nKAPOJ_TLS_DIRECTIVE=\nKAPOJ_TLS_VERIFY=1\n' > "$ENV_FILE"
+DOMAIN=oj.example.com
+CERT_CRT="$TMP/fullchain.pem"
+CERT_KEY="$TMP/privkey.pem"
+TLS_VERIFY=1
+deploy_custom_cert
+[ "$(cat "$TMP/docker/caddy/certs/fullchain.pem")" = "cert" ] || fail "cert not copied"
+[ "$(cat "$TMP/docker/caddy/certs/privkey.pem")" = "key" ] || fail "key not copied"
+grep -q '^KAPOJ_TLS_DIRECTIVE=tls /etc/caddy/certs/fullchain.pem /etc/caddy/certs/privkey.pem$' "$ENV_FILE" \
+  || fail "TLS directive not written"
+pass "deploy_custom_cert copies files and writes directive"
+
 echo "all deploy helper tests passed"

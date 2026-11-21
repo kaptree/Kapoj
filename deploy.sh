@@ -38,9 +38,13 @@ MIN_COMPOSE_VERSION="2.24"
 HEALTH_URL="http://127.0.0.1:8080/health"
 
 DOMAIN=""
+CERT_CRT=""
+CERT_KEY=""
+TLS_VERIFY=1
 FLAG_YES=0
 FLAG_SKIP_IMAGES=0
 FLAG_PULL=0
+FLAG_INSECURE_HEALTH=0
 
 # ---------- 输出 ----------
 if [ -t 1 ]; then
@@ -388,9 +392,16 @@ PYEOF
 # --domain 与 .env 不一致时更新这两个键（脚本唯一受支持的 .env 写路径，用户显式意图）。
 load_entry_settings() {
   [ -f "$ENV_FILE" ] || return 0
-  local env_domain env_site
+  local env_domain env_site env_tls
   env_domain=$(grep -E '^KAPOJ_DOMAIN=' "$ENV_FILE" | head -1 | cut -d= -f2-)
   env_site=$(grep -E '^KAPOJ_SITE_ADDRESS=' "$ENV_FILE" | head -1 | cut -d= -f2-)
+  env_tls=$(grep -E '^KAPOJ_TLS_VERIFY=' "$ENV_FILE" | head -1 | cut -d= -f2-)
+  if [ "$FLAG_INSECURE_HEALTH" -eq 1 ]; then
+    TLS_VERIFY=0
+    set_env_key KAPOJ_TLS_VERIFY 0
+  else
+    TLS_VERIFY="${env_tls:-1}"
+  fi
   if [ -n "$DOMAIN" ] && [ "$DOMAIN" != "$env_domain" ]; then
     validate_domain "$DOMAIN"
     set_env_key KAPOJ_DOMAIN "$DOMAIN"
@@ -496,6 +507,28 @@ ensure_env_symlink() {
   ok "已创建 $link -> ../.env"
 }
 
+deploy_custom_cert() {
+  if [ "${TLS_VERIFY:-1}" = "0" ]; then
+    set_env_key KAPOJ_TLS_VERIFY 0
+  fi
+  if [ -z "${CERT_CRT:-}" ] && [ -z "${CERT_KEY:-}" ]; then
+    return 0
+  fi
+  [ -n "${DOMAIN:-}" ] || die "--cert-crt/--cert-key 需要同时提供 --domain"
+  [ -n "${CERT_CRT:-}" ] && [ -n "${CERT_KEY:-}" ] \
+    || die "--cert-crt 与 --cert-key 必须同时提供"
+  [ -r "$CERT_CRT" ] || die "证书不可读：$CERT_CRT"
+  [ -r "$CERT_KEY" ] || die "私钥不可读：$CERT_KEY"
+
+  local dir="$ROOT/docker/caddy/certs"
+  mkdir -p "$dir"
+  cmp -s "$CERT_CRT" "$dir/fullchain.pem" || install -m 644 "$CERT_CRT" "$dir/fullchain.pem"
+  cmp -s "$CERT_KEY" "$dir/privkey.pem" || install -m 600 "$CERT_KEY" "$dir/privkey.pem"
+  set_env_key KAPOJ_TLS_DIRECTIVE \
+    "tls /etc/caddy/certs/fullchain.pem /etc/caddy/certs/privkey.pem"
+  ok "已部署自定义证书；证书不会自动续期"
+}
+
 # ---------- 构建/启动/镜像 ----------
 ensure_socket_proxy() {
   if [ "${KAPOJ_JUDGE_DOCKER_DIRECT:-0}" = "1" ]; then
@@ -578,9 +611,19 @@ wait_health() {
 wait_entry() {
   if [ -n "$DOMAIN" ]; then
     log "等待 HTTPS 证书签发（最长 60 秒，需要域名已解析到本机且 80/443 可达）"
+    local insecure=0
+    if [ "${TLS_VERIFY:-1}" = "0" ]; then
+      insecure=1
+      warn "KAPOJ_TLS_VERIFY=0：健康检查跳过证书校验（仅用于私有源站证书）"
+    fi
     local i=0
     while [ $i -lt 30 ]; do
-      if curl -m 5 -fsS --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN/health" >/dev/null 2>&1; then
+      if [ "$insecure" -eq 1 ]; then
+        curl -k -m 5 -fsS --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN/health" >/dev/null 2>&1 && {
+          ok "HTTPS 入口就绪：https://$DOMAIN"
+          return
+        }
+      elif curl -m 5 -fsS --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN/health" >/dev/null 2>&1; then
         ok "HTTPS 入口就绪：https://$DOMAIN"
         return
       fi
@@ -642,6 +685,7 @@ cmd_install() {
   ensure_mirrors
   gen_env
   ensure_env_symlink
+  deploy_custom_cert
   [ -f "$PROD_COMPOSE" ] || die "缺少 ${PROD_COMPOSE}，请在仓库根目录运行本脚本。"
   ensure_socket_proxy
   build_up
@@ -665,6 +709,7 @@ cmd_update() {
   install_docker
   ensure_mirrors
   ensure_env_symlink
+  deploy_custom_cert
   ensure_socket_proxy
   build_up
   docker image prune -f >/dev/null 2>&1 || true
@@ -713,6 +758,13 @@ main() {
       --domain)
         if [ $# -lt 2 ]; then die "--domain 需要一个参数，如 --domain oj.example.com"; fi
         DOMAIN="$2"; shift 2 ;;
+      --cert-crt)
+        if [ $# -lt 2 ]; then die "--cert-crt 需要一个证书文件路径"; fi
+        CERT_CRT="$2"; shift 2 ;;
+      --cert-key)
+        if [ $# -lt 2 ]; then die "--cert-key 需要一个私钥文件路径"; fi
+        CERT_KEY="$2"; shift 2 ;;
+      --insecure-health) FLAG_INSECURE_HEALTH=1; TLS_VERIFY=0; shift ;;
       --yes)   FLAG_YES=1; shift ;;
       --skip-images) FLAG_SKIP_IMAGES=1; shift ;;
       --pull)  FLAG_PULL=1; shift ;;

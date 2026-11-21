@@ -39,12 +39,14 @@ services:
     # ${VAR:-default} 同时覆盖「未设置」与「显式置空」两种情况（env_file 会把空值原样传给 Caddy 导致崩溃循环）。
     environment:
       KAPOJ_SITE_ADDRESS: "${KAPOJ_SITE_ADDRESS:-:80}"
+      KAPOJ_TLS_DIRECTIVE: "${KAPOJ_TLS_DIRECTIVE:-}"
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - caddy_data:/data
       - caddy_config:/config
+      - ./caddy/certs:/etc/caddy/certs:ro
     restart: unless-stopped
     depends_on:
       server:
