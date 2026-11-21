@@ -55,6 +55,7 @@ const (
 	AuditTargetScheduledJob          = "scheduled_job"
 	AuditTargetAgent                 = "agent"
 	AuditTargetDifficultySettings    = "difficulty_settings"
+	AuditTargetJudgeSettings         = "judge_settings"
 	AuditTargetProblemImportSettings = "problem_import_settings"
 )
 

@@ -20,6 +20,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/companion"
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
+	"github.com/kaptree/kapoj/apps/server/internal/judgesettings"
 	"github.com/kaptree/kapoj/apps/server/internal/learning"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/problemimport"
@@ -433,6 +434,40 @@ func TestMigrateCreatesProblemImportSettings(t *testing.T) {
 	view, err := problemimport.NewSettingsService(g).Get(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, 200, view.MaxPackageMB)
+}
+
+func TestMigrateCreatesJudgeSettings(t *testing.T) {
+	dsn := os.Getenv("KAPOJ_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("KAPOJ_TEST_DATABASE_URL not set; skipping database test")
+	}
+	g, err := open(dsn, io.Discard)
+	require.NoError(t, err)
+	require.NoError(t, Migrate(g))
+	sqlDB, err := g.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	require.True(t, g.Migrator().HasTable("judge_settings"))
+	for _, column := range []string{
+		"output_floor_bytes",
+		"output_slack_bytes",
+		"max_output_bytes",
+		"max_input_file_bytes",
+		"max_output_file_bytes",
+		"max_batch_total_bytes",
+		"max_problem_total_bytes",
+		"updated_by",
+		"updated_at",
+	} {
+		assert.True(t, g.Migrator().HasColumn(&judgesettings.Settings{}, column), "缺少 judge_settings.%s", column)
+	}
+
+	view, err := judgesettings.NewSettingsService(g).Get(context.Background())
+	require.NoError(t, err)
+	assert.EqualValues(t, 1<<20, view.OutputFloorBytes)
+	assert.EqualValues(t, 16<<20, view.MaxOutputBytes)
+	assert.EqualValues(t, 200<<20, view.MaxBatchTotalBytes)
 }
 
 func TestMigrateCreatesDifficultySchema(t *testing.T) {

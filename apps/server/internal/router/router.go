@@ -34,6 +34,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/jobs"
 	"github.com/kaptree/kapoj/apps/server/internal/jobsapi"
+	"github.com/kaptree/kapoj/apps/server/internal/judgesettings"
 	"github.com/kaptree/kapoj/apps/server/internal/learning"
 	"github.com/kaptree/kapoj/apps/server/internal/learningapi"
 	"github.com/kaptree/kapoj/apps/server/internal/mail"
@@ -167,12 +168,14 @@ func New(d Deps) *gin.Engine {
 	}
 	userapi.RegisterAvatarRoutes(public, uploads, userSvc)
 	problemImportSettings := problemimport.NewSettingsService(d.DB)
+	judgeSettings := judgesettings.NewSettingsService(d.DB)
 	if d.RBAC != nil {
 		adminapi.RegisterUserImportRoute(uploads, d.RBAC, userimport.NewService(d.DB))
 		adminapi.RegisterRoutes(api, d.RBAC, adminapi.Options{
 			Game: d.Game, Rating: d.Rating, AI: d.AISettings,
 			AIPlatform: d.AIPlatform, Agent: d.Agent,
 			ProblemImport: problemImportSettings,
+			JudgeSettings: judgeSettings,
 		})
 	}
 	jobsapi.RegisterRoutes(api, d.Jobs, d.Difficulty, d.RBAC)

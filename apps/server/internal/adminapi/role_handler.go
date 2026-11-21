@@ -9,6 +9,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/ai"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
+	"github.com/kaptree/kapoj/apps/server/internal/judgesettings"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
 	"github.com/kaptree/kapoj/apps/server/internal/problemimport"
 	"github.com/kaptree/kapoj/apps/server/internal/rating"
@@ -21,7 +22,8 @@ import (
 // super_admin 由中间件直接放行。opts.Game 非空时额外挂载金币调整接口；
 // opts.Rating 非空时额外挂载 Rating 设置接口；opts.AI 非空时额外挂载
 // AI 设置接口；opts.AIPlatform 非空时额外挂载平台模型接口；opts.Agent
-// 非空时额外挂载 Agent 管理接口（agent.manage）。
+// 非空时额外挂载 Agent 管理接口（agent.manage）；opts.JudgeSettings 非空时
+// 额外挂载评测设置接口（system.settings.manage）。
 func RegisterRoutes(api gin.IRouter, s *rbac.Service, opts ...Options) {
 	var o Options
 	if len(opts) > 0 {
@@ -30,7 +32,7 @@ func RegisterRoutes(api gin.IRouter, s *rbac.Service, opts ...Options) {
 	h := &handler{
 		svc: s, game: o.Game, rating: o.Rating, ai: o.AI,
 		aiPlatform: o.AIPlatform, agentSvc: o.Agent,
-		problemImport: o.ProblemImport,
+		problemImport: o.ProblemImport, judgeSettings: o.JudgeSettings,
 	}
 
 	api.GET("/admin/stats", append(requirePermission(s, string(rbac.PermAdminDashboardView)), h.stats)...)
@@ -46,6 +48,10 @@ func RegisterRoutes(api gin.IRouter, s *rbac.Service, opts ...Options) {
 	if h.problemImport != nil {
 		api.GET("/admin/problems/import/settings", append(requirePermission(s, string(rbac.PermSiteSettingsManage)), h.getProblemImportSettings)...)
 		api.PUT("/admin/problems/import/settings", append(requirePermission(s, string(rbac.PermSiteSettingsManage)), h.updateProblemImportSettings)...)
+	}
+	if h.judgeSettings != nil {
+		api.GET("/admin/judge/settings", append(requirePermission(s, string(rbac.PermSystemSettingsManage)), h.getJudgeSettings)...)
+		api.PUT("/admin/judge/settings", append(requirePermission(s, string(rbac.PermSystemSettingsManage)), h.updateJudgeSettings)...)
 	}
 	api.GET("/admin/users", append(requirePermission(s, string(rbac.PermUserRead)), h.listUsers)...)
 	api.GET("/admin/users/:id", append(requirePermission(s, string(rbac.PermUserRead)), h.getUser)...)
@@ -97,6 +103,7 @@ type handler struct {
 	agentSvc      *agent.Service
 	userImport    *userimport.Service
 	problemImport *problemimport.SettingsService
+	judgeSettings *judgesettings.SettingsService
 }
 
 // roleUpdateRequest 是 PUT /admin/roles/:id 的请求体。Code 为可选字段：

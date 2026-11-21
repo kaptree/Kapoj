@@ -28,6 +28,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/difficulty"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/jobs"
+	"github.com/kaptree/kapoj/apps/server/internal/judgesettings"
 	"github.com/kaptree/kapoj/apps/server/internal/learning"
 	"github.com/kaptree/kapoj/apps/server/internal/mail"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
@@ -215,6 +216,7 @@ func devAutoMigrate(g *gorm.DB) error {
 			&similarity.Settings{}, &similarity.Run{}, &similarity.Match{},
 			&rating.RatingHistory{}, &rating.RatingSettings{}, &rating.RatingRun{},
 			&difficulty.Settings{}, &problem.DifficultyHistory{},
+			&judgesettings.Settings{},
 			&activity.ActivityLog{}, &activity.SharedItem{},
 			&social.Follow{}, &social.Notification{}, &social.UserEvaluation{},
 			&gamification.CoinTransaction{}, &gamification.Achievement{},

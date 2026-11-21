@@ -21,6 +21,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/adminapi"
 	"github.com/kaptree/kapoj/apps/server/internal/auth"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
+	"github.com/kaptree/kapoj/apps/server/internal/judgesettings"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
 	"github.com/kaptree/kapoj/apps/server/internal/problemimport"
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
@@ -53,6 +54,7 @@ func newFixture(t *testing.T) *fixture {
 	adminapi.RegisterUserImportRoute(r.Group("/api"), svc, userImportSvc)
 	adminapi.RegisterRoutes(r.Group("/api"), svc, adminapi.Options{
 		ProblemImport: problemimport.NewSettingsService(g),
+		JudgeSettings: judgesettings.NewSettingsService(g),
 	})
 	return &fixture{t: t, engine: r, db: g, issuer: issuer, svc: svc}
 }
