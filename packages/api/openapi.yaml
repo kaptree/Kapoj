@@ -1353,6 +1353,37 @@ paths:
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
+  /admin/judge/settings:
+    get:
+      summary: 读取评测大小设置（system.settings.manage）
+      description: 返回输出下限/余量、最大输出与各上传总量上限；首次读取时懒创建默认设置。
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: 评测大小设置
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JudgeSettingsResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+    put:
+      summary: 整体更新评测大小设置（system.settings.manage）
+      description: 校验字节范围与字段关系（最大输出不小于下限/余量，单个输出不超过最大输出）；修改写审计 system.settings.manage / target judge_settings。
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/JudgeSettingsInput' }
+      responses:
+        '200':
+          description: 更新后的评测大小设置
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JudgeSettingsResponse' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
   /admin/permissions:
     get:
       summary: 权限目录（role.read）
@@ -7091,6 +7122,37 @@ components:
           required: [data]
           properties:
             data: { $ref: '#/components/schemas/DifficultySettingsView' }
+    JudgeSettingsView:
+      type: object
+      required: [outputFloorBytes, outputSlackBytes, maxOutputBytes, maxInputFileBytes, maxOutputFileBytes, maxBatchTotalBytes, maxProblemTotalBytes, updatedAt]
+      properties:
+        outputFloorBytes: { type: integer, format: int64, description: 输出下限（字节） }
+        outputSlackBytes: { type: integer, format: int64, description: 输出余量（字节） }
+        maxOutputBytes: { type: integer, format: int64, description: 最大输出（字节） }
+        maxInputFileBytes: { type: integer, format: int64, description: 单个输入文件上限（字节） }
+        maxOutputFileBytes: { type: integer, format: int64, description: 单个输出文件上限（字节） }
+        maxBatchTotalBytes: { type: integer, format: int64, description: 批量上传总量上限（字节） }
+        maxProblemTotalBytes: { type: integer, format: int64, description: 单题导入总量上限（字节） }
+        updatedAt: { type: string, format: date-time }
+    JudgeSettingsInput:
+      type: object
+      description: 整体替换全部评测大小上限；字段关系在服务端校验。
+      required: [outputFloorBytes, outputSlackBytes, maxOutputBytes, maxInputFileBytes, maxOutputFileBytes, maxBatchTotalBytes, maxProblemTotalBytes]
+      properties:
+        outputFloorBytes: { type: integer, format: int64, minimum: 1024, maximum: 67108864, description: 输出下限，1 KiB–64 MiB }
+        outputSlackBytes: { type: integer, format: int64, minimum: 0, maximum: 67108864, description: 输出余量，0–64 MiB }
+        maxOutputBytes: { type: integer, format: int64, minimum: 1048576, maximum: 67108864, description: 最大输出，1–64 MiB，不能小于输出下限与输出余量 }
+        maxInputFileBytes: { type: integer, format: int64, minimum: 1048576, maximum: 268435456, description: 单个输入文件上限，1–256 MiB }
+        maxOutputFileBytes: { type: integer, format: int64, minimum: 1048576, maximum: 67108864, description: 单个输出文件上限，1–64 MiB，不能超过最大输出 }
+        maxBatchTotalBytes: { type: integer, format: int64, minimum: 1048576, maximum: 2147483648, description: 批量上传总量，1–2048 MiB }
+        maxProblemTotalBytes: { type: integer, format: int64, minimum: 1048576, maximum: 2147483648, description: 单题导入总量，1–2048 MiB }
+    JudgeSettingsResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/JudgeSettingsView' }
     JobView:
       type: object
       required: [key, name, description, cronExpr, timezone, enabled, nextRunAt, lastRunAt, lastStatus, lastError, activeRun, updatedAt]

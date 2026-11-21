@@ -30,6 +30,8 @@ import type {
   JobInput,
   JobRunView,
   JobView,
+  JudgeSettingsInput,
+  JudgeSettingsView,
   Page,
   PlatformModelInput,
   PlatformModelTestResult,
@@ -132,6 +134,13 @@ export const getAdminDifficultySettings = () =>
 /** Replace all difficulty formula settings (system.jobs.manage). */
 export const updateAdminDifficultySettings = (input: DifficultySettingsInput) =>
   http.put<DifficultySettingsView>('/admin/difficulty/settings', input)
+
+/** Judge byte-limit settings shared with the judge workers (system.settings.manage). */
+export const getAdminJudgeSettings = () => http.get<JudgeSettingsView>('/admin/judge/settings')
+
+/** Replace all judge byte-limit settings; the server validates ranges and relations (system.settings.manage). */
+export const updateAdminJudgeSettings = (input: JudgeSettingsInput) =>
+  http.put<JudgeSettingsView>('/admin/judge/settings', input)
 
 export interface ListAdminUsersQuery {
   keyword?: string

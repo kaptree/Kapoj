@@ -3410,6 +3410,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/judge/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 读取评测大小设置（system.settings.manage）
+         * @description 返回输出下限/余量、最大输出与各上传总量上限；首次读取时懒创建默认设置。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 评测大小设置 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["JudgeSettingsResponse"];
+                    };
+                };
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        /**
+         * 整体更新评测大小设置（system.settings.manage）
+         * @description 校验字节范围与字段关系（最大输出不小于下限/余量，单个输出不超过最大输出）；修改写审计 system.settings.manage / target judge_settings。
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["JudgeSettingsInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的评测大小设置 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["JudgeSettingsResponse"];
+                    };
+                };
+                400: components["responses"]["Error"];
+                401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/permissions": {
         parameters: {
             query?: never;
@@ -13332,6 +13403,86 @@ export interface components {
         };
         DifficultySettingsResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["DifficultySettingsView"];
+        };
+        JudgeSettingsView: {
+            /**
+             * Format: int64
+             * @description 输出下限（字节）
+             */
+            outputFloorBytes: number;
+            /**
+             * Format: int64
+             * @description 输出余量（字节）
+             */
+            outputSlackBytes: number;
+            /**
+             * Format: int64
+             * @description 最大输出（字节）
+             */
+            maxOutputBytes: number;
+            /**
+             * Format: int64
+             * @description 单个输入文件上限（字节）
+             */
+            maxInputFileBytes: number;
+            /**
+             * Format: int64
+             * @description 单个输出文件上限（字节）
+             */
+            maxOutputFileBytes: number;
+            /**
+             * Format: int64
+             * @description 批量上传总量上限（字节）
+             */
+            maxBatchTotalBytes: number;
+            /**
+             * Format: int64
+             * @description 单题导入总量上限（字节）
+             */
+            maxProblemTotalBytes: number;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        /** @description 整体替换全部评测大小上限；字段关系在服务端校验。 */
+        JudgeSettingsInput: {
+            /**
+             * Format: int64
+             * @description 输出下限，1 KiB–64 MiB
+             */
+            outputFloorBytes: number;
+            /**
+             * Format: int64
+             * @description 输出余量，0–64 MiB
+             */
+            outputSlackBytes: number;
+            /**
+             * Format: int64
+             * @description 最大输出，1–64 MiB，不能小于输出下限与输出余量
+             */
+            maxOutputBytes: number;
+            /**
+             * Format: int64
+             * @description 单个输入文件上限，1–256 MiB
+             */
+            maxInputFileBytes: number;
+            /**
+             * Format: int64
+             * @description 单个输出文件上限，1–64 MiB，不能超过最大输出
+             */
+            maxOutputFileBytes: number;
+            /**
+             * Format: int64
+             * @description 批量上传总量，1–2048 MiB
+             */
+            maxBatchTotalBytes: number;
+            /**
+             * Format: int64
+             * @description 单题导入总量，1–2048 MiB
+             */
+            maxProblemTotalBytes: number;
+        };
+        JudgeSettingsResponse: components["schemas"]["Envelope"] & {
+            data: components["schemas"]["JudgeSettingsView"];
         };
         JobView: {
             key: string;
