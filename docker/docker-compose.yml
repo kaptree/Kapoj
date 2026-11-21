@@ -53,6 +53,8 @@ services:
     profiles: ["app"]
     build:
       context: ../apps/server
+      args:
+        GOPROXY: ${KAPOJ_GOPROXY:-https://goproxy.cn,direct}
     # Single config source: the repository-root .env file.
     env_file:
       - ../.env
@@ -122,6 +124,8 @@ services:
     profiles: ["app"]
     build:
       context: ../apps/judge
+      args:
+        GOPROXY: ${KAPOJ_GOPROXY:-https://goproxy.cn,direct}
     env_file:
       - ../.env
     environment:
