@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kaptree/kapoj/apps/server/internal/ratinglevel"
 )
 
 func fullProblem() *Problem {
@@ -92,11 +94,17 @@ func TestDetailDTOAnswersOnlyWhenIncluded(t *testing.T) {
 }
 
 func TestDetailAuthorOptional(t *testing.T) {
-	author := &AuthorSummary{ID: 9, Username: "alice", Nickname: "Alice"}
+	author := &AuthorSummary{
+		ID: 9, Username: "alice", Nickname: "Alice",
+		Level: ratinglevel.LevelFor(1500),
+	}
 	with := keys(t, ToDetail(fullProblem(), false, false, false, author))
 	assert.Equal(t, map[string]any{
 		"id": float64(9), "username": "alice", "nickname": "Alice",
-	}, with["author"], "author is public and carries only id/username/nickname")
+		"level": map[string]any{
+			"key": "cyan", "name": "青名", "color": "#03A89E", "accentColor": "",
+		},
+	}, with["author"], "author is public and carries only id/username/nickname/level")
 
 	without := keys(t, ToDetail(fullProblem(), false, false, false, nil))
 	assert.NotContains(t, without, "author", "a nil author omits the key entirely")
