@@ -10,6 +10,7 @@ import Tabs from 'primevue/tabs'
 import { ApiError } from '@/api/http'
 import { listFollowers, listFollowing } from '@/api/social'
 import type { SocialUserSummary } from '@/api/types'
+import RatingLevelName from '@/components/RatingLevelName.vue'
 import AppEmptyState from '@/components/ui/AppEmptyState.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
@@ -126,7 +127,9 @@ function onPage(event: { page: number }) {
                 class="follow-user__avatar"
               />
               <div class="follow-user__info">
-                <span class="follow-user__name">{{ displayName(user) }}</span>
+                <span class="follow-user__name">
+                  <RatingLevelName :name="displayName(user)" :level="user.level" />
+                </span>
                 <span class="follow-user__username">@{{ user.username }}</span>
               </div>
               <span class="follow-user__rating">Rating {{ user.rating }}</span>

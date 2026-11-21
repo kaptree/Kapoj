@@ -21,6 +21,7 @@ import { likeSolutionPost, unlikeSolutionPost } from '@/api/social'
 import type { SolutionAuthor, SolutionPostDetail, SolutionReplyItem } from '@/api/types'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import MarkdownView from '@/components/MarkdownView.vue'
+import RatingLevelName from '@/components/RatingLevelName.vue'
 import AppEmptyState from '@/components/ui/AppEmptyState.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
@@ -329,7 +330,7 @@ async function doDeleteReply(replyId: number) {
       <AppSurface padding="lg" class="post-card">
         <h1 class="post-title">{{ detail.title }}</h1>
         <p class="post-meta">
-          {{ authorName(detail.author) }} · {{ formatDateTime(detail.createdAt) }}
+          <RatingLevelName :name="authorName(detail.author)" :level="detail.author.level" /> · {{ formatDateTime(detail.createdAt) }}
         </p>
         <div class="post-like-row">
           <Button
@@ -358,7 +359,7 @@ async function doDeleteReply(replyId: number) {
         <div v-else class="replies-list">
           <div v-for="reply in detail.replies" :key="reply.id" class="reply">
             <div class="reply-head">
-              <span class="reply-author">{{ authorName(reply.author) }}</span>
+              <span class="reply-author"><RatingLevelName :name="authorName(reply.author)" :level="reply.author.level" /></span>
               <span class="reply-time">{{ formatDateTime(reply.createdAt) }}</span>
               <div class="reply-actions">
                 <Button

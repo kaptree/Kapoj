@@ -16,6 +16,7 @@ import AppEmptyState from '@/components/ui/AppEmptyState.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
+import RatingLevelName from '@/components/RatingLevelName.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
 import { PERM } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
@@ -274,7 +275,7 @@ onMounted(load)
               <p class="path-desc">{{ item.descriptionMd }}</p>
 
               <div class="path-meta">
-                <span class="path-author">{{ item.author.nickname || item.author.username }}</span>
+                <span class="path-author"><RatingLevelName :name="item.author.nickname || item.author.username" :level="item.author.level" /></span>
                 <span class="path-progress"
                   >已完成 {{ item.myCompletedCount }} / {{ item.nodeCount }} 节点</span
                 >

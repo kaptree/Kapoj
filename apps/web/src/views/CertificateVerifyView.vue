@@ -9,6 +9,7 @@ import { useRoute } from 'vue-router'
 import { verifyCertificate } from '@/api/certificates'
 import { ApiError } from '@/api/http'
 import type { PublicCertificateView } from '@/api/types'
+import RatingLevelName from '@/components/RatingLevelName.vue'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
 import { formatDateTime } from '@/utils/format'
@@ -93,7 +94,7 @@ onMounted(() => {
               </div>
               <div class="result-row">
                 <dt>持有者</dt>
-                <dd>{{ result.nickname }}</dd>
+                <dd><RatingLevelName :name="result.nickname" :level="result.ratingLevel" inherit-typography /></dd>
               </div>
               <div class="result-row">
                 <dt>通过日期</dt>

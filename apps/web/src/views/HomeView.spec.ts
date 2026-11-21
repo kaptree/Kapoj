@@ -32,6 +32,7 @@ const baseUser: Me = {
   permissions: [],
   isSuperAdmin: false,
   rating: 1680,
+  level: { key: 'blue', name: '蓝名', color: '#0000FF', accentColor: '' },
   coins: 1234,
   status: 'active',
   createdAt: '2026-01-01T00:00:00Z',
@@ -63,6 +64,8 @@ const recentSubmission: SubmissionListItem = {
   nickname: 'Alice',
   agentId: null,
   agentName: '',
+  agentLevel: { key: 'gray', name: '灰名', color: '#808080', accentColor: '' },
+  level: { key: 'blue', name: '蓝名', color: '#0000FF', accentColor: '' },
   equippedBadges: [],
   equippedTitle: null,
   problemId: 42,
@@ -435,6 +438,7 @@ describe('HomeView', () => {
     const links = hrefs(wrapper)
 
     expect(wrapper.text()).toContain('Alice')
+    expect(wrapper.find('.profile-card__name .rating-level-name').attributes('title')).toBe('Alice（蓝名）')
     expect(wrapper.text()).toContain('@alice')
     expect(wrapper.text()).toContain('1680')
     expect(wrapper.text()).toContain('1,234')

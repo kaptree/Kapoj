@@ -13,6 +13,7 @@ import { ApiError } from '@/api/http'
 import { likeSolutionPost, unlikeSolutionPost } from '@/api/social'
 import type { SolutionAuthor, SolutionPostItem } from '@/api/types'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
+import RatingLevelName from '@/components/RatingLevelName.vue'
 import AppEmptyState from '@/components/ui/AppEmptyState.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
@@ -242,7 +243,7 @@ async function submitPublish() {
               </div>
               <p class="post-excerpt">{{ post.excerpt }}</p>
               <p class="card-meta">
-                {{ authorName(post.author) }} · {{ formatDateTime(post.createdAt) }}
+                <RatingLevelName :name="authorName(post.author)" :level="post.author.level" /> · {{ formatDateTime(post.createdAt) }}
               </p>
             </AppSurface>
           </RouterLink>

@@ -17,6 +17,7 @@ import {
 } from '@/api/problems'
 import type { ContestDetail, ProblemDetail, ProblemPackageInfo, ProblemStats } from '@/api/types'
 import MarkdownView from '@/components/MarkdownView.vue'
+import RatingLevelName from '@/components/RatingLevelName.vue'
 import CompanionAvatar from '@/components/companion/CompanionAvatar.vue'
 import ProblemAttachmentsCard from '@/components/ProblemAttachmentsCard.vue'
 import AppDifficultyTag from '@/components/ui/AppDifficultyTag.vue'
@@ -328,7 +329,7 @@ async function downloadPackage() {
         <span v-if="problem?.author" class="meta-item author-item">
           <i class="pi pi-user" aria-hidden="true" /> 创建者
           <RouterLink :to="`/users/${problem.author.id}`" class="author-link">
-            {{ authorName }}
+            <RatingLevelName :name="authorName" :level="problem.author.level" inherit-typography />
           </RouterLink>
         </span>
         <span v-if="problem?.tags.length" class="tag-list">

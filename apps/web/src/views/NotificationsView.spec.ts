@@ -26,7 +26,10 @@ vi.mock('@/api/social', () => ({
 }))
 
 function actor(nickname: string): SocialUserSummary {
-  return { id: 2, username: nickname.toLowerCase(), nickname, avatarUrl: '', rating: 1500 }
+  return {
+    id: 2, username: nickname.toLowerCase(), nickname, avatarUrl: '', rating: 1500,
+    level: { key: 'cyan', name: '青名', color: '#03A89E', accentColor: '' },
+  }
 }
 
 function notification(overrides: Partial<NotificationItem> = {}): NotificationItem {
@@ -83,6 +86,7 @@ describe('NotificationsView', () => {
     expect(wrapper.text()).toContain('关注了你')
     expect(wrapper.text()).toContain('赞了你的解题思路')
     expect(wrapper.text()).toContain('Alice')
+    expect(wrapper.find('.rating-level-name').attributes('title')).toBe('Alice（青名）')
     expect(wrapper.text()).toContain('Carol')
     expect(wrapper.text()).toContain('未知用户')
     wrapper.unmount()

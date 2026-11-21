@@ -8,6 +8,7 @@ import { useToast } from 'primevue/usetoast'
 import { ApiError } from '@/api/http'
 import { listNotifications } from '@/api/social'
 import type { NotificationItem } from '@/api/types'
+import RatingLevelName from '@/components/RatingLevelName.vue'
 import AppEmptyState from '@/components/ui/AppEmptyState.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
@@ -154,7 +155,7 @@ async function markAll() {
               <span class="notification-item__dot" aria-hidden="true" />
               <div class="notification-item__body">
                 <span class="notification-item__text">
-                  <strong>{{ actorName(item) }}</strong>
+                  <strong><RatingLevelName :name="actorName(item)" :level="item.actor?.level" /></strong>
                   {{ typeLabel(item.type) }}
                 </span>
                 <span class="notification-item__time">{{ formatDateTime(item.createdAt) }}</span>

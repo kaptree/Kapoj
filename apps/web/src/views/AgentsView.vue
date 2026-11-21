@@ -16,6 +16,7 @@ import AppEmptyState from '@/components/ui/AppEmptyState.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
+import RatingLevelName from '@/components/RatingLevelName.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
 
 const PAGE_SIZE = 20
@@ -209,7 +210,7 @@ onMounted(() => {
                   :to="{ name: 'agent-detail', params: { id: data.id } }"
                   @click.stop
                 >
-                  {{ data.name }}
+                  <RatingLevelName :name="data.name" :level="data.level" inherit-typography />
                 </RouterLink>
               </template>
             </Column>
@@ -223,7 +224,7 @@ onMounted(() => {
             <Column header="作者" style="min-width: 140px">
               <template #body="{ data }">
                 <div class="author-cell">
-                  <span class="author-name">{{ data.author.nickname }}</span>
+                  <RatingLevelName class="author-name" :name="data.author.nickname || data.author.username" :level="data.author.level" />
                   <span class="author-username">@{{ data.author.username }}</span>
                 </div>
               </template>

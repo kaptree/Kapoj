@@ -17,6 +17,7 @@ import ProfileEvaluationDialog from '@/components/profile/ProfileEvaluationDialo
 import ProfileWordCloud from '@/components/profile/ProfileWordCloud.vue'
 import FollowListDialog from '@/components/social/FollowListDialog.vue'
 import IdentityShowcase from '@/components/IdentityShowcase.vue'
+import RatingLevelName from '@/components/RatingLevelName.vue'
 import RatingHistoryCard from '@/components/RatingHistoryCard.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
@@ -298,7 +299,9 @@ watch(
                 </p>
 
                 <div class="profile-hero__name-row">
-                  <h1 id="profile-name" class="profile-hero__title">{{ displayName }}</h1>
+                  <h1 id="profile-name" class="profile-hero__title">
+                    <RatingLevelName :name="displayName" :level="profile?.level" inherit-typography />
+                  </h1>
                   <span
                     v-if="profile.equippedTitle"
                     class="profile-title-badge"

@@ -11,6 +11,7 @@ import HomeLinkCard from '@/components/home/HomeLinkCard.vue'
 import HomeProfileCard from '@/components/home/HomeProfileCard.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppStatusTag from '@/components/ui/AppStatusTag.vue'
+import RatingLevelName from '@/components/RatingLevelName.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
 import { pickCompanionLine } from '@/content/companion/lines.zh-CN'
 import { useHomeData } from '@/composables/useHomeData'
@@ -141,7 +142,6 @@ const greeting = computed(() => {
 })
 
 const greetingName = computed(() => auth.user?.nickname.trim() || '同学')
-const greetingText = computed(() => `${greeting.value}，${greetingName.value}`)
 const companionGreeting = computed(() => pickCompanionLine('greeting', localDateKey()))
 const presence = computed<'online' | 'away' | 'offline'>(() => {
   if (!networkOnline.value) return 'offline'
@@ -313,7 +313,7 @@ onBeforeUnmount(() => {
         <div class="hero__meta">
           <span class="hero__greeting">
             <span class="hero__greeting-dot" aria-hidden="true" />
-            {{ greetingText }}
+            {{ greeting }}，<RatingLevelName v-if="auth.user" :name="greetingName" :level="auth.user.level" /><span v-else>同学</span>
           </span>
           <span v-if="site.home.eyebrow" class="hero__eyebrow">{{ site.home.eyebrow }}</span>
         </div>
@@ -563,9 +563,12 @@ onBeforeUnmount(() => {
                       severity="info"
                       class="recent-list__agent"
                     />
-                    <span v-if="submission.agentName" class="recent-list__agent-name">
-                      {{ submission.agentName }}
-                    </span>
+                    <RatingLevelName
+                      v-if="submission.agentName"
+                      class="recent-list__agent-name"
+                      :name="submission.agentName"
+                      :level="submission.agentLevel"
+                    />
                   </span>
                   <span class="recent-list__time">{{ formatDateTime(submission.createdAt) }}</span>
                 </span>

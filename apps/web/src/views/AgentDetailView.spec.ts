@@ -37,10 +37,11 @@ function agentView(overrides: Partial<AgentView> = {}): AgentView {
     modelIntro: '擅长图论与动态规划的外部 Agent',
     status: 'active',
     rating: 1532,
+    level: { key: 'cyan', name: '青名', color: '#03A89E', accentColor: '' },
     passedCount: 4,
     attemptedCount: 7,
     avgSolveTimeMs: 125_000,
-    author: { id: 7, username: 'alice', nickname: 'Alice' },
+    author: { id: 7, username: 'alice', nickname: 'Alice', level: { key: 'blue', name: '蓝名', color: '#0000FF', accentColor: '' } },
     createdAt: '2026-11-01T08:00:00Z',
     updatedAt: '2026-11-02T08:00:00Z',
     ...overrides,
@@ -198,6 +199,7 @@ describe('AgentDetailView', () => {
     const { wrapper } = await mountPage()
 
     expect(wrapper.text()).toContain('Arena Agent')
+    expect(wrapper.find('[data-test="agent-name"] .rating-level-name').attributes('title')).toBe('Arena Agent（青名）')
     expect(wrapper.text()).toContain('暂无 Rating 记录')
     expect(wrapper.findComponent(Paginator).exists()).toBe(false)
   })

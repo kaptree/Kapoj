@@ -396,13 +396,14 @@ describe('ProblemDetailView', () => {
 
   it('shows the public author with a link to their profile (guest visible)', async () => {
     vi.mocked(getProblem).mockResolvedValue(
-      detail(1, { author: { id: 7, username: 'alice', nickname: 'Alice' } }),
+      detail(1, { author: { id: 7, username: 'alice', nickname: 'Alice', level: { key: 'blue', name: '蓝名', color: '#0000FF', accentColor: '' } } }),
     )
     vi.mocked(getStatistics).mockResolvedValue(stats(0, 0))
     const wrapper = mountView()
     await flushPromises()
 
     expect(wrapper.text()).toContain('创建者')
+    expect(wrapper.find('.author-link .rating-level-name').attributes('title')).toBe('Alice（蓝名）')
     const link = wrapper.find('a[href="/users/7"]')
     expect(link.exists()).toBe(true)
     expect(link.text()).toContain('Alice')

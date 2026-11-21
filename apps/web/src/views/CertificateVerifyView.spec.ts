@@ -24,6 +24,7 @@ function publicView(overrides: Partial<PublicCertificateView> = {}): PublicCerti
     type: '蓝桥杯',
     level: '省一',
     nickname: 'Alice',
+    ratingLevel: { key: 'blue', name: '蓝名', color: '#0000FF', accentColor: '' },
     approvedAt: '2026-11-02T08:00:00Z',
     ...overrides,
   }
@@ -59,6 +60,7 @@ describe('CertificateVerifyView', () => {
     expect(wrapper.text()).toContain('蓝桥杯')
     expect(wrapper.text()).toContain('省一')
     expect(wrapper.text()).toContain('Alice')
+    expect(wrapper.find('.rating-level-name').attributes('title')).toBe('Alice（蓝名）')
     expect(wrapper.text()).toContain('通过日期')
     expect(wrapper.find('img').exists()).toBe(false)
   })

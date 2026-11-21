@@ -50,4 +50,21 @@ describe('RatingLevelName', () => {
     expect(wrapper.text()).toBe('?')
     expect(wrapper.attributes('title')).toBe('?（黑红名）')
   })
+
+  it('renders plain text when level is missing', () => {
+    const wrapper = mount(RatingLevelName, { props: { name: '旧缓存用户' } })
+
+    expect(wrapper.text()).toBe('旧缓存用户')
+    expect(wrapper.classes()).not.toContain('rating-level-name--black-red')
+    expect(wrapper.attributes('title')).toBe('旧缓存用户')
+    expect(wrapper.attributes('aria-label')).toBe('旧缓存用户')
+  })
+
+  it('can inherit heading typography', () => {
+    const wrapper = mount(RatingLevelName, {
+      props: { name: '标题用户', level: cyan, inheritTypography: true },
+    })
+
+    expect(wrapper.classes()).toContain('rating-level-name--inherit')
+  })
 })

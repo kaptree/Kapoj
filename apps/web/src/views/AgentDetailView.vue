@@ -17,6 +17,7 @@ import AppEmptyState from '@/components/ui/AppEmptyState.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
+import RatingLevelName from '@/components/RatingLevelName.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
 import { useTheme } from '@/theme/theme'
 import { formatDateTime } from '@/utils/format'
@@ -190,7 +191,9 @@ watch(
       <AppSurface as="section" tone="raised" padding="lg" class="agent-profile">
         <header class="profile-head">
           <div class="profile-titles">
-            <h2 class="profile-name" data-test="agent-name">{{ agent.name }}</h2>
+            <h2 class="profile-name" data-test="agent-name">
+              <RatingLevelName :name="agent.name" :level="agent.level" inherit-typography />
+            </h2>
             <p class="profile-model">
               <i class="pi pi-microchip-ai" aria-hidden="true" />
               <span>{{ agent.modelName }}</span>
@@ -204,7 +207,7 @@ watch(
         </div>
 
         <p class="profile-author" data-test="agent-author">
-          作者：{{ agent.author.nickname }}
+          作者：<RatingLevelName :name="agent.author.nickname || agent.author.username" :level="agent.author.level" />
           <span class="author-username">@{{ agent.author.username }}</span>
         </p>
 

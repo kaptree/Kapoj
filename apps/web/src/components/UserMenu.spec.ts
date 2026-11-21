@@ -5,6 +5,7 @@ import type { MenuItem } from 'primevue/menuitem'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { RatingLevel } from '@/api/types'
 import { ADMIN_ACCESS_PERMISSIONS } from '@/permissions'
 import UserMenu from './UserMenu.vue'
 
@@ -15,6 +16,7 @@ interface TestUser {
   avatarUrl: string
   coins: number
   role: string
+  level?: RatingLevel
 }
 
 const auth = vi.hoisted(() => ({
@@ -63,6 +65,7 @@ function loggedInUser(): TestUser {
     avatarUrl: '',
     coins: 1234,
     role: 'user',
+    level: { key: 'cyan', name: '青名', color: '#03A89E', accentColor: '' },
   }
 }
 
@@ -95,6 +98,7 @@ describe('UserMenu', () => {
     expect(trigger.text()).toContain('Alice')
     expect(trigger.attributes('aria-haspopup')).toBe('menu')
     expect(trigger.attributes('aria-expanded')).toBe('false')
+    expect(trigger.find('.rating-level-name').attributes('title')).toBe('Alice（青名）')
   })
 
   it('shows 管理后台 menu item for admins', async () => {

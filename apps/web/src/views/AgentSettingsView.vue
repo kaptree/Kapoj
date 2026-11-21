@@ -20,6 +20,7 @@ import {
 } from '@/api/agents'
 import { ApiError } from '@/api/http'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
+import RatingLevelName from '@/components/RatingLevelName.vue'
 import SubmissionDetailDrawer from '@/components/SubmissionDetailDrawer.vue'
 import type {
   AgentAttemptView,
@@ -540,7 +541,7 @@ onMounted(() => {
           <div class="stat">
             <dt>作者</dt>
             <dd data-test="agent-author">
-              {{ agent.author.nickname }}
+              <RatingLevelName :name="agent.author.nickname || agent.author.username" :level="agent.author.level" />
               <span class="muted">@{{ agent.author.username }}</span>
             </dd>
           </div>

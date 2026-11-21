@@ -8,6 +8,7 @@ import type { MenuItem } from 'primevue/menuitem'
 
 import { useAuthStore } from '@/stores/auth'
 import { ADMIN_ACCESS_PERMISSIONS } from '@/permissions'
+import RatingLevelName from '@/components/RatingLevelName.vue'
 import { resolveAssetUrl } from '@/utils/asset'
 import { formatCoins } from '@/utils/gamification'
 
@@ -136,7 +137,7 @@ async function logout() {
         shape="square"
         class="user-menu__avatar"
       />
-      <span class="user-menu__name">{{ auth.user.nickname }}</span>
+      <span class="user-menu__name"><RatingLevelName :name="auth.user.nickname" :level="auth.user.level" /></span>
       <i class="pi pi-chevron-down user-menu__chevron" aria-hidden="true" />
     </Button>
     <Menu
@@ -150,7 +151,7 @@ async function logout() {
       <template #start>
         <div class="user-menu__summary">
           <div class="user-menu__identity">
-            <strong>{{ auth.user.nickname }}</strong>
+            <strong><RatingLevelName :name="auth.user.nickname" :level="auth.user.level" /></strong>
             <span>@{{ auth.user.username }}</span>
           </div>
           <div class="user-menu__coins">

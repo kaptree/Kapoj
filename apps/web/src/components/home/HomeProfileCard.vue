@@ -4,6 +4,7 @@ import Avatar from 'primevue/avatar'
 import Button from 'primevue/button'
 
 import type { Me, UserActivity } from '@/api/types'
+import RatingLevelName from '@/components/RatingLevelName.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
 import type { HomeDataState } from '@/composables/useHomeData'
 import { resolveAssetUrl } from '@/utils/asset'
@@ -62,7 +63,9 @@ const streak = computed(() =>
 
       <div class="profile-card__main">
         <p class="profile-card__eyebrow">PROFILE</p>
-        <h2 id="home-profile-title" class="profile-card__name">{{ user.nickname }}</h2>
+        <h2 id="home-profile-title" class="profile-card__name">
+          <RatingLevelName :name="user.nickname" :level="user.level" inherit-typography />
+        </h2>
         <div class="profile-card__meta">
           <span class="profile-card__username">@{{ user.username }}</span>
           <span

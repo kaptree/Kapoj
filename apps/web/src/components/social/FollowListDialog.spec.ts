@@ -19,6 +19,7 @@ function user(overrides: Partial<SocialUserSummary> = {}): SocialUserSummary {
     nickname: 'Bob',
     avatarUrl: '',
     rating: 1500,
+    level: { key: 'cyan', name: '青名', color: '#03A89E', accentColor: '' },
     ...overrides,
   }
 }
@@ -54,6 +55,7 @@ describe('FollowListDialog', () => {
 
     expect(listFollowers).toHaveBeenCalledWith(7, { page: 1, pageSize: 20 })
     expect(wrapper.text()).toContain('Bob')
+    expect(wrapper.find('.rating-level-name').attributes('title')).toBe('Bob（青名）')
     expect(wrapper.text()).toContain('@bob')
     expect(wrapper.find('a[href="/users/2"]').exists()).toBe(true)
     wrapper.unmount()

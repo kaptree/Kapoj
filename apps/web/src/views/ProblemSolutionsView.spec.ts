@@ -48,7 +48,7 @@ function post(overrides: Partial<SolutionPostItem> = {}): SolutionPostItem {
     userId: 2,
     title: '如何 AC 这道题',
     excerpt: '先打表找规律……',
-    author: { id: 2, username: 'alice', nickname: 'Alice' },
+    author: { id: 2, username: 'alice', nickname: 'Alice', level: { key: 'blue', name: '蓝名', color: '#0000FF', accentColor: '' } },
     replyCount: 3,
     likeCount: 0,
     likedByMe: false,
@@ -99,6 +99,7 @@ describe('ProblemSolutionsView', () => {
     expect(listSolutionPosts).toHaveBeenCalledWith(1, { page: 1, pageSize: 20 })
     expect(wrapper.text()).toContain('如何 AC 这道题')
     expect(wrapper.text()).toContain('Alice')
+    expect(wrapper.find('.card-meta .rating-level-name').attributes('title')).toBe('Alice（蓝名）')
     expect(wrapper.text()).toContain('3 回复')
     expect(wrapper.find('a[href="/problems/1/solutions/1"]').exists()).toBe(true)
 

@@ -52,6 +52,7 @@ function profile(overrides: Partial<Profile> = {}): Profile {
     avatarUploaded: false,
     bio: '热爱算法与开源。',
     rating: 1680,
+    level: { key: 'blue', name: '蓝名', color: '#0000FF', accentColor: '' },
     coins: 1234,
     equippedBadges: [{ id: 1, name: '早鸟', imageUrl: '' }],
     equippedTitle: { id: 1, name: '卷王', color: '#7C3AED' },
@@ -203,6 +204,7 @@ describe('UserProfileView', () => {
 
     expect(getProfile).toHaveBeenCalledWith('7')
     expect(wrapper.text()).toContain('Alice')
+    expect(wrapper.find('.profile-hero__title .rating-level-name').attributes('title')).toBe('Alice（蓝名）')
     expect(wrapper.text()).toContain('@alice')
     expect(wrapper.text()).toContain('卷王')
     expect(wrapper.text()).toContain('热爱算法与开源。')
