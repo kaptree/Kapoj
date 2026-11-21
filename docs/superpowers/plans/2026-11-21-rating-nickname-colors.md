@@ -16,7 +16,7 @@
 - 公共页面全覆盖；管理后台页面（Admin*）不改。
 - Agent 名称用 `AgentView.level`（Agent rating）；作者昵称用 `AgentAuthor.level`（作者用户 rating）。
 - 黑红名保持首字 `level.color`、其余 `level.accentColor`（空时 `#FF0000`）。
-- `RatingLevelName` 的 `title`/`aria-label`（昵称 + 等级名）必须保留，不能只靠颜色传达等级。
+- `RatingLevelName` 的 `level` 可选并支持 `inheritTypography`；`title`/`aria-label`（昵称 + 等级名）必须保留，不能只靠颜色传达等级。
 - API 只增字段，不改旧字段语义；无 rating 的用户按 0 计算灰名。
 - 活动/贡献榜基础行仍缓存；level 在缓存读取后装饰，rating 变化不要求失效榜单缓存。
 - 不新增数据库迁移。
@@ -63,9 +63,9 @@
 
 ```go
 func TestIdentitiesIncludesRatingLevel(t *testing.T) {
-    // 复用现有测试 env，创建 rating=1500 和 rating=2600 的用户
-    // got := svc.Identities(ctx, []int64{blueID, blackRedID})
-    // assert.Equal(t, "blue", got[blueID].Level.Key)
+    // 复用现有测试 env，创建 rating=1500（青名） 和 rating=2600 的用户
+    // got := svc.Identities(ctx, []int64{cyanID, blackRedID})
+    // assert.Equal(t, "cyan", got[cyanID].Level.Key)
     // assert.Equal(t, "black_red", got[blackRedID].Level.Key)
     // assert.Equal(t, "#FF0000", got[blackRedID].Level.AccentColor)
 }
@@ -133,11 +133,12 @@ item["level"].(map[string]any)["key"] == "cyan"
 `submission/dto.go`：
 
 ```go
-import "github.com/kaptree/kapoj/apps/server/internal/rating"
+import "github.com/kaptree/kapoj/apps/server/internal/ratinglevel"
 
 type ListItem struct {
     // ...existing
-    Level rating.Level `json:"level"`
+    Level      ratinglevel.Level `json:"level"`
+    AgentLevel ratinglevel.Level `json:"agentLevel"`
 }
 ```
 
@@ -147,13 +148,15 @@ type ListItem struct {
 items[i].Level = identity.Level
 ```
 
+`submission` 查询已 join `agents`，同时 select `ag.rating`；人类提交的 `AgentLevel` 使用 `ratinglevel.LevelFor(0)`（灰名），Agent 提交用 `ratinglevel.LevelFor(agentRating)`。测试覆盖人类提交和 Agent 提交两种。
+
 Run: `cd apps/server && go test ./internal/submissionapi -run TestList -v`
 
 Expected: PASS。
 
 - [ ] **Step 7: 为 SubmissionMetric 写失败测试并实现**
 
-在 `problemapi/handler_test.go` 的 submission-stats 测试中，给用户设置 rating=1500，断言 `level.key == "blue"`。
+在 `problemapi/handler_test.go` 的 submission-stats 测试中，给用户设置 rating=1500（青名），断言 `level.key == "cyan"`。
 
 `problem/stats.go` 增加 `Level rating.Level`；`problemapi.decorateMetricIdentities` 增加 `items[i].Level = identity.Level`。
 
@@ -173,7 +176,7 @@ Expected: PASS。
 
 - [ ] **Step 9: 为活动/分享/富豪榜写失败测试并实现**
 
-在 `activityapi/handler_test.go` 三个榜单测试中，给用户设置 rating=1500/2600，断言每行 `level.key`。
+在 `activityapi/handler_test.go` 三个榜单测试中，给用户设置 rating=1500（青名）/2600，断言每行 `level.key`。
 
 `activityapi/handler.go` 的 `LeaderboardRow` 增加：
 
@@ -241,11 +244,11 @@ git commit -m "feat(rating): expose rating levels on core public summaries"
 
 - [ ] **Step 1: Agent 测试先失败**
 
-在 `agentapi` 测试中创建 Agent rating=2600、作者 rating=1500，断言：
+在 `agentapi` 测试中创建 Agent rating=2600、作者 rating=1500（青名），断言：
 
 ```go
 agentData["level"].(map[string]any)["key"] == "black_red"
-author["level"].(map[string]any)["key"] == "blue"
+author["level"].(map[string]any)["key"] == "cyan"
 ```
 
 Run: `cd apps/server && go test ./internal/agentapi -run TestPublic -v`
@@ -299,7 +302,7 @@ Expected: PASS。
 
 - [ ] **Step 5: 题目作者/讨论作者测试先失败**
 
-在 `problem`/`problemapi` 测试中给作者 rating=1500，断言 `author["level"].(map[string]any)["key"] == "blue"`；讨论回复作者同理。
+在 `problem`/`problemapi` 测试中给作者 rating=1500（青名），断言 `author["level"].(map[string]any)["key"] == "cyan"`；讨论回复作者同理。
 
 Run: `cd apps/server && go test ./internal/problem ./internal/problemapi -run 'Author|Discussion|Solution' -v`
 
@@ -333,7 +336,7 @@ Expected: PASS。
 
 - [ ] **Step 9: 证书核验测试先失败**
 
-在 certificate 测试中给持有者 rating=1500，断言 `view.Level.Key == "blue"`；无效验证码时 `Level` 为零值且不影响 `Valid=false`。
+在 certificate 测试中给持有者 rating=1500（青名），断言 `view.RatingLevel.Key == "cyan"`；无效验证码时 `RatingLevel == nil` 且不影响 `Valid=false`；`view.Level`（证书等级）保持原字符串。
 
 Run: `cd apps/server && go test ./internal/certificate -run Verify -v`
 
@@ -341,11 +344,11 @@ Expected: FAIL。
 
 - [ ] **Step 10: 证书核验 level**
 
-`certificate/dto.go` 的 `PublicCertificateView` 增加 `Level rating.Level`。
+`certificate/dto.go` 的 `PublicCertificateView` 增加 `RatingLevel *ratinglevel.Level `json:"ratingLevel"``；保留原有 `Level string`。
 
 `certificate/repository.go` 的 `FindByVerifyCode` 返回 `(*Certificate, string, int, error)`，查询 select `u.nickname, u.rating`；更新接口、`GormRepository` 实现、测试 mock。
 
-`certificate/service.go` 的 `Verify` 接收 rating 并设置 `Level: rating.LevelFor(userRating)`；无效码返回 `Valid:false` 时不设置 level。
+`certificate/service.go` 的 `Verify` 接收 rating 并设置 `RatingLevel: ptr(ratinglevel.LevelFor(userRating))`；无效码返回 `Valid:false` 时 `RatingLevel=nil`。
 
 Run: `cd apps/server && go test ./internal/certificate -v`
 
@@ -437,7 +440,7 @@ git commit -m "feat(api): expose rating levels on public user summaries"
 在 `SubmissionsView.spec.ts`、`ProblemStatisticsView.spec.ts`、`ContestRanklist.spec.ts`、`LeaderboardView.spec.ts` 的 fixture 中加入 `level`，断言：
 
 ```ts
-expect(wrapper.find('.rating-level-name').attributes('style')).toContain('color: rgb(0, 0, 255)')
+expect(wrapper.find('.rating-level-name').attributes('style')).toContain('color: rgb(3, 168, 158)')
 ```
 
 对黑红名 fixture 断言首字/剩余字两个 span 的颜色；对活动/富豪/贡献榜也断言传入 level（例如 cyan）。
@@ -450,7 +453,7 @@ Expected: FAIL，昵称没有 `rating-level-name` 或颜色不对。
 
 - [ ] **Step 3: 传 level**
 
-- `SubmissionsView` / `SubmissionDetailDrawer` / `ProblemStatisticsView` / `ContestRanklist`：给 `UserIdentityName` 增加 `:rating-level="data.level"`（详情用 `detail.level`）。
+- `SubmissionsView` / `SubmissionDetailDrawer` / `ProblemStatisticsView` / `ContestRanklist`：给 `UserIdentityName` 增加 `:rating-level="data.level"`（详情用 `detail.level`）；Agent 名称用 `RatingLevelName :level="data.agentLevel"`（详情 `detail.agentLevel`），人类提交时 agentName 为空。
 - `LeaderboardView` 卡片和表格：`:rating-level="row.level"`、`:rating-level="data.level"`，删除 `board.key === 'rating'` 条件。
 
 - [ ] **Step 4: 运行测试确认通过**
@@ -498,7 +501,7 @@ git commit -m "feat(web): color nicknames on submissions and leaderboards"
 
 至少覆盖：
 
-- `AgentsView.spec.ts`：Agent rating=2600 → Agent 名称黑红；作者 rating=1500 → 作者蓝名。
+- `AgentsView.spec.ts`：Agent rating=2600 → Agent 名称黑红；作者 rating=1500（青名） → 作者青名。
 - `HomeView.spec.ts` / `UserMenu.spec.ts` / `UserProfileView.spec.ts`：`Me`/`Profile` level 渲染颜色。
 - `FollowListDialog.spec.ts`：粉丝 level 渲染颜色。
 - `LearningPathSummary.spec.ts` / `LearningPathListView.spec.ts`：作者 level。
@@ -516,10 +519,10 @@ Expected: FAIL。
 
 - [ ] **Step 3: 替换裸昵称**
 
-- `HomeProfileCard`：`<h2>` 内用 `RatingLevelName :name="user.nickname" :level="user.level"`。
-- `HomeView`：问候语拆成 `{{ greeting }}，` + `RatingLevelName`（`auth.user.level`）；无登录用户保持“同学”。
+- `HomeProfileCard`：`<h2>` 内用 `RatingLevelName :name="user.nickname" :level="user.level" inherit-typography`。
+- `HomeView`：问候语拆成 `{{ greeting }}，` + `RatingLevelName`（`auth.user.level`）；主页 Agent 名称同样用 `RatingLevelName`（数据有 Agent rating/level 时）；无登录用户保持“同学”。
 - `UserMenu`：触发器 `.user-menu__name` 和下拉 `strong` 用 `RatingLevelName`。
-- `UserProfileView`：`h1` 内用 `RatingLevelName :name="displayName" :level="profile.level"`。
+- `UserProfileView`：`h1` 内用 `RatingLevelName :name="displayName" :level="profile.level" inherit-typography`。
 - `FollowListDialog`：昵称用 `RatingLevelName :name="displayName(user)" :level="user.level"`。
 - `AgentsView`：Agent 名称用 `RatingLevelName :name="data.name" :level="data.level"`；作者用 `RatingLevelName :name="data.author.nickname || data.author.username" :level="data.author.level"`。
 - `AgentDetailView`/`AgentSettingsView`：同上（作者）。
@@ -559,10 +562,10 @@ git commit -m "feat(web): color nicknames across public pages"
 在 `core-flow.spec.ts` AC 行断言后，增加：
 
 ```ts
-await expect(row.locator('.rating-level-name')).toHaveAttribute('title', /蓝名/)
+await expect(row.locator('.rating-level-name')).toHaveAttribute('title', /青名/)
 ```
 
-（e2e 用户初始 rating=1500；若等级边界改动，按服务端定义调整。）
+（e2e 用户初始 rating=1500（青名）；若等级边界改动，按服务端定义调整。）
 
 - [ ] **Step 2: 文档说明**
 

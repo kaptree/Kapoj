@@ -61,6 +61,8 @@
 | Agents 列表 | `AgentView.level`（Agent rating）+ `AgentAuthor.level`（作者 rating） | Agent 名称 `RatingLevelName`；作者昵称 `RatingLevelName` |
 | Agent 详情 | 同上 | `AgentDetailView` |
 | Agent 设置页作者 | `AgentAuthor.level` | `AgentSettingsView` |
+| 测评记录/详情里的 Agent 名称 | `SubmissionListItem.agentLevel`（Agent rating） | `SubmissionsView`、`SubmissionDetailDrawer` |
+| 主页 Agent 名称 | 当前主页数据里的 Agent rating | `HomeView` |
 | 主页个人卡 | `Me.level` | `HomeProfileCard` |
 | 主页问候语 | `Me.level` | `HomeView` |
 | 顶部用户菜单 | `Me.level` | `UserMenu` |
@@ -70,7 +72,7 @@
 | 题目作者 | `problem.AuthorSummary.level` | `ProblemDetailView` |
 | 题解/讨论作者 | `problem.AuthorSummary.level` | `ProblemSolutionsView`、`ProblemSolutionDetailView`、官方题解页（如有作者） |
 | 通知 actor | `social.UserSummary.level` | `NotificationsView` |
-| 证书核验 | `PublicCertificateView.level` | `CertificateVerifyView` |
+| 证书核验 | `PublicCertificateView.ratingLevel`（昵称 rating 等级；证书自身等级仍是 `level`） | `CertificateVerifyView` |
 | 用户评价作者 | `social.UserSummary.level` | 当前评价弹窗不展示作者；API 保持一致 |
 
 明确排除：管理后台列表、比赛报名管理弹窗（`CanReadParticipants` 管理员）、ContestSimilarity 管理面板、邮件/导出。
@@ -100,7 +102,7 @@ Level rating.Level `json:"level"`
 
 为以下结构增加 `Level rating.Level json:"level"`，并在构造时赋值：
 
-- `submission.ListItem`：`decorateItems` 从 `identity.Level` 赋值。
+- `submission.ListItem`：`decorateItems` 从 `identity.Level` 赋值；同时增加 `AgentLevel`（提交关联 Agent 的 rating 等级），人类提交为零值/灰名。
 - `problem.SubmissionMetric`：`decorateMetricIdentities` 从 `identity.Level` 赋值。
 - `contest.RankRow`：`contestapi` 装饰时赋值。
 - `activityapi.LeaderboardRow`：装饰时从 `identity.Level` 赋值；`activity.LeaderboardRow` 基础缓存行不变。
@@ -110,7 +112,7 @@ Level rating.Level `json:"level"`
 - `learning.UserSummary`：`pathItemColumns` 增加 `u.rating AS author_rating`，`pathRow.item()` 赋值。
 - `problem.AuthorSummary`：`FindAuthor` 查询 `rating`；`DiscussionService.authors` 查询 `rating`；赋值 level。
 - `social.UserSummary`：粉丝/关注、通知、评价查询已经 select `rating`，构造时赋值 `Level`。
-- `certificate.PublicCertificateView`：证书核验查询用户 rating 并赋值 level；不改管理员证书视图。
+- `certificate.PublicCertificateView`：新增 `RatingLevel *rating.Level json:"ratingLevel"`，从持有者 rating 计算；无效验证码时 `Valid=false` 且 `RatingLevel=nil`。**不要覆盖已有的证书等级字段 `Level string`**。管理员证书视图保持不变。
 
 ### 6.3 OpenAPI
 
@@ -126,7 +128,8 @@ Level rating.Level `json:"level"`
 
 ### 7.1 复用现有组件
 
-- `RatingLevelName`：昵称 + level，负责普通颜色和黑红名首字/剩余字。
+- `RatingLevelName`：昵称 + level，负责普通颜色和黑红名首字/剩余字。`level` 改为可选；缺省/未知时渲染普通文本并回退默认颜色（兼容部署前缓存在 localStorage 的 `Me` 没有 `level` 的情况）。
+- `RatingLevelName` 增加 `inheritTypography`（或等价 prop）：标题/作者场景不强制 600 字重和 `nowrap`，保留外层标题的字重与换行；表格昵称继续使用默认紧凑样式。
 - `UserIdentityName`：已有 `ratingLevel` prop；测评、榜单、统计、ranklist 直接传 `:rating-level="...level"`。
 - Agent 名称、裸昵称、个人主页标题、主页问候、用户菜单等没有徽章/称号上下文的，直接用 `RatingLevelName`。
 
