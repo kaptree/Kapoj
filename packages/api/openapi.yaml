@@ -4951,7 +4951,7 @@ components:
         firstBlood: { type: boolean, description: 是否为该题首个通过 }
     ContestRankRow:
       type: object
-      required: [rank, userId, username, nickname, equippedBadges, equippedTitle, solved, penalty, totalScore, problems, level]
+      required: [rank, userId, username, nickname, equippedBadges, equippedTitle, solved, penalty, totalScore, problems]
       properties:
         rank: { type: integer }
         userId: { type: integer, format: int64 }
@@ -5333,7 +5333,7 @@ components:
     Me:
       type: object
       description: 登录/注册响应中的 user 权限字段可能为空；前端登录后应调用 GET /users/me 获取最新角色与权限。
-      required: [id, username, nickname, email, emailVerified, avatarUrl, avatarUploaded, role, rating, coins, bio, status, roles, permissions, isSuperAdmin, createdAt, level]
+      required: [id, username, nickname, email, emailVerified, avatarUrl, avatarUploaded, role, rating, coins, bio, status, roles, permissions, isSuperAdmin, createdAt]
       properties:
         id: { type: integer, format: int64 }
         username: { type: string }
@@ -5371,7 +5371,7 @@ components:
         name: { type: string }
     Profile:
       type: object
-      required: [id, username, nickname, avatarUrl, avatarUploaded, bio, rating, coins, equippedBadges, equippedTitle, createdAt, level]
+      required: [id, username, nickname, avatarUrl, avatarUploaded, bio, rating, coins, equippedBadges, equippedTitle, createdAt]
       properties:
         id: { type: integer, format: int64 }
         username: { type: string }
@@ -5914,7 +5914,7 @@ components:
     ProblemAuthor:
       type: object
       description: 题目创建者的公开摘要；仅含 id/username/nickname，不含邮箱。
-      required: [id, username, nickname, level]
+      required: [id, username, nickname]
       properties:
         id: { type: integer, format: int64 }
         username: { type: string }
@@ -6029,8 +6029,6 @@ components:
         - score
         - codeLength
         - createdAt
-        - level
-        - agentLevel
       properties:
         id: { type: integer, format: int64 }
         userId: { type: integer, format: int64 }
@@ -6121,7 +6119,6 @@ components:
         - memoryUsedKb
         - codeLength
         - createdAt
-        - level
       properties:
         userId: { type: integer, format: int64 }
         username: { type: string }
@@ -7295,7 +7292,7 @@ components:
             data: { $ref: '#/components/schemas/RatingHistoryPage' }
     ActivityLeaderboardRow:
       type: object
-      required: [rank, userId, username, nickname, score, equippedBadges, equippedTitle, level]
+      required: [rank, userId, username, nickname, score, equippedBadges, equippedTitle]
       properties:
         rank: { type: integer, minimum: 1 }
         userId: { type: integer, format: int64 }
@@ -7315,7 +7312,7 @@ components:
           description: 已装备称号；无装备时为 null
     SharingLeaderboardRow:
       type: object
-      required: [rank, userId, username, nickname, score, equippedBadges, equippedTitle, level]
+      required: [rank, userId, username, nickname, score, equippedBadges, equippedTitle]
       properties:
         rank: { type: integer, minimum: 1 }
         userId: { type: integer, format: int64 }
@@ -7335,7 +7332,7 @@ components:
           description: 已装备称号；无装备时为 null
     WealthLeaderboardRow:
       type: object
-      required: [rank, userId, username, nickname, score, equippedBadges, equippedTitle, level]
+      required: [rank, userId, username, nickname, score, equippedBadges, equippedTitle]
       properties:
         rank: { type: integer, minimum: 1 }
         userId: { type: integer, format: int64 }
@@ -7424,7 +7421,7 @@ components:
     LearningPathAuthor:
       type: object
       description: 学习路线作者的公开摘要。
-      required: [id, username, nickname, level]
+      required: [id, username, nickname]
       properties:
         id: { type: integer, format: int64 }
         username: { type: string }
@@ -7855,7 +7852,7 @@ components:
     SolutionAuthor:
       type: object
       description: 帖子/回复作者的公开摘要；仅含 id/username/nickname，不含邮箱。
-      required: [id, username, nickname, level]
+      required: [id, username, nickname]
       properties:
         id: { type: integer, format: int64 }
         username: { type: string }
@@ -7973,7 +7970,7 @@ components:
     SocialUserSummary:
       type: object
       description: 粉丝/关注列表与通知触发者的公开摘要；不含邮箱。
-      required: [id, username, nickname, avatarUrl, rating, level]
+      required: [id, username, nickname, avatarUrl, rating]
       properties:
         id: { type: integer, format: int64 }
         username: { type: string }
@@ -8015,7 +8012,7 @@ components:
     EvaluationAuthor:
       type: object
       description: 评价作者的公开摘要；不含邮箱。
-      required: [id, username, nickname, avatarUrl, rating, level]
+      required: [id, username, nickname, avatarUrl, rating]
       properties:
         id: { type: integer, format: int64 }
         username: { type: string }
@@ -8909,7 +8906,7 @@ components:
         modelIntro: { type: string, maxLength: 2000, description: 模型简介，支持 Markdown，最多 2000 个字符 }
     AgentAuthor:
       type: object
-      required: [id, username, nickname, level]
+      required: [id, username, nickname]
       properties:
         id: { type: integer, format: int64 }
         username: { type: string }
@@ -8931,7 +8928,6 @@ components:
         - author
         - createdAt
         - updatedAt
-        - level
       properties:
         id: { type: integer, format: int64 }
         userId: { type: integer, format: int64, description: 所属用户 ID }
