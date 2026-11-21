@@ -73,6 +73,8 @@ type Testcase struct {
 	ID         int64
 	InputFile  string
 	OutputFile string
+	InputSize  int64
+	OutputSize int64
 	Score      int
 	SortOrder  int
 }

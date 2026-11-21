@@ -197,6 +197,23 @@ func TestPipelineAccepted(t *testing.T) {
 	assert.Equal(t, []int64{sub, sub}, e.pub.ids, "judging and terminal states are published")
 }
 
+func TestPipelineScalesOutputLimitForLargeExpectedAnswer(t *testing.T) {
+	e := newEnv(t, "traditional", caseSpec{"3\n", 10})
+	_, err := e.pool.Exec(context.Background(),
+		`UPDATE problem_testcases SET output_size = $1 WHERE id = $2`, 2<<20, e.cases[0])
+	require.NoError(t, err)
+
+	sub := e.submit(t, model.LanguageCPP, "int main(){}")
+	e.sb.runFn = func(sandbox.RunRequest) (sandbox.RunResult, error) {
+		return sandbox.RunResult{Output: []byte("3\n")}, nil
+	}
+
+	require.NoError(t, e.pipe.Run(context.Background(), sub))
+	require.Len(t, e.sb.batches, 1)
+	assert.Equal(t, 2<<20+(1<<20), e.sb.batches[0].OutputLimitBytes,
+		"the batch must allow the expected answer plus slack")
+}
+
 func TestPipelinePublishesAcceptedGameEvent(t *testing.T) {
 	e := newEnv(t, "traditional", caseSpec{"3\n", 10})
 	sub := e.submit(t, model.LanguageCPP, "int main(){}")

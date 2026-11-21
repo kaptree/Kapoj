@@ -90,7 +90,7 @@ func (r *Repository) Claim(ctx context.Context, id int64) (*model.Submission, *m
 	}
 
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, input_file, output_file, score, sort_order
+		SELECT id, input_file, output_file, input_size, output_size, score, sort_order
 		FROM problem_testcases WHERE problem_id = $1 ORDER BY sort_order, id`, sub.ProblemID)
 	if err != nil {
 		return nil, nil, nil, err
@@ -99,7 +99,10 @@ func (r *Repository) Claim(ctx context.Context, id int64) (*model.Submission, *m
 	var cases []model.Testcase
 	for rows.Next() {
 		var tc model.Testcase
-		if err := rows.Scan(&tc.ID, &tc.InputFile, &tc.OutputFile, &tc.Score, &tc.SortOrder); err != nil {
+		if err := rows.Scan(
+			&tc.ID, &tc.InputFile, &tc.OutputFile, &tc.InputSize, &tc.OutputSize,
+			&tc.Score, &tc.SortOrder,
+		); err != nil {
 			return nil, nil, nil, err
 		}
 		cases = append(cases, tc)

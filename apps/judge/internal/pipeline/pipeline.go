@@ -22,9 +22,14 @@ import (
 )
 
 const (
-	maxAnswerBytes        = 16 << 20
-	maxCheckerBytes       = 256 << 10
+	maxAnswerBytes  = 16 << 20
+	maxCheckerBytes = 256 << 10
+	// outputLimitBytes is the floor for a submission's stdout. Large-answer
+	// problems raise it from the testcase's expected output size (plus slack),
+	// so a correct program is not rejected for exceeding a fixed 1 MiB cap.
 	outputLimitBytes      = 1 << 20
+	outputLimitSlack      = 1 << 20
+	maxOutputLimitBytes   = 16 << 20
 	maxMessageBytes       = 4096
 	maxCompileMessageSize = 64 << 10
 	checkerTimeLimitMS    = 5000
@@ -158,7 +163,7 @@ func (p *Pipeline) Run(ctx context.Context, submissionID int64) error {
 	_, err = p.sandbox.RunBatch(ctx, sandbox.RunBatchRequest{
 		Language: string(sub.Language), ArtifactDir: compiled.ArtifactDir, Cases: batchCases,
 		TimeLimitMS: prob.TimeLimitMS, MemoryLimitMB: prob.MemoryLimitMB,
-		OutputLimitBytes: outputLimitBytes,
+		OutputLimitBytes: outputLimitForCases(cases),
 		OnResult: func(index int, run sandbox.RunResult) bool {
 			if judgeErr != nil {
 				return false
@@ -320,6 +325,34 @@ func looksLikeOOM(stderr []byte) bool {
 		}
 	}
 	return false
+}
+
+// outputLimitForCases returns the stdout cap for one batch. It starts at the
+// historical 1 MiB floor and grows to cover the largest expected answer plus
+// slack, capped at maxOutputLimitBytes. Without this, a correct program for a
+// problem whose expected output is larger than 1 MiB is reported as
+// "输出超过限制" even when it matches exactly.
+func outputLimitForCases(cases []model.Testcase) int {
+	limit := outputLimitBytes
+	for _, tc := range cases {
+		if tc.OutputSize <= 0 {
+			continue
+		}
+		need := tc.OutputSize + outputLimitSlack
+		if tc.OutputSize < outputLimitBytes {
+			need = outputLimitBytes
+		}
+		if need > maxOutputLimitBytes {
+			need = maxOutputLimitBytes
+		}
+		if need > int64(limit) {
+			limit = int(need)
+		}
+		if limit == maxOutputLimitBytes {
+			break
+		}
+	}
+	return limit
 }
 
 func (p *Pipeline) readStorage(ctx context.Context, key string, limit int64) ([]byte, error) {
