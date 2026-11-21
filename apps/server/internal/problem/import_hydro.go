@@ -155,6 +155,23 @@ func WithHydroUncompressedLimit(n int64) Option {
 	return func(s *Service) { s.hydroUncompressedLimit = n }
 }
 
+// hydroTestcaseLimits snapshots the configured testcase limits for one import.
+// A field left unset by an incomplete provider keeps the legacy Hydro default
+// so imports keep working; a valid provider always supplies all fields.
+func (s *Service) hydroTestcaseLimits(ctx context.Context) TestcaseLimits {
+	limits := s.limits(ctx)
+	if limits.MaxInputBytes <= 0 {
+		limits.MaxInputBytes = maxHydroTestcaseBytes
+	}
+	if limits.MaxOutputBytes <= 0 {
+		limits.MaxOutputBytes = maxHydroTestcaseBytes
+	}
+	if limits.MaxProblemTotalBytes <= 0 {
+		limits.MaxProblemTotalBytes = maxHydroProblemTestdataBytes
+	}
+	return limits
+}
+
 // ImportHydro parses a HydroOJ exported zip package and imports every valid
 // problem as an offline problem owned by createdBy. A package that is damaged,
 // empty, over its limits, or carries a dangerous entry is rejected whole with a
@@ -173,6 +190,7 @@ func (s *Service) ImportHydro(ctx context.Context, createdBy int64, r io.ReaderA
 	if opt.Publish && !opt.CanPublish {
 		return nil, httpx.ErrForbidden
 	}
+	limits := s.hydroTestcaseLimits(ctx)
 	zipLimit := opt.MaxZipBytes
 	if zipLimit <= 0 {
 		zipLimit = maxHydroZipBytes
@@ -324,7 +342,7 @@ func (s *Service) ImportHydro(ctx context.Context, createdBy int64, r io.ReaderA
 		case skippedSlugs[slug]:
 			continue
 		}
-		imp, fail, err := s.importHydroProblem(ctx, createdBy, d, byDir[d], byDir[d+"/testdata"], slug, existingBySlug[slug], &actual, limit, &result.Warnings)
+		imp, fail, err := s.importHydroProblem(ctx, createdBy, d, byDir[d], byDir[d+"/testdata"], slug, existingBySlug[slug], &actual, limit, limits, &result.Warnings)
 		if err != nil {
 			// A package-level error (e.g. the decompressed budget) aborts the
 			// whole import; roll back everything committed during this call so
@@ -445,6 +463,7 @@ func (s *Service) importHydroProblem(
 	existing *Problem,
 	actual *int64,
 	limit int64,
+	limits TestcaseLimits,
 	warnings *[]string,
 ) (HydroImportedProblem, *HydroImportFailure, error) {
 	folder := path.Base(dir)
@@ -486,7 +505,7 @@ func (s *Service) importHydroProblem(
 		return fail(title, msg)
 	}
 
-	pairs, warning, msg := collectHydroTestdata(testFiles)
+	pairs, warning, msg := collectHydroTestdata(testFiles, limits)
 	if warning != "" && warnings != nil {
 		*warnings = append(*warnings, folder+"："+warning)
 	}
@@ -683,7 +702,7 @@ func readHydroStatement(byBase map[string]*zip.File, actual *int64) (string, str
 	return stmt, ""
 }
 
-func collectHydroTestdata(files []hydroEntry) ([]hydroPair, string, string) {
+func collectHydroTestdata(files []hydroEntry, limits TestcaseLimits) ([]hydroPair, string, string) {
 	type entry struct{ in, out, ans *zip.File }
 	m := map[string]*entry{}
 	for _, e := range files {
@@ -748,15 +767,17 @@ func collectHydroTestdata(files []hydroEntry) ([]hydroPair, string, string) {
 		if out == nil {
 			out = e.ans
 		}
-		for _, f := range []*zip.File{e.in, out} {
-			sz := int64(f.UncompressedSize64)
-			if sz > maxHydroTestcaseBytes {
-				return nil, "", "单个测试文件不能超过 16 MiB"
-			}
-			total += sz
+		inputSize := int64(e.in.UncompressedSize64)
+		if inputSize > limits.MaxInputBytes {
+			return nil, "", fmt.Sprintf("输入文件不能超过 %s：%s", formatLimitBytes(limits.MaxInputBytes), e.in.Name)
 		}
-		if total > maxHydroProblemTestdataBytes {
-			return nil, "", fmt.Sprintf("单题测试数据不能超过 %d MiB", maxHydroProblemTestdataBytes>>20)
+		outputSize := int64(out.UncompressedSize64)
+		if outputSize > limits.MaxOutputBytes {
+			return nil, "", fmt.Sprintf("输出文件不能超过 %s：%s", formatLimitBytes(limits.MaxOutputBytes), out.Name)
+		}
+		total += inputSize + outputSize
+		if total > limits.MaxProblemTotalBytes {
+			return nil, "", fmt.Sprintf("单题测试数据不能超过 %s", formatLimitBytes(limits.MaxProblemTotalBytes))
 		}
 		pairs = append(pairs, hydroPair{in: e.in, out: out})
 	}

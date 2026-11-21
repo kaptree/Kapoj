@@ -259,6 +259,7 @@ func (s *Service) importKapOJ(
 		Imported: []PackageImportedProblem{},
 		Failed:   []PackageImportFailure{},
 	}
+	limits := s.hydroTestcaseLimits(ctx)
 
 	descriptors, err := readKapOJDescriptors(archive, kind, prefix)
 	if err != nil {
@@ -350,7 +351,7 @@ func (s *Service) importKapOJ(
 			continue
 		}
 		imported, failure, err := s.importKapOJProblem(
-			ctx, createdBy, archive, desc, existingBySlug[slug], opt, &createdIDs)
+			ctx, createdBy, archive, desc, existingBySlug[slug], opt, limits, &createdIDs)
 		if err != nil {
 			for _, id := range createdIDs {
 				s.cleanupHydroProblem(ctx, id)
@@ -491,6 +492,7 @@ func (s *Service) importKapOJProblem(
 	desc *kapOJDescriptor,
 	existing *Problem,
 	opt PackageImportOptions,
+	limits TestcaseLimits,
 	createdIDs *[]int64,
 ) (PackageImportedProblem, *PackageImportFailure, error) {
 	manifest := desc.manifest
@@ -500,7 +502,7 @@ func (s *Service) importKapOJProblem(
 			Folder: desc.folder, Title: title, Error: msg,
 		}, nil
 	}
-	prepared, err := prepareKapOJProblem(archive, desc.prefix, manifest)
+	prepared, err := prepareKapOJProblem(archive, desc.prefix, manifest, limits)
 	if err != nil {
 		if errors.Is(err, errHydroPackageLimit) {
 			return PackageImportedProblem{}, nil, err
@@ -809,7 +811,7 @@ func (s *Service) replaceKapOJProblem(
 	return imported, nil, nil
 }
 
-func prepareKapOJProblem(archive *kapOJArchive, prefix string, manifest *PackageManifest) (*kapOJPrepared, error) {
+func prepareKapOJProblem(archive *kapOJArchive, prefix string, manifest *PackageManifest, limits TestcaseLimits) (*kapOJPrepared, error) {
 	files := manifest.Files
 	statement, err := archive.read(prefix, files.Statement, maxHydroStatementBytes)
 	if err != nil {
@@ -862,7 +864,7 @@ func prepareKapOJProblem(archive *kapOJArchive, prefix string, manifest *Package
 			return nil, fmt.Errorf("测试数据清单不是有效 JSON")
 		}
 	}
-	if err := validateKapOJTestdata(archive, prefix, testdata); err != nil {
+	if err := validateKapOJTestdata(archive, prefix, testdata, limits); err != nil {
 		return nil, err
 	}
 
@@ -954,7 +956,7 @@ func prepareKapOJProblem(archive *kapOJArchive, prefix string, manifest *Package
 	}, nil
 }
 
-func validateKapOJTestdata(archive *kapOJArchive, prefix string, meta TestdataManifest) error {
+func validateKapOJTestdata(archive *kapOJArchive, prefix string, meta TestdataManifest, limits TestcaseLimits) error {
 	if len(meta.Testcases) > maxHydroTestcases {
 		return fmt.Errorf("测试点数量不能超过 %d", maxHydroTestcases)
 	}
@@ -974,14 +976,18 @@ func validateKapOJTestdata(archive *kapOJArchive, prefix string, meta TestdataMa
 				return err
 			}
 			size := int64(f.UncompressedSize64)
-			if size > maxHydroTestcaseBytes {
-				return fmt.Errorf("单个测试文件不能超过 16 MiB")
+			if rel == tc.Input {
+				if size > limits.MaxInputBytes {
+					return fmt.Errorf("输入文件不能超过 %s：%s", formatLimitBytes(limits.MaxInputBytes), rel)
+				}
+			} else if size > limits.MaxOutputBytes {
+				return fmt.Errorf("输出文件不能超过 %s：%s", formatLimitBytes(limits.MaxOutputBytes), rel)
 			}
 			total += size
 		}
 	}
-	if total > maxHydroProblemTestdataBytes {
-		return fmt.Errorf("单题测试数据不能超过 %d MiB", maxHydroProblemTestdataBytes>>20)
+	if total > limits.MaxProblemTotalBytes {
+		return fmt.Errorf("单题测试数据不能超过 %s", formatLimitBytes(limits.MaxProblemTotalBytes))
 	}
 	return nil
 }
