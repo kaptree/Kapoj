@@ -242,8 +242,18 @@ func TestPipelineUsesConfiguredOutputLimit(t *testing.T) {
 
 	t.Run("read failure falls back to defaults", func(t *testing.T) {
 		e := newEnv(t, "traditional", caseSpec{"3\n", 10})
-		_, err := e.pool.Exec(context.Background(), `DROP TABLE judge_settings`)
+		// Rename the table instead of dropping it so following tests in the
+		// package keep the schema; restore it during cleanup.
+		const hidden = "judge_settings_pipeline_test_hidden"
+		_, err := e.pool.Exec(context.Background(), `DROP TABLE IF EXISTS `+hidden)
 		require.NoError(t, err)
+		_, err = e.pool.Exec(context.Background(), `ALTER TABLE judge_settings RENAME TO `+hidden)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_, err := e.pool.Exec(context.Background(),
+				`ALTER TABLE IF EXISTS `+hidden+` RENAME TO judge_settings`)
+			require.NoError(t, err)
+		})
 
 		sub := e.submit(t, model.LanguageCPP, "int main(){}")
 		e.sb.runFn = func(sandbox.RunRequest) (sandbox.RunResult, error) {
@@ -261,10 +271,10 @@ func TestPipelineUsesConfiguredOutputLimit(t *testing.T) {
 }
 
 func TestPipelineUsesConfiguredAnswerReadLimit(t *testing.T) {
-	const answer = "some expected answer larger than the configured read limit"
+	answer := strings.Repeat("x", (1<<20)+1)
 	e := newEnv(t, "traditional", caseSpec{answer, 10})
 	settings := model.DefaultJudgeSettings()
-	settings.MaxOutputBytes = int64(len(answer) - 1)
+	settings.MaxOutputBytes = 1 << 20 // the smallest value the admin API accepts
 	testutil.InsertJudgeSettings(t, e.pool, settings)
 
 	sub := e.submit(t, model.LanguageCPP, "int main(){}")
@@ -282,10 +292,10 @@ func TestPipelineUsesConfiguredAnswerReadLimit(t *testing.T) {
 }
 
 func TestPipelineUsesConfiguredAnswerReadLimitWithinCap(t *testing.T) {
-	answer := strings.Repeat("x", 64)
+	answer := strings.Repeat("x", 1<<20)
 	e := newEnv(t, "traditional", caseSpec{answer, 10})
 	settings := model.DefaultJudgeSettings()
-	settings.MaxOutputBytes = int64(len(answer))
+	settings.MaxOutputBytes = 1 << 20 // the smallest value the admin API accepts
 	testutil.InsertJudgeSettings(t, e.pool, settings)
 
 	sub := e.submit(t, model.LanguageCPP, "int main(){}")

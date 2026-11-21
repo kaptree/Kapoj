@@ -6496,7 +6496,7 @@ export interface paths {
             };
         };
         put?: never;
-        /** 上传测试点（problem.testcase.manage）；输入输出文件各不超过 16 MiB，请求体不超过 40 MiB */
+        /** 上传测试点（problem.testcase.manage）；输入输出文件各受后台评测设置限制（默认各 16 MiB），路由请求体上限 2 GiB + 16 MiB */
         post: {
             parameters: {
                 query?: never;
@@ -6769,7 +6769,7 @@ export interface paths {
         put?: never;
         /**
          * 批量上传测试数据（problem.testcase.manage；创建者或管理员）
-         * @description multipart 字段 files 可重复；每个 .in 必须配对同名 .out 或 .ans，二者同时存在时使用 .out。 一次 1–100 对，单文件不超过 16 MiB，总量不超过 200 MiB；任一对不完整则整批失败。
+         * @description multipart 字段 files 可重复；每个 .in 必须配对同名 .out 或 .ans，二者同时存在时使用 .out。 一次 1–100 对，单文件与批次总量均受后台评测设置限制（默认单文件 16 MiB、总量 200 MiB）；任一对不完整则整批失败。
          */
         post: {
             parameters: {

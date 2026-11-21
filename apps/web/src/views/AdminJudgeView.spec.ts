@@ -92,6 +92,7 @@ describe('AdminJudgeView', () => {
     expect(wrapper.text()).toContain('批量上传总量')
     expect(wrapper.text()).toContain('单题导入总量')
     expect(wrapper.text()).toContain('只影响后续提交')
+    expect(wrapper.text()).toContain('系统错误')
 
     const inputs = numbers(wrapper)
     // Order matches the template: floor, slack, max output, input, output, batch, problem.
@@ -184,6 +185,44 @@ describe('AdminJudgeView', () => {
         detail: '最大输出需为 1–64 MiB',
       }),
     )
+    wrapper.unmount()
+  })
+
+  it('reports a failed reload after a successful save as saved, not failed', async () => {
+    auth.can.mockImplementation((code) => code === PERM.system.settings.manage)
+    vi.mocked(updateAdminJudgeSettings).mockResolvedValue(settingsView())
+    vi.mocked(getAdminJudgeSettings)
+      .mockResolvedValueOnce(settingsView())
+      .mockRejectedValueOnce(new ApiError(500, 50000, 'refresh failed'))
+
+    const wrapper = await mountPage()
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(updateAdminJudgeSettings).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('已保存，但刷新失败，请重新加载')
+    expect(wrapper.text()).not.toContain('保存评测设置失败')
+    expect(toast.add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'error',
+        summary: '刷新失败',
+        detail: '已保存，但刷新失败，请重新加载',
+      }),
+    )
+    wrapper.unmount()
+  })
+
+  it('associates every label with its generated input id', async () => {
+    const wrapper = await mountPage()
+
+    const fields = wrapper.findAll('.app-field')
+    expect(fields).toHaveLength(7)
+    fields.forEach((field) => {
+      const label = field.find('label')
+      const input = field.find('input')
+      expect(label.attributes('for')).toBe(input.attributes('id'))
+    })
     wrapper.unmount()
   })
 

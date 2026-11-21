@@ -155,14 +155,25 @@ async function save() {
       maxBatchTotalBytes: mibToBytes(form.value.maxBatchTotalMiB as number),
       maxProblemTotalBytes: mibToBytes(form.value.maxProblemTotalMiB as number),
     }
-    await updateAdminJudgeSettings(input)
+    try {
+      await updateAdminJudgeSettings(input)
+    } catch (e) {
+      const message = e instanceof ApiError ? e.message : '保存评测设置失败，请稍后再试'
+      saveError.value = message
+      toast.add({ severity: 'error', summary: '保存失败', detail: message, life: 4000 })
+      return
+    }
     // Re-read so server-side rounding and clamping are what the form shows.
-    applyView(await getAdminJudgeSettings())
-    toast.add({ severity: 'success', summary: '评测设置已保存', life: 3000 })
-  } catch (e) {
-    const message = e instanceof ApiError ? e.message : '保存评测设置失败，请稍后再试'
-    saveError.value = message
-    toast.add({ severity: 'error', summary: '保存失败', detail: message, life: 4000 })
+    // The save already succeeded, so a failed refresh must not be reported as
+    // a failed save.
+    try {
+      applyView(await getAdminJudgeSettings())
+      toast.add({ severity: 'success', summary: '评测设置已保存', life: 3000 })
+    } catch {
+      const message = '已保存，但刷新失败，请重新加载'
+      saveError.value = message
+      toast.add({ severity: 'error', summary: '刷新失败', detail: message, life: 4000 })
+    }
   } finally {
     saving.value = false
   }
@@ -197,17 +208,23 @@ onMounted(() => {
 
     <AppSurface v-else padding="lg" class="admin-judge__surface">
       <Message severity="info" :closable="false" role="status">
-        这些限制只影响后续提交与上传；已有数据不会被修改；降低最大输出可能导致已有的大输出被截断。
+        这些限制只影响后续提交与上传；已有数据不会被修改；降低最大输出可能导致已有的大输出被截断，也可能使超过新上限的标准答案无法读取，相关提交会进入重试或系统错误。
       </Message>
 
       <form class="admin-judge__form" @submit.prevent="save">
         <section class="settings-group" aria-label="评测运行">
           <h2 class="settings-group__title">评测运行</h2>
           <div class="settings-grid">
-            <AppFormField label="输出下限（MiB）" :error="errors.outputFloorMiB">
+            <AppFormField
+              v-slot="{ id, invalid, describedby }"
+              label="输出下限（MiB）"
+              :error="errors.outputFloorMiB"
+            >
               <InputNumber
                 v-model="form.outputFloorMiB"
-                input-id="output-floor"
+                :input-id="id"
+                :invalid="invalid"
+                :aria-describedby="describedby"
                 :min="FLOOR_MIN_MIB"
                 :max="64"
                 :step="0.5"
@@ -216,10 +233,16 @@ onMounted(() => {
               />
             </AppFormField>
 
-            <AppFormField label="输出余量（MiB）" :error="errors.outputSlackMiB">
+            <AppFormField
+              v-slot="{ id, invalid, describedby }"
+              label="输出余量（MiB）"
+              :error="errors.outputSlackMiB"
+            >
               <InputNumber
                 v-model="form.outputSlackMiB"
-                input-id="output-slack"
+                :input-id="id"
+                :invalid="invalid"
+                :aria-describedby="describedby"
                 :min="0"
                 :max="64"
                 :step="0.5"
@@ -228,10 +251,16 @@ onMounted(() => {
               />
             </AppFormField>
 
-            <AppFormField label="最大输出（MiB）" :error="errors.maxOutputMiB">
+            <AppFormField
+              v-slot="{ id, invalid, describedby }"
+              label="最大输出（MiB）"
+              :error="errors.maxOutputMiB"
+            >
               <InputNumber
                 v-model="form.maxOutputMiB"
-                input-id="max-output"
+                :input-id="id"
+                :invalid="invalid"
+                :aria-describedby="describedby"
                 :min="1"
                 :max="64"
                 :step="0.5"
@@ -245,10 +274,16 @@ onMounted(() => {
         <section class="settings-group" aria-label="测试数据">
           <h2 class="settings-group__title">测试数据</h2>
           <div class="settings-grid">
-            <AppFormField label="单个输入文件（MiB）" :error="errors.maxInputFileMiB">
+            <AppFormField
+              v-slot="{ id, invalid, describedby }"
+              label="单个输入文件（MiB）"
+              :error="errors.maxInputFileMiB"
+            >
               <InputNumber
                 v-model="form.maxInputFileMiB"
-                input-id="max-input-file"
+                :input-id="id"
+                :invalid="invalid"
+                :aria-describedby="describedby"
                 :min="1"
                 :max="256"
                 :step="0.5"
@@ -257,10 +292,16 @@ onMounted(() => {
               />
             </AppFormField>
 
-            <AppFormField label="单个输出文件（MiB）" :error="errors.maxOutputFileMiB">
+            <AppFormField
+              v-slot="{ id, invalid, describedby }"
+              label="单个输出文件（MiB）"
+              :error="errors.maxOutputFileMiB"
+            >
               <InputNumber
                 v-model="form.maxOutputFileMiB"
-                input-id="max-output-file"
+                :input-id="id"
+                :invalid="invalid"
+                :aria-describedby="describedby"
                 :min="1"
                 :max="64"
                 :step="0.5"
@@ -269,10 +310,16 @@ onMounted(() => {
               />
             </AppFormField>
 
-            <AppFormField label="批量上传总量（MiB）" :error="errors.maxBatchTotalMiB">
+            <AppFormField
+              v-slot="{ id, invalid, describedby }"
+              label="批量上传总量（MiB）"
+              :error="errors.maxBatchTotalMiB"
+            >
               <InputNumber
                 v-model="form.maxBatchTotalMiB"
-                input-id="max-batch-total"
+                :input-id="id"
+                :invalid="invalid"
+                :aria-describedby="describedby"
                 :min="1"
                 :max="2048"
                 :step="0.5"
@@ -281,10 +328,16 @@ onMounted(() => {
               />
             </AppFormField>
 
-            <AppFormField label="单题导入总量（MiB）" :error="errors.maxProblemTotalMiB">
+            <AppFormField
+              v-slot="{ id, invalid, describedby }"
+              label="单题导入总量（MiB）"
+              :error="errors.maxProblemTotalMiB"
+            >
               <InputNumber
                 v-model="form.maxProblemTotalMiB"
-                input-id="max-problem-total"
+                :input-id="id"
+                :invalid="invalid"
+                :aria-describedby="describedby"
                 :min="1"
                 :max="2048"
                 :step="0.5"

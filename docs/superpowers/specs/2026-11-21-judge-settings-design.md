@@ -99,7 +99,7 @@ type TestcaseLimits struct {
 - 批量上传：单文件同上限，批次总量使用 `MaxBatchTotalBytes`。
 - Hydro/题包导入：单文件使用输入/输出上限，单题总量使用 `MaxProblemTotalBytes`。
 - 已有 `problem_import_settings` 的题包 zip/解压限制保持不变。
-- 上传路由改用新的 testcase upload 组，外层 body 硬上限 1 GiB；批量路由 body 硬上限 2 GiB + 16 MiB。服务层仍按后台设置精确校验，固定值只防超大请求。
+- 上传路由改用 `imports` 组，外层 body 硬上限 2 GiB + 16 MiB；服务层仍按后台设置精确校验，固定值只防超大请求。
 
 ## 6. judge 接入
 

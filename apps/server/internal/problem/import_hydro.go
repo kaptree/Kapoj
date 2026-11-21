@@ -532,7 +532,7 @@ func (s *Service) importHydroProblem(
 		if err != nil {
 			return fail(title, "读取原测试数据失败")
 		}
-		added, err := s.addHydroTestcases(ctx, existing.ID, pairs, actual, limit)
+		added, err := s.addHydroTestcases(ctx, existing.ID, pairs, actual, limit, limits.MaxProblemTotalBytes)
 		if err != nil {
 			s.cleanupHydroTestcases(ctx, existing.ID, added)
 			if errors.Is(err, errHydroPackageLimit) {
@@ -567,7 +567,7 @@ func (s *Service) importHydroProblem(
 	if err != nil {
 		return fail(title, hydroCreateError(err, slug))
 	}
-	if _, err := s.addHydroTestcases(ctx, p.ID, pairs, actual, limit); err != nil {
+	if _, err := s.addHydroTestcases(ctx, p.ID, pairs, actual, limit, limits.MaxProblemTotalBytes); err != nil {
 		s.cleanupHydroProblem(ctx, p.ID)
 		if errors.Is(err, errHydroPackageLimit) {
 			return HydroImportedProblem{}, nil, errHydroPackageLimit
@@ -583,8 +583,9 @@ func (s *Service) importHydroProblem(
 	}, nil, nil
 }
 
-func (s *Service) addHydroTestcases(ctx context.Context, problemID int64, pairs []hydroPair, actual *int64, limit int64) ([]int64, error) {
+func (s *Service) addHydroTestcases(ctx context.Context, problemID int64, pairs []hydroPair, actual *int64, limit, problemLimit int64) ([]int64, error) {
 	added := make([]int64, 0, len(pairs))
+	var problemBytes int64
 	for _, pair := range pairs {
 		inRC, err := pair.in.Open()
 		if err != nil {
@@ -608,6 +609,10 @@ func (s *Service) addHydroTestcases(ctx context.Context, problemID int64, pairs 
 		added = append(added, tc.ID)
 		if *actual > limit {
 			return added, errHydroPackageLimit
+		}
+		problemBytes += tc.InputSize + tc.OutputSize
+		if err := checkProblemTestcaseTotal(problemBytes, problemLimit); err != nil {
+			return added, err
 		}
 	}
 	return added, nil

@@ -65,8 +65,8 @@ import (
 const (
 	maxBodyBytes        = 1 << 20                // JSON endpoints
 	maxProblemJSONBytes = 6 << 20                // problem create/update and inline testcase content
-	maxUploadBytes      = 40 << 20               // file upload endpoints: two 16 MiB files plus form fields
-	maxImportBodyBytes  = (2 << 30) + (16 << 20) // 2 GiB package plus multipart overhead
+	maxUploadBytes      = 40 << 20               // checker, attachment and statement-image uploads
+	maxImportBodyBytes  = (2 << 30) + (16 << 20) // testcase uploads and package imports; per-route handlers enforce smaller limits
 )
 
 type Deps struct {

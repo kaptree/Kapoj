@@ -27,3 +27,19 @@ func TestRewriteImagePlaceholdersUsesLongestMatch(t *testing.T) {
 		"a /api/problems/9/assets/1 b /api/problems/9/assets/2",
 		got)
 }
+
+// TestCheckProblemTestcaseTotal covers the actual-imported-bytes guard directly.
+// Normal zip fixtures cannot reach this branch: archive/zip rejects entries that
+// read past their declared UncompressedSize64, so declared sizes always bound
+// the bytes AddTestcase can store. The guard protects against metadata that is
+// not authoritative (and future reader changes).
+func TestCheckProblemTestcaseTotal(t *testing.T) {
+	const limit = 6 << 20
+	assert.NoError(t, checkProblemTestcaseTotal(limit, limit))
+	assert.NoError(t, checkProblemTestcaseTotal(limit-1, limit))
+
+	err := checkProblemTestcaseTotal(limit+1, limit)
+	if assert.Error(t, err) {
+		assert.Contains(t, err.Error(), "单题测试数据不能超过 6 MiB")
+	}
+}

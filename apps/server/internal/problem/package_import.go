@@ -510,7 +510,7 @@ func (s *Service) importKapOJProblem(
 		return fail(packageErrorText(err))
 	}
 	if existing != nil {
-		return s.replaceKapOJProblem(ctx, createdBy, archive, desc, existing, prepared, opt)
+		return s.replaceKapOJProblem(ctx, createdBy, archive, desc, existing, prepared, opt, limits)
 	}
 
 	created, err := s.CreateWithDifficulty(ctx, createdBy, prepared.input,
@@ -527,7 +527,7 @@ func (s *Service) importKapOJProblem(
 		}
 	}
 
-	if _, err := s.addKapOJTestcases(ctx, problemID, archive, desc.prefix, prepared.testdata); err != nil {
+	if _, err := s.addKapOJTestcases(ctx, problemID, archive, desc.prefix, prepared.testdata, limits.MaxProblemTotalBytes); err != nil {
 		cleanup()
 		if errors.Is(err, errHydroPackageLimit) {
 			return PackageImportedProblem{}, nil, err
@@ -622,6 +622,7 @@ func (s *Service) replaceKapOJProblem(
 	existing *Problem,
 	prepared *kapOJPrepared,
 	opt PackageImportOptions,
+	limits TestcaseLimits,
 ) (PackageImportedProblem, *PackageImportFailure, error) {
 	manifest := desc.manifest
 	title := manifest.Problem.Title
@@ -702,6 +703,7 @@ func (s *Service) replaceKapOJProblem(
 	testdata := append([]TestcaseManifest(nil), prepared.testdata.Testcases...)
 	sort.SliceStable(testdata, func(i, j int) bool { return testdata[i].SortOrder < testdata[j].SortOrder })
 	testcases := make([]*Testcase, 0, len(testdata))
+	var testcaseBytes int64
 	for _, item := range testdata {
 		inFile, err := archive.file(desc.prefix, item.Input)
 		if err != nil {
@@ -740,6 +742,11 @@ func (s *Service) replaceKapOJProblem(
 		if archive.actual > archive.limit {
 			cleanup()
 			return PackageImportedProblem{}, nil, errHydroPackageLimit
+		}
+		testcaseBytes += tc.InputSize + tc.OutputSize
+		if err := checkProblemTestcaseTotal(testcaseBytes, limits.MaxProblemTotalBytes); err != nil {
+			cleanup()
+			return fail(packageErrorText(err))
 		}
 	}
 
@@ -998,10 +1005,12 @@ func (s *Service) addKapOJTestcases(
 	archive *kapOJArchive,
 	prefix string,
 	meta TestdataManifest,
+	problemLimit int64,
 ) ([]int64, error) {
 	cases := append([]TestcaseManifest(nil), meta.Testcases...)
 	sort.SliceStable(cases, func(i, j int) bool { return cases[i].SortOrder < cases[j].SortOrder })
 	added := make([]int64, 0, len(cases))
+	var problemBytes int64
 	for _, item := range cases {
 		inFile, err := archive.file(prefix, item.Input)
 		if err != nil {
@@ -1033,6 +1042,10 @@ func (s *Service) addKapOJTestcases(
 		added = append(added, tc.ID)
 		if archive.actual > archive.limit {
 			return added, errHydroPackageLimit
+		}
+		problemBytes += tc.InputSize + tc.OutputSize
+		if err := checkProblemTestcaseTotal(problemBytes, problemLimit); err != nil {
+			return added, err
 		}
 	}
 	return added, nil

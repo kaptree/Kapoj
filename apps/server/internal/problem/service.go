@@ -638,6 +638,16 @@ func (s *Service) put(ctx context.Context, key string, r io.Reader, max int64, w
 	return n, err
 }
 
+// checkProblemTestcaseTotal enforces the per-problem testcase total against the
+// bytes actually imported. The zip-declared size scan in the importers remains
+// an early guard only: metadata is not authoritative for what gets stored.
+func checkProblemTestcaseTotal(total, limit int64) error {
+	if total > limit {
+		return httpx.ErrValidation(fmt.Sprintf("单题测试数据不能超过 %s", formatLimitBytes(limit)))
+	}
+	return nil
+}
+
 // formatLimitBytes renders a byte limit in MiB or KiB without integer
 // rounding, so configured values appear in messages instead of hardcoded ones.
 func formatLimitBytes(n int64) string {

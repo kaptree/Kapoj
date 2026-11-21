@@ -432,7 +432,7 @@ function goAiGenerate() {
           @click="upload"
         />
       </div>
-      <p class="hint">输入、输出文件各不超过 16 MiB。</p>
+      <p class="hint">输入、输出文件各受评测设置限制（默认各 16 MiB）。</p>
     </section>
 
     <section class="uploader batch-uploader">
@@ -496,7 +496,7 @@ function goAiGenerate() {
           @click="uploadBatch"
         />
       </div>
-      <p class="hint">一次最多 100 对，单文件不超过 16 MiB，总量不超过 200 MiB。</p>
+      <p class="hint">一次最多 100 对；单文件默认 16 MiB，总量默认 200 MiB，管理员可调整。</p>
     </section>
 
     <template v-if="type === 'special'">

@@ -90,7 +90,7 @@ type PermissionDef struct {
 var permissionCatalog = []PermissionDef{
 	{Code: PermAdminDashboardView, Name: "访问管理仪表盘", GroupName: PermissionGroupAdmin, Description: "访问管理后台仪表盘与统计数据"},
 	{Code: PermAdminAuditView, Name: "查看审计日志", GroupName: PermissionGroupAdmin, Description: "查看管理员操作审计日志"},
-	{Code: PermSystemSettingsManage, Name: "管理系统设置", GroupName: PermissionGroupAdmin, Description: "修改平台系统配置（预留）"},
+	{Code: PermSystemSettingsManage, Name: "管理系统设置", GroupName: PermissionGroupAdmin, Description: "修改平台系统配置与评测设置"},
 	{Code: PermSystemBackupManage, Name: "管理系统备份", GroupName: PermissionGroupAdmin, Description: "创建、下载、恢复平台与用户账号备份，管理定时任务"},
 	{Code: PermSystemJobsManage, Name: "管理定时任务", GroupName: PermissionGroupAdmin, Description: "配置定时任务、立即执行、查看运行历史与题目难度设置"},
 
