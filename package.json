@@ -9,7 +9,7 @@
     "test:e2e": "corepack pnpm --filter web test:e2e",
     "e2e:stack:up": "bash scripts/e2e-stack.sh up",
     "e2e:stack:down": "bash scripts/e2e-stack.sh down",
-    "test:e2e:core": "bash scripts/e2e-stack.sh up && E2E_API_URL=http://127.0.0.1:18080 E2E_BASE_URL=http://127.0.0.1:15173 corepack pnpm --filter web exec playwright test e2e/core-flow.spec.ts",
+    "test:e2e:core": "bash scripts/e2e-stack.sh up && corepack pnpm --filter web exec playwright install ffmpeg && E2E_API_URL=http://127.0.0.1:18080 E2E_BASE_URL=http://127.0.0.1:15173 corepack pnpm --filter web exec playwright test e2e/core-flow.spec.ts",
     "lint:web": "corepack pnpm --filter web lint",
     "gen:api": "corepack pnpm --filter @kapoj/api gen"
   }

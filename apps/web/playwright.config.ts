@@ -16,6 +16,7 @@ export default defineConfig({
     channel: process.env.E2E_BROWSER_CHANNEL ?? 'chrome',
     actionTimeout: 10_000,
     trace: 'retain-on-failure',
+    video: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
   webServer: process.env.E2E_BASE_URL
