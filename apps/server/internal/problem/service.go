@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -87,19 +88,56 @@ type LearningGuard interface {
 // Option customizes a problem Service.
 type Option func(*Service)
 
+// TestcaseLimits are the upload limits applied to testcase files.
+type TestcaseLimits struct {
+	MaxInputBytes        int64
+	MaxOutputBytes       int64
+	MaxBatchTotalBytes   int64
+	MaxProblemTotalBytes int64
+}
+
+// TestcaseLimitsProvider supplies the current upload limits. It is read once
+// at the start of each operation so one request sees a consistent snapshot.
+type TestcaseLimitsProvider interface {
+	TestcaseLimits(ctx context.Context) (TestcaseLimits, error)
+}
+
+// TestcaseLimitsProviderFunc adapts a function to TestcaseLimitsProvider.
+type TestcaseLimitsProviderFunc func(ctx context.Context) (TestcaseLimits, error)
+
+func (f TestcaseLimitsProviderFunc) TestcaseLimits(ctx context.Context) (TestcaseLimits, error) {
+	return f(ctx)
+}
+
+// DefaultTestcaseLimits matches the historical fixed limits.
+func DefaultTestcaseLimits() TestcaseLimits {
+	return TestcaseLimits{
+		MaxInputBytes:        maxTestcaseBytes,
+		MaxOutputBytes:       maxTestcaseBytes,
+		MaxBatchTotalBytes:   maxBatchTotalBytes,
+		MaxProblemTotalBytes: maxBatchTotalBytes,
+	}
+}
+
 // WithLearningGuard installs a guard that blocks unpublishing or deleting a
 // problem referenced by an active learning path.
 func WithLearningGuard(g LearningGuard) Option {
 	return func(s *Service) { s.learningGuard = g }
 }
 
+// WithTestcaseLimitsProvider installs the dynamic testcase upload limits.
+func WithTestcaseLimitsProvider(p TestcaseLimitsProvider) Option {
+	return func(s *Service) { s.testcaseLimits = p }
+}
+
 // Service holds problem business rules. Authorization (who may call write
 // methods) is enforced by the HTTP layer; the service only decides what a
 // Viewer may see.
 type Service struct {
-	repo          Repository
-	store         storage.Storage
-	learningGuard LearningGuard
+	repo           Repository
+	store          storage.Storage
+	learningGuard  LearningGuard
+	testcaseLimits TestcaseLimitsProvider
 
 	hydroUncompressedLimit  int64
 	packageExportMaxBytes   int64
@@ -116,6 +154,20 @@ func NewService(repo Repository, store storage.Storage, opts ...Option) *Service
 		opt(s)
 	}
 	return s
+}
+
+// limits returns the upload limits for one operation. A missing or failing
+// provider keeps uploads working with the legacy defaults.
+func (s *Service) limits(ctx context.Context) TestcaseLimits {
+	if s.testcaseLimits == nil {
+		return DefaultTestcaseLimits()
+	}
+	limits, err := s.testcaseLimits.TestcaseLimits(ctx)
+	if err != nil {
+		slog.Warn("load testcase limits failed; using defaults", "err", err)
+		return DefaultTestcaseLimits()
+	}
+	return limits
 }
 
 func (s *Service) Create(ctx context.Context, createdBy int64, in Input) (*Problem, error) {
@@ -462,16 +514,17 @@ func (s *Service) stageTestcase(ctx context.Context, problemID int64, up Testcas
 	if up.Score < 0 || up.Score > maxScore {
 		return nil, nil, httpx.ErrValidation(fmt.Sprintf("分数需为 0–%d", maxScore))
 	}
+	limits := s.limits(ctx)
 	base := fmt.Sprintf("problems/%d/testcases/%s", problemID, randomHex())
 	tc := &Testcase{
 		ProblemID: problemID, InputFile: base + ".in", OutputFile: base + ".out",
 		Score: up.Score, IsSample: up.IsSample,
 	}
 	var err error
-	if tc.InputSize, err = s.put(ctx, tc.InputFile, up.Input, maxTestcaseBytes, "输入文件"); err != nil {
+	if tc.InputSize, err = s.put(ctx, tc.InputFile, up.Input, limits.MaxInputBytes, "输入文件"); err != nil {
 		return nil, nil, err
 	}
-	if tc.OutputSize, err = s.put(ctx, tc.OutputFile, up.Output, maxTestcaseBytes, "输出文件"); err != nil {
+	if tc.OutputSize, err = s.put(ctx, tc.OutputFile, up.Output, limits.MaxOutputBytes, "输出文件"); err != nil {
 		s.deleteFiles(ctx, []string{tc.InputFile})
 		return nil, nil, err
 	}
@@ -580,9 +633,22 @@ func validateInlineTestcase(value, what string) error {
 func (s *Service) put(ctx context.Context, key string, r io.Reader, max int64, what string) (int64, error) {
 	n, err := s.store.Put(ctx, key, r, max)
 	if errors.Is(err, storage.ErrTooLarge) {
-		return 0, httpx.ErrValidation(fmt.Sprintf("%s不能超过 %d KiB", what, max>>10))
+		return 0, httpx.ErrValidation(fmt.Sprintf("%s不能超过 %s", what, formatLimitBytes(max)))
 	}
 	return n, err
+}
+
+// formatLimitBytes renders a byte limit in MiB or KiB without integer
+// rounding, so configured values appear in messages instead of hardcoded ones.
+func formatLimitBytes(n int64) string {
+	switch {
+	case n >= 1<<20:
+		return strconv.FormatFloat(float64(n)/float64(1<<20), 'f', -1, 64) + " MiB"
+	case n >= 1<<10:
+		return strconv.FormatFloat(float64(n)/float64(1<<10), 'f', -1, 64) + " KiB"
+	default:
+		return fmt.Sprintf("%d B", n)
+	}
 }
 
 func (s *Service) ListTestcases(ctx context.Context, id int64) ([]TestcaseDTO, error) {

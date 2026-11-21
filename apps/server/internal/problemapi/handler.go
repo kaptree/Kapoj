@@ -26,12 +26,16 @@ const (
 	// Multipart parts above this size are spooled to temporary files rather
 	// than kept in memory.
 	multipartMemory = 1 << 20
+	// defaultMaxBatchBodyBytes matches the high-cap import body group so a
+	// configured batch total is the effective limit, not the multipart cap.
+	defaultMaxBatchBodyBytes int64 = (2 << 30) + (16 << 20)
 )
 
-// RegisterRoutes mounts the problem endpoints. api, problemJSON and uploads
-// must already run middleware.Authenticate. problemJSON carries a larger
-// limit because a statement plus samples can exceed the default 1 MiB;
-// uploads carries the limit used by the file upload endpoints.
+// RegisterRoutes mounts the problem endpoints. api, problemJSON, uploads and
+// imports must already run middleware.Authenticate. problemJSON carries a
+// larger limit because a statement plus samples can exceed the default 1 MiB;
+// uploads carries the limit used by checker/attachment uploads, while imports
+// carries the high ceiling used by package imports and testcase uploads.
 // ImportLimitProvider exposes the current configurable import limits.
 type ImportLimitProvider interface {
 	Get(ctx context.Context) (*problemimport.SettingsView, error)
@@ -75,7 +79,7 @@ type Options struct {
 	// When nil, MaxImportFileBytes / package defaults are used.
 	ImportSettings ImportLimitProvider
 	// MaxBatchBodyBytes caps the batch testcase multipart route. Zero means
-	// the historical 210 MiB cap.
+	// defaultMaxBatchBodyBytes.
 	MaxBatchBodyBytes int64
 	// TestcaseGen 是 AI 出题造数据服务；非 nil 时注册相关路由。
 	TestcaseGen *testcasegen.Service
@@ -162,7 +166,6 @@ func RegisterRoutes(
 	api.POST("/problems/:id/testcases/reorder", require(string(rbac.PermProblemTestcaseManage)), audit(string(rbac.PermProblemTestcaseManage)), h.reorderTestcases)
 	api.DELETE("/problems/:id/testcases/:tid", require(string(rbac.PermProblemTestcaseManage)), audit(string(rbac.PermProblemTestcaseManage)), h.deleteTestcase)
 
-	uploads.POST("/problems/:id/testcases", require(string(rbac.PermProblemTestcaseManage)), audit(string(rbac.PermProblemTestcaseManage)), h.addTestcase)
 	uploads.POST("/problems/:id/checker", require(string(rbac.PermProblemCheckerManage)), audit(string(rbac.PermProblemCheckerManage)), h.uploadChecker)
 	uploads.POST("/problems/:id/attachments", require(string(rbac.PermProblemUpdate)), audit(string(rbac.PermProblemUpdate)), h.uploadAttachment)
 	uploads.POST("/problems/:id/assets", require(string(rbac.PermProblemUpdate)), audit(string(rbac.PermProblemUpdate)), h.uploadStatementImage)
@@ -178,8 +181,9 @@ func RegisterRoutes(
 	api.GET("/problems/import/limits", load, require(string(rbac.PermProblemCreate)), h.importLimitsView)
 	maxBatchBody := o.MaxBatchBodyBytes
 	if maxBatchBody <= 0 {
-		maxBatchBody = 210 << 20
+		maxBatchBody = defaultMaxBatchBodyBytes
 	}
+	imports.POST("/problems/:id/testcases", require(string(rbac.PermProblemTestcaseManage)), audit(string(rbac.PermProblemTestcaseManage)), h.addTestcase)
 	imports.POST("/problems/import/hydro", require(string(rbac.PermProblemCreate)), h.importHydro)
 	imports.POST("/problems/import/package", require(string(rbac.PermProblemCreate)), h.importPackage)
 	imports.POST("/problems/:id/testcases/batch", middleware.MaxBody(maxBatchBody),

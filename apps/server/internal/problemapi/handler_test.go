@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
+	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,10 +24,14 @@ import (
 
 	"github.com/kaptree/kapoj/apps/server/internal/activity"
 	"github.com/kaptree/kapoj/apps/server/internal/ai"
+	"github.com/kaptree/kapoj/apps/server/internal/auth"
 	"github.com/kaptree/kapoj/apps/server/internal/config"
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
+	"github.com/kaptree/kapoj/apps/server/internal/judgesettings"
+	"github.com/kaptree/kapoj/apps/server/internal/middleware"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
+	"github.com/kaptree/kapoj/apps/server/internal/problemapi"
 	"github.com/kaptree/kapoj/apps/server/internal/rbac"
 	"github.com/kaptree/kapoj/apps/server/internal/router"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
@@ -98,6 +103,62 @@ func newFx(t *testing.T, mutators ...func(*router.Deps)) *fx {
 	}
 	h := router.New(deps)
 	return &fx{t: t, h: h, db: g, rbac: rbacSvc, root: root, tokens: map[string]string{}}
+}
+
+// newBodyGroupEngine builds a minimal authenticated engine whose uploads and
+// imports groups carry distinct body limits. Route placement is then
+// observable with small payloads instead of a 40 MiB request.
+func newBodyGroupEngine(t *testing.T, uploadsBody, importsBody int64, opts ...problem.Option) (http.Handler, string, *problem.Service) {
+	t.Helper()
+	g := testutil.PG(t)
+	rbacSvc := testutil.SeedRBAC(t, g)
+	store, err := storage.NewLocal(t.TempDir())
+	require.NoError(t, err)
+	svc := problem.NewService(problem.NewGormRepository(g), store, opts...)
+
+	require.NoError(t, g.Exec(`INSERT INTO users (username, nickname, email, password_hash, created_at, updated_at)
+		VALUES ('uploader', 'Uploader', 'uploader@example.com', 'x', now(), now())`).Error)
+	var uid int64
+	require.NoError(t, g.Raw(`SELECT id FROM users WHERE username = 'uploader'`).Scan(&uid).Error)
+	testutil.AssignRole(t, g, uid, rbac.RoleCodeContentAdmin)
+
+	issuer := auth.NewTokenIssuer(strings.Repeat("s", 32), 15*time.Minute)
+	token, err := issuer.IssueAccess(&user.User{ID: uid, Role: user.RoleUser})
+	require.NoError(t, err)
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	api := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(1<<20))
+	problemJSON := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(4<<20))
+	uploads := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(uploadsBody))
+	imports := r.Group("/api", middleware.Authenticate(issuer), middleware.MaxBody(importsBody))
+	problemapi.RegisterRoutes(api, problemJSON, uploads, imports, svc, nil, nil,
+		problemapi.Options{RBAC: rbacSvc})
+	return r, token, svc
+}
+
+func postTestcaseMultipart(t *testing.T, h http.Handler, token string, problemID int64, input, output io.Reader) (*httptest.ResponseRecorder, map[string]any) {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	in, err := mw.CreateFormFile("input", "1.in")
+	require.NoError(t, err)
+	_, err = io.Copy(in, input)
+	require.NoError(t, err)
+	out, err := mw.CreateFormFile("output", "1.out")
+	require.NoError(t, err)
+	_, err = io.Copy(out, output)
+	require.NoError(t, err)
+	require.NoError(t, mw.Close())
+
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/problems/%d/testcases", problemID), &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	return w, decode(w)
 }
 
 func decode(w *httptest.ResponseRecorder) map[string]any {
@@ -637,6 +698,58 @@ func TestPublishFlow(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
+func TestTestcaseUploadUsesImportBodyGroup(t *testing.T) {
+	h, token, svc := newBodyGroupEngine(t, 1<<10, 1<<20)
+	p, err := svc.Create(context.Background(), 1, problem.Input{
+		Title: "Import body group", Slug: "import-body-group", StatementMD: "statement",
+		Type: problem.TypeTraditional, Difficulty: 1, TimeLimitMS: 1000, MemoryLimitMB: 256,
+	})
+	require.NoError(t, err)
+
+	// Larger than the 1 KiB uploads group, well inside the imports group.
+	w, resp := postTestcaseMultipart(t, h, token, p.ID,
+		strings.NewReader(strings.Repeat("a", 2<<10)), strings.NewReader("out"))
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	assert.EqualValues(t, 2<<10, resp["data"].(map[string]any)["inputSize"])
+}
+
+func TestTestcaseUploadUsesJudgeSettingsLimits(t *testing.T) {
+	f := newFx(t)
+	admin := f.token("problem_admin")
+	id := f.create(body("judge-limits"))
+	ctx := context.Background()
+	_, err := judgesettings.NewSettingsService(f.db).Get(ctx)
+	require.NoError(t, err)
+	require.NoError(t, f.db.Exec(`
+		UPDATE judge_settings SET max_input_file_bytes = ?, max_output_file_bytes = ? WHERE id = 1`,
+		2<<20, 1<<20).Error)
+	url := path("/api/problems/%d/testcases", id)
+
+	w, resp := f.multipart(url, admin, nil,
+		filePart{"input", "big.in", io.LimitReader(zeros{}, 2<<20+1)},
+		filePart{"output", "big.out", strings.NewReader("x")})
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+	assert.Contains(t, resp["message"], "2 MiB")
+	assert.Empty(t, f.storedFiles())
+
+	w, resp = f.multipart(url, admin, nil,
+		filePart{"input", "ok.in", strings.NewReader("x")},
+		filePart{"output", "big.out", io.LimitReader(zeros{}, 1<<20+1)})
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.EqualValues(t, 40001, resp["code"])
+	assert.Contains(t, resp["message"], "1 MiB")
+	assert.Empty(t, f.storedFiles())
+
+	w, resp = f.multipart(url, admin, nil,
+		filePart{"input", "ok.in", io.LimitReader(zeros{}, 2<<20)},
+		filePart{"output", "ok.out", io.LimitReader(zeros{}, 1<<20)})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	data := resp["data"].(map[string]any)
+	assert.EqualValues(t, 2<<20, data["inputSize"])
+	assert.EqualValues(t, 1<<20, data["outputSize"])
+}
+
 func TestUploadTestcase(t *testing.T) {
 	f := newFx(t)
 	id := f.create(body("up"))
@@ -690,7 +803,6 @@ func TestUploadErrors(t *testing.T) {
 		{"isSample not a bool", map[string]string{"isSample": "maybe"}, []filePart{ok("input"), ok("output")}, 400, 40001},
 		{"input over 16 MiB", nil, []filePart{{"input", "i", io.LimitReader(zeros{}, 16<<20+1)}, ok("output")}, 400, 40001},
 		{"output over 16 MiB", nil, []filePart{ok("input"), {"output", "o", io.LimitReader(zeros{}, 16<<20+1)}}, 400, 40001},
-		{"body over 40 MiB", nil, []filePart{{"input", "i", io.LimitReader(zeros{}, 41<<20)}, ok("output")}, 413, 41300},
 	}
 	for _, tc := range cases {
 		w, resp := f.multipart(url, admin, tc.fields, tc.files...)

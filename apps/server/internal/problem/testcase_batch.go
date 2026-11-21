@@ -12,9 +12,8 @@ import (
 )
 
 const (
-	maxBatchTestcases    = 100
-	maxBatchTotalBytes   = 200 << 20
-	maxBatchTestcaseSize = 16 << 20
+	maxBatchTestcases  = 100
+	maxBatchTotalBytes = 200 << 20
 )
 
 // BatchTestcaseFile is one uploaded file in a batch testcase request. The
@@ -39,7 +38,8 @@ func (s *Service) AddTestcasesBatch(ctx context.Context, problemID int64, files 
 	if _, err := s.repo.FindByID(ctx, problemID); err != nil {
 		return nil, mapRepoErr(err)
 	}
-	pairs, err := pairBatchTestcases(files)
+	limits := s.limits(ctx)
+	pairs, err := pairBatchTestcases(files, limits)
 	if err != nil {
 		return nil, err
 	}
@@ -55,22 +55,22 @@ func (s *Service) AddTestcasesBatch(ctx context.Context, problemID int64, files 
 			ProblemID: problemID, InputFile: base + ".in", OutputFile: base + ".out",
 			Score: score,
 		}
-		tc.InputSize, err = s.put(ctx, tc.InputFile, pair.input.Reader, maxBatchTestcaseSize, "输入文件")
+		tc.InputSize, err = s.put(ctx, tc.InputFile, pair.input.Reader, limits.MaxInputBytes, "输入文件")
 		if err != nil {
 			cleanup()
 			return nil, err
 		}
 		keys = append(keys, tc.InputFile)
-		tc.OutputSize, err = s.put(ctx, tc.OutputFile, pair.output.Reader, maxBatchTestcaseSize, "输出文件")
+		tc.OutputSize, err = s.put(ctx, tc.OutputFile, pair.output.Reader, limits.MaxOutputBytes, "输出文件")
 		if err != nil {
 			cleanup()
 			return nil, err
 		}
 		keys = append(keys, tc.OutputFile)
 		total += tc.InputSize + tc.OutputSize
-		if total > maxBatchTotalBytes {
+		if total > limits.MaxBatchTotalBytes {
 			cleanup()
-			return nil, httpx.ErrValidation(fmt.Sprintf("批量测试数据不能超过 %d MiB", maxBatchTotalBytes>>20))
+			return nil, httpx.ErrValidation(fmt.Sprintf("批量测试数据不能超过 %s", formatLimitBytes(limits.MaxBatchTotalBytes)))
 		}
 		cases = append(cases, tc)
 	}
@@ -81,7 +81,7 @@ func (s *Service) AddTestcasesBatch(ctx context.Context, problemID int64, files 
 	return cases, nil
 }
 
-func pairBatchTestcases(files []BatchTestcaseFile) ([]batchTestcasePair, error) {
+func pairBatchTestcases(files []BatchTestcaseFile, limits TestcaseLimits) ([]batchTestcasePair, error) {
 	type entry struct{ input, out, ans *BatchTestcaseFile }
 	byBase := map[string]*entry{}
 	var total int64
@@ -137,19 +137,19 @@ func pairBatchTestcases(files []BatchTestcaseFile) ([]batchTestcasePair, error) 
 		if e.input == nil || (e.out == nil && e.ans == nil) {
 			return nil, httpx.ErrValidation("每个 .in 必须对应一个 .out 或 .ans：" + name)
 		}
-		if e.input.Size > maxBatchTestcaseSize {
-			return nil, httpx.ErrValidation("单个测试文件不能超过 16 MiB：" + e.input.Name)
+		if e.input.Size > limits.MaxInputBytes {
+			return nil, httpx.ErrValidation(fmt.Sprintf("输入文件不能超过 %s：%s", formatLimitBytes(limits.MaxInputBytes), e.input.Name))
 		}
 		output := e.out
 		if output == nil {
 			output = e.ans
 		}
-		if output.Size > maxBatchTestcaseSize {
-			return nil, httpx.ErrValidation("单个测试文件不能超过 16 MiB：" + output.Name)
+		if output.Size > limits.MaxOutputBytes {
+			return nil, httpx.ErrValidation(fmt.Sprintf("输出文件不能超过 %s：%s", formatLimitBytes(limits.MaxOutputBytes), output.Name))
 		}
 		total += e.input.Size + output.Size
-		if total > maxBatchTotalBytes {
-			return nil, httpx.ErrValidation(fmt.Sprintf("批量测试数据不能超过 %d MiB", maxBatchTotalBytes>>20))
+		if total > limits.MaxBatchTotalBytes {
+			return nil, httpx.ErrValidation(fmt.Sprintf("批量测试数据不能超过 %s", formatLimitBytes(limits.MaxBatchTotalBytes)))
 		}
 		names = append(names, name)
 	}

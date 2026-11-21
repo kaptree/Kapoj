@@ -63,10 +63,10 @@ import (
 )
 
 const (
-	maxBodyBytes        = 1 << 20    // JSON endpoints
-	maxProblemJSONBytes = 6 << 20    // problem create/update and inline testcase content
-	maxUploadBytes      = 40 << 20   // file upload endpoints: two 16 MiB files plus form fields
-	maxImportBodyBytes  = 2064 << 20 // 2048 MiB package plus multipart overhead
+	maxBodyBytes        = 1 << 20                // JSON endpoints
+	maxProblemJSONBytes = 6 << 20                // problem create/update and inline testcase content
+	maxUploadBytes      = 40 << 20               // file upload endpoints: two 16 MiB files plus form fields
+	maxImportBodyBytes  = (2 << 30) + (16 << 20) // 2 GiB package plus multipart overhead
 )
 
 type Deps struct {
@@ -237,12 +237,24 @@ func New(d Deps) *gin.Engine {
 		similarityapi.RegisterRoutes(api, d.Similarity, similarityapi.Options{RBAC: d.RBAC})
 	}
 	submissionRepo := submission.NewGormRepository(d.DB)
-	var problemSvc *problem.Service
-	if d.Learning != nil {
-		problemSvc = problem.NewService(problemRepo, d.Storage, problem.WithLearningGuard(d.Learning))
-	} else {
-		problemSvc = problem.NewService(problemRepo, d.Storage)
+	problemServiceOpts := []problem.Option{
+		problem.WithTestcaseLimitsProvider(problem.TestcaseLimitsProviderFunc(func(ctx context.Context) (problem.TestcaseLimits, error) {
+			l, err := judgeSettings.TestcaseLimits(ctx)
+			if err != nil {
+				return problem.TestcaseLimits{}, err
+			}
+			return problem.TestcaseLimits{
+				MaxInputBytes:        l.MaxInputBytes,
+				MaxOutputBytes:       l.MaxOutputBytes,
+				MaxBatchTotalBytes:   l.MaxBatchTotalBytes,
+				MaxProblemTotalBytes: l.MaxProblemTotalBytes,
+			}, nil
+		})),
 	}
+	if d.Learning != nil {
+		problemServiceOpts = append(problemServiceOpts, problem.WithLearningGuard(d.Learning))
+	}
+	problemSvc := problem.NewService(problemRepo, d.Storage, problemServiceOpts...)
 	socialSvc := social.NewService(d.DB, d.Activity)
 	socialapi.RegisterRoutes(api, socialSvc)
 	problemOpts := problemapi.Options{
