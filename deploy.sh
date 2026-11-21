@@ -441,13 +441,6 @@ gen_env() {
   step "生成统一配置文件 .env"
   ( umask 077 && cp .env.example "$ENV_FILE" && chmod 600 "$ENV_FILE" )
   if [ -n "$DOMAIN" ]; then
-    validate_domain "$DOMAIN"
-  elif [ "$FLAG_YES" -eq 0 ]; then
-    printf '%s' "请输入对外域名（如 oj.example.com；留空则仅用 HTTP 80 访问）: "
-    read -r DOMAIN
-    [ -n "$DOMAIN" ] && validate_domain "$DOMAIN"
-  fi
-  if [ -n "$DOMAIN" ]; then
     SITE_ADDRESS="$DOMAIN"
   else
     SITE_ADDRESS=":80"
