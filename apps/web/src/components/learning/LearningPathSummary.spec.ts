@@ -14,7 +14,12 @@ function path(overrides: Partial<LearningPathItem> = {}): LearningPathItem {
     isOfficial: true,
     isPublic: true,
     isActive: true,
-    author: { id: 1, username: 'admin', nickname: '管理员', level: { key: 'blue', name: '蓝名', color: '#0000FF', accentColor: '' } },
+    author: {
+      id: 1,
+      username: 'admin',
+      nickname: '管理员',
+      level: { key: 'blue', name: '蓝名', color: '#0000FF', accentColor: '' },
+    },
     nodeCount: 3,
     myCompletedCount: 1,
     sortOrder: 0,
@@ -113,7 +118,9 @@ describe('LearningPathSummary', () => {
     const wrapper = mountSummary()
 
     expect(wrapper.get('.summary-author').text()).toBe('作者 管理员')
-    expect(wrapper.get('.summary-author .rating-level-name').attributes('title')).toBe('管理员（蓝名）')
+    expect(wrapper.get('.summary-author .rating-level-name').attributes('title')).toBe(
+      '管理员（蓝名）',
+    )
     expect(wrapper.get('.summary-node-count').text()).toBe('3 个节点')
     expect(wrapper.get('.summary-problem-progress').text()).toBe('已完成 0 / 0 题')
     expect(wrapper.get('.summary-ring__value').text()).toBe('33%')
@@ -121,7 +128,14 @@ describe('LearningPathSummary', () => {
 
   it('falls back to the username when the nickname is empty', () => {
     const wrapper = mountSummary({
-      path: path({ author: { id: 1, username: 'admin', nickname: '', level: { key: 'blue', name: '蓝名', color: '#0000FF', accentColor: '' } } }),
+      path: path({
+        author: {
+          id: 1,
+          username: 'admin',
+          nickname: '',
+          level: { key: 'blue', name: '蓝名', color: '#0000FF', accentColor: '' },
+        },
+      }),
     })
 
     expect(wrapper.get('.summary-author').text()).toBe('作者 admin')

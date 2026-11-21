@@ -61,7 +61,12 @@ function path(overrides: Partial<LearningPathItem> = {}): LearningPathItem {
     isOfficial: true,
     isPublic: true,
     isActive: true,
-    author: { id: 1, username: 'admin', nickname: '管理员', level: { key: 'blue', name: '蓝名', color: '#0000FF', accentColor: '' } },
+    author: {
+      id: 1,
+      username: 'admin',
+      nickname: '管理员',
+      level: { key: 'blue', name: '蓝名', color: '#0000FF', accentColor: '' },
+    },
     nodeCount: 3,
     myCompletedCount: 1,
     sortOrder: 0,
@@ -214,8 +219,24 @@ describe('LearningPathListView', () => {
 
   it('shows 编辑 on a card for the author, and on any card for an official manager', async () => {
     const items = [
-      path({ id: 1, author: { id: 1, username: 'alice', nickname: 'Alice', level: { key: 'blue', name: '蓝名', color: '#0000FF', accentColor: '' } } }),
-      path({ id: 2, author: { id: 99, username: 'other', nickname: 'Other', level: { key: 'green', name: '绿名', color: '#008000', accentColor: '' } } }),
+      path({
+        id: 1,
+        author: {
+          id: 1,
+          username: 'alice',
+          nickname: 'Alice',
+          level: { key: 'blue', name: '蓝名', color: '#0000FF', accentColor: '' },
+        },
+      }),
+      path({
+        id: 2,
+        author: {
+          id: 99,
+          username: 'other',
+          nickname: 'Other',
+          level: { key: 'green', name: '绿名', color: '#008000', accentColor: '' },
+        },
+      }),
     ]
 
     vi.mocked(listLearningPaths).mockResolvedValue({ total: 2, items })

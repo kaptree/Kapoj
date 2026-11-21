@@ -300,7 +300,11 @@ watch(
 
                 <div class="profile-hero__name-row">
                   <h1 id="profile-name" class="profile-hero__title">
-                    <RatingLevelName :name="displayName" :level="profile?.level" inherit-typography />
+                    <RatingLevelName
+                      :name="displayName"
+                      :level="profile?.level"
+                      inherit-typography
+                    />
                   </h1>
                   <span
                     v-if="profile.equippedTitle"

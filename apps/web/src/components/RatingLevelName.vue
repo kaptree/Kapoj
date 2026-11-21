@@ -23,7 +23,9 @@ const levelStyle = computed(() =>
   hasLevel.value ? ratingLevelStyle(props.level as RatingLevel) : {},
 )
 const accessibleName = computed(() =>
-  hasLevel.value ? `${displayName.value}（${(props.level as RatingLevel).name}）` : displayName.value,
+  hasLevel.value
+    ? `${displayName.value}（${(props.level as RatingLevel).name}）`
+    : displayName.value,
 )
 const firstStyle = computed(() => ({ color: (props.level as RatingLevel).color }))
 const restStyle = computed(() => ({

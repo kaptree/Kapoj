@@ -160,7 +160,12 @@ watch(
               :link-to="{ name: 'user-profile', params: { id: detail.userId } }"
             />
             <Tag v-if="detail.agentId != null" value="Agent" severity="info" />
-            <RatingLevelName v-if="detail.agentName" class="agent-name" :name="detail.agentName" :level="detail.agentLevel" />
+            <RatingLevelName
+              v-if="detail.agentName"
+              class="agent-name"
+              :name="detail.agentName"
+              :level="detail.agentLevel"
+            />
           </dd>
         </div>
         <div>

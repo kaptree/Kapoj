@@ -204,7 +204,9 @@ describe('UserProfileView', () => {
 
     expect(getProfile).toHaveBeenCalledWith('7')
     expect(wrapper.text()).toContain('Alice')
-    expect(wrapper.find('.profile-hero__title .rating-level-name').attributes('title')).toBe('Alice（蓝名）')
+    expect(wrapper.find('.profile-hero__title .rating-level-name').attributes('title')).toBe(
+      'Alice（蓝名）',
+    )
     expect(wrapper.text()).toContain('@alice')
     expect(wrapper.text()).toContain('卷王')
     expect(wrapper.text()).toContain('热爱算法与开源。')

@@ -28,7 +28,12 @@ function agentView(overrides: Partial<AgentView> = {}): AgentView {
     passedCount: 4,
     attemptedCount: 7,
     avgSolveTimeMs: 125_000,
-    author: { id: 7, username: 'alice', nickname: 'Alice', level: { key: 'blue', name: '蓝名', color: '#0000FF', accentColor: '' } },
+    author: {
+      id: 7,
+      username: 'alice',
+      nickname: 'Alice',
+      level: { key: 'blue', name: '蓝名', color: '#0000FF', accentColor: '' },
+    },
     createdAt: '2026-11-01T08:00:00Z',
     updatedAt: '2026-11-02T08:00:00Z',
     ...overrides,
@@ -47,7 +52,12 @@ const fastAgent = agentView({
   passedCount: 2,
   attemptedCount: 5,
   avgSolveTimeMs: 65_000,
-  author: { id: 8, username: 'bob', nickname: 'Bob', level: { key: 'green', name: '绿名', color: '#008000', accentColor: '' } },
+  author: {
+    id: 8,
+    username: 'bob',
+    nickname: 'Bob',
+    level: { key: 'green', name: '绿名', color: '#008000', accentColor: '' },
+  },
 })
 
 const routes = [
@@ -84,7 +94,9 @@ describe('AgentsView', () => {
     expect(text).toContain('deepseek-chat')
     expect(text).toContain('Alice')
     expect(wrapper.find('.author-name.rating-level-name').attributes('title')).toBe('Alice（蓝名）')
-    expect(wrapper.find('.agent-link .rating-level-name').attributes('title')).toBe('Arena Agent（青名）')
+    expect(wrapper.find('.agent-link .rating-level-name').attributes('title')).toBe(
+      'Arena Agent（青名）',
+    )
     expect(text).toContain('@alice')
     expect(text).toContain('1532')
     expect(text).toContain('4 / 7')

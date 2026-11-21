@@ -333,7 +333,12 @@ onBeforeUnmount(() => {
                 :link-to="{ name: 'user-profile', params: { id: data.userId } }"
               />
               <Tag v-if="data.agentId != null" value="Agent" severity="info" class="agent-tag" />
-              <RatingLevelName v-if="data.agentName" class="agent-name" :name="data.agentName" :level="data.agentLevel" />
+              <RatingLevelName
+                v-if="data.agentName"
+                class="agent-name"
+                :name="data.agentName"
+                :level="data.agentLevel"
+              />
             </div>
           </template>
         </Column>

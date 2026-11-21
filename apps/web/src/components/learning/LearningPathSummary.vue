@@ -52,7 +52,9 @@ const ringLabel = computed(() => `${nodeProgressLabel.value}，${nodePercent.val
 <template>
   <section class="path-summary" :class="{ 'path-summary--compact': compact }" aria-label="路线摘要">
     <div v-if="!compact" class="summary-meta">
-      <span class="summary-author">作者 <RatingLevelName :name="authorLabel" :level="path.author.level" inherit-typography /></span>
+      <span class="summary-author"
+        >作者 <RatingLevelName :name="authorLabel" :level="path.author.level" inherit-typography
+      /></span>
       <span class="summary-node-count">{{ path.nodeCount }} 个节点</span>
     </div>
 

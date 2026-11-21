@@ -110,7 +110,7 @@ describe('ContestRanklist', () => {
     expect(getContestRanklist).toHaveBeenCalledWith(5)
     expect(wrapper.text()).toContain('ICPC')
     expect(wrapper.text()).toContain('Alice')
-    expect(wrapper.findComponent(RatingLevelName).props('level').key).toBe('black_red')
+    expect(wrapper.findComponent(RatingLevelName).props('level')!.key).toBe('black_red')
     expect(wrapper.text()).toContain('2 / 120')
     expect(wrapper.text()).toContain('-2')
     expect(wrapper.text()).toContain('-1')

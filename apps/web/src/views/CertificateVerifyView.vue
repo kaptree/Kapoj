@@ -94,7 +94,13 @@ onMounted(() => {
               </div>
               <div class="result-row">
                 <dt>持有者</dt>
-                <dd><RatingLevelName :name="result.nickname" :level="result.ratingLevel" inherit-typography /></dd>
+                <dd>
+                  <RatingLevelName
+                    :name="result.nickname ?? ''"
+                    :level="result.ratingLevel"
+                    inherit-typography
+                  />
+                </dd>
               </div>
               <div class="result-row">
                 <dt>通过日期</dt>

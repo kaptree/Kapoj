@@ -313,7 +313,11 @@ onBeforeUnmount(() => {
         <div class="hero__meta">
           <span class="hero__greeting">
             <span class="hero__greeting-dot" aria-hidden="true" />
-            {{ greeting }}，<RatingLevelName v-if="auth.user" :name="greetingName" :level="auth.user.level" /><span v-else>同学</span>
+            {{ greeting }}，<RatingLevelName
+              v-if="auth.user"
+              :name="greetingName"
+              :level="auth.user.level"
+            /><span v-else>同学</span>
           </span>
           <span v-if="site.home.eyebrow" class="hero__eyebrow">{{ site.home.eyebrow }}</span>
         </div>

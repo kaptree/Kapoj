@@ -224,7 +224,11 @@ onMounted(() => {
             <Column header="作者" style="min-width: 140px">
               <template #body="{ data }">
                 <div class="author-cell">
-                  <RatingLevelName class="author-name" :name="data.author.nickname || data.author.username" :level="data.author.level" />
+                  <RatingLevelName
+                    class="author-name"
+                    :name="data.author.nickname || data.author.username"
+                    :level="data.author.level"
+                  />
                   <span class="author-username">@{{ data.author.username }}</span>
                 </div>
               </template>

@@ -48,7 +48,12 @@ function post(overrides: Partial<SolutionPostItem> = {}): SolutionPostItem {
     userId: 2,
     title: '如何 AC 这道题',
     excerpt: '先打表找规律……',
-    author: { id: 2, username: 'alice', nickname: 'Alice', level: { key: 'blue', name: '蓝名', color: '#0000FF', accentColor: '' } },
+    author: {
+      id: 2,
+      username: 'alice',
+      nickname: 'Alice',
+      level: { key: 'blue', name: '蓝名', color: '#0000FF', accentColor: '' },
+    },
     replyCount: 3,
     likeCount: 0,
     likedByMe: false,

@@ -438,7 +438,9 @@ describe('HomeView', () => {
     const links = hrefs(wrapper)
 
     expect(wrapper.text()).toContain('Alice')
-    expect(wrapper.find('.profile-card__name .rating-level-name').attributes('title')).toBe('Alice（蓝名）')
+    expect(wrapper.find('.profile-card__name .rating-level-name').attributes('title')).toBe(
+      'Alice（蓝名）',
+    )
     expect(wrapper.text()).toContain('@alice')
     expect(wrapper.text()).toContain('1680')
     expect(wrapper.text()).toContain('1,234')

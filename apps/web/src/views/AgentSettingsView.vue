@@ -541,7 +541,10 @@ onMounted(() => {
           <div class="stat">
             <dt>作者</dt>
             <dd data-test="agent-author">
-              <RatingLevelName :name="agent.author.nickname || agent.author.username" :level="agent.author.level" />
+              <RatingLevelName
+                :name="agent.author.nickname || agent.author.username"
+                :level="agent.author.level"
+              />
               <span class="muted">@{{ agent.author.username }}</span>
             </dd>
           </div>

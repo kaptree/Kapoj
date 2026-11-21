@@ -275,7 +275,11 @@ onMounted(load)
               <p class="path-desc">{{ item.descriptionMd }}</p>
 
               <div class="path-meta">
-                <span class="path-author"><RatingLevelName :name="item.author.nickname || item.author.username" :level="item.author.level" /></span>
+                <span class="path-author"
+                  ><RatingLevelName
+                    :name="item.author.nickname || item.author.username"
+                    :level="item.author.level"
+                /></span>
                 <span class="path-progress"
                   >已完成 {{ item.myCompletedCount }} / {{ item.nodeCount }} 节点</span
                 >

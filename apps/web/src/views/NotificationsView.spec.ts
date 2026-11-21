@@ -27,7 +27,11 @@ vi.mock('@/api/social', () => ({
 
 function actor(nickname: string): SocialUserSummary {
   return {
-    id: 2, username: nickname.toLowerCase(), nickname, avatarUrl: '', rating: 1500,
+    id: 2,
+    username: nickname.toLowerCase(),
+    nickname,
+    avatarUrl: '',
+    rating: 1500,
     level: { key: 'cyan', name: '青名', color: '#03A89E', accentColor: '' },
   }
 }

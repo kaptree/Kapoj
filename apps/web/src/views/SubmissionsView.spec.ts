@@ -153,25 +153,29 @@ describe('SubmissionsView', () => {
     expect(wrapper.text()).toContain('1024 KB')
     expect(wrapper.find('a[href="/users/7"]').exists()).toBe(true)
     expect(wrapper.find('a[href="/problems/3"]').exists()).toBe(true)
-    expect(wrapper.findComponent(RatingLevelName).props('level').key).toBe('cyan')
+    expect(wrapper.findComponent(RatingLevelName).props('level')!.key).toBe('cyan')
     wrapper.unmount()
   })
 
   it('tags Agent submissions and shows the agent name', async () => {
     vi.mocked(listSubmissions).mockResolvedValue({
       total: 1,
-      items: [item({
-        agentId: 11,
-        agentName: 'Arena Agent',
-        agentLevel: { key: 'purple', name: '紫名', color: '#AA00AA', accentColor: '' },
-      })],
+      items: [
+        item({
+          agentId: 11,
+          agentName: 'Arena Agent',
+          agentLevel: { key: 'purple', name: '紫名', color: '#AA00AA', accentColor: '' },
+        }),
+      ],
     })
     const { wrapper } = await mountPage()
 
     expect(wrapper.text()).toContain('Agent')
     expect(wrapper.text()).toContain('Arena Agent')
-    const agentName = wrapper.findAllComponents(RatingLevelName).find((node) => node.props('name') === 'Arena Agent')
-    expect(agentName?.props('level').key).toBe('purple')
+    const agentName = wrapper
+      .findAllComponents(RatingLevelName)
+      .find((node) => node.props('name') === 'Arena Agent')
+    expect(agentName?.props('level')!.key).toBe('purple')
     wrapper.unmount()
   })
 

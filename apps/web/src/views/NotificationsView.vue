@@ -155,7 +155,9 @@ async function markAll() {
               <span class="notification-item__dot" aria-hidden="true" />
               <div class="notification-item__body">
                 <span class="notification-item__text">
-                  <strong><RatingLevelName :name="actorName(item)" :level="item.actor?.level" /></strong>
+                  <strong
+                    ><RatingLevelName :name="actorName(item)" :level="item.actor?.level"
+                  /></strong>
                   {{ typeLabel(item.type) }}
                 </span>
                 <span class="notification-item__time">{{ formatDateTime(item.createdAt) }}</span>

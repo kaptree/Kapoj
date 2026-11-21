@@ -207,7 +207,10 @@ watch(
         </div>
 
         <p class="profile-author" data-test="agent-author">
-          作者：<RatingLevelName :name="agent.author.nickname || agent.author.username" :level="agent.author.level" />
+          作者：<RatingLevelName
+            :name="agent.author.nickname || agent.author.username"
+            :level="agent.author.level"
+          />
           <span class="author-username">@{{ agent.author.username }}</span>
         </p>
 

@@ -137,7 +137,9 @@ async function logout() {
         shape="square"
         class="user-menu__avatar"
       />
-      <span class="user-menu__name"><RatingLevelName :name="auth.user.nickname" :level="auth.user.level" /></span>
+      <span class="user-menu__name"
+        ><RatingLevelName :name="auth.user.nickname" :level="auth.user.level"
+      /></span>
       <i class="pi pi-chevron-down user-menu__chevron" aria-hidden="true" />
     </Button>
     <Menu

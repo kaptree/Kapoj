@@ -160,11 +160,18 @@ describe('LeaderboardView', () => {
 
     const ratingCard = wrapper.find('[data-board="rating"]')
     expect(ratingCard.findComponent(RatingLevelName).props('name')).toBe('m2bsolver1')
-    expect(ratingCard.findComponent(RatingLevelName).props('level').name).toBe('青名')
+    expect(ratingCard.findComponent(RatingLevelName).props('level')!.name).toBe('青名')
     expect(ratingCard.text()).toContain('1516')
-    expect(wrapper.find('[data-board="activity"]').findComponent(RatingLevelName).props('level').key).toBe('green')
-    expect(wrapper.find('[data-board="wealth"]').findComponent(RatingLevelName).props('level').key).toBe('orange')
-    expect(wrapper.find('[data-board="contribution"]').findComponent(RatingLevelName).props('level').key).toBe('purple')
+    expect(
+      wrapper.find('[data-board="activity"]').findComponent(RatingLevelName).props('level')!.key,
+    ).toBe('green')
+    expect(
+      wrapper.find('[data-board="wealth"]').findComponent(RatingLevelName).props('level')!.key,
+    ).toBe('orange')
+    expect(
+      wrapper.find('[data-board="contribution"]').findComponent(RatingLevelName).props('level')!
+        .key,
+    ).toBe('purple')
 
     // Wealth scores use thousands separators in the card.
     expect(wrapper.find('[data-board="wealth"]').text()).toContain('23,000')

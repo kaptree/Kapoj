@@ -115,7 +115,7 @@ describe('ProblemStatisticsView', () => {
     expect(wrapper.find('[data-test="status-legend"]').text()).toContain('通过')
     expect(wrapper.find('[data-test="status-legend"]').text()).toContain('50.0%')
     expect(text).toContain('指标用户')
-    expect(wrapper.findComponent(RatingLevelName).props('level').key).toBe('blue')
+    expect(wrapper.findComponent(RatingLevelName).props('level')!.key).toBe('blue')
     expect(text).toContain('42 B')
     expect(text).not.toContain('查看代码')
     expect(text).not.toContain('SECRET_CODE')
