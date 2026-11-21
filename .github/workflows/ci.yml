@@ -269,86 +269,16 @@ jobs:
       - name: Install dependencies
         run: corepack pnpm install --frozen-lockfile
 
-      - name: Prepare .env with random secrets
-        run: |
-          cp .env.example .env
-          python3 - <<'PY'
-          import base64
-          import re
-          import secrets
+      - name: Install Playwright ffmpeg
+        run: corepack pnpm --filter web exec playwright install ffmpeg
 
-          path = ".env"
-          text = open(path, encoding="utf-8").read()
-
-          def replace(key, value):
-              global text
-              text = re.sub(rf"^{re.escape(key)}=.*$", f"{key}={value}", text, flags=re.M)
-
-          replace("POSTGRES_PASSWORD", secrets.token_hex(16))
-          replace("MINIO_ROOT_PASSWORD", secrets.token_hex(16))
-          replace("KAPOJ_JWT_SECRET", base64.b64encode(secrets.token_bytes(48)).decode())
-          replace("KAPOJ_AI_ENCRYPTION_KEY", base64.b64encode(secrets.token_bytes(32)).decode())
-          replace("KAPOJ_MAIL_ENCRYPTION_KEY", base64.b64encode(secrets.token_bytes(32)).decode())
-
-          open(path, "w", encoding="utf-8").write(text)
-          PY
-          chmod 600 .env
-
-      - name: Start full stack
-        run: |
-          docker compose --env-file .env \
-            -f docker/docker-compose.yml \
-            -f docker/docker-compose.prod.yml \
-            --profile app up -d --build
-
-      - name: Wait for backend and web health
-        run: |
-          for _ in $(seq 1 60); do
-            if curl -fsS http://127.0.0.1:8080/health >/dev/null \
-              && curl -fsS http://127.0.0.1/health >/dev/null; then
-              exit 0
-            fi
-            sleep 5
-          done
-          docker compose --env-file .env \
-            -f docker/docker-compose.yml \
-            -f docker/docker-compose.prod.yml \
-            --profile app ps
-          docker compose --env-file .env \
-            -f docker/docker-compose.yml \
-            -f docker/docker-compose.prod.yml \
-            --profile app logs --no-color --tail=200
-          exit 1
-
-      - name: Seed E2E accounts
-        run: |
-          curl -fsS -X POST http://127.0.0.1:8080/api/auth/register \
-            -H 'Content-Type: application/json' \
-            --data '{"username":"m2badmin","email":"m2badmin@example.com","password":"correct-horse"}' \
-            >/dev/null
-
-          docker exec -i kapoj-postgres-1 psql -U kapoj -d kapoj -v ON_ERROR_STOP=1 <<'SQL'
-          INSERT INTO users (username, nickname, email, email_verified_at, password_hash, salt, role, rating, coins, bio, status, created_at, updated_at)
-          SELECT 'm2bsolver1', 'm2bsolver1', 'm2bsolver1@example.com', now(), password_hash, salt, 'user', 1500, 0, '', 'active', now(), now()
-          FROM users WHERE username = 'm2badmin'
-          ON CONFLICT (username) DO NOTHING;
-
-          INSERT INTO users (username, nickname, email, email_verified_at, password_hash, salt, role, rating, coins, bio, status, created_at, updated_at)
-          SELECT 'm2bsolver2', 'm2bsolver2', 'm2bsolver2@example.com', now(), password_hash, salt, 'user', 1500, 0, '', 'active', now(), now()
-          FROM users WHERE username = 'm2badmin'
-          ON CONFLICT (username) DO NOTHING;
-
-          INSERT INTO user_roles (user_id, role_id, assigned_at)
-          SELECT u.id, r.id, now()
-          FROM users u CROSS JOIN roles r
-          WHERE u.username = 'm2badmin' AND r.code = 'super_admin'
-          ON CONFLICT (user_id, role_id) DO NOTHING;
-          SQL
+      - name: Start e2e stack
+        run: bash scripts/e2e-stack.sh up
 
       - name: Run Playwright E2E
         env:
-          E2E_API_URL: http://127.0.0.1:8080
-          E2E_BASE_URL: http://127.0.0.1
+          E2E_API_URL: http://127.0.0.1:18080
+          E2E_BASE_URL: http://127.0.0.1:15173
         run: corepack pnpm test:e2e
 
       - name: Upload Playwright report
@@ -360,18 +290,19 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-      - name: Dump compose logs on failure
+      - name: Upload Playwright traces and video
         if: failure()
-        run: |
-          docker compose --env-file .env \
-            -f docker/docker-compose.yml \
-            -f docker/docker-compose.prod.yml \
-            --profile app logs --no-color --tail=300
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-test-results
+          path: apps/web/test-results
+          retention-days: 7
+          if-no-files-found: ignore
 
-      - name: Stop stack
+      - name: Dump e2e stack logs on failure
+        if: failure()
+        run: bash scripts/e2e-stack.sh logs
+
+      - name: Stop e2e stack
         if: always()
-        run: |
-          docker compose --env-file .env \
-            -f docker/docker-compose.yml \
-            -f docker/docker-compose.prod.yml \
-            --profile app down -v
+        run: bash scripts/e2e-stack.sh down
