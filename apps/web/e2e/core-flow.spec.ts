@@ -204,6 +204,7 @@ test.describe.serial('core flow smoke', () => {
         .evaluateAll((headers) => headers.findIndex((h) => h.textContent?.trim() === '得分'))
       expect(scoreColumn).toBeGreaterThanOrEqual(0)
       await expect(row.locator('td').nth(scoreColumn)).toHaveText('100')
+      await expect(row.locator('.rating-level-name').first()).toHaveAttribute('title', /青名/)
     })
 
     await test.step('credits coins and activity after AC', async () => {
