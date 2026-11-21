@@ -113,6 +113,61 @@ wait_health() {
   return 1
 }
 
+psql_exec() {
+  "${COMPOSE[@]}" exec -T postgres \
+    psql -U "${POSTGRES_USER:-kapoj}" -d "${POSTGRES_DB:-kapoj}" -v ON_ERROR_STOP=1 "$@"
+}
+
+seed() {
+  ensure_env
+  set -a
+  # shellcheck disable=SC1090
+  . "$ENV_FILE"
+  set +a
+
+  psql_exec >/dev/null <<'SQL'
+INSERT INTO mail_settings (id, updated_at, require_email_verification, sending_enabled)
+VALUES (1, now(), false, false)
+ON CONFLICT (id) DO UPDATE
+  SET require_email_verification = false,
+      sending_enabled = false,
+      updated_at = now();
+SQL
+
+  local admin_exists
+  admin_exists=$(psql_exec -tAc "SELECT 1 FROM users WHERE username = 'm2badmin'" | tr -d '[:space:]')
+  if [ "$admin_exists" != "1" ]; then
+    curl -fsS -X POST "$API_URL/api/auth/register" \
+      -H 'Content-Type: application/json' \
+      --data '{"username":"m2badmin","email":"m2badmin@example.com","password":"correct-horse"}' \
+      >/dev/null
+  fi
+
+  psql_exec >/dev/null <<'SQL'
+UPDATE users
+SET email_verified_at = COALESCE(email_verified_at, now()), status = 'active'
+WHERE username = 'm2badmin';
+
+INSERT INTO user_roles (user_id, role_id, assigned_at)
+SELECT u.id, r.id, now()
+FROM users u CROSS JOIN roles r
+WHERE u.username = 'm2badmin' AND r.code = 'super_admin'
+ON CONFLICT (user_id, role_id) DO NOTHING;
+
+INSERT INTO users (username, nickname, email, email_verified_at, password_hash, salt, role, rating, coins, bio, status, created_at, updated_at)
+SELECT 'm2bsolver1', 'm2bsolver1', 'm2bsolver1@example.com', now(), password_hash, salt, 'user', 1500, 0, '', 'active', now(), now()
+FROM users WHERE username = 'm2badmin'
+ON CONFLICT (username) DO NOTHING;
+
+INSERT INTO users (username, nickname, email, email_verified_at, password_hash, salt, role, rating, coins, bio, status, created_at, updated_at)
+SELECT 'm2bsolver2', 'm2bsolver2', 'm2bsolver2@example.com', now(), password_hash, salt, 'user', 1500, 0, '', 'active', now(), now()
+FROM users WHERE username = 'm2badmin'
+ON CONFLICT (username) DO NOTHING;
+SQL
+
+  echo "seeded e2e accounts"
+}
+
 up() {
   need_docker
   ensure_env
@@ -120,6 +175,7 @@ up() {
   local start=$SECONDS
   "${COMPOSE[@]}" up -d --build
   wait_health
+  seed
   echo "e2e stack ready in $((SECONDS - start))s"
   echo "API: $API_URL"
   echo "Web: $WEB_URL"
