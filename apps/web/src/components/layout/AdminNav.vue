@@ -104,6 +104,13 @@ const mailItem: AdminNavItem = {
   icon: 'pi pi-envelope',
 }
 
+const judgeItem: AdminNavItem = {
+  key: 'judge',
+  path: '/admin/judge',
+  label: '评测设置',
+  icon: 'pi pi-sliders-h',
+}
+
 const backupItem: AdminNavItem = {
   key: 'backups',
   path: '/admin/backups',
@@ -173,6 +180,7 @@ const groups = computed<AdminNavGroup[]>(() => {
   }
   const systemItems: AdminNavItem[] = []
   if (auth.can(PERM.system.jobs.manage)) systemItems.push(jobsItem)
+  if (auth.can(PERM.system.settings.manage)) systemItems.push(judgeItem)
   if (auth.can(PERM.mail.settings.manage)) systemItems.push(mailItem)
   if (auth.can(PERM.system.backup.manage)) systemItems.push(backupItem)
   if (systemItems.length > 0) {

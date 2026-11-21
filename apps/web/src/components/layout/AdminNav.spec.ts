@@ -35,6 +35,7 @@ const routes = [
   { path: '/admin/certificates', component: { template: '<div />' } },
   { path: '/admin/site', component: { template: '<div />' } },
   { path: '/admin/jobs', component: { template: '<div />' } },
+  { path: '/admin/judge', component: { template: '<div />' } },
 ]
 
 async function mountNav(path = '/admin') {
@@ -240,6 +241,19 @@ describe('AdminNav', () => {
     expect(wrapper.find('a[href="/admin/jobs"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('定时任务')
     expect(wrapper.find('a[href="/admin/jobs"] i').classes()).toContain('pi-clock')
+    wrapper.unmount()
+  })
+
+  it('shows the judge settings entry only with system.settings.manage', async () => {
+    let wrapper = await mountNav()
+    expect(wrapper.text()).not.toContain('评测设置')
+
+    auth.can.mockImplementation((code) => code === PERM.system.settings.manage)
+    wrapper = await mountNav()
+    expect(auth.can).toHaveBeenCalledWith(PERM.system.settings.manage)
+    expect(wrapper.find('a[href="/admin/judge"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('评测设置')
+    expect(wrapper.find('a[href="/admin/judge"] i').classes()).toContain('pi-sliders-h')
     wrapper.unmount()
   })
 })

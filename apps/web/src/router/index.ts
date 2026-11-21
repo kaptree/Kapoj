@@ -409,6 +409,16 @@ export const router = createRouter({
           },
         },
         {
+          path: 'judge',
+          name: 'admin-judge',
+          component: () => import('@/views/AdminJudgeView.vue'),
+          meta: {
+            requiresAuth: true,
+            permission: PERM.system.settings.manage,
+            title: '评测设置',
+          },
+        },
+        {
           path: 'jobs',
           name: 'admin-jobs',
           component: () => import('@/views/AdminJobsView.vue'),
