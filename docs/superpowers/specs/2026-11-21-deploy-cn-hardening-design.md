@@ -63,7 +63,7 @@ Docker 安装和镜像加速交给第三方一键脚本。
 
 1. `ensure_base_packages()`：用带重试的 apt 安装 `ca-certificates curl gnupg openssl`；`apt-get update` 失败只警告，继续尝试安装。
 2. 若 `docker compose version --short` 已可用且 ≥ 2.24，进入 `repair_compose_plugin()` 做健康检查后返回。
-3. 若 Docker 已存在（例如 Docker CE），**绝不安装 `docker.io`**，避免 apt 替换/移除 Docker CE；只修复或安装 Compose 插件（优先 `docker-compose-v2`，其次 `docker-compose-plugin`）。
+3. 若 Docker 已存在（例如 Docker CE），**绝不安装 `docker.io` 或 `docker-compose-v2`**（后者依赖 `docker.io | podman`，可能替换 Docker CE）；只安装 Docker 官方仓库的 `docker-compose-plugin`，不可用时下载独立二进制。
 4. 仅当 Docker 不存在时，优先发行版包：`apt-get install -y docker.io docker-compose-v2`（Ubuntu 26.04 推荐路径）。
 5. 发行版包失败时再执行 `get.docker.com`，然后补装 Compose 插件。
 6. 仍无可用 Compose 时，才下载独立二进制：
@@ -73,7 +73,7 @@ Docker 安装和镜像加速交给第三方一键脚本。
 
 `repair_compose_plugin()`：
 
-- 扫描 `/usr/local/lib/docker/cli-plugins`、`/usr/lib/docker/cli-plugins`、`/usr/libexec/docker/cli-plugins`、`${DOCKER_CONFIG:-$HOME/.docker}/cli-plugins`。
+- 扫描 `/usr/local/lib/docker/cli-plugins`、`/usr/local/libexec/docker/cli-plugins`、`/usr/lib/docker/cli-plugins`、`/usr/libexec/docker/cli-plugins`、`${DOCKER_CONFIG:-$HOME/.docker}/cli-plugins`。
 - 对每个 `docker-compose` 文件执行 `timeout 5 <file> version`：
   - 退出码非 0 或超时（损坏/SIGSEGV）→ 重命名为 `docker-compose.broken.<时间戳>`，打印原路径和备份路径。
   - 版本 < 2.24 → 重命名为 `docker-compose.old.<时间戳>`，避免它遮蔽新插件。
