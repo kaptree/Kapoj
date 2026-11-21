@@ -22,6 +22,44 @@ func acceptCount(t *testing.T, repo *db.Repository, problemID int64) int {
 	return n
 }
 
+func TestJudgeSettingsDefaultsAndRead(t *testing.T) {
+	pool := testutil.PG(t)
+	repo := db.New(pool)
+	defaults := model.DefaultJudgeSettings()
+
+	got, err := repo.JudgeSettings(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, defaults, got, "a missing row must fall back to defaults")
+
+	custom := model.JudgeSettings{
+		OutputFloorBytes:     2 << 20,
+		OutputSlackBytes:     3 << 20,
+		MaxOutputBytes:       9 << 20,
+		MaxInputFileBytes:    4 << 20,
+		MaxOutputFileBytes:   5 << 20,
+		MaxBatchTotalBytes:   6 << 20,
+		MaxProblemTotalBytes: 7 << 20,
+	}
+	testutil.InsertJudgeSettings(t, pool, custom)
+
+	got, err = repo.JudgeSettings(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, custom, got)
+
+	_, err = pool.Exec(context.Background(),
+		`ALTER TABLE judge_settings RENAME TO judge_settings_unavailable`)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, err := pool.Exec(context.Background(),
+			`ALTER TABLE judge_settings_unavailable RENAME TO judge_settings`)
+		require.NoError(t, err)
+	})
+
+	got, err = repo.JudgeSettings(context.Background())
+	require.Error(t, err, "query failures must be reported to the caller")
+	assert.Equal(t, defaults, got, "query failures still return usable defaults")
+}
+
 func TestClaimLoadsSubmissionProblemAndTestcases(t *testing.T) {
 	pool := testutil.PG(t)
 	repo := db.New(pool)

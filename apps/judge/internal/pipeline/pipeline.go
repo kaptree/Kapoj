@@ -22,14 +22,7 @@ import (
 )
 
 const (
-	maxAnswerBytes  = 16 << 20
-	maxCheckerBytes = 256 << 10
-	// outputLimitBytes is the floor for a submission's stdout. Large-answer
-	// problems raise it from the testcase's expected output size (plus slack),
-	// so a correct program is not rejected for exceeding a fixed 1 MiB cap.
-	outputLimitBytes      = 1 << 20
-	outputLimitSlack      = 1 << 20
-	maxOutputLimitBytes   = 16 << 20
+	maxCheckerBytes       = 256 << 10
 	maxMessageBytes       = 4096
 	maxCompileMessageSize = 64 << 10
 	checkerTimeLimitMS    = 5000
@@ -103,6 +96,14 @@ func (p *Pipeline) Run(ctx context.Context, submissionID int64) error {
 	}
 	p.publish(ctx, sub)
 
+	settings := model.DefaultJudgeSettings()
+	if loaded, err := p.repo.JudgeSettings(ctx); err != nil {
+		slog.Warn("read judge settings failed; using defaults",
+			"submission_id", sub.ID, "err", err)
+	} else {
+		settings = loaded
+	}
+
 	work, err := os.MkdirTemp("", "kapoj-judge-*")
 	if err != nil {
 		return err
@@ -163,12 +164,13 @@ func (p *Pipeline) Run(ctx context.Context, submissionID int64) error {
 	_, err = p.sandbox.RunBatch(ctx, sandbox.RunBatchRequest{
 		Language: string(sub.Language), ArtifactDir: compiled.ArtifactDir, Cases: batchCases,
 		TimeLimitMS: prob.TimeLimitMS, MemoryLimitMB: prob.MemoryLimitMB,
-		OutputLimitBytes: outputLimitForCases(cases),
+		OutputLimitBytes: outputLimitForCases(cases, settings),
 		OnResult: func(index int, run sandbox.RunResult) bool {
 			if judgeErr != nil {
 				return false
 			}
-			result, err := p.judgeRun(ctx, work, prob, cases[index], inputs[index], run, checkerArtifact)
+			result, err := p.judgeRun(ctx, work, prob, cases[index], inputs[index], run,
+				checkerArtifact, settings.MaxOutputBytes)
 			if err != nil {
 				judgeErr = err
 				return false
@@ -236,8 +238,11 @@ func (p *Pipeline) publish(ctx context.Context, sub *model.Submission) {
 
 func (p *Pipeline) judgeRun(
 	ctx context.Context, work string, prob *model.Problem, tc model.Testcase,
-	inputPath string, run sandbox.RunResult, checkerArtifact string,
+	inputPath string, run sandbox.RunResult, checkerArtifact string, maxAnswerBytes int64,
 ) (model.JudgeCaseResult, error) {
+	if maxAnswerBytes <= 0 {
+		maxAnswerBytes = model.DefaultJudgeSettings().MaxOutputBytes
+	}
 	answer, err := p.readStorage(ctx, tc.OutputFile, maxAnswerBytes)
 	if err != nil {
 		return model.JudgeCaseResult{}, fmt.Errorf("read answer %s: %w", tc.OutputFile, err)
@@ -328,31 +333,37 @@ func looksLikeOOM(stderr []byte) bool {
 }
 
 // outputLimitForCases returns the stdout cap for one batch. It starts at the
-// historical 1 MiB floor and grows to cover the largest expected answer plus
-// slack, capped at maxOutputLimitBytes. Without this, a correct program for a
-// problem whose expected output is larger than 1 MiB is reported as
-// "输出超过限制" even when it matches exactly.
-func outputLimitForCases(cases []model.Testcase) int {
-	limit := outputLimitBytes
+// configured floor and grows to cover the largest expected answer plus slack,
+// capped at the configured maximum output. Without this, a correct program for
+// a problem whose expected output is larger than the floor is reported as
+// "输出超过限制" even when it matches exactly. A maximum below the floor (bad
+// stored data) is clamped to the floor.
+func outputLimitForCases(cases []model.Testcase, settings model.JudgeSettings) int {
+	floor := settings.OutputFloorBytes
+	if floor <= 0 {
+		floor = model.DefaultJudgeSettings().OutputFloorBytes
+	}
+	maxOutput := settings.MaxOutputBytes
+	if maxOutput < floor {
+		maxOutput = floor
+	}
+	limit := floor
 	for _, tc := range cases {
 		if tc.OutputSize <= 0 {
 			continue
 		}
-		need := tc.OutputSize + outputLimitSlack
-		if tc.OutputSize < outputLimitBytes {
-			need = outputLimitBytes
+		need := tc.OutputSize + settings.OutputSlackBytes
+		if need < floor {
+			need = floor
 		}
-		if need > maxOutputLimitBytes {
-			need = maxOutputLimitBytes
+		if need > maxOutput {
+			need = maxOutput
 		}
-		if need > int64(limit) {
-			limit = int(need)
-		}
-		if limit == maxOutputLimitBytes {
-			break
+		if need > limit {
+			limit = need
 		}
 	}
-	return limit
+	return int(limit)
 }
 
 func (p *Pipeline) readStorage(ctx context.Context, key string, limit int64) ([]byte, error) {

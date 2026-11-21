@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -212,6 +213,89 @@ func TestPipelineScalesOutputLimitForLargeExpectedAnswer(t *testing.T) {
 	require.Len(t, e.sb.batches, 1)
 	assert.Equal(t, 2<<20+(1<<20), e.sb.batches[0].OutputLimitBytes,
 		"the batch must allow the expected answer plus slack")
+}
+
+func TestPipelineUsesConfiguredOutputLimit(t *testing.T) {
+	t.Run("configured floor slack and max", func(t *testing.T) {
+		e := newEnv(t, "traditional", caseSpec{"3\n", 10})
+		settings := model.DefaultJudgeSettings()
+		settings.OutputFloorBytes = 2 << 20
+		settings.OutputSlackBytes = 1 << 20
+		settings.MaxOutputBytes = 8 << 20
+		testutil.InsertJudgeSettings(t, e.pool, settings)
+		_, err := e.pool.Exec(context.Background(),
+			`UPDATE problem_testcases SET output_size = $1 WHERE id = $2`, 3<<20, e.cases[0])
+		require.NoError(t, err)
+
+		sub := e.submit(t, model.LanguageCPP, "int main(){}")
+		e.sb.runFn = func(sandbox.RunRequest) (sandbox.RunResult, error) {
+			return sandbox.RunResult{Output: []byte("3\n")}, nil
+		}
+
+		require.NoError(t, e.pipe.Run(context.Background(), sub))
+		require.Len(t, e.sb.batches, 1)
+		assert.Equal(t, 4<<20, e.sb.batches[0].OutputLimitBytes,
+			"the configured slot above the expected answer must be used")
+		status, _ := submissionResult(t, e.pool, sub)
+		assert.Equal(t, model.StatusAccepted, status)
+	})
+
+	t.Run("read failure falls back to defaults", func(t *testing.T) {
+		e := newEnv(t, "traditional", caseSpec{"3\n", 10})
+		_, err := e.pool.Exec(context.Background(), `DROP TABLE judge_settings`)
+		require.NoError(t, err)
+
+		sub := e.submit(t, model.LanguageCPP, "int main(){}")
+		e.sb.runFn = func(sandbox.RunRequest) (sandbox.RunResult, error) {
+			return sandbox.RunResult{Output: []byte("3\n")}, nil
+		}
+
+		require.NoError(t, e.pipe.Run(context.Background(), sub),
+			"a settings read failure must not fail judging")
+		require.Len(t, e.sb.batches, 1)
+		assert.Equal(t, int(model.DefaultJudgeSettings().OutputFloorBytes),
+			e.sb.batches[0].OutputLimitBytes)
+		status, _ := submissionResult(t, e.pool, sub)
+		assert.Equal(t, model.StatusAccepted, status)
+	})
+}
+
+func TestPipelineUsesConfiguredAnswerReadLimit(t *testing.T) {
+	const answer = "some expected answer larger than the configured read limit"
+	e := newEnv(t, "traditional", caseSpec{answer, 10})
+	settings := model.DefaultJudgeSettings()
+	settings.MaxOutputBytes = int64(len(answer) - 1)
+	testutil.InsertJudgeSettings(t, e.pool, settings)
+
+	sub := e.submit(t, model.LanguageCPP, "int main(){}")
+	e.sb.runFn = func(sandbox.RunRequest) (sandbox.RunResult, error) {
+		return sandbox.RunResult{Output: []byte(answer)}, nil
+	}
+
+	err := e.pipe.Run(context.Background(), sub)
+	require.Error(t, err, "an oversized expected answer must not be read silently")
+	assert.Contains(t, err.Error(), "read answer")
+	got, err := e.repo.FindByID(context.Background(), sub)
+	require.NoError(t, err)
+	assert.Equal(t, model.StatusJudging, got.Status,
+		"an infrastructure read failure leaves the submission for retry")
+}
+
+func TestPipelineUsesConfiguredAnswerReadLimitWithinCap(t *testing.T) {
+	answer := strings.Repeat("x", 64)
+	e := newEnv(t, "traditional", caseSpec{answer, 10})
+	settings := model.DefaultJudgeSettings()
+	settings.MaxOutputBytes = int64(len(answer))
+	testutil.InsertJudgeSettings(t, e.pool, settings)
+
+	sub := e.submit(t, model.LanguageCPP, "int main(){}")
+	e.sb.runFn = func(sandbox.RunRequest) (sandbox.RunResult, error) {
+		return sandbox.RunResult{Output: []byte(answer)}, nil
+	}
+
+	require.NoError(t, e.pipe.Run(context.Background(), sub))
+	status, _ := submissionResult(t, e.pool, sub)
+	assert.Equal(t, model.StatusAccepted, status)
 }
 
 func TestPipelinePublishesAcceptedGameEvent(t *testing.T) {

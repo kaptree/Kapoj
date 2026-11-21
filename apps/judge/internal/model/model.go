@@ -79,6 +79,32 @@ type Testcase struct {
 	SortOrder  int
 }
 
+// JudgeSettings mirrors the judge_settings singleton row shared with the
+// server. All byte fields use bytes.
+type JudgeSettings struct {
+	OutputFloorBytes     int64
+	OutputSlackBytes     int64
+	MaxOutputBytes       int64
+	MaxInputFileBytes    int64
+	MaxOutputFileBytes   int64
+	MaxBatchTotalBytes   int64
+	MaxProblemTotalBytes int64
+}
+
+// DefaultJudgeSettings returns the limits used when the judge_settings row is
+// missing or unreadable. They mirror apps/server/internal/judgesettings.
+func DefaultJudgeSettings() JudgeSettings {
+	return JudgeSettings{
+		OutputFloorBytes:     1 << 20,
+		OutputSlackBytes:     1 << 20,
+		MaxOutputBytes:       16 << 20,
+		MaxInputFileBytes:    16 << 20,
+		MaxOutputFileBytes:   16 << 20,
+		MaxBatchTotalBytes:   200 << 20,
+		MaxProblemTotalBytes: 200 << 20,
+	}
+}
+
 // JudgeCaseResult is stored in submissions.judge_result_json. Score is used
 // for aggregation and is serialized so the submission detail can show the
 // per-testcase score.

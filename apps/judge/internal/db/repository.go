@@ -49,6 +49,30 @@ func (r *Repository) Close() { r.pool.Close() }
 // Pool exposes the connection pool for tests and health checks.
 func (r *Repository) Pool() *pgxpool.Pool { return r.pool }
 
+// JudgeSettings loads the judge_settings singleton. A missing row falls back
+// to defaults. Other query failures return the defaults together with the
+// error so the caller can log it and keep judging with historical limits.
+func (r *Repository) JudgeSettings(ctx context.Context) (model.JudgeSettings, error) {
+	defaults := model.DefaultJudgeSettings()
+	var settings model.JudgeSettings
+	err := r.pool.QueryRow(ctx, `
+		SELECT output_floor_bytes, output_slack_bytes, max_output_bytes,
+		       max_input_file_bytes, max_output_file_bytes,
+		       max_batch_total_bytes, max_problem_total_bytes
+		FROM judge_settings WHERE id = 1`).Scan(
+		&settings.OutputFloorBytes, &settings.OutputSlackBytes, &settings.MaxOutputBytes,
+		&settings.MaxInputFileBytes, &settings.MaxOutputFileBytes,
+		&settings.MaxBatchTotalBytes, &settings.MaxProblemTotalBytes,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return defaults, nil
+	}
+	if err != nil {
+		return defaults, err
+	}
+	return settings, nil
+}
+
 // Claim moves a pending (or retrying) submission to judging and loads the
 // problem and its testcases. Terminal submissions return ErrSkip.
 func (r *Repository) Claim(ctx context.Context, id int64) (*model.Submission, *model.Problem, []model.Testcase, error) {

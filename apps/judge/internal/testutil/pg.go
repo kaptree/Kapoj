@@ -10,6 +10,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kaptree/kapoj/apps/judge/internal/model"
 )
 
 // PG connects to KAPOJ_TEST_DATABASE_URL and empties the judge-related tables.
@@ -124,17 +126,55 @@ CREATE TABLE IF NOT EXISTS testcase_generation_cases (
   output_size bigint NOT NULL DEFAULT 0,
   CONSTRAINT uniq_generation_cases_order UNIQUE (generation_id, sort_order)
 )`)
+	mustExec(t, pool, `
+CREATE TABLE IF NOT EXISTS judge_settings (
+  id bigint PRIMARY KEY,
+  output_floor_bytes bigint NOT NULL DEFAULT 1048576,
+  output_slack_bytes bigint NOT NULL DEFAULT 1048576,
+  max_output_bytes bigint NOT NULL DEFAULT 16777216,
+  max_input_file_bytes bigint NOT NULL DEFAULT 16777216,
+  max_output_file_bytes bigint NOT NULL DEFAULT 16777216,
+  max_batch_total_bytes bigint NOT NULL DEFAULT 209715200,
+  max_problem_total_bytes bigint NOT NULL DEFAULT 209715200,
+  updated_by bigint NOT NULL DEFAULT 0,
+  updated_at timestamptz NOT NULL DEFAULT now()
+)`)
 	// Older test databases may predate the objective columns; keep the
 	// CREATE TABLE above as the source of truth for fresh databases.
 	mustExec(t, pool, `ALTER TABLE problems ADD COLUMN IF NOT EXISTS answers_json jsonb NOT NULL DEFAULT '[]'`)
 	mustExec(t, pool, `ALTER TABLE submissions ADD COLUMN IF NOT EXISTS answer text NOT NULL DEFAULT ''`)
-	mustExec(t, pool, `TRUNCATE testcase_generation_cases, testcase_generations, submissions, problem_testcases, problems, users RESTART IDENTITY CASCADE`)
+	mustExec(t, pool, `TRUNCATE testcase_generation_cases, testcase_generations, submissions, problem_testcases, problems, users, judge_settings RESTART IDENTITY CASCADE`)
 	return pool
 }
 
 func mustExec(t *testing.T, pool *pgxpool.Pool, sql string) {
 	t.Helper()
 	_, err := pool.Exec(context.Background(), sql)
+	require.NoError(t, err)
+}
+
+// InsertJudgeSettings stores the singleton judge_settings row read by the judge.
+func InsertJudgeSettings(t *testing.T, pool *pgxpool.Pool, settings model.JudgeSettings) {
+	t.Helper()
+	_, err := pool.Exec(context.Background(), `
+		INSERT INTO judge_settings (
+			id, output_floor_bytes, output_slack_bytes, max_output_bytes,
+			max_input_file_bytes, max_output_file_bytes, max_batch_total_bytes,
+			max_problem_total_bytes, updated_by, updated_at
+		) VALUES (1, $1, $2, $3, $4, $5, $6, $7, 0, now())
+		ON CONFLICT (id) DO UPDATE SET
+			output_floor_bytes = EXCLUDED.output_floor_bytes,
+			output_slack_bytes = EXCLUDED.output_slack_bytes,
+			max_output_bytes = EXCLUDED.max_output_bytes,
+			max_input_file_bytes = EXCLUDED.max_input_file_bytes,
+			max_output_file_bytes = EXCLUDED.max_output_file_bytes,
+			max_batch_total_bytes = EXCLUDED.max_batch_total_bytes,
+			max_problem_total_bytes = EXCLUDED.max_problem_total_bytes,
+			updated_at = now()`,
+		settings.OutputFloorBytes, settings.OutputSlackBytes, settings.MaxOutputBytes,
+		settings.MaxInputFileBytes, settings.MaxOutputFileBytes,
+		settings.MaxBatchTotalBytes, settings.MaxProblemTotalBytes,
+	)
 	require.NoError(t, err)
 }
 
