@@ -20,6 +20,9 @@ type decodedAnthropicBody struct {
 	System      string           `json:"system"`
 	Messages    []decodedMessage `json:"messages"`
 	Temperature float64          `json:"temperature"`
+	Thinking    *struct {
+		Type string `json:"type"`
+	} `json:"thinking"`
 }
 
 func TestAnthropicURL(t *testing.T) {
@@ -90,8 +93,9 @@ func TestAnthropicChat(t *testing.T) {
 			{Role: "system", Content: "second rule"},
 			{Role: "user", Content: "bye"},
 		},
-		Temperature: 0.3,
-		MaxTokens:   256,
+		Temperature:     0.3,
+		MaxTokens:       256,
+		DisableThinking: true,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "Hello world", out)
@@ -105,6 +109,8 @@ func TestAnthropicChat(t *testing.T) {
 	assert.Equal(t, 256, gotBody.MaxTokens)
 	assert.Equal(t, "first rule\n\nsecond rule", gotBody.System)
 	assert.Equal(t, 0.3, gotBody.Temperature)
+	require.NotNil(t, gotBody.Thinking)
+	assert.Equal(t, "disabled", gotBody.Thinking.Type)
 	require.Len(t, gotBody.Messages, 3)
 	assert.Equal(t, "user", gotBody.Messages[0].Role)
 	assert.Equal(t, "hi", gotBody.Messages[0].Content)

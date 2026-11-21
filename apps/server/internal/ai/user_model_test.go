@@ -350,6 +350,25 @@ func TestDeleteActiveUserModelRejected(t *testing.T) {
 	assertValidationCode(t, err, 40400)
 }
 
+func TestTestUserModelDisablesDeepSeekThinking(t *testing.T) {
+	g := testutil.PG(t)
+	client := &fakeChatClient{fn: func(ai.ChatRequest) (string, error) { return "pong", nil }}
+	svc := newGenerateService(t, g, client, nil)
+	created := createUserModel(t, svc, 1, ai.UserModelInput{
+		Name:      "DeepSeek",
+		Protocol:  "openai",
+		BaseURL:   "https://api.deepseek.com",
+		ModelName: "deepseek-flash",
+		APIKey:    "sk-deepseek-test",
+	})
+
+	_, err := svc.TestUserModel(context.Background(), 1, created.ID)
+	require.NoError(t, err)
+	require.Len(t, client.calls, 1)
+	assert.True(t, client.calls[0].DisableThinking,
+		"DeepSeek connectivity probes must not spend all 16 tokens on reasoning")
+}
+
 func TestTestUserModelUpdatesLastTest(t *testing.T) {
 	g := testutil.PG(t)
 	ctx := context.Background()

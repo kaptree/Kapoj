@@ -28,11 +28,16 @@ func NewAnthropicClient(timeout time.Duration) *AnthropicClient {
 }
 
 type anthropicChatRequest struct {
-	Model       string        `json:"model"`
-	MaxTokens   int           `json:"max_tokens"`
-	System      string        `json:"system,omitempty"`
-	Messages    []ChatMessage `json:"messages"`
-	Temperature float64       `json:"temperature"`
+	Model       string             `json:"model"`
+	MaxTokens   int                `json:"max_tokens"`
+	System      string             `json:"system,omitempty"`
+	Messages    []ChatMessage      `json:"messages"`
+	Temperature float64            `json:"temperature"`
+	Thinking    *anthropicThinking `json:"thinking,omitempty"`
+}
+
+type anthropicThinking struct {
+	Type string `json:"type"`
 }
 
 type anthropicChatResponse struct {
@@ -85,12 +90,17 @@ func (c *AnthropicClient) Chat(ctx context.Context, req ChatRequest) (string, er
 		maxTokens = anthropicDefaultMaxTokens
 	}
 
+	var thinking *anthropicThinking
+	if req.DisableThinking {
+		thinking = &anthropicThinking{Type: "disabled"}
+	}
 	payload, err := json.Marshal(anthropicChatRequest{
 		Model:       req.Model,
 		MaxTokens:   maxTokens,
 		System:      strings.Join(systemParts, "\n\n"),
 		Messages:    messages,
 		Temperature: req.Temperature,
+		Thinking:    thinking,
 	})
 	if err != nil {
 		return "", err

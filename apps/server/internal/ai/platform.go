@@ -291,7 +291,7 @@ func (s *PlatformService) Test(ctx context.Context, id int64) (*PlatformTestResu
 			break
 		}
 		testCtx, cancel := context.WithTimeout(ctx, platformTestTimeout)
-		_, chatErr := s.client.Chat(testCtx, ChatRequest{
+		req := ChatRequest{
 			Protocol: model.Protocol,
 			BaseURL:  model.BaseURL,
 			APIKey:   plain,
@@ -300,7 +300,11 @@ func (s *PlatformService) Test(ctx context.Context, id int64) (*PlatformTestResu
 				{Role: "user", Content: "ping"},
 			},
 			MaxTokens: platformTestMaxTokens,
-		})
+		}
+		// A 16-token probe otherwise spends the whole budget on DeepSeek's
+		// default reasoning_content and returns an empty final answer.
+		req.DisableThinking = isDeepSeekChat(req)
+		_, chatErr := s.client.Chat(testCtx, req)
 		cancel()
 		if chatErr == nil {
 			result.OK = true
@@ -495,6 +499,8 @@ func platformTestFailureMessage(err error) string {
 			return fmt.Sprintf("HTTP %d", code)
 		}
 		return "上游返回错误状态"
+	case errors.Is(err, errUpstreamTruncated):
+		return "响应被截断，请关闭模型思考模式或调大输出上限"
 	case errors.Is(err, errMalformedResponse), errors.Is(err, errEmptyChoices), errors.Is(err, errEmptyContent):
 		return "响应格式错误"
 	}

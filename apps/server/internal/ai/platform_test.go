@@ -578,6 +578,22 @@ func TestPlatformAnthropicTestConnection(t *testing.T) {
 	})
 }
 
+func TestPlatformModelTestDisablesDeepSeekThinking(t *testing.T) {
+	g := testutil.PG(t)
+	keys := newKeyManager(t)
+	client := &fakeChatClient{fn: func(ai.ChatRequest) (string, error) { return "pong", nil }}
+	svc, _ := newPlatformService(t, g, keys, client)
+
+	created, err := svc.Create(context.Background(), 7, platformInput(), nil)
+	require.NoError(t, err)
+	res, err := svc.Test(context.Background(), created.ID)
+	require.NoError(t, err)
+	assert.True(t, res.OK)
+	require.Len(t, client.calls, 1)
+	assert.True(t, client.calls[0].DisableThinking,
+		"DeepSeek connectivity probes must not spend all 16 tokens on reasoning")
+}
+
 func TestPlatformModelTestConnection(t *testing.T) {
 	t.Run("成功且不受 AI 总开关影响", func(t *testing.T) {
 		var gotPath, gotAuth string

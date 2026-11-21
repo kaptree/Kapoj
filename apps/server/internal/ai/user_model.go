@@ -312,7 +312,7 @@ func (s *Service) TestUserModel(ctx context.Context, userID, id int64) (*UserMod
 			break
 		}
 		testCtx, cancel := context.WithTimeout(ctx, userModelTestTimeout)
-		_, chatErr := s.client.Chat(testCtx, ChatRequest{
+		req := ChatRequest{
 			Protocol: model.Protocol,
 			BaseURL:  model.BaseURL,
 			APIKey:   plain,
@@ -321,7 +321,11 @@ func (s *Service) TestUserModel(ctx context.Context, userID, id int64) (*UserMod
 				{Role: "user", Content: "ping"},
 			},
 			MaxTokens: userModelTestMaxTokens,
-		})
+		}
+		// A 16-token probe otherwise spends the whole budget on DeepSeek's
+		// default reasoning_content and returns an empty final answer.
+		req.DisableThinking = isDeepSeekChat(req)
+		_, chatErr := s.client.Chat(testCtx, req)
 		cancel()
 		if chatErr == nil {
 			result.OK = true
