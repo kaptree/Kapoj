@@ -43,6 +43,7 @@ DOMAIN=""
 CERT_CRT=""
 CERT_KEY=""
 TLS_VERIFY=1
+TLS_DIRECTIVE=""
 FLAG_YES=0
 FLAG_SKIP_IMAGES=0
 FLAG_PULL=0
@@ -60,7 +61,11 @@ STEP_TOTAL=9
 log()  { printf '%s\n' "${C_BLUE}    $*${C_OFF}"; }
 ok()   { printf '%s\n' "${C_GREEN} ✔  $*${C_OFF}"; }
 warn() { printf '%s\n' "${C_YELLOW} ⚠  $*${C_OFF}" >&2; }
-die()  { printf '%s\n' "${C_RED} ✘  $*${C_OFF}" >&2; exit 1; }
+die()  {
+  printf '%s\n' "${C_RED} ✘  $*${C_OFF}" >&2
+  [ -n "${LOG_FILE:-}" ] && printf '%s\n' "${C_RED}    完整日志：${LOG_FILE}${C_OFF}" >&2
+  exit 1
+}
 step() { STEP_NO=$((STEP_NO + 1)); printf '%s\n' "${C_BOLD}[ STEP $STEP_NO/$STEP_TOTAL ] $*${C_OFF}"; }
 
 LOG_FILE="${KAPOJ_DEPLOY_LOG:-}"
@@ -197,10 +202,14 @@ repair_compose_plugin() {
     fi
   done
 
-  if [ -x /usr/libexec/docker/cli-plugins/docker-compose ] \
-    && [ ! -e /usr/lib/docker/cli-plugins/docker-compose ]; then
-    mkdir -p /usr/lib/docker/cli-plugins
-    ln -s /usr/libexec/docker/cli-plugins/docker-compose /usr/lib/docker/cli-plugins/docker-compose
+  local link_src="${KAPOJ_COMPOSE_SYMLINK_SRC:-/usr/libexec/docker/cli-plugins/docker-compose}"
+  local link_dst="${KAPOJ_COMPOSE_SYMLINK_DST:-/usr/lib/docker/cli-plugins/docker-compose}"
+  if [ -L "$link_dst" ] && [ ! -e "$link_dst" ]; then
+    rm -f "$link_dst"
+  fi
+  if [ -x "$link_src" ] && [ ! -e "$link_dst" ]; then
+    mkdir -p "$(dirname "$link_dst")"
+    ln -s "$link_src" "$link_dst"
   fi
 }
 
@@ -225,6 +234,17 @@ install_compose_binary() {
   fi
 }
 
+start_docker() {
+  systemctl enable docker >/dev/null 2>&1 || true
+  if systemctl start docker >/dev/null 2>&1; then return 0; fi
+  if service docker start >/dev/null 2>&1; then return 0; fi
+  return 1
+}
+
+docker_ready() {
+  command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1
+}
+
 install_docker() {
   ensure_base_packages
 
@@ -237,31 +257,41 @@ install_docker() {
       else
         warn "docker-compose-plugin 包不可用（可能缺少 Docker apt 源），将下载独立二进制。"
       fi
-    fi
-  else
-    step "安装 Docker Engine 与 Compose 插件"
-    if apt_get install docker.io docker-compose-v2; then
-      log "已通过 Ubuntu 软件源安装 docker.io + docker-compose-v2"
-    else
-      warn "Ubuntu 软件源安装失败，尝试 get.docker.com"
-      if curl -fsSL https://get.docker.com | sh >/tmp/kapoj-getdocker.log 2>&1; then
-        log "get.docker.com 安装完成"
-        apt_get install docker-compose-plugin || warn "docker-compose-plugin 安装失败，将下载独立二进制。"
-      else
-        warn "get.docker.com 也失败（见 /tmp/kapoj-getdocker.log）"
+      if ! compose_ok; then
+        install_compose_binary
       fi
     fi
-    repair_compose_plugin
+    if ! docker_ready; then
+      warn "Docker 已安装但守护进程未运行，尝试启动"
+      start_docker || die "Docker 启动失败，请检查 systemctl status docker 与日志 ${LOG_FILE}"
+      sleep 2
+    fi
+    docker_ready || die "Docker 仍不可用，请检查 systemctl status docker 与日志 ${LOG_FILE}"
+    compose_ok || die "Compose 版本 $(compose_version) < ${MIN_COMPOSE_VERSION}。请检查插件路径后重试。"
+    ok "Docker 就绪（$(docker --version | awk '{print $3}' | tr -d ,)，compose $(docker compose version --short)）"
+    return
   fi
 
+  step "安装 Docker Engine 与 Compose 插件"
+  if apt_get install docker.io docker-compose-v2; then
+    log "已通过 Ubuntu 软件源安装 docker.io + docker-compose-v2"
+  else
+    warn "Ubuntu 软件源安装失败，尝试 get.docker.com"
+    if curl -fsSL https://get.docker.com | sh >/tmp/kapoj-getdocker.log 2>&1; then
+      log "get.docker.com 安装完成"
+      apt_get install docker-compose-plugin || warn "docker-compose-plugin 安装失败，将下载独立二进制。"
+    else
+      warn "get.docker.com 也失败（见 /tmp/kapoj-getdocker.log）"
+    fi
+  fi
+  repair_compose_plugin
   if ! compose_ok; then
     install_compose_binary
   fi
 
-  systemctl enable docker >/dev/null 2>&1 || service docker start >/dev/null 2>&1 || true
-  systemctl restart docker 2>/dev/null || service docker restart >/dev/null 2>&1 || true
+  start_docker || die "Docker 安装后无法启动，请检查 systemctl status docker 与日志 ${LOG_FILE}"
   sleep 2
-  command -v docker >/dev/null 2>&1 || die "Docker 安装后仍不可用，请查看上方日志手动安装。"
+  docker_ready || die "Docker 安装后仍不可用，请查看日志 ${LOG_FILE} 手动安装。"
   compose_ok || die "Compose 版本 $(compose_version) < ${MIN_COMPOSE_VERSION}。请检查插件路径后重试。"
   ok "Docker 就绪（$(docker --version | awk '{print $3}' | tr -d ,)，compose $(docker compose version --short)）"
 }
@@ -351,41 +381,59 @@ ensure_mirrors() {
     esac
   fi
 
-  local json="["
-  local first=1
-  for m in "${mirrors[@]}"; do
-    [ $first -eq 1 ] || json+=", "
-    json+="\"$m\""
-    first=0
-  done
-  json+="]"
   mkdir -p "$(dirname "$daemon_json")"
   local py="${KAPOJ_PYTHON3:-python3}"
   if [ -f "$daemon_json" ]; then
     cp "$daemon_json" "$daemon_json.bak"
     command -v "$py" >/dev/null 2>&1 \
       || die "${daemon_json} 已存在但无 python3 可安全合并。请手工加入 registry-mirrors 后重试（原文件未改动，备份路径 daemon.json.bak）。"
-    if ! MIRRORS_JSON="$json" "$py" - "$daemon_json" <<'PYEOF'
+    if ! "$py" - "$daemon_json" "${mirrors[@]}" <<'PYEOF'
 import json, os, sys
-path = sys.argv[1]
+path, mirrors = sys.argv[1], sys.argv[2:]
 with open(path) as f:
     cfg = json.load(f)
-cfg["registry-mirrors"] = json.loads(os.environ["MIRRORS_JSON"])
-with open(path, "w") as f:
+cfg["registry-mirrors"] = mirrors
+tmp = path + ".tmp"
+with open(tmp, "w") as f:
     json.dump(cfg, f, indent=2, ensure_ascii=False)
+    f.write("\n")
+os.replace(tmp, path)
 PYEOF
     then
       die "${daemon_json} 解析/写入失败，原文件未改动（备份 daemon.json.bak）。请手工合并 registry-mirrors。"
     fi
     log "已合并 registry-mirrors 到 ${daemon_json}（原文件备份为 daemon.json.bak）"
+  elif command -v "$py" >/dev/null 2>&1; then
+    "$py" - "$daemon_json" "${mirrors[@]}" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+with open(path, "w") as f:
+    json.dump({"registry-mirrors": sys.argv[2:]}, f, indent=2, ensure_ascii=False)
+    f.write("\n")
+PYEOF
+    log "已写入 ${daemon_json}"
   else
+    local json="["
+    local first=1
+    for m in "${mirrors[@]}"; do
+      [ $first -eq 1 ] || json+=", "
+      json+="\"$m\""
+      first=0
+    done
+    json+="]"
     printf '{ "registry-mirrors": %s }\n' "$json" > "$daemon_json"
     log "已写入 ${daemon_json}"
   fi
-  systemctl restart docker 2>/dev/null || service docker restart >/dev/null 2>&1 || true
+  if ! systemctl restart docker 2>/dev/null \
+    && ! service docker restart >/dev/null 2>&1; then
+    warn "Docker 重启失败。可恢复 ${daemon_json}.bak 后运行 sudo systemctl restart docker"
+    return 1
+  fi
   sleep 2
-  docker info --format '{{json .RegistryConfig.Mirrors}}' >/dev/null 2>&1 \
-    || warn "Docker 重启后暂不可用，请稍后运行 docker info 检查"
+  if ! docker info --format '{{json .RegistryConfig.Mirrors}}' >/dev/null 2>&1; then
+    warn "Docker 重启后不可用。可恢复 ${daemon_json}.bak 后运行 sudo systemctl restart docker"
+    return 1
+  fi
   ok "镜像加速已启用：${mirrors[*]}"
 }
 
@@ -394,10 +442,12 @@ PYEOF
 # --domain 与 .env 不一致时更新这两个键（脚本唯一受支持的 .env 写路径，用户显式意图）。
 load_entry_settings() {
   [ -f "$ENV_FILE" ] || return 0
-  local env_domain env_site env_tls
-  env_domain=$(grep -E '^KAPOJ_DOMAIN=' "$ENV_FILE" | head -1 | cut -d= -f2-)
-  env_site=$(grep -E '^KAPOJ_SITE_ADDRESS=' "$ENV_FILE" | head -1 | cut -d= -f2-)
-  env_tls=$(grep -E '^KAPOJ_TLS_VERIFY=' "$ENV_FILE" | head -1 | cut -d= -f2-)
+  local env_domain env_site env_tls env_tls_dir
+  env_domain="$(env_get KAPOJ_DOMAIN)"
+  env_site="$(env_get KAPOJ_SITE_ADDRESS)"
+  env_tls="$(env_get KAPOJ_TLS_VERIFY)"
+  env_tls_dir="$(env_get KAPOJ_TLS_DIRECTIVE)"
+  TLS_DIRECTIVE="$env_tls_dir"
   if [ "$FLAG_INSECURE_HEALTH" -eq 1 ]; then
     TLS_VERIFY=0
     set_env_key KAPOJ_TLS_VERIFY 0
@@ -517,10 +567,18 @@ deploy_custom_cert() {
 
   local dir="$ROOT/docker/caddy/certs"
   mkdir -p "$dir"
-  cmp -s "$CERT_CRT" "$dir/fullchain.pem" || install -m 644 "$CERT_CRT" "$dir/fullchain.pem"
-  cmp -s "$CERT_KEY" "$dir/privkey.pem" || install -m 600 "$CERT_KEY" "$dir/privkey.pem"
-  set_env_key KAPOJ_TLS_DIRECTIVE \
-    "tls /etc/caddy/certs/fullchain.pem /etc/caddy/certs/privkey.pem"
+  if cmp -s "$CERT_CRT" "$dir/fullchain.pem"; then
+    chmod 644 "$dir/fullchain.pem"
+  else
+    install -m 644 "$CERT_CRT" "$dir/fullchain.pem"
+  fi
+  if cmp -s "$CERT_KEY" "$dir/privkey.pem"; then
+    chmod 600 "$dir/privkey.pem"
+  else
+    install -m 600 "$CERT_KEY" "$dir/privkey.pem"
+  fi
+  TLS_DIRECTIVE="tls /etc/caddy/certs/fullchain.pem /etc/caddy/certs/privkey.pem"
+  set_env_key KAPOJ_TLS_DIRECTIVE "$TLS_DIRECTIVE"
   ok "已部署自定义证书；证书不会自动续期"
 }
 
@@ -550,21 +608,26 @@ build_up() {
   ok "容器已启动：$("${COMPOSE[@]}" ps --format '{{.Service}}' | sort | tr '\n' ' ')"
 }
 
+reload_web_if_custom_cert() {
+  if [ -n "$(env_get KAPOJ_TLS_DIRECTIVE)" ]; then
+    "${COMPOSE[@]}" restart web >/dev/null
+    ok "已重启 web 以加载自定义证书"
+  fi
+}
+
 pull_judge_images() {
   if [ "$FLAG_SKIP_IMAGES" -eq 1 ]; then
     warn "跳过评测语言镜像拉取（--skip-images）；judge 首次评测对应语言时会按需拉取"
     return
   fi
   step "预拉取评测语言镜像（后台并行，失败不阻塞部署）"
-  local images=() key value
-  for key in KAPOJ_JUDGE_CPP_IMAGE KAPOJ_JUDGE_PYTHON_IMAGE \
-    KAPOJ_JUDGE_JAVA_IMAGE KAPOJ_JUDGE_GO_IMAGE; do
-    value="$(env_get "$key")"
-    [ -n "$value" ] && images+=("$value")
+  local keys=(KAPOJ_JUDGE_CPP_IMAGE KAPOJ_JUDGE_PYTHON_IMAGE \
+    KAPOJ_JUDGE_JAVA_IMAGE KAPOJ_JUDGE_GO_IMAGE)
+  local images=() value i
+  for i in "${!keys[@]}"; do
+    value="$(env_get "${keys[$i]}")"
+    images+=("${value:-${JUDGE_IMAGES[$i]}}")
   done
-  if [ "${#images[@]}" -eq 0 ]; then
-    images=("${JUDGE_IMAGES[@]}")
-  fi
 
   local pids=() failed=() img
   for img in "${images[@]}"; do
@@ -605,7 +668,11 @@ wait_health() {
 
 wait_entry() {
   if [ -n "$DOMAIN" ]; then
-    log "等待 HTTPS 证书签发（最长 60 秒，需要域名已解析到本机且 80/443 可达）"
+    if [ -n "${TLS_DIRECTIVE:-}" ]; then
+      log "等待 HTTPS 入口加载自定义证书（最长 60 秒）"
+    else
+      log "等待 HTTPS 证书签发（最长 60 秒，需要域名已解析到本机且 80/443 可达）"
+    fi
     local insecure=0
     if [ "${TLS_VERIFY:-1}" = "0" ]; then
       insecure=1
@@ -625,8 +692,12 @@ wait_entry() {
       sleep 2
       i=$((i + 1))
     done
+    if [ -n "${TLS_DIRECTIVE:-}" ]; then
+      die "HTTPS 入口 60 秒内未就绪。自定义证书模式请检查证书 SAN/CN 是否包含 $DOMAIN、证书链与私钥是否匹配、docker/caddy/certs 挂载是否生效。
+    排查：ss -ltnp | grep ':80\\|:443' 与 docker compose --env-file .env -f $BASE_COMPOSE -f $PROD_COMPOSE logs web"
+    fi
     die "HTTPS 入口 60 秒内未就绪。服务容器已启动，常见原因：域名 A 记录未生效、云安全组未放行 80/443、域名未 ICP 备案。
-    排查：ss -ltnp | grep ':80\\|:443' 与 docker compose -f $BASE_COMPOSE -f $PROD_COMPOSE logs web
+    排查：ss -ltnp | grep ':80\\|:443' 与 docker compose --env-file .env -f $BASE_COMPOSE -f $PROD_COMPOSE logs web
     稍后可手动验证 https://$DOMAIN 或重跑 ./deploy.sh update"
   else
     local i=0
@@ -684,6 +755,7 @@ cmd_install() {
   [ -f "$PROD_COMPOSE" ] || die "缺少 ${PROD_COMPOSE}，请在仓库根目录运行本脚本。"
   ensure_socket_proxy
   build_up
+  reload_web_if_custom_cert
   pull_judge_images
   wait_health
   print_summary
@@ -691,6 +763,7 @@ cmd_install() {
 
 cmd_update() {
   need_root update
+  [ -f "$ENV_FILE" ] || die "缺少 .env，请先运行 sudo bash deploy.sh install"
   if [ "$FLAG_PULL" -eq 1 ]; then
     if [ -d .git ]; then
       git pull --ff-only
@@ -707,6 +780,7 @@ cmd_update() {
   deploy_custom_cert
   ensure_socket_proxy
   build_up
+  reload_web_if_custom_cert
   docker image prune -f >/dev/null 2>&1 || true
   wait_health
   print_summary
@@ -719,10 +793,18 @@ cmd_promote() {
   if [ -n "$(env_get KAPOJ_DATABASE_URL)" ]; then
     die "当前使用外部数据库（KAPOJ_DATABASE_URL），promote 只支持内置 postgres。请手工执行文档中的 SQL。"
   fi
+  local db_host db_port
+  db_host="$(env_get KAPOJ_DB_HOST)"
+  db_port="$(env_get KAPOJ_DB_PORT)"
+  if { [ -n "$db_host" ] && [ "$db_host" != "postgres" ]; } \
+    || { [ -n "$db_port" ] && [ "$db_port" != "5432" ]; }; then
+    die "当前数据库不是内置 postgres（KAPOJ_DB_HOST=${db_host:-空}，KAPOJ_DB_PORT=${db_port:-空}），promote 只支持内置 postgres。请手工执行文档中的 SQL。"
+  fi
 
   "${COMPOSE[@]}" exec -T postgres sh -c '
     psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -v username="$1"
   ' sh "$user" <<'SQL'
+BEGIN;
 SELECT (count(*) = 0) AS user_missing FROM users WHERE username = :'username' \gset
 \if :user_missing
   DO $$ BEGIN RAISE EXCEPTION '用户不存在或用户名为空'; END $$;
@@ -732,6 +814,7 @@ UPDATE users SET role = 'super_admin' WHERE id = :id;
 INSERT INTO user_roles (user_id, role_id, assigned_by, assigned_at)
 VALUES (:id, (SELECT id FROM roles WHERE code = 'super_admin'), NULL, now())
 ON CONFLICT (user_id, role_id) DO NOTHING;
+COMMIT;
 \echo '已授予 super_admin；权限实时生效，如前端菜单未更新请刷新或重新登录'
 SQL
   ok "已提升 ${user} 为 super_admin"
@@ -771,10 +854,18 @@ usage() {
 
 main() {
   local cmd="install"
+  local cmd_set=0
   local args=()
   while [ $# -gt 0 ]; do
     case "$1" in
-      install|update|status|logs|stop|restart|promote) cmd="$1"; shift ;;
+      install|update|status|logs|stop|restart|promote)
+        if [ "$cmd_set" -eq 0 ]; then
+          cmd="$1"
+          cmd_set=1
+        else
+          args+=("$1")
+        fi
+        shift ;;
       --domain)
         if [ $# -lt 2 ]; then die "--domain 需要一个参数，如 --domain oj.example.com"; fi
         DOMAIN="$2"; shift 2 ;;

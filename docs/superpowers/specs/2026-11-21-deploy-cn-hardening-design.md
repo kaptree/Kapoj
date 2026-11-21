@@ -160,6 +160,8 @@ sudo bash deploy.sh update  --domain oj.example.com --cert-crt ... --cert-key ..
 
 `wait_entry()` 默认校验证书链；失败时提示检查证书域名、链、DNS 和安全组。若源站使用 CDN 厂商的私有源站证书（如 Cloudflare Origin CA），可用 `--insecure-health` 或 `KAPOJ_TLS_VERIFY=0` 只跳过部署脚本的健康检查证书校验，不影响浏览器/CDN 的 TLS。
 
+`cmd_install`/`cmd_update` 在 `build_up` 之后若检测到 `KAPOJ_TLS_DIRECTIVE` 非空，会 `docker compose restart web`，确保续期后的证书真正被 Caddy 重新加载。
+
 **已确认（CDN 回源模式）**：CDN 通过 HTTPS:443 回源，源站证书由公网 CA 签发。`wait_entry()` 默认校验证书链；`--insecure-health` 仅作为私有源站证书的备用开关，不用于当前 CDN 模式。
 
 ### 5.6 RBAC 管理员提升

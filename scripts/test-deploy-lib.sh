@@ -58,17 +58,29 @@ PLUGINS="$TMP/plugins"
 mkdir -p "$PLUGINS"
 printf '#!/bin/sh\nexit 139\n' > "$PLUGINS/docker-compose"
 chmod +x "$PLUGINS/docker-compose"
-KAPOJ_COMPOSE_PLUGIN_DIRS="$PLUGINS" repair_compose_plugin
+KAPOJ_COMPOSE_PLUGIN_DIRS="$PLUGINS" \
+  KAPOJ_COMPOSE_SYMLINK_SRC="$TMP/no-src" KAPOJ_COMPOSE_SYMLINK_DST="$TMP/no-dst" \
+  repair_compose_plugin
 [ ! -e "$PLUGINS/docker-compose" ] || fail "broken plugin not moved"
 ls "$PLUGINS"/docker-compose.broken.* >/dev/null 2>&1 || fail "broken backup missing"
 pass "repair_compose_plugin moves broken binary"
 
 printf '#!/bin/sh\n[ "$1" = version ] && echo v2.20.0\n' > "$PLUGINS/docker-compose"
 chmod +x "$PLUGINS/docker-compose"
-KAPOJ_COMPOSE_PLUGIN_DIRS="$PLUGINS" repair_compose_plugin
+KAPOJ_COMPOSE_PLUGIN_DIRS="$PLUGINS" \
+  KAPOJ_COMPOSE_SYMLINK_SRC="$TMP/no-src" KAPOJ_COMPOSE_SYMLINK_DST="$TMP/no-dst" \
+  repair_compose_plugin
 [ ! -e "$PLUGINS/docker-compose" ] || fail "old plugin not moved"
 ls "$PLUGINS"/docker-compose.old.* >/dev/null 2>&1 || fail "old backup missing"
 pass "repair_compose_plugin moves old binary"
+
+printf '#!/bin/sh\nexit 0\n' > "$TMP/symlink-src"
+chmod +x "$TMP/symlink-src"
+KAPOJ_COMPOSE_PLUGIN_DIRS="$PLUGINS" \
+  KAPOJ_COMPOSE_SYMLINK_SRC="$TMP/symlink-src" KAPOJ_COMPOSE_SYMLINK_DST="$TMP/symlink-dst" \
+  repair_compose_plugin
+[ -L "$TMP/symlink-dst" ] || fail "compose symlink not created"
+pass "repair_compose_plugin creates compose symlink"
 
 # 8. compose always gets the repository .env explicitly
 grep -q -- '--env-file "$ENV_FILE"' "$ROOT_DIR/deploy.sh" \
@@ -82,6 +94,8 @@ parse_mirrors 'https://a.example,https://b.example https://c.example'
 pass "parse_mirrors handles commas and spaces"
 
 # 10. explicit mirrors replace registry-mirrors but preserve other keys
+systemctl() { return 0; }
+docker() { return 0; }
 printf '{"data-root":"/var/lib/docker-test","registry-mirrors":["https://old.example"]}\n' \
   > "$TMP/daemon.json"
 FLAG_YES=1
@@ -129,5 +143,91 @@ if (cmd_promote someone >/dev/null 2>&1); then
   fail "promote should refuse KAPOJ_DATABASE_URL"
 fi
 pass "promote refuses external database"
+
+# 14. pre-change .env without KAPOJ_TLS_VERIFY must not abort
+printf 'POSTGRES_PASSWORD=x\n' > "$ENV_FILE"
+DOMAIN=""
+TLS_VERIFY=1
+(TLS_VERIFY=1; load_entry_settings) || fail "load_entry_settings aborted on pre-change .env"
+pass "load_entry_settings tolerates missing keys"
+
+# 15. identical cert content still enforces private-key mode
+DOMAIN=oj.example.com
+chmod 644 "$TMP/docker/caddy/certs/privkey.pem"
+deploy_custom_cert
+key_mode=$(stat -c %a "$TMP/docker/caddy/certs/privkey.pem" 2>/dev/null \
+  || stat -f %Lp "$TMP/docker/caddy/certs/privkey.pem")
+[ "$key_mode" = "600" ] || fail "private key mode is $key_mode, expected 600"
+pass "deploy_custom_cert enforces key mode"
+
+# 16. promote refuses a non-postgres KAPOJ_DB_HOST
+printf 'KAPOJ_DB_HOST=external.example\nKAPOJ_DB_PORT=5432\n' > "$ENV_FILE"
+if (cmd_promote someone >/dev/null 2>&1); then
+  fail "promote should refuse external KAPOJ_DB_HOST"
+fi
+pass "promote refuses external DB host"
+
+# 17. healthy Docker is not restarted by install_docker
+ensure_base_packages() { :; }
+repair_compose_plugin() { :; }
+compose_ok() { return 0; }
+docker() {
+  case "$1" in
+    info) return 0 ;;
+    --version) echo "Docker version 29.0.0, build test" ;;
+    compose) echo "2.30.0" ;;
+    *) return 0 ;;
+  esac
+}
+SYSTEMCTL_LOG="$TMP/systemctl.log"
+systemctl() { printf '%s\n' "$*" >> "$SYSTEMCTL_LOG"; return 0; }
+install_docker
+if [ -f "$SYSTEMCTL_LOG" ] && grep -q 'restart docker' "$SYSTEMCTL_LOG"; then
+  fail "install_docker restarted a healthy Docker daemon"
+fi
+pass "install_docker does not restart healthy Docker"
+
+# 18. a working plugin >= 2.24 is left in place
+printf '#!/bin/sh\n[ "$1" = version ] && echo v2.30.0\n' > "$PLUGINS/docker-compose"
+chmod +x "$PLUGINS/docker-compose"
+KAPOJ_COMPOSE_PLUGIN_DIRS="$PLUGINS" \
+  KAPOJ_COMPOSE_SYMLINK_SRC="$TMP/no-src" KAPOJ_COMPOSE_SYMLINK_DST="$TMP/no-dst" \
+  repair_compose_plugin
+[ -x "$PLUGINS/docker-compose" ] || fail "working plugin was moved"
+pass "repair_compose_plugin keeps a working plugin"
+
+# 19. existing Docker + broken Compose never installs docker.io
+APT_LOG="$TMP/apt.log"
+apt_get() { printf '%s\n' "$*" >> "$APT_LOG"; return 0; }
+compose_calls=0
+compose_ok() {
+  compose_calls=$((compose_calls + 1))
+  [ "$compose_calls" -gt 2 ]
+}
+install_compose_binary() { :; }
+docker_ready() { return 0; }
+install_docker
+grep -q 'install docker-compose-plugin' "$APT_LOG" || fail "compose plugin install missing"
+if grep -q 'docker.io' "$APT_LOG"; then
+  fail "install_docker installed docker.io on an existing Docker host"
+fi
+pass "install_docker does not install docker.io on existing Docker"
+
+# 20. a failed Docker restart after mirror changes is fatal
+systemctl() { return 1; }
+service() { return 1; }
+if (KAPOJ_DAEMON_JSON="$TMP/daemon.json" KAPOJ_DOCKER_MIRRORS="https://new.example" \
+  FLAG_YES=1 ensure_mirrors >/dev/null 2>&1); then
+  fail "ensure_mirrors should fail when Docker cannot restart"
+fi
+pass "ensure_mirrors fails when Docker cannot restart"
+
+# 21. command keywords after the subcommand are positional arguments
+need_root() { :; }
+cmd_promote() { echo "promote:$1"; }
+init_log() { :; }
+out=$(main promote status)
+[ "$out" = "promote:status" ] || fail "promote status parsed as command: $out"
+pass "promote accepts a username that looks like a command"
 
 echo "all deploy helper tests passed"

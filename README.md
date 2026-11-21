@@ -55,14 +55,14 @@ packages/api                 OpenAPI 规范，前端类型由此生成
 docker/docker-compose.yml    开发环境：PostgreSQL 17、Redis 7、MinIO、后端/评测镜像
 docker/docker-compose.prod.yml  生产 override：端口收紧 + Caddy 入口（web 服务）
 docker/caddy/Caddyfile       入口容器配置（静态托管 + /api 反代）
-deploy.sh                    Ubuntu 20.04 一键部署脚本（install/update/status/logs/stop/restart）
+deploy.sh                    Ubuntu 20.04+ 一键部署脚本（install/update/promote/status/logs/stop/restart）
 docs                         任务清单、开发日志、规格设计、实施计划
 ```
 
 ## 环境要求
 
 - **本地开发**：Go 1.26（工具链会自动下载）、Node.js 22（pnpm 经 `corepack pnpm` 调用，无需全局安装）、Docker。
-- **生产部署**：Ubuntu 20.04 服务器，推荐 2 核 / 4GB 内存 / 30GB 磁盘起步；唯一依赖 Docker（`deploy.sh` 可自动安装并配置国内镜像加速）。
+- **生产部署**：Ubuntu 20.04–26.04 LTS 服务器，推荐 2 核 / 4GB 内存 / 30GB 磁盘起步；唯一依赖 Docker（`deploy.sh` 可自动安装 Docker/Compose 并配置国内镜像加速）。
 
 ## 快速开始（本地开发）
 
