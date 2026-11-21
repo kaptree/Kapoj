@@ -141,7 +141,7 @@ kapoj/
 - **删除策略**：已有提交记录的题目、比赛不做物理删除，改为下线（`is_public=false`）或归档。
 - **接口前缀**：业务接口统一挂在 `/api` 下（如 `/api/auth/login`），`/health` 不加前缀。本文档各模块「关键接口」表中的路径省略了 `/api`。
 - **字段命名**：接口 JSON 字段使用 camelCase（如 `avatarUrl`、`createdAt`），数据库列使用 snake_case。
-- **请求体大小**：JSON 请求默认上限 1 MiB；题目创建/更新与内联测试点因为题面、样例可能较大，放宽到 6 MiB；checker/附件/题面图片等 `uploads` 组上限 40 MiB（checker 256 KiB、附件 20 MiB、题面图片 5 MiB）；单个测试点上传、批量上传与题包导入使用 `imports` 组，外层硬上限 2 GiB + 16 MiB。测试点单文件默认 16 MiB、批量/单题总量默认 200 MiB，可在“评测设置”调整（见 §4.2）；题包 zip/解压上限单独见 §7。
+- **请求体大小**：JSON 请求默认上限 1 MiB；题目创建/更新与内联测试点因为题面、样例可能较大，放宽到 6 MiB；checker/附件/题面图片等 `uploads` 组上限 40 MiB（checker 256 KiB、附件 20 MiB、题面图片 5 MiB）；单个测试点上传与批量上传使用 `imports` 组，路由组外层硬上限 2 GiB + 16 MiB。Hydro/kapOJ 题包导入虽也挂在 `imports` 组，但 handler 会在解析 multipart 前按当前题包设置限制请求体为 **题包设置 + 16 MiB**（默认 200 MiB + 16 MiB ≈ 216 MiB；设置 2 GiB 时才到 2 GiB + 16 MiB）。测试点单文件默认 16 MiB、批量/单题总量默认 200 MiB，可在“评测设置”调整（见 §4.2）；题包 zip/解压上限单独见 §7。
 
 **错误码**（M0 已实现，见 `apps/server/internal/httpx/errors.go`；新模块在此表追加）：
 
@@ -908,7 +908,7 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 
 - 新增单例表 `judge_settings`（`id=1`），server 与 judge 共同读取；修改后**无需重启** server/judge，下一次提交与下一次上传/导入即使用新值。
 - 管理入口：`/admin/judge`（导航“系统 → 评测设置”），API 为 `GET/PUT /api/admin/judge/settings`，权限 `system.settings.manage`（`super_admin` 绕过）。详见 §4.7。
-- 字段、默认值与范围（PUT 为整行替换，必须提交全部 7 个字段；时间与操作者由服务端写入）：
+- 字段、默认值与范围（PUT 为整行替换：请求中缺省的数字字段按 0 处理，`outputSlackBytes` 缺省即 0，其余缺省通常会触发范围错误；因此客户端应始终提交全部 7 个字段。时间与操作者由服务端写入）：
 
 | 字段 | 默认值 | 范围 | 作用 |
 |------|--------|------|------|
@@ -931,7 +931,7 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
   ```
 
   即期望输出越大，批量 stdout 上限越高，直到 `max_output_bytes` 封顶；`output_size <= 0` 的点不参与提升。若库中存在 `max_output_bytes < output_floor_bytes` 的异常数据，judge 将上限退回 `output_floor_bytes`，保证仍可评测。
-- **标准答案读取**：judge 用 `max_output_bytes` 作为单个期望答案文件的读取上限；该值非正时回退默认 16 MiB。读取超限属于基础设施错误，提交会重试并最终可能变为 `system_error`，不会静默判 WA。`max_output_file_bytes <= max_output_bytes` 的校验可保证按当前设置新上传的答案能被读取。
+- **标准答案读取**：judge 用 `max_output_bytes` 作为单个期望答案文件的读取上限；该值非正时回退默认 16 MiB。读取超限属于基础设施错误，提交会重试并最终可能变为 `system_error`，不会静默判 WA。`max_output_file_bytes <= max_output_bytes` 的校验只保证通过单点/批量/导入路径新上传的答案不超过读取上限；内联测试点编辑仍固定 2 MiB/文件，不受该关系保护（例如“最大输出”设为 1 MiB 时，内联保存的 2 MiB 答案仍会读取失败）。
 - **仅影响后续**：已有测试数据不会因调低上传限制而被重新校验或删除；已有答案也不会被改写。若管理员把 `max_output_bytes` 降到已有答案大小以下，这些题目的后续评测会因答案读取超限而失败，需要重新调高或重新上传更小的答案。
 - **不受影响**：objective 题在读取设置前直接判定；special judge 的 checker 输出上限仍固定 4 KiB；时间/内存限制、测试点数量、checker 大小、题包 zip/解压上限均未改变。
 - **持久化字段**：`updated_by` 记录最后修改者的用户 ID，`updated_at` 记录 UTC 时间；PUT 与审计在同一事务内，审计失败会回滚设置更新。
@@ -1003,7 +1003,7 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 - 后端题目 CRUD、测试数据管理、checker 上传与前端题目列表、详情、编辑页、测评记录页、Monaco 提交页均已完成；提交、评测与 SSE 实时刷新已在 M1-B/M1-C 交付。
 - 权限（RBAC-C）：`POST /problems` 需要 `problem.create`；`PUT /problems/:id` 需要 `problem.update`，修改 `isPublic`（公开/下线）额外要求 `problem.publish`（仅 `problem.update` 不能发布/下线）；`DELETE` 需要 `problem.delete`；测试点与排序需要 `problem.testcase.manage`；checker 上传需要 `problem.checker.manage`。`super_admin` 总是放行。未公开题目对无 `problem.view_hidden` 者返回 40400，与不存在一致；`contest_admin` 不因比赛管理权限看到隐藏题。
 - 创建时忽略 `isPublic`，新题一律未公开；发布需至少 1 个测试点，特判题还需已上传 checker；公开题目不能删除最后一个测试点。发布校验与删除保护都在题目行锁事务内完成，并发删除测试点不会让公开题目变成 0 个测试点。
-- **更新是整体替换**：`PUT /problems/:id` 必须提交全部可编辑字段；未提交的字符串/数组会清空，`isPublic` 缺省为 `false`（即下线）。前端编辑页会先加载完整题目再提交。题目创建/更新的 JSON 请求体上限为 4 MiB。
+- **更新是整体替换**：`PUT /problems/:id` 必须提交全部可编辑字段；未提交的字符串/数组会清空，`isPublic` 缺省为 `false`（即下线）。前端编辑页会先加载完整题目再提交。题目创建/更新的 JSON 请求体上限为 6 MiB。
 - 难度为整数 **1–100**（`1–20` 入门、`21–40` 普及、`41–60` 提高、`61–80` 省选、`81–100` NOI），存储、API、筛选、题包与前端显示统一使用精确分；旧数据 1–5 迁移为 10/30/50/70/90。详见下方「题目难度 1–100、平台 AI 模型与定时任务」。
 - 列表筛选：`keyword` 同时匹配标题与 slug（不区分大小写、按字面量匹配，`%`/`_` 不作通配符）；`tag` 精确匹配整个标签；`difficulty` 精确匹配（兼容旧链接）；`difficultyMin`/`difficultyMax` 为 1–100 范围筛选；`includeHidden` 需要 `problem.view_hidden` 权限（需携带 bearer token）。
 - 题解可见性：`solutionMd`、`solutionCode`、`checkerUploaded`、`createdBy` 返回给拥有题目管理权限（`problem.update`/`problem.delete`/`problem.publish`/`problem.testcase.manage`/`problem.checker.manage` 任一）的用户，或本人已在该题有 `accepted` 提交的普通用户；`problem.view_hidden` 只放开题面，不放开题解；`hintMd` 对所有人生效。
@@ -1036,7 +1036,7 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 
 - 单个测试点上传（`POST /problems/:id/testcases`）的输入/输出分别使用 `max_input_file_bytes`/`max_output_file_bytes`；批量上传（`POST /problems/:id/testcases/batch`）单文件同上限，批次输入+输出总量使用 `max_batch_total_bytes`；Hydro/kapOJ 题包导入的单文件使用输入/输出上限，单题测试数据总量使用 `max_problem_total_bytes`。错误文案会显示当前配置值（如“输入文件不能超过 1 MiB”）。
 - 上传限制在每个操作开始时读取一次，单个请求内保持一致；provider 缺失或读取失败时回退改造前的默认值（16/16/200/200 MiB），上传继续可用并记录 warn。
-- 请求体分组：JSON 1 MiB；题目创建/更新与内联测试点 6 MiB；checker/附件/题面图片等 `uploads` 组 40 MiB；单个测试点上传、批量上传与题包导入使用 `imports` 组，外层硬上限 **2 GiB + 16 MiB**。外层上限只防超大请求，实际生效的是后台配置值。
+- 请求体分组：JSON 1 MiB；题目创建/更新与内联测试点 6 MiB；checker/附件/题面图片等 `uploads` 组 40 MiB；单个测试点上传与批量上传使用 `imports` 组，路由组外层硬上限 **2 GiB + 16 MiB**。Hydro/kapOJ 题包导入也挂在该组，但 handler 在解析 multipart 前按当前题包设置将请求体限制为 **题包设置 + 16 MiB**（默认 200 MiB + 16 MiB ≈ 216 MiB；题包设置调到 2 GiB 时才到 2 GiB + 16 MiB）。外层上限只防超大请求，实际生效的是后台配置值。
 - 未改变：内联测试点在线编辑仍固定 2 MiB/文件；checker 仍 256 KiB；附件仍 20 MiB、题面图片 5 MiB；每批 1–100 对、题包题数/条目/单题测试点数量上限不变；题包 zip 大小与解压上限仍由 `/admin/site` →「题库导入」的 `problem_import_settings` 控制，不迁移到评测设置。
 - 已有测试数据不追溯校验；调低限制只拦截之后的上传/导入。
 
@@ -1386,7 +1386,7 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 | GET | `/api/admin/judge/settings` | `system.settings.manage` | 评测输出与测试数据大小设置；首次读取懒创建默认行 |
 | PUT | `/api/admin/judge/settings` | `system.settings.manage` | 整体更新设置；校验范围与字段关系；与审计同事务（评测设置） |
 
-- **评测设置（2026-11-21）**：管理页 `/admin/judge`（导航“系统 → 评测设置”），只有 `system.settings.manage` 显示保存操作；默认仅 `super_admin` 拥有该权限。GET 返回 7 个字节字段与 `updatedAt`，PUT 必须提交全部 7 个字段（整行替换），范围/关系错误返回 40001 中文文案。PUT 在更新事务内写审计 action=`system.settings.manage`、target=`judge_settings`、summary 含各字段 MiB 值，审计失败回滚。字段、默认值、范围、公式与生效时机见 §4.2「评测与测试数据大小设置」。
+- **评测设置（2026-11-21）**：管理页 `/admin/judge`（导航“系统 → 评测设置”），只有 `system.settings.manage` 显示保存操作；默认仅 `super_admin` 拥有该权限。GET 返回 7 个字节字段与 `updatedAt`；PUT 为整行替换，请求中缺省的数字字段按 0 处理（客户端应提交全部 7 个字段），范围/关系错误返回 40001 中文文案。PUT 在更新事务内写审计 action=`system.settings.manage`、target=`judge_settings`、summary 含各字段 MiB 值，审计失败回滚。字段、默认值、范围、公式与生效时机见 §4.2「评测与测试数据大小设置」。
 - **保护规则**：系统角色不可删除、code/name 不可改；`super_admin` 权限不可修改；只有 super 能授予/移除/封禁/解封 super；禁止封禁自己（40001）；禁止移除/封禁最后一个 active super（40001）。角色/权限变更、用户角色分配、封禁/解封、管理员编辑用户在同一事务内写审计，失败回滚。
 - 自定义角色 code 创建后不可修改（`^[a-z][a-z0-9_]{2,63}$`），权限用 code 整体替换、重复去重、非法 code 返回 40001。
 - `POST /api/admin/users/:id/coins`（`user.coins.adjust`）在 RBAC-C 迁移到 `adminapi`，调整与审计在同一事务内完成，审计失败回滚。
