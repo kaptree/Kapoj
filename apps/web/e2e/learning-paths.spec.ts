@@ -8,8 +8,8 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
  * the frontend dev server at `E2E_BASE_URL` (default http://127.0.0.1:5173).
  * The admin creates an official path (root required 2 + two children) through
  * the API; progress is driven by inserting accepted submissions for the
- * ordinary users directly into PostgreSQL (docker exec kapoj-postgres-1). All
- * temporary problems/paths/nodes/progress/submissions/audit rows are removed in
+ * ordinary users directly into PostgreSQL. All temporary
+ * problems/paths/nodes/progress/submissions/audit rows are removed in
  * `afterAll`; existing data is never touched.
  */
 
@@ -24,7 +24,17 @@ const secondPassword = process.env.E2E_SECOND_PASSWORD ?? 'correct-horse'
 const runId = Date.now().toString()
 const slugPrefix = `e2e-lp-${runId}`
 const codeMarker = `// e2e-lp-${runId}`
-const psqlCommand = process.env.E2E_PSQL ?? 'docker exec kapoj-postgres-1 psql -U kapoj -d kapoj'
+/**
+ * Pick the PostgreSQL container that belongs to the API under test. The
+ * isolated e2e stack publishes the API on 18080 and names its container
+ * `kapoj-e2e-postgres-1`; everything else keeps targeting the main stack.
+ */
+function defaultPsqlCommand(): string {
+  const container = new URL(apiURL).port === '18080' ? 'kapoj-e2e-postgres-1' : 'kapoj-postgres-1'
+  return `docker exec ${container} psql -U kapoj -d kapoj`
+}
+
+const psqlCommand = process.env.E2E_PSQL ?? defaultPsqlCommand()
 
 /** Run a single SQL statement against the dev database and return trimmed stdout. */
 function sql(query: string): string {

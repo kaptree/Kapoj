@@ -279,6 +279,7 @@ jobs:
         env:
           E2E_API_URL: http://127.0.0.1:18080
           E2E_BASE_URL: http://127.0.0.1:15173
+          E2E_PSQL: docker exec kapoj-e2e-postgres-1 psql -U kapoj -d kapoj
         run: corepack pnpm test:e2e
 
       - name: Upload Playwright report

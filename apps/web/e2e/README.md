@@ -73,14 +73,15 @@ SSE 连接状态只作为测试注解；“实时刷新”不是失败条件，�
 
 ## 环境变量
 
-| 变量                                        | 默认值                         | 说明                                                                         |
-| ------------------------------------------- | ------------------------------ | ---------------------------------------------------------------------------- |
-| `E2E_API_URL`                               | `http://127.0.0.1:18080`       | 后端直连地址                                                                 |
-| `E2E_BASE_URL`                              | `http://127.0.0.1:5173`        | 前端地址；设置后 Playwright 不启动 Vite。e2e 栈使用 `http://127.0.0.1:15173` |
-| `E2E_BROWSER_CHANNEL`                       | `chrome`                       | Playwright 浏览器 channel                                                    |
-| `E2E_ADMIN_USER` / `E2E_ADMIN_PASSWORD`     | `m2badmin` / `correct-horse`   | 超管账号                                                                     |
-| `E2E_LIMITED_USER` / `E2E_LIMITED_PASSWORD` | `m2bsolver1` / `correct-horse` | 受限账号                                                                     |
-| `E2E_LIMITED_ROLE`                          | `auditor`                      | 管理后台用例临时分配给受限账号的角色                                         |
+| 变量                                        | 默认值                         | 说明                                                                                                                 |
+| ------------------------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `E2E_API_URL`                               | `http://127.0.0.1:18080`       | 后端直连地址                                                                                                         |
+| `E2E_BASE_URL`                              | `http://127.0.0.1:5173`        | 前端地址；设置后 Playwright 不启动 Vite。e2e 栈使用 `http://127.0.0.1:15173`                                         |
+| `E2E_BROWSER_CHANNEL`                       | `chrome`                       | Playwright 浏览器 channel                                                                                            |
+| `E2E_ADMIN_USER` / `E2E_ADMIN_PASSWORD`     | `m2badmin` / `correct-horse`   | 超管账号                                                                                                             |
+| `E2E_LIMITED_USER` / `E2E_LIMITED_PASSWORD` | `m2bsolver1` / `correct-horse` | 受限账号                                                                                                             |
+| `E2E_LIMITED_ROLE`                          | `auditor`                      | 管理后台用例临时分配给受限账号的角色                                                                                 |
+| `E2E_PSQL`                                  | 按 `E2E_API_URL` 自动选择      | `learning-paths.spec.ts` 使用的 psql 命令；API 端口为 `18080` 时用 `kapoj-e2e-postgres-1`，否则用 `kapoj-postgres-1` |
 
 ## 失败调试
 
