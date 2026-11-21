@@ -10,6 +10,7 @@ import { nextTick } from 'vue'
 import { ApiError } from '@/api/http'
 import { getSubmission, listSubmissions, rejudgeSubmission } from '@/api/submissions'
 import type { SubmissionDetail, SubmissionListItem } from '@/api/types'
+import RatingLevelName from '@/components/RatingLevelName.vue'
 import SubmissionsView from './SubmissionsView.vue'
 
 const toast = vi.hoisted(() => ({ add: vi.fn() }))
@@ -46,6 +47,8 @@ function item(overrides: Partial<SubmissionListItem> = {}): SubmissionListItem {
     nickname: 'Alice',
     agentId: null,
     agentName: '',
+    agentLevel: { key: 'gray', name: '灰名', color: '#808080', accentColor: '' },
+    level: { key: 'cyan', name: '青名', color: '#03A89E', accentColor: '' },
     equippedBadges: [],
     equippedTitle: null,
     problemId: 3,
@@ -150,18 +153,25 @@ describe('SubmissionsView', () => {
     expect(wrapper.text()).toContain('1024 KB')
     expect(wrapper.find('a[href="/users/7"]').exists()).toBe(true)
     expect(wrapper.find('a[href="/problems/3"]').exists()).toBe(true)
+    expect(wrapper.findComponent(RatingLevelName).props('level').key).toBe('cyan')
     wrapper.unmount()
   })
 
   it('tags Agent submissions and shows the agent name', async () => {
     vi.mocked(listSubmissions).mockResolvedValue({
       total: 1,
-      items: [item({ agentId: 11, agentName: 'Arena Agent' })],
+      items: [item({
+        agentId: 11,
+        agentName: 'Arena Agent',
+        agentLevel: { key: 'purple', name: '紫名', color: '#AA00AA', accentColor: '' },
+      })],
     })
     const { wrapper } = await mountPage()
 
     expect(wrapper.text()).toContain('Agent')
     expect(wrapper.text()).toContain('Arena Agent')
+    const agentName = wrapper.findAllComponents(RatingLevelName).find((node) => node.props('name') === 'Arena Agent')
+    expect(agentName?.props('level').key).toBe('purple')
     wrapper.unmount()
   })
 

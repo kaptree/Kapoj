@@ -9,6 +9,7 @@ import { reactive } from 'vue'
 import { ApiError } from '@/api/http'
 import { getStatistics, getSubmissionStats } from '@/api/problems'
 import type { ProblemStats, ProblemSubmissionMetric } from '@/api/types'
+import RatingLevelName from '@/components/RatingLevelName.vue'
 import ProblemStatisticsView from './ProblemStatisticsView.vue'
 
 const route = reactive({ params: { id: '7' } })
@@ -50,6 +51,7 @@ function metric(overrides: Partial<ProblemSubmissionMetric> = {}): ProblemSubmis
     userId: 12,
     username: 'metric-user',
     nickname: '指标用户',
+    level: { key: 'blue', name: '蓝名', color: '#0000FF', accentColor: '' },
     avatarUrl: 'https://example.com/avatar.png',
     equippedBadges: [],
     equippedTitle: null,
@@ -113,6 +115,7 @@ describe('ProblemStatisticsView', () => {
     expect(wrapper.find('[data-test="status-legend"]').text()).toContain('通过')
     expect(wrapper.find('[data-test="status-legend"]').text()).toContain('50.0%')
     expect(text).toContain('指标用户')
+    expect(wrapper.findComponent(RatingLevelName).props('level').key).toBe('blue')
     expect(text).toContain('42 B')
     expect(text).not.toContain('查看代码')
     expect(text).not.toContain('SECRET_CODE')

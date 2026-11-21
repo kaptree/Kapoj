@@ -122,6 +122,7 @@ onBeforeUnmount(() => {
                 :username="data.username"
                 :title="data.equippedTitle"
                 :badges="data.equippedBadges"
+                :rating-level="data.level"
                 size="small"
               />
             </div>

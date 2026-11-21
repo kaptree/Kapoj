@@ -11,24 +11,33 @@ import {
 
 const props = defineProps<{
   name: string
-  level: RatingLevel
+  level?: RatingLevel | null
+  inheritTypography?: boolean
 }>()
 
 const displayName = computed(() => props.name.trim() || '?')
 const parts = computed(() => splitBlackRedName(displayName.value))
-const blackRed = computed(() => isBlackRed(props.level))
-const levelStyle = computed(() => ratingLevelStyle(props.level))
-const accessibleName = computed(() => `${displayName.value}（${props.level.name}）`)
-const firstStyle = computed(() => ({ color: props.level.color }))
+const hasLevel = computed(() => Boolean(props.level?.key && props.level?.color))
+const blackRed = computed(() => hasLevel.value && isBlackRed(props.level as RatingLevel))
+const levelStyle = computed(() =>
+  hasLevel.value ? ratingLevelStyle(props.level as RatingLevel) : {},
+)
+const accessibleName = computed(() =>
+  hasLevel.value ? `${displayName.value}（${(props.level as RatingLevel).name}）` : displayName.value,
+)
+const firstStyle = computed(() => ({ color: (props.level as RatingLevel).color }))
 const restStyle = computed(() => ({
-  color: props.level.accentColor || BLACK_RED_ACCENT_COLOR,
+  color: (props.level as RatingLevel).accentColor || BLACK_RED_ACCENT_COLOR,
 }))
 </script>
 
 <template>
   <span
     class="rating-level-name"
-    :class="{ 'rating-level-name--black-red': blackRed }"
+    :class="{
+      'rating-level-name--black-red': blackRed,
+      'rating-level-name--inherit': inheritTypography,
+    }"
     :style="levelStyle"
     :title="accessibleName"
     :aria-label="accessibleName"
@@ -47,5 +56,10 @@ const restStyle = computed(() => ({
 .rating-level-name {
   font-weight: 600;
   white-space: nowrap;
+}
+
+.rating-level-name--inherit {
+  font-weight: inherit;
+  white-space: normal;
 }
 </style>

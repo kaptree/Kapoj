@@ -14,6 +14,7 @@ import { ApiError } from '@/api/http'
 import { listSubmissions } from '@/api/submissions'
 import type { SubmissionLanguage, SubmissionListItem, SubmissionStatus } from '@/api/types'
 import SubmissionDetailDrawer from '@/components/SubmissionDetailDrawer.vue'
+import RatingLevelName from '@/components/RatingLevelName.vue'
 import UserIdentityName from '@/components/UserIdentityName.vue'
 import AppEmptyState from '@/components/ui/AppEmptyState.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
@@ -327,11 +328,12 @@ onBeforeUnmount(() => {
                 :username="data.username"
                 :title="data.equippedTitle"
                 :badges="data.equippedBadges"
+                :rating-level="data.level"
                 size="small"
                 :link-to="{ name: 'user-profile', params: { id: data.userId } }"
               />
               <Tag v-if="data.agentId != null" value="Agent" severity="info" class="agent-tag" />
-              <span v-if="data.agentName" class="agent-name">{{ data.agentName }}</span>
+              <RatingLevelName v-if="data.agentName" class="agent-name" :name="data.agentName" :level="data.agentLevel" />
             </div>
           </template>
         </Column>

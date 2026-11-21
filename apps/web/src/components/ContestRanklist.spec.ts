@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { getContestRanklist } from '@/api/contests'
 import { ApiError } from '@/api/http'
 import type { ContestRankCell, ContestRankRow, ContestRanklist } from '@/api/types'
+import RatingLevelName from '@/components/RatingLevelName.vue'
 import ContestRanklistView from './ContestRanklist.vue'
 
 vi.mock('@/api/contests', () => ({
@@ -21,6 +22,7 @@ function row(overrides: Partial<ContestRankRow> = {}): ContestRankRow {
     userId: 1,
     username: 'user',
     nickname: 'User',
+    level: { key: 'cyan', name: '青名', color: '#03A89E', accentColor: '' },
     equippedBadges: [],
     equippedTitle: null,
     solved: 0,
@@ -48,6 +50,7 @@ function ranklist(overrides: Partial<ContestRanklist> = {}): ContestRanklist {
         userId: 7,
         username: 'alice',
         nickname: 'Alice',
+        level: { key: 'black_red', name: '黑红名', color: '#000000', accentColor: '#FF0000' },
         equippedBadges: [],
         equippedTitle: null,
         solved: 2,
@@ -70,6 +73,7 @@ function ranklist(overrides: Partial<ContestRanklist> = {}): ContestRanklist {
         userId: 8,
         username: 'bob',
         nickname: 'Bob',
+        level: { key: 'green', name: '绿名', color: '#008000', accentColor: '' },
         equippedBadges: [],
         equippedTitle: null,
         solved: 0,
@@ -106,6 +110,7 @@ describe('ContestRanklist', () => {
     expect(getContestRanklist).toHaveBeenCalledWith(5)
     expect(wrapper.text()).toContain('ICPC')
     expect(wrapper.text()).toContain('Alice')
+    expect(wrapper.findComponent(RatingLevelName).props('level').key).toBe('black_red')
     expect(wrapper.text()).toContain('2 / 120')
     expect(wrapper.text()).toContain('-2')
     expect(wrapper.text()).toContain('-1')

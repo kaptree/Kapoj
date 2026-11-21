@@ -46,6 +46,7 @@ const activityRow: ActivityLeaderboardRow = {
   username: 'm2bsolver1',
   nickname: 'm2bsolver1',
   score: 12345,
+  level: { key: 'green', name: '绿名', color: '#008000', accentColor: '' },
   equippedBadges: [],
   equippedTitle: null,
 }
@@ -56,6 +57,7 @@ const wealthRow: WealthLeaderboardRow = {
   username: 'alice',
   nickname: 'Alice',
   score: 23000,
+  level: { key: 'orange', name: '橙名', color: '#FF8C00', accentColor: '' },
   equippedBadges: [],
   equippedTitle: null,
 }
@@ -66,6 +68,7 @@ const wealthFullRow: WealthLeaderboardRow = {
   username: 'full-wealth',
   nickname: '富豪完整榜用户',
   score: 99,
+  level: { key: 'red', name: '红名', color: '#FF0000', accentColor: '' },
   equippedBadges: [],
   equippedTitle: null,
 }
@@ -76,6 +79,7 @@ const sharingRow: SharingLeaderboardRow = {
   username: 'm2badmin',
   nickname: 'm2badmin',
   score: 120,
+  level: { key: 'purple', name: '紫名', color: '#AA00AA', accentColor: '' },
   equippedBadges: [],
   equippedTitle: null,
 }
@@ -158,6 +162,9 @@ describe('LeaderboardView', () => {
     expect(ratingCard.findComponent(RatingLevelName).props('name')).toBe('m2bsolver1')
     expect(ratingCard.findComponent(RatingLevelName).props('level').name).toBe('青名')
     expect(ratingCard.text()).toContain('1516')
+    expect(wrapper.find('[data-board="activity"]').findComponent(RatingLevelName).props('level').key).toBe('green')
+    expect(wrapper.find('[data-board="wealth"]').findComponent(RatingLevelName).props('level').key).toBe('orange')
+    expect(wrapper.find('[data-board="contribution"]').findComponent(RatingLevelName).props('level').key).toBe('purple')
 
     // Wealth scores use thousands separators in the card.
     expect(wrapper.find('[data-board="wealth"]').text()).toContain('23,000')

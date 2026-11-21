@@ -443,7 +443,7 @@ watch(activeTab, (key) => {
                 :username="row.username"
                 :title="row.equippedTitle"
                 :badges="row.equippedBadges"
-                :rating-level="board.key === 'rating' ? (row.level ?? null) : null"
+                :rating-level="row.level ?? null"
                 size="small"
               />
             </span>
@@ -532,7 +532,7 @@ watch(activeTab, (key) => {
                             :username="data.username"
                             :title="data.equippedTitle"
                             :badges="data.equippedBadges"
-                            :rating-level="board.key === 'rating' ? (data.level ?? null) : null"
+                            :rating-level="data.level ?? null"
                             size="small"
                             :link-to="{ name: 'user-profile', params: { id: data.userId } }"
                           />

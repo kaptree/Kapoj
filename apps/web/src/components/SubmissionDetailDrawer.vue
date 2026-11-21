@@ -12,6 +12,7 @@ import { ApiError } from '@/api/http'
 import { getSubmission, rejudgeSubmission } from '@/api/submissions'
 import type { SubmissionDetail } from '@/api/types'
 import CodeViewer from '@/components/CodeViewer.vue'
+import RatingLevelName from '@/components/RatingLevelName.vue'
 import UserIdentityName from '@/components/UserIdentityName.vue'
 import AppEmptyState from '@/components/ui/AppEmptyState.vue'
 import AppErrorState from '@/components/ui/AppErrorState.vue'
@@ -154,11 +155,12 @@ watch(
               :username="detail.username"
               :title="detail.equippedTitle"
               :badges="detail.equippedBadges"
+              :rating-level="detail.level"
               size="small"
               :link-to="{ name: 'user-profile', params: { id: detail.userId } }"
             />
             <Tag v-if="detail.agentId != null" value="Agent" severity="info" />
-            <span v-if="detail.agentName" class="agent-name">{{ detail.agentName }}</span>
+            <RatingLevelName v-if="detail.agentName" class="agent-name" :name="detail.agentName" :level="detail.agentLevel" />
           </dd>
         </div>
         <div>

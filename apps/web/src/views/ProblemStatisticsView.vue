@@ -391,6 +391,7 @@ watch(
                   :username="data.username"
                   :title="data.equippedTitle"
                   :badges="data.equippedBadges"
+                  :rating-level="data.level"
                   size="small"
                   :link-to="{ name: 'user-profile', params: { id: data.userId } }"
                 />
