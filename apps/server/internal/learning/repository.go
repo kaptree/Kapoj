@@ -8,6 +8,8 @@ import (
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
+	"github.com/kaptree/kapoj/apps/server/internal/ratinglevel"
 )
 
 // ErrNotFound 表示学习路线不存在。
@@ -38,6 +40,7 @@ const pathItemColumns = `p.id, p.title, p.description_md, p.cover_url,
 	p.price_coins, p.participant_count, p.recommend_count,
 	p.created_at, p.updated_at,
 	u.id AS author_id, u.username AS author_username, u.nickname AS author_nickname,
+	u.rating AS author_rating,
 	(SELECT COUNT(*) FROM learning_path_nodes AS n WHERE n.path_id = p.id) AS node_count,
 	(SELECT COUNT(*) FROM user_learning_progress AS pr
 		WHERE pr.path_id = p.id AND pr.user_id = ? AND pr.status = ?) AS my_completed_count,
@@ -63,6 +66,7 @@ type pathRow struct {
 	AuthorID         int64
 	AuthorUsername   string
 	AuthorNickname   string
+	AuthorRating     int
 	NodeCount        int
 	MyCompletedCount int
 	Purchased        bool
@@ -82,6 +86,7 @@ func (r pathRow) item() PathItem {
 			ID:       r.AuthorID,
 			Username: r.AuthorUsername,
 			Nickname: r.AuthorNickname,
+			Level:    ratinglevel.LevelFor(r.AuthorRating),
 		},
 		NodeCount:        r.NodeCount,
 		MyCompletedCount: r.MyCompletedCount,

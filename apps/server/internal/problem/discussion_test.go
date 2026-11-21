@@ -80,6 +80,7 @@ func TestDiscussionPostCRUDAndPagination(t *testing.T) {
 	assert.True(t, detail.CanDelete)
 	assert.Equal(t, "author", detail.Author.Username)
 	assert.Equal(t, "Author Nick", detail.Author.Nickname)
+	assert.Equal(t, "cyan", detail.Author.Level.Key)
 	assert.Empty(t, detail.Replies)
 
 	// 列表包含该帖，摘要、作者、回复数为 0。

@@ -70,7 +70,8 @@ func (s *Service) ListNotifications(ctx context.Context, userID int64, page, siz
 	for _, r := range rows {
 		var actor *UserSummary
 		if r.Username != "" {
-			actor = &UserSummary{ID: r.ActorID, Username: r.Username, Nickname: r.Nickname, AvatarURL: r.AvatarURL, Rating: r.Rating}
+			summary := newUserSummary(r.ActorID, r.Username, r.Nickname, r.AvatarURL, r.Rating)
+			actor = &summary
 		}
 		items = append(items, NotificationItem{
 			ID:         r.ID,

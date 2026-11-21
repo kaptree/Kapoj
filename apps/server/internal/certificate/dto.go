@@ -3,6 +3,8 @@ package certificate
 import (
 	"fmt"
 	"time"
+
+	"github.com/kaptree/kapoj/apps/server/internal/ratinglevel"
 )
 
 // TypeInput 是管理员创建或更新证书类型的输入。
@@ -51,11 +53,12 @@ type CertificateView struct {
 // PublicCertificateView 是公开核验结果。仅当 Valid 为 true 时携带类型/等级/
 // 昵称/通过时间；绝不返回图片、邮箱、用户 ID、审核人、驳回原因等敏感信息。
 type PublicCertificateView struct {
-	Valid      bool       `json:"valid"`
-	Type       string     `json:"type,omitempty"`
-	Level      string     `json:"level,omitempty"`
-	Nickname   string     `json:"nickname,omitempty"`
-	ApprovedAt *time.Time `json:"approvedAt,omitempty"`
+	Valid       bool               `json:"valid"`
+	Type        string             `json:"type,omitempty"`
+	Level       string             `json:"level,omitempty"`
+	Nickname    string             `json:"nickname,omitempty"`
+	RatingLevel *ratinglevel.Level `json:"ratingLevel,omitempty"`
+	ApprovedAt  *time.Time         `json:"approvedAt,omitempty"`
 }
 
 // ProfileCertificateView 是用户公开主页上的证书摘要。仅包含已通过证书的

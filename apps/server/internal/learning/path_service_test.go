@@ -132,6 +132,7 @@ func TestPathPermissionMatrix(t *testing.T) {
 	assert.Equal(t, e.admin.ID, official.Author.ID)
 	assert.Equal(t, "path-admin", official.Author.Username)
 	assert.Equal(t, "昵称-path-admin", official.Author.Nickname)
+	assert.Equal(t, "cyan", official.Author.Level.Key)
 
 	custom := e.createPath(t, authorView, learning.PathInput{
 		Title: "自定义路线", IsActive: boolPtr(false),

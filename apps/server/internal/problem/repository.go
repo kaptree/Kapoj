@@ -11,6 +11,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
+	"github.com/kaptree/kapoj/apps/server/internal/ratinglevel"
 )
 
 var (
@@ -169,19 +171,27 @@ func (r *gormRepository) FindBySlug(ctx context.Context, slug string) (*Problem,
 }
 
 func (r *gormRepository) FindAuthor(ctx context.Context, userID int64) (*AuthorSummary, error) {
-	var a AuthorSummary
+	var row struct {
+		ID       int64
+		Username string
+		Nickname string
+		Rating   int
+	}
 	err := r.db.WithContext(ctx).
 		Table("users").
-		Select("id, username, nickname").
+		Select("id, username, nickname, rating").
 		Where("id = ?", userID).
-		Take(&a).Error
+		Take(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	return &a, nil
+	return &AuthorSummary{
+		ID: row.ID, Username: row.Username, Nickname: row.Nickname,
+		Level: ratinglevel.LevelFor(row.Rating),
+	}, nil
 }
 
 func escapeLike(s string) string {

@@ -40,6 +40,7 @@ func TestNotificationListReadAndUnread(t *testing.T) {
 	assert.Equal(t, social.TypeFollow, first.Type)
 	require.NotNil(t, first.Actor)
 	assert.Equal(t, "carol", first.Actor.Username)
+	assert.Equal(t, "cyan", first.Actor.Level.Key)
 	assert.Nil(t, first.ReadAt)
 	assert.NotEmpty(t, first.Link)
 

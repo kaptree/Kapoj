@@ -402,6 +402,7 @@ func TestVerifyApprovedOnly(t *testing.T) {
 	typeID := firstActiveTypeID(t, e)
 
 	userID := createUser(t, e.db, "verify-user", "核验昵称")
+	require.NoError(t, e.db.Exec(`UPDATE users SET rating = 1500 WHERE id = ?`, userID).Error)
 	code := "KAPOJ-ABCD-EFGH"
 	approvedAt := time.Now()
 
@@ -440,6 +441,8 @@ func TestVerifyApprovedOnly(t *testing.T) {
 	assert.Equal(t, "蓝桥杯", v.Type)
 	assert.Equal(t, "省一", v.Level)
 	assert.Equal(t, "核验昵称", v.Nickname)
+	require.NotNil(t, v.RatingLevel)
+	assert.Equal(t, "cyan", v.RatingLevel.Key)
 	require.NotNil(t, v.ApprovedAt)
 
 	// 大小写/空格/无连字符/去前缀容错。
@@ -455,6 +458,7 @@ func TestVerifyApprovedOnly(t *testing.T) {
 		v, err = e.svc.Verify(ctx, c)
 		require.NoError(t, err)
 		assert.False(t, v.Valid)
+		assert.Nil(t, v.RatingLevel)
 	}
 
 	// 无效格式直接 false。

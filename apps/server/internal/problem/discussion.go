@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
+	"github.com/kaptree/kapoj/apps/server/internal/ratinglevel"
 )
 
 const (
@@ -21,9 +22,10 @@ const (
 
 // AuthorSummary 是帖子/回复作者的公开摘要；仅含 ID/username/nickname，绝不包含邮箱。
 type AuthorSummary struct {
-	ID       int64  `json:"id"`
-	Username string `json:"username"`
-	Nickname string `json:"nickname"`
+	ID       int64             `json:"id"`
+	Username string            `json:"username"`
+	Nickname string            `json:"nickname"`
+	Level    ratinglevel.Level `json:"level"`
 }
 
 // SolutionPostInput 是发布/编辑帖子的输入。
@@ -509,15 +511,19 @@ func (s *DiscussionService) authors(ctx context.Context, userIDs []int64) (map[i
 		ID       int64
 		Username string
 		Nickname string
+		Rating   int
 	}
 	if err := s.db.WithContext(ctx).Table("users").
-		Select("id, username, nickname").
+		Select("id, username, nickname, rating").
 		Where("id IN ?", userIDs).
 		Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	for _, r := range rows {
-		out[r.ID] = AuthorSummary{ID: r.ID, Username: r.Username, Nickname: r.Nickname}
+		out[r.ID] = AuthorSummary{
+			ID: r.ID, Username: r.Username, Nickname: r.Nickname,
+			Level: ratinglevel.LevelFor(r.Rating),
+		}
 	}
 	return out, nil
 }

@@ -29,7 +29,7 @@ type Repository interface {
 	ListApprovedByUser(ctx context.Context, userID int64, limit int) ([]Certificate, int64, error)
 	ListAdmin(ctx context.Context, filter AdminFilter, offset, limit int) ([]adminCertificateRow, int64, error)
 	Review(ctx context.Context, id int64, status Status, reason string, verifyCode *string, reviewedBy int64, now time.Time) (bool, error)
-	FindByVerifyCode(ctx context.Context, code string) (*Certificate, string, error)
+	FindByVerifyCode(ctx context.Context, code string) (*Certificate, string, int, error)
 }
 
 // GormRepository 是 Repository 的 GORM 实现。
@@ -209,22 +209,23 @@ func (r *GormRepository) Review(ctx context.Context, id int64, status Status, re
 type verifyRow struct {
 	Certificate
 	Nickname string `gorm:"column:nickname"`
+	Rating   int    `gorm:"column:rating"`
 }
 
 // FindByVerifyCode 按验证码精确匹配已通过的证书，并 join users 取持有者昵称。
 // 未命中返回 gorm.ErrRecordNotFound。调用方需先规范化验证码（大写、去空格/连字符）。
-func (r *GormRepository) FindByVerifyCode(ctx context.Context, code string) (*Certificate, string, error) {
+func (r *GormRepository) FindByVerifyCode(ctx context.Context, code string) (*Certificate, string, int, error) {
 	var row verifyRow
 	err := r.db.WithContext(ctx).Table("certificates AS c").
-		Select("c.*, u.nickname").
+		Select("c.*, u.nickname, u.rating").
 		Joins("JOIN users AS u ON u.id = c.user_id").
 		Where("c.status = ? AND c.verify_code = ?", StatusApproved, code).
 		Scan(&row).Error
 	if err != nil {
-		return nil, "", err
+		return nil, "", 0, err
 	}
 	if row.ID == 0 {
-		return nil, "", gorm.ErrRecordNotFound
+		return nil, "", 0, gorm.ErrRecordNotFound
 	}
-	return &row.Certificate, row.Nickname, nil
+	return &row.Certificate, row.Nickname, row.Rating, nil
 }

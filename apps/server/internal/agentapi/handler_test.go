@@ -251,9 +251,11 @@ func TestAgentPublicLeaderboardDetailAndHistory(t *testing.T) {
 	first := items[0].(map[string]any)
 	assert.Equal(t, "Public Beta", first["name"])
 	assert.EqualValues(t, 1900, first["rating"])
+	assert.Equal(t, "purple", first["level"].(map[string]any)["key"])
 	author := first["author"].(map[string]any)
 	assert.Equal(t, "api-public-bob", author["username"])
 	assert.Equal(t, "nick-api-public-bob", author["nickname"])
+	assert.Equal(t, "cyan", author["level"].(map[string]any)["key"])
 
 	// Model filter plus avg_time excludes Agents without a solved problem.
 	w, resp = f.do(http.MethodGet, "/api/agents?sort=avg_time", "", "")
@@ -290,8 +292,10 @@ func TestAgentPublicLeaderboardDetailAndHistory(t *testing.T) {
 	assert.Equal(t, "Public Alpha", agentData["name"])
 	assert.Equal(t, "gpt-5", agentData["modelName"])
 	assert.EqualValues(t, 1700, agentData["rating"])
+	assert.Equal(t, "blue", agentData["level"].(map[string]any)["key"])
 	assert.EqualValues(t, 3, agentData["passedCount"])
 	assert.Equal(t, "api-public-alice", agentData["author"].(map[string]any)["username"])
+	assert.Equal(t, "cyan", agentData["author"].(map[string]any)["level"].(map[string]any)["key"])
 	for _, forbidden := range []string{"token", "currentAttempt", "testcases", "solution"} {
 		assert.NotContains(t, w.Body.String(), forbidden)
 	}

@@ -17,6 +17,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
+	"github.com/kaptree/kapoj/apps/server/internal/ratinglevel"
 	"github.com/kaptree/kapoj/apps/server/internal/storage"
 )
 
@@ -460,19 +461,21 @@ func (s *Service) Verify(ctx context.Context, code string) (*PublicCertificateVi
 	if !ok {
 		return &PublicCertificateView{Valid: false}, nil
 	}
-	cert, nickname, err := s.repo.FindByVerifyCode(ctx, normalized)
+	cert, nickname, userRating, err := s.repo.FindByVerifyCode(ctx, normalized)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return &PublicCertificateView{Valid: false}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	level := ratinglevel.LevelFor(userRating)
 	return &PublicCertificateView{
-		Valid:      true,
-		Type:       cert.CertificateTypeName,
-		Level:      cert.Level,
-		Nickname:   nickname,
-		ApprovedAt: cert.ReviewedAt,
+		Valid:       true,
+		Type:        cert.CertificateTypeName,
+		Level:       cert.Level,
+		Nickname:    nickname,
+		RatingLevel: &level,
+		ApprovedAt:  cert.ReviewedAt,
 	}, nil
 }
 

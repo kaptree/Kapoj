@@ -161,7 +161,7 @@ func (s *Service) followUsers(ctx context.Context, targetID int64, page, size in
 
 	items := make([]UserSummary, len(rows))
 	for i, r := range rows {
-		items[i] = UserSummary{ID: r.ID, Username: r.Username, Nickname: r.Nickname, AvatarURL: r.AvatarURL, Rating: r.Rating}
+		items[i] = newUserSummary(r.ID, r.Username, r.Nickname, r.AvatarURL, r.Rating)
 	}
 	return httpx.Page[UserSummary]{Total: total, Items: items}, nil
 }

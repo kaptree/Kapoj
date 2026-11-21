@@ -107,6 +107,7 @@ func TestListEvaluationsVisibilityAndCloud(t *testing.T) {
 	// 最近更新优先。
 	assert.Equal(t, "太强", page.Items[0].Content)
 	assert.Equal(t, "erin", page.Items[0].Author.Username)
+	assert.Equal(t, "cyan", page.Items[0].Author.Level.Key)
 	assert.Equal(t, "不行", page.Items[1].Content)
 	assert.Equal(t, "很棒", page.Items[2].Content)
 	assert.Equal(t, "dave", page.Items[2].Author.Username)

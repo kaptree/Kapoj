@@ -128,6 +128,7 @@ func TestFollowLists(t *testing.T) {
 	// 最近关注的排最前。
 	assert.Equal(t, "follower4", page.Items[0].Username)
 	assert.EqualValues(t, 1500, page.Items[0].Rating)
+	assert.Equal(t, "cyan", page.Items[0].Level.Key)
 	assert.NotEmpty(t, page.Items[0].Nickname)
 
 	// 第二页。

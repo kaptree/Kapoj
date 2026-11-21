@@ -1341,7 +1341,8 @@ func TestProblemDetailIncludesPublicAuthor(t *testing.T) {
 	assert.EqualValues(t, userID, author["id"])
 	assert.NotEmpty(t, author["username"])
 	assert.NotEmpty(t, author["nickname"])
-	assert.Len(t, author, 3, "author must expose only id/username/nickname")
+	assert.Equal(t, "cyan", author["level"].(map[string]any)["key"])
+	assert.Len(t, author, 4, "author must expose only id/username/nickname/level")
 	assert.NotContains(t, author, "email", "email must never be exposed")
 }
 

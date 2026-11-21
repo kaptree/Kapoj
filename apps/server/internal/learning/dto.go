@@ -1,6 +1,10 @@
 package learning
 
-import "time"
+import (
+	"time"
+
+	"github.com/kaptree/kapoj/apps/server/internal/ratinglevel"
+)
 
 // Viewer 描述当前请求者。零值表示游客。
 //
@@ -16,9 +20,10 @@ type Viewer struct {
 
 // UserSummary 是路线作者的公开摘要。
 type UserSummary struct {
-	ID       int64  `json:"id"`
-	Username string `json:"username"`
-	Nickname string `json:"nickname"`
+	ID       int64             `json:"id"`
+	Username string            `json:"username"`
+	Nickname string            `json:"nickname"`
+	Level    ratinglevel.Level `json:"level"`
 }
 
 // PathItem 是学习路线列表/详情的元信息，不含节点树。

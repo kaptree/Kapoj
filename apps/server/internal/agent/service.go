@@ -13,6 +13,7 @@ import (
 
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
+	"github.com/kaptree/kapoj/apps/server/internal/ratinglevel"
 	"github.com/kaptree/kapoj/apps/server/internal/submission"
 	"github.com/kaptree/kapoj/apps/server/internal/user"
 )
@@ -108,26 +109,28 @@ type AgentInput struct {
 
 // AgentAuthor identifies the user who owns an Agent.
 type AgentAuthor struct {
-	ID       int64  `json:"id"`
-	Username string `json:"username"`
-	Nickname string `json:"nickname"`
+	ID       int64             `json:"id"`
+	Username string            `json:"username"`
+	Nickname string            `json:"nickname"`
+	Level    ratinglevel.Level `json:"level"`
 }
 
 // AgentView is the public Agent profile and statistics.
 type AgentView struct {
-	ID             int64       `json:"id"`
-	UserID         int64       `json:"userId"`
-	Name           string      `json:"name"`
-	ModelName      string      `json:"modelName"`
-	ModelIntro     string      `json:"modelIntro"`
-	Status         Status      `json:"status"`
-	Rating         int         `json:"rating"`
-	PassedCount    int         `json:"passedCount"`
-	AttemptedCount int         `json:"attemptedCount"`
-	AvgSolveTimeMS int         `json:"avgSolveTimeMs"`
-	Author         AgentAuthor `json:"author"`
-	CreatedAt      time.Time   `json:"createdAt"`
-	UpdatedAt      time.Time   `json:"updatedAt"`
+	ID             int64             `json:"id"`
+	UserID         int64             `json:"userId"`
+	Name           string            `json:"name"`
+	ModelName      string            `json:"modelName"`
+	ModelIntro     string            `json:"modelIntro"`
+	Status         Status            `json:"status"`
+	Rating         int               `json:"rating"`
+	Level          ratinglevel.Level `json:"level"`
+	PassedCount    int               `json:"passedCount"`
+	AttemptedCount int               `json:"attemptedCount"`
+	AvgSolveTimeMS int               `json:"avgSolveTimeMs"`
+	Author         AgentAuthor       `json:"author"`
+	CreatedAt      time.Time         `json:"createdAt"`
+	UpdatedAt      time.Time         `json:"updatedAt"`
 }
 
 // AgentFilter filters and sorts the public Agent leaderboard.
@@ -611,7 +614,7 @@ func (s *Service) listAgentPage(
 			a.rating, a.passed_count, a.attempted_count, a.avg_solve_time_ms,
 			a.created_at, a.updated_at,
 			u.id AS author_id, u.username AS author_username,
-			u.nickname AS author_nickname`).
+			u.nickname AS author_nickname, u.rating AS author_rating`).
 		Order(agentListOrder(sort)).
 		Limit(size).
 		Offset((page - 1) * size).
@@ -667,6 +670,7 @@ type agentListRow struct {
 	AuthorID       int64     `gorm:"column:author_id"`
 	AuthorUsername string    `gorm:"column:author_username"`
 	AuthorNickname string    `gorm:"column:author_nickname"`
+	AuthorRating   int       `gorm:"column:author_rating"`
 }
 
 func (r agentListRow) view() AgentView {
@@ -678,6 +682,7 @@ func (r agentListRow) view() AgentView {
 		ModelIntro:     r.ModelIntro,
 		Status:         r.Status,
 		Rating:         r.Rating,
+		Level:          ratinglevel.LevelFor(r.Rating),
 		PassedCount:    r.PassedCount,
 		AttemptedCount: r.AttemptedCount,
 		AvgSolveTimeMS: r.AvgSolveTimeMS,
@@ -685,6 +690,7 @@ func (r agentListRow) view() AgentView {
 			ID:       r.AuthorID,
 			Username: r.AuthorUsername,
 			Nickname: r.AuthorNickname,
+			Level:    ratinglevel.LevelFor(r.AuthorRating),
 		},
 		CreatedAt: r.CreatedAt,
 		UpdatedAt: r.UpdatedAt,
@@ -971,12 +977,22 @@ func (s *Service) agentView(ctx context.Context, a Agent) (*AgentView, error) {
 
 func buildAgentView(db *gorm.DB, a Agent) (*AgentView, error) {
 	var author AgentAuthor
+	var authorRow struct {
+		ID       int64
+		Username string
+		Nickname string
+		Rating   int
+	}
 	err := db.Table("users").
-		Select("id, username, nickname").
+		Select("id, username, nickname, rating").
 		Where("id = ?", a.UserID).
-		Scan(&author).Error
+		Scan(&authorRow).Error
 	if err != nil {
 		return nil, err
+	}
+	author = AgentAuthor{
+		ID: authorRow.ID, Username: authorRow.Username, Nickname: authorRow.Nickname,
+		Level: ratinglevel.LevelFor(authorRow.Rating),
 	}
 	return &AgentView{
 		ID:             a.ID,
@@ -986,6 +1002,7 @@ func buildAgentView(db *gorm.DB, a Agent) (*AgentView, error) {
 		ModelIntro:     a.ModelIntro,
 		Status:         a.Status,
 		Rating:         a.Rating,
+		Level:          ratinglevel.LevelFor(a.Rating),
 		PassedCount:    a.PassedCount,
 		AttemptedCount: a.AttemptedCount,
 		AvgSolveTimeMS: a.AvgSolveTimeMS,

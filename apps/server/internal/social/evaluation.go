@@ -63,12 +63,9 @@ type evaluationRow struct {
 
 func (r evaluationRow) item(canDelete bool) EvaluationItem {
 	return EvaluationItem{
-		ID:      r.ID,
-		Content: r.Content,
-		Author: UserSummary{
-			ID: r.AuthorID, Username: r.Username, Nickname: r.Nickname,
-			AvatarURL: r.AvatarURL, Rating: r.Rating,
-		},
+		ID:        r.ID,
+		Content:   r.Content,
+		Author:    newUserSummary(r.AuthorID, r.Username, r.Nickname, r.AvatarURL, r.Rating),
 		CreatedAt: r.CreatedAt,
 		UpdatedAt: r.UpdatedAt,
 		CanDelete: canDelete,

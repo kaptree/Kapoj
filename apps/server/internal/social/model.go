@@ -1,6 +1,10 @@
 package social
 
-import "time"
+import (
+	"time"
+
+	"github.com/kaptree/kapoj/apps/server/internal/ratinglevel"
+)
 
 const (
 	// TypeSolutionReply 表示“回复了你的解题思路”。
@@ -59,11 +63,19 @@ func (UserEvaluation) TableName() string { return "user_evaluations" }
 
 // UserSummary 是用户公开摘要，供粉丝/关注列表与通知 actor 使用；不含邮箱。
 type UserSummary struct {
-	ID        int64  `json:"id"`
-	Username  string `json:"username"`
-	Nickname  string `json:"nickname"`
-	AvatarURL string `json:"avatarUrl"`
-	Rating    int    `json:"rating"`
+	ID        int64             `json:"id"`
+	Username  string            `json:"username"`
+	Nickname  string            `json:"nickname"`
+	AvatarURL string            `json:"avatarUrl"`
+	Rating    int               `json:"rating"`
+	Level     ratinglevel.Level `json:"level"`
+}
+
+func newUserSummary(id int64, username, nickname, avatarURL string, rating int) UserSummary {
+	return UserSummary{
+		ID: id, Username: username, Nickname: nickname, AvatarURL: avatarURL,
+		Rating: rating, Level: ratinglevel.LevelFor(rating),
+	}
 }
 
 // FollowResult 是关注/取消关注的返回。
