@@ -24,14 +24,26 @@ const secondPassword = process.env.E2E_SECOND_PASSWORD ?? 'correct-horse'
 const runId = Date.now().toString()
 const slugPrefix = `e2e-lp-${runId}`
 const codeMarker = `// e2e-lp-${runId}`
+function containerExists(name: string): boolean {
+  try {
+    execSync(`docker inspect ${name}`, { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+}
+
 /**
- * Pick the PostgreSQL container that belongs to the API under test. The
- * isolated e2e stack publishes the API on 18080 and names its container
- * `kapoj-e2e-postgres-1`; everything else keeps targeting the main stack.
+ * Pick the PostgreSQL container that belongs to the API under test. Prefer the
+ * isolated e2e stack only when its API port is in use and its container exists;
+ * otherwise keep targeting the main stack (including older local setups that
+ * ran the backend on 18080).
  */
 function defaultPsqlCommand(): string {
-  const container = new URL(apiURL).port === '18080' ? 'kapoj-e2e-postgres-1' : 'kapoj-postgres-1'
-  return `docker exec ${container} psql -U kapoj -d kapoj`
+  if (new URL(apiURL).port === '18080' && containerExists('kapoj-e2e-postgres-1')) {
+    return 'docker exec kapoj-e2e-postgres-1 psql -U kapoj -d kapoj'
+  }
+  return 'docker exec kapoj-postgres-1 psql -U kapoj -d kapoj'
 }
 
 const psqlCommand = process.env.E2E_PSQL ?? defaultPsqlCommand()

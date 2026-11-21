@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Isolated full-stack environment for the Playwright core-flow smoke test.
 set -euo pipefail
+umask 077
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -39,15 +40,14 @@ need_docker() {
 }
 
 ensure_env() {
-  if [ -f "$ENV_FILE" ]; then
-    return 0
-  fi
-  command -v python3 >/dev/null 2>&1 || {
-    echo "python3 is required to generate $ENV_FILE" >&2
-    exit 1
-  }
-  cp .env.example "$ENV_FILE"
-  python3 - "$ENV_FILE" <<'PY'
+  if [ ! -f "$ENV_FILE" ]; then
+    command -v python3 >/dev/null 2>&1 || {
+      echo "python3 is required to generate $ENV_FILE" >&2
+      exit 1
+    }
+    local tmp="${ENV_FILE}.tmp.$$"
+    cp .env.example "$tmp"
+    if ! python3 - "$tmp" <<'PY'
 import base64
 import re
 import secrets
@@ -59,7 +59,10 @@ text = open(path, encoding="utf-8").read()
 
 def replace(key: str, value: str) -> None:
     global text
-    text = re.sub(rf"^{re.escape(key)}=.*$", f"{key}={value}", text, flags=re.M)
+    pattern = rf"^{re.escape(key)}=.*$"
+    text, count = re.subn(pattern, f"{key}={value}", text, flags=re.M)
+    if count != 1:
+        sys.exit(f"expected exactly one {key} entry in the template")
 
 
 replace("POSTGRES_PASSWORD", secrets.token_hex(16))
@@ -70,8 +73,25 @@ replace("KAPOJ_MAIL_ENCRYPTION_KEY", base64.b64encode(secrets.token_bytes(32)).d
 
 open(path, "w", encoding="utf-8").write(text)
 PY
+    then
+      rm -f "$tmp"
+      echo "failed to generate $ENV_FILE" >&2
+      exit 1
+    fi
+    chmod 600 "$tmp"
+    mv "$tmp" "$ENV_FILE"
+    echo "created $ENV_FILE"
+  fi
   chmod 600 "$ENV_FILE"
-  echo "created $ENV_FILE"
+}
+
+# Load the e2e file into the shell environment so Compose interpolation cannot
+# silently pick up POSTGRES_* / MINIO_* values exported for the main stack.
+load_env() {
+  set -a
+  # shellcheck disable=SC1090
+  . "$ENV_FILE"
+  set +a
 }
 
 pull_images() {
@@ -98,11 +118,14 @@ pull_images() {
   done
 }
 
+health_check() {
+  curl -fsS --connect-timeout 3 --max-time 5 "$1" >/dev/null 2>&1
+}
+
 wait_health() {
   local deadline=$((SECONDS + 180))
   while [ "$SECONDS" -lt "$deadline" ]; do
-    if curl -fsS "$API_URL/health" >/dev/null 2>&1 \
-      && curl -fsS "$WEB_URL/health" >/dev/null 2>&1; then
+    if health_check "$API_URL/health" && health_check "$WEB_URL/health"; then
       return 0
     fi
     sleep 2
@@ -110,6 +133,7 @@ wait_health() {
   echo "e2e stack did not become healthy in 180s" >&2
   "${COMPOSE[@]}" ps >&2 || true
   "${COMPOSE[@]}" logs --no-color --tail=200 >&2 || true
+  echo "hint: run 'bash scripts/e2e-stack.sh down -v' before retrying" >&2
   return 1
 }
 
@@ -120,10 +144,7 @@ psql_exec() {
 
 seed() {
   ensure_env
-  set -a
-  # shellcheck disable=SC1090
-  . "$ENV_FILE"
-  set +a
+  load_env
 
   psql_exec >/dev/null <<'SQL'
 INSERT INTO mail_settings (id, updated_at, require_email_verification, sending_enabled)
@@ -137,7 +158,7 @@ SQL
   local admin_exists
   admin_exists=$(psql_exec -tAc "SELECT 1 FROM users WHERE username = 'm2badmin'" | tr -d '[:space:]')
   if [ "$admin_exists" != "1" ]; then
-    curl -fsS -X POST "$API_URL/api/auth/register" \
+    curl -fsS --connect-timeout 3 --max-time 30 -X POST "$API_URL/api/auth/register" \
       -H 'Content-Type: application/json' \
       --data '{"username":"m2badmin","email":"m2badmin@example.com","password":"correct-horse"}' \
       >/dev/null
@@ -169,14 +190,19 @@ SQL
 }
 
 up() {
+  local start=$SECONDS
   need_docker
   ensure_env
+  load_env
   pull_images
-  local start=$SECONDS
   "${COMPOSE[@]}" up -d --build
   wait_health
   seed
-  echo "e2e stack ready in $((SECONDS - start))s"
+  local elapsed=$((SECONDS - start))
+  echo "e2e stack ready in ${elapsed}s"
+  if [ "$elapsed" -gt 600 ]; then
+    echo "warning: startup exceeded the 600s target" >&2
+  fi
   echo "API: $API_URL"
   echo "Web: $WEB_URL"
   echo "Run: E2E_API_URL=$API_URL E2E_BASE_URL=$WEB_URL corepack pnpm test:e2e"
@@ -186,18 +212,21 @@ up() {
 down() {
   need_docker
   ensure_env
+  load_env
   "${COMPOSE[@]}" down -v --remove-orphans
 }
 
 logs() {
   need_docker
   ensure_env
+  load_env
   "${COMPOSE[@]}" logs --no-color --tail="${2:-300}"
 }
 
 status() {
   need_docker
   ensure_env
+  load_env
   "${COMPOSE[@]}" ps
 }
 

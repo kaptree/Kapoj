@@ -7,7 +7,7 @@
 - Docker 与 Compose v2.24+（e2e override 使用 `!override`）。
 - Node 22 + corepack pnpm。
 - 本机安装 Google Chrome（默认 `channel: chrome`，可用 `E2E_BROWSER_CHANNEL` 覆盖）。
-- 视频/trace 需要 Playwright ffmpeg：`corepack pnpm --filter web exec playwright install ffmpeg`。
+- 失败视频需要 Playwright ffmpeg：`corepack pnpm --filter web exec playwright install ffmpeg`（trace 不需要）。
 
 ## 快速开始
 
@@ -31,18 +31,20 @@ E2E_API_URL=http://127.0.0.1:18080 E2E_BASE_URL=http://127.0.0.1:15173 \
 
 `scripts/e2e-stack.sh` 使用独立 Compose 项目 `kapoj-e2e` 和 `docker/docker-compose.e2e.yml`：
 
-| 项目         | 值                                            |
-| ------------ | --------------------------------------------- |
-| Compose 项目 | `kapoj-e2e`                                   |
-| API          | `http://127.0.0.1:18080`                      |
-| Web          | `http://127.0.0.1:15173`                      |
-| PostgreSQL   | `127.0.0.1:15433`                             |
-| Redis        | `127.0.0.1:16380`                             |
-| MinIO        | `19000`（S3）/ `19001`（控制台）              |
-| 数据         | 命名卷 `e2e-pgdata` / `e2e-minio-data`        |
-| 密钥         | 仓库根 `.env.e2e`（自动生成、`0600`、已忽略） |
+| 项目         | 值                                                         |
+| ------------ | ---------------------------------------------------------- |
+| Compose 项目 | `kapoj-e2e`                                                |
+| API          | `http://127.0.0.1:18080`                                   |
+| Web          | `http://127.0.0.1:15173`                                   |
+| PostgreSQL   | `127.0.0.1:15433`                                          |
+| Redis        | `127.0.0.1:16380`                                          |
+| MinIO        | `19000`（S3）/ `19001`（控制台）                           |
+| 数据         | 命名卷 `kapoj-e2e_e2e-pgdata` / `kapoj-e2e_e2e-minio-data` |
+| 密钥         | 仓库根 `.env.e2e`（自动生成、`0600`、已忽略）              |
 
-首次 `up` 会拉取评测镜像并构建 server/judge/web，目标 ≤ 10 分钟；后续复用 Docker、pnpm 与镜像缓存。`down` 使用 `down -v`，删除 e2e 数据库和 MinIO 卷；不会修改主 `.env` 或宿主 `minio-data`。
+首次 `up` 会拉取评测镜像并构建 server/judge/web，目标 ≤ 10 分钟；本地后续运行复用 Docker、pnpm 与镜像缓存。`down` 使用 `down -v`，删除 e2e 数据库和 MinIO 卷；不会修改主 `.env` 或宿主 `minio-data`。
+
+项目名和端口固定，一台 Docker 主机同时只能运行一个 e2e 栈。切换 worktree 或删除 `.env.e2e` 后，如果旧命名卷仍在，PostgreSQL 会因密码不匹配而启动失败；先运行 `bash scripts/e2e-stack.sh down -v` 再重新 `up`。
 
 ## 种子账号与邮箱验证
 
@@ -73,23 +75,23 @@ SSE 连接状态只作为测试注解；“实时刷新”不是失败条件，�
 
 ## 环境变量
 
-| 变量                                        | 默认值                         | 说明                                                                                                                 |
-| ------------------------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| `E2E_API_URL`                               | `http://127.0.0.1:18080`       | 后端直连地址                                                                                                         |
-| `E2E_BASE_URL`                              | `http://127.0.0.1:5173`        | 前端地址；设置后 Playwright 不启动 Vite。e2e 栈使用 `http://127.0.0.1:15173`                                         |
-| `E2E_BROWSER_CHANNEL`                       | `chrome`                       | Playwright 浏览器 channel                                                                                            |
-| `E2E_ADMIN_USER` / `E2E_ADMIN_PASSWORD`     | `m2badmin` / `correct-horse`   | 超管账号                                                                                                             |
-| `E2E_LIMITED_USER` / `E2E_LIMITED_PASSWORD` | `m2bsolver1` / `correct-horse` | 受限账号                                                                                                             |
-| `E2E_LIMITED_ROLE`                          | `auditor`                      | 管理后台用例临时分配给受限账号的角色                                                                                 |
-| `E2E_PSQL`                                  | 按 `E2E_API_URL` 自动选择      | `learning-paths.spec.ts` 使用的 psql 命令；API 端口为 `18080` 时用 `kapoj-e2e-postgres-1`，否则用 `kapoj-postgres-1` |
+| 变量                                        | 默认值                         | 说明                                                                                                                                                    |
+| ------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `E2E_API_URL`                               | `http://127.0.0.1:18080`       | 后端直连地址                                                                                                                                            |
+| `E2E_BASE_URL`                              | `http://127.0.0.1:5173`        | 前端地址；设置后 Playwright 不启动 Vite。e2e 栈使用 `http://127.0.0.1:15173`                                                                            |
+| `E2E_BROWSER_CHANNEL`                       | `chrome`                       | Playwright 浏览器 channel                                                                                                                               |
+| `E2E_ADMIN_USER` / `E2E_ADMIN_PASSWORD`     | `m2badmin` / `correct-horse`   | 超管账号                                                                                                                                                |
+| `E2E_LIMITED_USER` / `E2E_LIMITED_PASSWORD` | `m2bsolver1` / `correct-horse` | 受限账号                                                                                                                                                |
+| `E2E_LIMITED_ROLE`                          | `auditor`                      | 管理后台用例临时分配给受限账号的角色                                                                                                                    |
+| `E2E_PSQL`                                  | 自动探测                       | `learning-paths.spec.ts` 使用的 psql 命令；API 端口为 `18080` 且 `kapoj-e2e-postgres-1` 存在时用它，否则用 `kapoj-postgres-1`。自定义栈用此变量显式覆盖 |
 
 ## 失败调试
 
 - HTML 报告：`apps/web/playwright-report/index.html`
 - trace/视频/截图：`apps/web/test-results/<test-name>/`
-- 查看 trace：
+- 查看 trace（`--filter web` 的工作目录是 `apps/web`，路径不要再带 `apps/web/`）：
   ```bash
-  corepack pnpm --filter web exec playwright show-trace apps/web/test-results/<test-name>/trace.zip
+  corepack pnpm --filter web exec playwright show-trace test-results/<test-name>/trace.zip
   ```
 - 查看 e2e 栈日志：
   ```bash

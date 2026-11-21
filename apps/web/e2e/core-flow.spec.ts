@@ -47,8 +47,11 @@ type ActivitySummary = {
 }
 
 async function apiData<T>(res: APIResponse): Promise<T> {
+  if (!res.ok()) {
+    const detail = (await res.text()).slice(0, 300)
+    throw new Error(`API ${res.url()} failed: ${res.status()} ${detail}`)
+  }
   const body = (await res.json()) as { code: number; message: string; data: T }
-  if (!res.ok()) throw new Error(`API ${res.url()} failed: ${body.code} ${body.message}`)
   return body.data
 }
 
@@ -127,7 +130,12 @@ test.describe.serial('core flow smoke', () => {
   test.afterAll(async () => {
     try {
       if (adminApi && adminToken && problemId > 0) {
-        await adminApi.delete(`/api/problems/${problemId}`, { headers: apiHeaders() })
+        const res = await adminApi.delete(`/api/problems/${problemId}`, {
+          headers: apiHeaders(),
+        })
+        if (!res.ok()) {
+          console.warn(`core-flow cleanup failed: ${res.status()} ${await res.text()}`)
+        }
       }
     } finally {
       await adminApi?.dispose()
@@ -190,7 +198,12 @@ test.describe.serial('core flow smoke', () => {
 
       const row = page.locator('.submissions-table tbody tr').first()
       await expect(row.getByText('通过')).toBeVisible({ timeout: 120_000 })
-      await expect(row.locator('td').nth(7)).toHaveText('100')
+
+      const scoreColumn = await page
+        .locator('.submissions-table thead th')
+        .evaluateAll((headers) => headers.findIndex((h) => h.textContent?.trim() === '得分'))
+      expect(scoreColumn).toBeGreaterThanOrEqual(0)
+      await expect(row.locator('td').nth(scoreColumn)).toHaveText('100')
     })
 
     await test.step('credits coins and activity after AC', async () => {
@@ -227,7 +240,7 @@ test.describe.serial('core flow smoke', () => {
       acBalance = coins.balance
 
       await page.locator('.user-menu__trigger').click()
-      await expect(page.locator('.user-menu__coins')).toContainText(String(acBalance))
+      await expect(page.locator('.user-menu__coins strong')).toHaveText(String(acBalance))
       await page.keyboard.press('Escape')
 
       const summary = await apiData<ActivitySummary>(
@@ -274,10 +287,16 @@ test.describe.serial('core flow smoke', () => {
       const coins = await apiData<CoinPage>(
         await userApi.get('/api/coins/transactions', { headers: userHeaders }),
       )
-      expect(coins.balance).toBe(acBalance)
+      // Achievements or other asynchronous awards may add coins between the AC
+      // snapshot and this check; only the absence of a duplicate AC reward is
+      // guaranteed.
+      expect(coins.balance).toBeGreaterThanOrEqual(acBalance)
       expect(
         coins.items.filter(
-          (item) => item.reason === 'problem_accepted' && item.refId === problemId,
+          (item) =>
+            item.reason === 'problem_accepted' &&
+            item.refType === 'problem' &&
+            item.refId === problemId,
         ),
       ).toHaveLength(1)
 
@@ -288,11 +307,6 @@ test.describe.serial('core flow smoke', () => {
     })
 
     expect(pageErrors).toEqual([])
-    if (consoleErrors.length > 0) {
-      test.info().annotations.push({
-        type: 'console-errors',
-        description: consoleErrors.join(' | '),
-      })
-    }
+    expect(consoleErrors).toEqual([])
   })
 })

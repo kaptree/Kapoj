@@ -190,7 +190,7 @@ E2E_API_URL=http://127.0.0.1:18080 E2E_BASE_URL=http://127.0.0.1:15173 corepack 
 corepack pnpm e2e:stack:down     # 清理 e2e PostgreSQL 与 MinIO 卷
 ```
 
-e2e 栈使用独立 Compose 项目 `kapoj-e2e`、固定端口（API `18080`、Web `15173`、PG `15433`、Redis `16380`、MinIO `19000/19001`）和独立命名卷，不修改主 `.env` 或 `minio-data`。首次启动目标 ≤ 10 分钟；重复运行复用 Docker、pnpm 和评测镜像缓存。PR 的 `e2e` job 会运行全部 spec；失败时上传 HTML 报告和 `test-results`（trace/视频/截图），保留 7 天。视频需要 Playwright ffmpeg，`test:e2e:core` 会自动安装，单独运行完整 e2e 前可执行一次：
+e2e 栈使用独立 Compose 项目 `kapoj-e2e`、仅绑定 `127.0.0.1` 的固定端口（API `18080`、Web `15173`、PG `15433`、Redis `16380`、MinIO `19000/19001`）和独立命名卷，不修改主 `.env` 或 `minio-data`。首次启动目标 ≤ 10 分钟；本地重复运行复用 Docker、pnpm 和评测镜像缓存。PR 的 `e2e` job 会运行全部 spec；失败时上传 HTML 报告和 `test-results`（trace/视频/截图），保留 7 天。视频需要 Playwright ffmpeg，`test:e2e:core` 会自动安装，单独运行完整 e2e 前可执行一次：
 
 ```bash
 corepack pnpm --filter web exec playwright install ffmpeg
