@@ -8,7 +8,7 @@
 
 公共页面中所有用户昵称统一显示服务端 rating 等级颜色；Agent 列表/详情中的 Agent 名称使用 Agent 自己的 rating 等级颜色，Agent 作者昵称使用作者用户的 rating 等级颜色。
 
-颜色唯一来源是后端 `apps/server/internal/rating/level.go` 的 `LevelFor(rating)`，前端不再复制色阶。
+颜色唯一来源是后端 `apps/server/internal/ratinglevel/level.go` 的 `LevelFor(rating)`（`rating.LevelFor` 是它的兼容包装），前端不再复制色阶。
 
 ## 2. 非目标
 
@@ -116,11 +116,11 @@ Level rating.Level `json:"level"`
 
 ### 6.3 OpenAPI
 
-在 `packages/api/openapi.yaml` 对应 schema 增加可空/必填 `level` 引用 `#/components/schemas/RatingLevel`：
+在 `packages/api/openapi.yaml` 对应 schema 增加 `level` 引用 `#/components/schemas/RatingLevel`。为兼容部署前缓存的 `Me` / 旧响应，字段在 schema 中保持**可选**（`level?`）；服务端正常响应始终返回它，前端必须保留缺省回退。
 
 `SubmissionListItem`、`SubmissionMetric`、`ContestRankRow`、`ActivityLeaderboardRow`、`SharingLeaderboardRow`、`WealthLeaderboardRow`、`Me`、`Profile`、`AgentView`、`AgentAuthor`、`LearningPath UserSummary`、`AuthorSummary`、`SocialUserSummary`、`NotificationItem`（actor 内嵌）、`PublicCertificateView`。
 
-保持向后兼容：新增字段只增不改；`level` 在用户摘要中必填，服务端始终返回（无 rating 的用户按 0 计算灰名）。
+保持向后兼容：新增字段只增不改；`level` 在 OpenAPI/TypeScript 中可选，服务端正常响应始终返回（无 rating 的用户按 0 计算灰名），前端对缺失值回退默认色。`agentLevel` 与证书 `ratingLevel` 同样可选。
 
 运行 `corepack pnpm gen:api` 更新 `apps/web/src/api/schema.d.ts`。
 
@@ -196,5 +196,5 @@ Level rating.Level `json:"level"`
 - 新增字段是向后兼容的；旧前端忽略 `level`。
 - 若某页面遗漏 level，昵称回落为默认颜色；通过覆盖清单和测试逐页检查。
 - 不改数据库，无需迁移；回滚前端/后端提交即可。
-- `gamification` 新增对 `rating` 包的依赖，但 `rating` 不反向依赖 `gamification`，无循环导入。
+- `rating` 服务依赖 `contest`，而 `contest` 依赖 `gamification`，因此 `gamification` 不能反向导入 `rating`；把等级定义放进中立的 `ratinglevel` 包后，两边共享同一类型和色阶，无循环导入。
 - 黑红名在暗色背景的可见性沿用现有组件；如后续需要，可单独调整组件对比度，不在本设计内改色值。

@@ -23,6 +23,8 @@ function detail(overrides: Partial<SubmissionDetail> = {}): SubmissionDetail {
     nickname: 'Alice',
     agentId: null,
     agentName: '',
+    agentLevel: { key: 'gray', name: '灰名', color: '#808080', accentColor: '' },
+    level: { key: 'cyan', name: '青名', color: '#03A89E', accentColor: '' },
     equippedBadges: [],
     equippedTitle: null,
     problemId: 3,
@@ -88,10 +90,17 @@ describe('SubmissionDetailDrawer', () => {
   })
 
   it('shows agent metadata and never offers rejudge for agent submissions', async () => {
-    vi.mocked(getSubmission).mockResolvedValue(detail({ agentId: 11, agentName: 'Arena Agent' }))
+    vi.mocked(getSubmission).mockResolvedValue(
+      detail({
+        agentId: 11,
+        agentName: 'Arena Agent',
+        agentLevel: { key: 'purple', name: '紫名', color: '#AA00AA', accentColor: '' },
+      }),
+    )
     const wrapper = await mountDrawer({ canRejudge: true })
 
     expect(document.body.textContent).toContain('Arena Agent')
+    expect(document.querySelector('.agent-name')?.getAttribute('title')).toBe('Arena Agent（紫名）')
     expect(document.querySelector('[data-test="rejudge"]')).toBeNull()
     wrapper.unmount()
   })

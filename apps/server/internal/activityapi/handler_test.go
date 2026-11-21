@@ -239,6 +239,15 @@ func TestActivityLeaderboardsPublicAndEquippedIdentity(t *testing.T) {
 
 	assert.EqualValues(t, 10, items[1].(map[string]any)["score"])
 
+	// A ratings change after the base page was cached must still be reflected in
+	// the decorated level on the next request.
+	require.NoError(t, f.db.Exec(`UPDATE users SET rating = 2600 WHERE id = ?`, decorated).Error)
+	w, resp = f.do(http.MethodGet, "/api/leaderboard/activity", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	_, items = pageData(t, resp)
+	row = items[0].(map[string]any)
+	assert.Equal(t, "black_red", row["level"].(map[string]any)["key"])
+
 	// Equipping after the base page was cached must still be visible: decorated
 	// identities are never cached with the base rows.
 	require.NoError(t, f.db.Exec(
@@ -269,6 +278,7 @@ func TestActivityLeaderboardsPublicAndEquippedIdentity(t *testing.T) {
 	title := row["equippedTitle"].(map[string]any)
 	assert.EqualValues(t, 9, title["id"])
 	assert.Equal(t, "#7C3AED", title["color"])
+	assert.Equal(t, "black_red", row["level"].(map[string]any)["key"])
 	plainRow := items[1].(map[string]any)
 	assert.Equal(t, []any{}, plainRow["equippedBadges"])
 	assert.Nil(t, plainRow["equippedTitle"])
@@ -283,7 +293,7 @@ func TestActivityLeaderboardsPublicAndEquippedIdentity(t *testing.T) {
 	assert.EqualValues(t, decorated, sharingRow["userId"])
 	assert.EqualValues(t, 40, sharingRow["score"])
 	assert.Len(t, sharingRow["equippedBadges"].([]any), 1)
-	assert.Equal(t, "blue", sharingRow["level"].(map[string]any)["key"])
+	assert.Equal(t, "black_red", sharingRow["level"].(map[string]any)["key"])
 	assert.EqualValues(t, 20, items[1].(map[string]any)["score"])
 
 	w, resp = f.do(http.MethodGet, "/api/leaderboard/activity?page=2&page_size=1", "")

@@ -51,6 +51,15 @@ describe('RatingLevelName', () => {
     expect(wrapper.attributes('title')).toBe('?（黑红名）')
   })
 
+  it('falls back to red for a black-red level without accent color', () => {
+    const wrapper = mount(RatingLevelName, {
+      props: { name: '张三', level: { ...blackRed, accentColor: '' } },
+    })
+    expect((wrapper.find('.rating-level-name__rest').element as HTMLElement).style.color).toBe(
+      'rgb(255, 0, 0)',
+    )
+  })
+
   it('renders plain text when level is missing', () => {
     const wrapper = mount(RatingLevelName, { props: { name: '旧缓存用户' } })
 

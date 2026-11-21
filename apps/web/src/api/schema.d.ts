@@ -12438,7 +12438,7 @@ export interface components {
         StatementImageResponse: components["schemas"]["Envelope"] & {
             data: components["schemas"]["StatementImageResult"];
         };
-        /** @description 题目创建者的公开摘要；仅含 id/username/nickname，不含邮箱。 */
+        /** @description 题目创建者的公开摘要；仅含 id/username/nickname/level，不含邮箱。 */
         ProblemAuthor: {
             /** Format: int64 */
             id: number;
@@ -14074,7 +14074,7 @@ export interface components {
             /** @description 官方代码；locked/guest 时不返回 */
             solutionCode?: string;
         };
-        /** @description 帖子/回复作者的公开摘要；仅含 id/username/nickname，不含邮箱。 */
+        /** @description 帖子/回复作者的公开摘要；仅含 id/username/nickname/level，不含邮箱。 */
         SolutionAuthor: {
             /** Format: int64 */
             id: number;

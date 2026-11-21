@@ -128,7 +128,11 @@ function onPage(event: { page: number }) {
               />
               <div class="follow-user__info">
                 <span class="follow-user__name">
-                  <RatingLevelName :name="displayName(user)" :level="user.level" />
+                  <RatingLevelName
+                    :name="displayName(user)"
+                    :level="user.level"
+                    inherit-typography
+                  />
                 </span>
                 <span class="follow-user__username">@{{ user.username }}</span>
               </div>

@@ -210,6 +210,7 @@ watch(
           作者：<RatingLevelName
             :name="agent.author.nickname || agent.author.username"
             :level="agent.author.level"
+            inherit-typography
           />
           <span class="author-username">@{{ agent.author.username }}</span>
         </p>

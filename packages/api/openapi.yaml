@@ -5913,7 +5913,7 @@ components:
             data: { $ref: '#/components/schemas/StatementImageResult' }
     ProblemAuthor:
       type: object
-      description: 题目创建者的公开摘要；仅含 id/username/nickname，不含邮箱。
+      description: 题目创建者的公开摘要；仅含 id/username/nickname/level，不含邮箱。
       required: [id, username, nickname]
       properties:
         id: { type: integer, format: int64 }
@@ -7851,7 +7851,7 @@ components:
         solutionCode: { type: string, description: 官方代码；locked/guest 时不返回 }
     SolutionAuthor:
       type: object
-      description: 帖子/回复作者的公开摘要；仅含 id/username/nickname，不含邮箱。
+      description: 帖子/回复作者的公开摘要；仅含 id/username/nickname/level，不含邮箱。
       required: [id, username, nickname]
       properties:
         id: { type: integer, format: int64 }

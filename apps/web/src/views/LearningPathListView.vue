@@ -279,6 +279,7 @@ onMounted(load)
                   ><RatingLevelName
                     :name="item.author.nickname || item.author.username"
                     :level="item.author.level"
+                    inherit-typography
                 /></span>
                 <span class="path-progress"
                   >已完成 {{ item.myCompletedCount }} / {{ item.nodeCount }} 节点</span

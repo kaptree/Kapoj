@@ -141,6 +141,10 @@ func TestIdentitiesIncludesRatingLevel(t *testing.T) {
 	assert.Equal(t, "#03A89E", got[cyan.ID].Level.Color)
 	assert.Equal(t, "black_red", got[dark.ID].Level.Key)
 	assert.Equal(t, "#FF0000", got[dark.ID].Level.AccentColor)
+
+	missing, err := svc.Identities(ctx, []int64{999999})
+	require.NoError(t, err)
+	assert.Equal(t, "gray", missing[999999].Level.Key)
 }
 
 func TestIdentitiesOrderAndInactive(t *testing.T) {

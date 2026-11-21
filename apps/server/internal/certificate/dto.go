@@ -57,7 +57,7 @@ type PublicCertificateView struct {
 	Type        string             `json:"type,omitempty"`
 	Level       string             `json:"level,omitempty"`
 	Nickname    string             `json:"nickname,omitempty"`
-	RatingLevel *ratinglevel.Level `json:"ratingLevel,omitempty"`
+	RatingLevel *ratinglevel.Level `json:"ratingLevel"`
 	ApprovedAt  *time.Time         `json:"approvedAt,omitempty"`
 }
 

@@ -156,7 +156,10 @@ async function markAll() {
               <div class="notification-item__body">
                 <span class="notification-item__text">
                   <strong
-                    ><RatingLevelName :name="actorName(item)" :level="item.actor?.level"
+                    ><RatingLevelName
+                      :name="actorName(item)"
+                      :level="item.actor?.level"
+                      inherit-typography
                   /></strong>
                   {{ typeLabel(item.type) }}
                 </span>

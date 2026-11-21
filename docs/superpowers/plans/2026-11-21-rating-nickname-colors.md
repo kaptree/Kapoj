@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- 颜色唯一来源：`apps/server/internal/rating/level.go` 的 `LevelFor(rating)`；前端不得硬编码色值或边界。
+- 颜色唯一来源：`apps/server/internal/ratinglevel/level.go` 的 `LevelFor(rating)`；`rating.LevelFor` 只是兼容包装。前端不得硬编码色值或边界。
 - 公共页面全覆盖；管理后台页面（Admin*）不改。
 - Agent 名称用 `AgentView.level`（Agent rating）；作者昵称用 `AgentAuthor.level`（作者用户 rating）。
 - 黑红名保持首字 `level.color`、其余 `level.accentColor`（空时 `#FF0000`）。
@@ -382,7 +382,7 @@ git commit -m "feat(rating): expose levels on agents, learning, social and certi
 
 - [ ] **Step 1: 更新 schema**
 
-在以下 schema 增加 `level: { $ref: '#/components/schemas/RatingLevel' }`，并把 `level` 加入 `required`：
+在以下 schema 增加 `level: { $ref: '#/components/schemas/RatingLevel' }`。为兼容旧缓存/旧响应，`level` / `agentLevel` / `ratingLevel` 在 schema 中保持可选（`?`），服务端正常响应始终返回；前端保留缺省回退：
 
 - `SubmissionListItem`
 - `SubmissionMetric`

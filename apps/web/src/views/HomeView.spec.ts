@@ -487,13 +487,21 @@ describe('HomeView', () => {
     auth.user = baseUser
     submissionsApi.listSubmissions.mockResolvedValue({
       total: 1,
-      items: [{ ...recentSubmission, agentId: 11, agentName: 'Arena Agent' }],
+      items: [
+        {
+          ...recentSubmission,
+          agentId: 11,
+          agentName: 'Arena Agent',
+          agentLevel: { key: 'purple', name: '紫名', color: '#AA00AA', accentColor: '' },
+        },
+      ],
     })
 
     const { wrapper } = await mountHome()
 
     expect(wrapper.text()).toContain('Agent')
     expect(wrapper.text()).toContain('Arena Agent')
+    expect(wrapper.find('.recent-list__agent-name').attributes('title')).toBe('Arena Agent（紫名）')
   })
 
   it('renders a fully real daily goal state instead of demo numbers', async () => {

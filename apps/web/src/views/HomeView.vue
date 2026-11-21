@@ -317,6 +317,7 @@ onBeforeUnmount(() => {
               v-if="auth.user"
               :name="greetingName"
               :level="auth.user.level"
+              inherit-typography
             /><span v-else>同学</span>
           </span>
           <span v-if="site.home.eyebrow" class="hero__eyebrow">{{ site.home.eyebrow }}</span>
@@ -572,6 +573,7 @@ onBeforeUnmount(() => {
                       class="recent-list__agent-name"
                       :name="submission.agentName"
                       :level="submission.agentLevel"
+                      inherit-typography
                     />
                   </span>
                   <span class="recent-list__time">{{ formatDateTime(submission.createdAt) }}</span>

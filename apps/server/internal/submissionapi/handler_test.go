@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/kaptree/kapoj/apps/server/internal/agent"
 	"github.com/kaptree/kapoj/apps/server/internal/auth"
 	"github.com/kaptree/kapoj/apps/server/internal/companion"
 	"github.com/kaptree/kapoj/apps/server/internal/config"
@@ -507,6 +508,51 @@ func TestSubmissionEquippedIdentity(t *testing.T) {
 	assert.Equal(t, []any{}, data["equippedBadges"])
 	assert.Nil(t, data["equippedTitle"])
 	assert.Equal(t, "cyan", data["level"].(map[string]any)["key"])
+}
+
+func TestSubmissionAgentLevel(t *testing.T) {
+	f := newFx(t)
+	f.seedUser(t, 2301, "agent-owner", "Agent Owner")
+	f.seedUser(t, 2302, "human-user", "Human User")
+	require.NoError(t, f.db.Exec(`UPDATE users SET rating = 1600 WHERE id = 2301`).Error)
+	p := f.problem(t, "agent-level", true, problem.TypeTraditional, 1)
+
+	now := time.Now()
+	ratedAgent := &agent.Agent{
+		UserID: 2301, Name: "Rated Agent", ModelName: "test-model",
+		Status: agent.StatusActive, Rating: 2600, CreatedAt: now, UpdatedAt: now,
+	}
+	require.NoError(t, f.db.Create(ratedAgent).Error)
+	var agentSubmissionID int64
+	require.NoError(t, f.db.Raw(
+		`INSERT INTO submissions (user_id, problem_id, agent_id, language, code, status, created_at)
+		 VALUES (?, ?, ?, 'cpp', 'agent-code', 'accepted', now()) RETURNING id`,
+		2301, p.ID, ratedAgent.ID,
+	).Scan(&agentSubmissionID).Error)
+	humanSubmissionID := f.record(t, 2302, p.ID, "cpp", "accepted", "human-code", nil)
+
+	w, resp := f.do(http.MethodGet, "/api/submissions?problemId="+fmt.Sprint(p.ID), "", nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	items := resp["data"].(map[string]any)["items"].([]any)
+	require.Len(t, items, 2)
+	byID := map[int64]map[string]any{}
+	for _, raw := range items {
+		item := raw.(map[string]any)
+		byID[int64(item["id"].(float64))] = item
+	}
+	agentRow := byID[agentSubmissionID]
+	require.NotNil(t, agentRow)
+	assert.Equal(t, "black_red", agentRow["agentLevel"].(map[string]any)["key"])
+	assert.Equal(t, "blue", agentRow["level"].(map[string]any)["key"])
+	humanRow := byID[humanSubmissionID]
+	require.NotNil(t, humanRow)
+	assert.Equal(t, "gray", humanRow["agentLevel"].(map[string]any)["key"])
+	assert.Equal(t, "cyan", humanRow["level"].(map[string]any)["key"])
+
+	w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/submissions/%d", agentSubmissionID), "", nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	detail := resp["data"].(map[string]any)
+	assert.Equal(t, "black_red", detail["agentLevel"].(map[string]any)["key"])
 }
 
 func TestSubmissionListMixedEquippedIdentity(t *testing.T) {

@@ -243,7 +243,12 @@ async function submitPublish() {
               </div>
               <p class="post-excerpt">{{ post.excerpt }}</p>
               <p class="card-meta">
-                <RatingLevelName :name="authorName(post.author)" :level="post.author.level" /> ·
+                <RatingLevelName
+                  :name="authorName(post.author)"
+                  :level="post.author.level"
+                  inherit-typography
+                />
+                ·
                 {{ formatDateTime(post.createdAt) }}
               </p>
             </AppSurface>

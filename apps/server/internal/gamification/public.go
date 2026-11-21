@@ -51,6 +51,9 @@ func (s *Service) Identities(ctx context.Context, userIDs []int64) (map[int64]Id
 		return identities, nil
 	}
 
+	// One indexed batch query keeps every public identity self-contained. Callers
+	// that already cached a rating (such as the rating leaderboard) still receive
+	// the same shape; the extra query is intentional and bounded by page size.
 	var ratings []struct {
 		ID     int64
 		Rating int

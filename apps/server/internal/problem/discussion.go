@@ -20,7 +20,7 @@ const (
 	postExcerptChars     = 200
 )
 
-// AuthorSummary 是帖子/回复作者的公开摘要；仅含 ID/username/nickname，绝不包含邮箱。
+// AuthorSummary 是帖子/回复作者的公开摘要；仅含 ID/username/nickname/level，绝不包含邮箱。
 type AuthorSummary struct {
 	ID       int64             `json:"id"`
 	Username string            `json:"username"`

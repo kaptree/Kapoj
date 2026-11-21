@@ -544,6 +544,7 @@ onMounted(() => {
               <RatingLevelName
                 :name="agent.author.nickname || agent.author.username"
                 :level="agent.author.level"
+                inherit-typography
               />
               <span class="muted">@{{ agent.author.username }}</span>
             </dd>

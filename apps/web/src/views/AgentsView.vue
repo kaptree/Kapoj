@@ -228,6 +228,7 @@ onMounted(() => {
                     class="author-name"
                     :name="data.author.nickname || data.author.username"
                     :level="data.author.level"
+                    inherit-typography
                   />
                   <span class="author-username">@{{ data.author.username }}</span>
                 </div>
