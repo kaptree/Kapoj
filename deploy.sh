@@ -260,31 +260,76 @@ install_docker() {
   ok "Docker 就绪（$(docker --version | awk '{print $3}' | tr -d ,)，compose $(docker compose version --short)）"
 }
 
+parse_mirrors() {
+  local raw="${1//,/ }"
+  # shellcheck disable=SC2206
+  MIRRORS=($raw)
+}
+
+mirror_reachable() {
+  local code
+  code="$(curl -sS -o /dev/null -w '%{http_code}' \
+    --connect-timeout 3 --max-time 5 "${1%/}/v2/" || true)"
+  case "$code" in
+    2*|3*|401|403) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+retry() { # $1=次数，其余=命令
+  local attempts="$1" n=1
+  shift
+  until "$@"; do
+    if [ "$n" -ge "$attempts" ]; then return 1; fi
+    warn "命令失败，5 秒后重试（$n/$attempts）：$*"
+    sleep 5
+    n=$((n + 1))
+  done
+}
+
 ensure_mirrors() {
-  # 大陆网络探测：registry-1.docker.io 返回任意 HTTP 状态码即视为可达（未授权时是 401）
-  code=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 5 https://registry-1.docker.io/v2/ || true)
-  if [ "${code:-000}" != "000" ]; then
-    ok "Docker Hub 直连可达（HTTP ${code}），跳过镜像加速配置"
-    return
-  fi
   if [ "${KAPOJ_DOCKER_MIRRORS:-}" = "off" ]; then
-    warn "Docker Hub 不可达，且 KAPOJ_DOCKER_MIRRORS=off，跳过加速配置（后续拉取可能失败）"
+    warn "KAPOJ_DOCKER_MIRRORS=off，跳过镜像加速配置（后续拉取可能失败）"
     return
   fi
-  step "Docker Hub 不可达，配置镜像加速"
-  local daemon_json=/etc/docker/daemon.json
-  if [ -f "$daemon_json" ] && grep -q 'registry-mirrors' "$daemon_json"; then
-    warn "${daemon_json} 已含 registry-mirrors 配置，不改动。若拉取仍慢请自行核对加速地址有效性。"
+
+  local daemon_json="${KAPOJ_DAEMON_JSON:-/etc/docker/daemon.json}"
+  local explicit=0
+  [ -n "${KAPOJ_DOCKER_MIRRORS:-}" ] && explicit=1
+
+  if [ "$explicit" -eq 0 ] && [ -f "$daemon_json" ] \
+    && grep -q 'registry-mirrors' "$daemon_json"; then
+    warn "${daemon_json} 已含 registry-mirrors 配置，不改动。若拉取仍慢，可显式设置 KAPOJ_DOCKER_MIRRORS 覆盖。"
     return
   fi
-  local mirrors
-  if [ -n "${KAPOJ_DOCKER_MIRRORS:-}" ]; then
-    # shellcheck disable=SC2206
-    mirrors=($KAPOJ_DOCKER_MIRRORS)
+
+  local candidates=()
+  if [ "$explicit" -eq 1 ]; then
+    parse_mirrors "$KAPOJ_DOCKER_MIRRORS"
+    candidates=("${MIRRORS[@]}")
   else
-    mirrors=("${DEFAULT_MIRRORS[@]}")
+    if curl -fsS --connect-timeout 2 --max-time 3 \
+      http://metadata.tencentyun.com/latest/meta-data/ >/dev/null 2>&1; then
+      candidates+=(https://mirror.ccs.tencentyun.com)
+    fi
+    candidates+=("${DEFAULT_MIRRORS[@]}")
   fi
-  # 明确征得同意：此操作会修改宿主机配置并重启 Docker（影响本机其他容器）
+
+  local mirrors=() m
+  for m in "${candidates[@]}"; do
+    [ -n "$m" ] || continue
+    if mirror_reachable "$m"; then
+      mirrors+=("$m")
+    else
+      warn "镜像加速地址不可达，已跳过：$m"
+    fi
+  done
+  if [ "${#mirrors[@]}" -eq 0 ]; then
+    warn "没有可用的镜像加速地址，继续使用 Docker Hub 直连（拉取可能失败）"
+    return
+  fi
+
+  step "配置 Docker 镜像加速"
   if [ "$FLAG_YES" -eq 0 ]; then
     log "将写入加速地址：${mirrors[*]}"
     if [ -f "$daemon_json" ]; then
@@ -299,6 +344,7 @@ ensure_mirrors() {
       *) warn "已跳过镜像加速配置（后续拉取可能失败；可设 KAPOJ_DOCKER_MIRRORS 或用 --yes 跳过询问）"; return ;;
     esac
   fi
+
   local json="["
   local first=1
   for m in "${mirrors[@]}"; do
@@ -307,11 +353,13 @@ ensure_mirrors() {
     first=0
   done
   json+="]"
-  mkdir -p /etc/docker
+  mkdir -p "$(dirname "$daemon_json")"
+  local py="${KAPOJ_PYTHON3:-python3}"
   if [ -f "$daemon_json" ]; then
     cp "$daemon_json" "$daemon_json.bak"
-    if command -v python3 >/dev/null 2>&1; then
-      MIRRORS_JSON="$json" python3 - "$daemon_json" <<'PYEOF'
+    command -v "$py" >/dev/null 2>&1 \
+      || die "${daemon_json} 已存在但无 python3 可安全合并。请手工加入 registry-mirrors 后重试（原文件未改动，备份路径 daemon.json.bak）。"
+    if ! MIRRORS_JSON="$json" "$py" - "$daemon_json" <<'PYEOF'
 import json, os, sys
 path = sys.argv[1]
 with open(path) as f:
@@ -320,16 +368,18 @@ cfg["registry-mirrors"] = json.loads(os.environ["MIRRORS_JSON"])
 with open(path, "w") as f:
     json.dump(cfg, f, indent=2, ensure_ascii=False)
 PYEOF
-      log "已合并 registry-mirrors 到 ${daemon_json}（原文件备份为 daemon.json.bak）"
-    else
-      die "${daemon_json} 已存在但未含 registry-mirrors，且无 python3 可合并。请手动编辑加入 \"registry-mirrors\": ${json} 后重试。"
+    then
+      die "${daemon_json} 解析/写入失败，原文件未改动（备份 daemon.json.bak）。请手工合并 registry-mirrors。"
     fi
+    log "已合并 registry-mirrors 到 ${daemon_json}（原文件备份为 daemon.json.bak）"
   else
     printf '{ "registry-mirrors": %s }\n' "$json" > "$daemon_json"
     log "已写入 ${daemon_json}"
   fi
   systemctl restart docker 2>/dev/null || service docker restart >/dev/null 2>&1 || true
   sleep 2
+  docker info --format '{{json .RegistryConfig.Mirrors}}' >/dev/null 2>&1 \
+    || warn "Docker 重启后暂不可用，请稍后运行 docker info 检查"
   ok "镜像加速已启用：${mirrors[*]}"
 }
 
@@ -457,7 +507,7 @@ ensure_socket_proxy() {
     return
   fi
   log "拉取 Docker socket 白名单代理（$SOCKET_PROXY_IMAGE）"
-  if ! docker pull "$SOCKET_PROXY_IMAGE"; then
+  if ! retry 3 docker pull "$SOCKET_PROXY_IMAGE"; then
     die "socket-proxy 镜像拉取失败；可检查网络，或使用 KAPOJ_JUDGE_DOCKER_DIRECT=1 临时回退直连（不推荐长期使用）"
   fi
   ok "Docker socket 白名单代理镜像已就绪"
@@ -465,7 +515,8 @@ ensure_socket_proxy() {
 
 build_up() {
   step "构建全部镜像（前端构建约 1-2 分钟，Go 构建约 1 分钟）"
-  "${COMPOSE[@]}" build
+  "${COMPOSE[@]}" config --quiet
+  "${COMPOSE[@]}" build --progress=plain
   step "启动全部服务"
   "${COMPOSE[@]}" up -d
   ok "容器已启动：$("${COMPOSE[@]}" ps --format '{{.Service}}' | sort | tr '\n' ' ')"
@@ -477,13 +528,23 @@ pull_judge_images() {
     return
   fi
   step "预拉取评测语言镜像（后台并行，失败不阻塞部署）"
+  local images=() key value
+  for key in KAPOJ_JUDGE_CPP_IMAGE KAPOJ_JUDGE_PYTHON_IMAGE \
+    KAPOJ_JUDGE_JAVA_IMAGE KAPOJ_JUDGE_GO_IMAGE; do
+    value="$(env_get "$key")"
+    [ -n "$value" ] && images+=("$value")
+  done
+  if [ "${#images[@]}" -eq 0 ]; then
+    images=("${JUDGE_IMAGES[@]}")
+  fi
+
   local pids=() failed=() img
-  for img in "${JUDGE_IMAGES[@]}"; do
-    docker pull "$img" >/dev/null 2>&1 &
+  for img in "${images[@]}"; do
+    retry 3 docker pull "$img" >/dev/null 2>&1 &
     pids+=($!)
   done
   local i=0
-  for img in "${JUDGE_IMAGES[@]}"; do
+  for img in "${images[@]}"; do
     if ! wait "${pids[$i]}"; then
       failed+=("$img")
     fi
@@ -492,7 +553,7 @@ pull_judge_images() {
   if [ "${#failed[@]}" -gt 0 ]; then
     warn "以下镜像拉取失败（不影响平台运行，评测对应语言时需重新拉取）：${failed[*]}"
   else
-    ok "评测语言镜像已就绪：${JUDGE_IMAGES[*]}"
+    ok "评测语言镜像已就绪：${images[*]}"
   fi
 }
 
@@ -509,8 +570,9 @@ wait_health() {
     sleep 2
     i=$((i + 1))
   done
-  "${COMPOSE[@]}" logs --tail=50 || true
-  die "后端未在 120 秒内就绪。请按上方日志排查，常见原因见 运行手册 §10。"
+  "${COMPOSE[@]}" ps || true
+  "${COMPOSE[@]}" logs --no-color --tail=100 || true
+  die "后端未在 120 秒内就绪。完整日志：${LOG_FILE}；请按上方日志排查，常见原因见 运行手册 §10。"
 }
 
 wait_entry() {

@@ -75,4 +75,35 @@ grep -q -- '--env-file "$ENV_FILE"' "$ROOT_DIR/deploy.sh" \
   || fail "COMPOSE does not pass --env-file"
 pass "compose passes --env-file"
 
+# 9. mirror parsing accepts commas and spaces
+parse_mirrors 'https://a.example,https://b.example https://c.example'
+[ "${#MIRRORS[@]}" -eq 3 ] || fail "parse_mirrors count"
+[ "${MIRRORS[0]}" = "https://a.example" ] || fail "parse_mirrors order"
+pass "parse_mirrors handles commas and spaces"
+
+# 10. explicit mirrors replace registry-mirrors but preserve other keys
+printf '{"data-root":"/var/lib/docker-test","registry-mirrors":["https://old.example"]}\n' \
+  > "$TMP/daemon.json"
+FLAG_YES=1
+KAPOJ_DAEMON_JSON="$TMP/daemon.json"
+KAPOJ_DOCKER_MIRRORS="https://new.example"
+mirror_reachable() { return 0; }
+ensure_mirrors >/dev/null
+python3 - "$TMP/daemon.json" <<'PY'
+import json, sys
+cfg = json.load(open(sys.argv[1]))
+assert cfg["data-root"] == "/var/lib/docker-test", cfg
+assert cfg["registry-mirrors"] == ["https://new.example"], cfg
+PY
+pass "ensure_mirrors preserves other keys and replaces mirrors"
+
+# 11. existing daemon.json + no python3 -> fail, file unchanged
+cp "$TMP/daemon.json" "$TMP/daemon-before.json"
+if (KAPOJ_DAEMON_JSON="$TMP/daemon.json" KAPOJ_PYTHON3=python3-missing \
+  ensure_mirrors >/dev/null 2>&1); then
+  fail "ensure_mirrors should fail without python3"
+fi
+cmp -s "$TMP/daemon.json" "$TMP/daemon-before.json" || fail "daemon.json changed without python3"
+pass "ensure_mirrors refuses to overwrite without python3"
+
 echo "all deploy helper tests passed"
