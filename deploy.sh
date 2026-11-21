@@ -3,7 +3,7 @@
 #
 # 用法：
 #   sudo bash deploy.sh [install] [--domain oj.example.com] [--yes] [--skip-images]
-#   sudo bash deploy.sh install|update --domain <域名> --cert-crt <证书> --cert-key <私钥>
+#   sudo bash deploy.sh install|update --domain <域名> --cert-crt <证书> --cert-key <私钥> [--insecure-health]
 #   sudo bash deploy.sh update [--pull]
 #   sudo bash deploy.sh promote <用户名>
 #   sudo bash deploy.sh status | logs [service...] | stop | restart
@@ -732,7 +732,7 @@ UPDATE users SET role = 'super_admin' WHERE id = :id;
 INSERT INTO user_roles (user_id, role_id, assigned_by, assigned_at)
 VALUES (:id, (SELECT id FROM roles WHERE code = 'super_admin'), NULL, now())
 ON CONFLICT (user_id, role_id) DO NOTHING;
-\echo '已授予 super_admin，请退出后重新登录'
+\echo '已授予 super_admin；权限实时生效，如前端菜单未更新请刷新或重新登录'
 SQL
   ok "已提升 ${user} 为 super_admin"
 }
