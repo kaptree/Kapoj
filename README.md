@@ -113,21 +113,23 @@ docs                         任务清单、开发日志、规格设计、实施
    corepack pnpm dev:web
    ```
 
-## 生产部署（Ubuntu 20.04）
+## 生产部署（Ubuntu 20.04–26.04 LTS）
 
-一条命令完成部署（自动安装 Docker、配置国内镜像加速、生成随机密钥 `.env`、构建启动全部服务、拉取评测镜像、健康检查）：
+一条命令完成部署（自动安装 Docker/Compose、配置国内镜像加速与 Go/npm 构建源、生成随机密钥 `.env`、构建启动全部服务、拉取评测镜像、健康检查）：
 
 ```bash
 git clone <本仓库> kapoj && cd kapoj
 sudo bash deploy.sh                       # 仅 HTTP，访问 http://<服务器IP>
 sudo bash deploy.sh --domain oj.example.com   # 或填域名，自动签发 Let's Encrypt 证书
+sudo bash deploy.sh --domain oj.example.com \
+  --cert-crt /path/fullchain.pem --cert-key /path/privkey.pem   # 使用自有证书
 ```
 
 - **升级**：`git pull && sudo bash deploy.sh update`；重复执行 `install` 幂等，不会覆盖已有 `.env`。
 - **日常运维**：`./deploy.sh status | logs | stop | restart`。
 - **对外端口**：仅 `80/443`（Caddy 入口）；PostgreSQL `5433`、Redis `6380`、MinIO `9000/9001`、后端 `8080` 全部只绑定 `127.0.0.1`，不暴露公网。
 - **反向代理与 HTTPS 详解**（自备 nginx/宝塔/CDN、自有证书、真实 IP 配置、排查表）：见 [运行手册 §11.3](运行手册.md#113-反向代理与-https)。
-- **创建第一个管理员**：前端注册后授予 `super_admin`，SQL 见 [运行手册 §7.3](运行手册.md#73-给账号授予管理员)。
+- **创建第一个管理员**：前端注册后执行 `sudo bash deploy.sh promote <用户名>`（同时写 `users.role` 与 `user_roles`）；外部数据库的手工 SQL 见 [运行手册 §7.3](运行手册.md#73-给账号授予管理员)。
 - **备份**：平台内置备份/恢复（管理员后台），建议每日全量并异地保存，见 [docs/数据备份与恢复.md](docs/数据备份与恢复.md)。
 - **评测安全**：默认自动启动 `socket-proxy`，judge 不直接挂载 Docker socket；独立评测节点、rootless Docker 与直连回退见 [运行手册 §12](运行手册.md#12-评测节点安全加固) 与 [docs/安全运维.md](docs/安全运维.md)。
 

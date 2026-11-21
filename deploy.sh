@@ -774,7 +774,7 @@ cmd_restart(){ "${COMPOSE[@]}" restart; }
 
 # ---------- 入口 ----------
 usage() {
-  sed -n '2,21p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '2,22p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 main() {

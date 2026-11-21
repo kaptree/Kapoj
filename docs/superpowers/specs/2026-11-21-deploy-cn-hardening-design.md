@@ -246,6 +246,8 @@ sudo bash deploy.sh promote <用户名>
 6. 验证 `docker/.env` 软链不会覆盖已有普通文件。
 7. `git diff --check`、CI 的 lint/unit 不受影响。
 
+测试钩子（仅本地测试使用，不改变生产默认行为）：`KAPOJ_DEPLOY_LIB_ONLY=1` 只加载函数；`KAPOJ_OS_RELEASE_FILE` 覆盖 os-release 路径；`KAPOJ_COMPOSE_PLUGIN_DIRS` 覆盖插件扫描目录；`KAPOJ_DAEMON_JSON` 覆盖 daemon.json 路径；`KAPOJ_PYTHON3` 覆盖 Python 命令名。
+
 服务器验收（Ubuntu 26.04，国内网络）：
 
 1. 全新服务器执行 `sudo bash deploy.sh --yes`，Docker/Compose 安装成功，构建阶段无 Go/npm 超时，健康检查通过。
