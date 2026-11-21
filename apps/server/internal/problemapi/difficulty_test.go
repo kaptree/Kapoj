@@ -12,6 +12,7 @@ import (
 
 	"github.com/kaptree/kapoj/apps/server/internal/ai"
 	"github.com/kaptree/kapoj/apps/server/internal/difficulty"
+	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/problemapi"
 	"github.com/kaptree/kapoj/apps/server/internal/router"
 )
@@ -178,12 +179,28 @@ func TestCreateProblemAutoFallbackReasonsAreCategorized(t *testing.T) {
 			wantCall: 1,
 		},
 		{
+			name: "truncated",
+			prepare: func() {
+				assessor.err = ai.ErrAssessmentTruncated
+			},
+			want:     "AI 输出被截断，使用默认难度",
+			wantCall: 2,
+		},
+		{
+			name: "empty",
+			prepare: func() {
+				assessor.err = ai.ErrAssessmentEmpty
+			},
+			want:     "AI 返回空内容，使用默认难度",
+			wantCall: 3,
+		},
+		{
 			name: "upstream",
 			prepare: func() {
 				assessor.err = errors.New("dial tcp: connection refused")
 			},
 			want:     "AI 服务调用失败，使用默认难度",
-			wantCall: 2,
+			wantCall: 4,
 		},
 		{
 			name: "not configured",
@@ -192,7 +209,7 @@ func TestCreateProblemAutoFallbackReasonsAreCategorized(t *testing.T) {
 				assessor.configured = false
 			},
 			want:     "AI 评估未启用或未配置，使用默认难度",
-			wantCall: 2,
+			wantCall: 4,
 		},
 	}
 	for i, tc := range cases {
@@ -327,6 +344,28 @@ func TestAssessProblemDifficulty(t *testing.T) {
 	w, resp = f.do(http.MethodPost, assessPath, admin, nil)
 	require.Equal(t, http.StatusBadGateway, w.Code, w.Body.String())
 	assert.EqualValues(t, 50200, resp["code"])
+
+	// Failure categories surface actionable messages instead of one generic
+	// "AI 服务调用失败" string.
+	for _, tc := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"timeout", fmt.Errorf("%w: %w", httpx.ErrBadGateway, ai.ErrAssessmentTimeout), "超时"},
+		{"truncated", fmt.Errorf("%w: %w", httpx.ErrBadGateway, ai.ErrAssessmentTruncated), "输出额度"},
+		{"empty", fmt.Errorf("%w: %w", httpx.ErrBadGateway, ai.ErrAssessmentEmpty), "未返回评分内容"},
+		{"format", fmt.Errorf("%w: %w", httpx.ErrBadGateway, ai.ErrAssessmentFormat), "格式无效"},
+		{"upstream", fmt.Errorf("%w: %w", httpx.ErrBadGateway, ai.ErrAssessmentUpstream), "接口地址、Token 与网络"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assessor.err = tc.err
+			w, resp := f.do(http.MethodPost, assessPath, admin, nil)
+			require.Equal(t, http.StatusBadGateway, w.Code, w.Body.String())
+			assert.EqualValues(t, 50200, resp["code"])
+			assert.Contains(t, resp["message"], tc.want)
+		})
+	}
 }
 
 func TestListProblemsDifficultyRange(t *testing.T) {

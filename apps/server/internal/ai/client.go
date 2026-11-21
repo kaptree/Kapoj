@@ -43,6 +43,10 @@ type ChatRequest struct {
 	// MaxTokens caps the generated output. Zero omits the field for OpenAI so
 	// existing callers keep the upstream default.
 	MaxTokens int
+	// DisableThinking asks DeepSeek-style OpenAI-compatible providers to skip
+	// chain-of-thought generation. It is omitted unless explicitly set so other
+	// providers never receive an unknown parameter.
+	DisableThinking bool
 }
 
 // ChatClient performs one chat completion and returns the assistant message
@@ -67,17 +71,24 @@ func NewOpenAIClient(timeout time.Duration) *OpenAIClient {
 }
 
 type openAIChatRequest struct {
-	Model       string        `json:"model"`
-	Messages    []ChatMessage `json:"messages"`
-	Temperature float64       `json:"temperature"`
-	MaxTokens   int           `json:"max_tokens,omitempty"`
+	Model       string          `json:"model"`
+	Messages    []ChatMessage   `json:"messages"`
+	Temperature float64         `json:"temperature"`
+	MaxTokens   int             `json:"max_tokens,omitempty"`
+	Thinking    *openAIThinking `json:"thinking,omitempty"`
+}
+
+type openAIThinking struct {
+	Type string `json:"type"`
 }
 
 type openAIChatResponse struct {
 	Choices []struct {
 		Message struct {
-			Content string `json:"content"`
+			Content          string `json:"content"`
+			ReasoningContent string `json:"reasoning_content"`
 		} `json:"message"`
+		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
 }
 
@@ -85,6 +96,7 @@ var (
 	errUpstreamStatus    = errors.New("upstream returned a non-2xx status")
 	errEmptyChoices      = errors.New("upstream returned no choices")
 	errMalformedResponse = errors.New("upstream returned malformed JSON")
+	errUpstreamTruncated = errors.New("upstream output was truncated")
 )
 
 // Chat POSTs {baseURL}/chat/completions with a Bearer token and returns the
@@ -96,11 +108,16 @@ func (c *OpenAIClient) Chat(ctx context.Context, req ChatRequest) (string, error
 		return "", err
 	}
 
+	var thinking *openAIThinking
+	if req.DisableThinking {
+		thinking = &openAIThinking{Type: "disabled"}
+	}
 	payload, err := json.Marshal(openAIChatRequest{
 		Model:       req.Model,
 		Messages:    req.Messages,
 		Temperature: req.Temperature,
 		MaxTokens:   req.MaxTokens,
+		Thinking:    thinking,
 	})
 	if err != nil {
 		return "", err
@@ -130,7 +147,14 @@ func (c *OpenAIClient) Chat(ctx context.Context, req ChatRequest) (string, error
 	if len(parsed.Choices) == 0 {
 		return "", errEmptyChoices
 	}
-	return parsed.Choices[0].Message.Content, nil
+	choice := parsed.Choices[0]
+	if strings.TrimSpace(choice.Message.Content) == "" {
+		if choice.FinishReason == "length" {
+			return "", errUpstreamTruncated
+		}
+		return "", errEmptyContent
+	}
+	return choice.Message.Content, nil
 }
 
 // normalizeAIBaseURL trims and validates a model base URL for protocol. Empty

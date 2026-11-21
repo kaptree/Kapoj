@@ -39,6 +39,8 @@ const (
 	aiFallbackReasonTimeout       = "AI 评估超时，使用默认难度"
 	aiFallbackReasonUpstream      = "AI 服务调用失败，使用默认难度"
 	aiFallbackReasonFormat        = "AI 返回格式无效，使用默认难度"
+	aiFallbackReasonTruncated     = "AI 输出被截断，使用默认难度"
+	aiFallbackReasonEmpty         = "AI 返回空内容，使用默认难度"
 )
 
 // createDifficultyDecision builds the difficulty metadata for POST
@@ -146,6 +148,10 @@ func assessmentFallbackReason(err error) string {
 	switch {
 	case errors.Is(err, ai.ErrAssessmentTimeout), errors.Is(err, context.DeadlineExceeded):
 		return aiFallbackReasonTimeout
+	case errors.Is(err, ai.ErrAssessmentTruncated):
+		return aiFallbackReasonTruncated
+	case errors.Is(err, ai.ErrAssessmentEmpty):
+		return aiFallbackReasonEmpty
 	case errors.Is(err, ai.ErrAssessmentFormat):
 		return aiFallbackReasonFormat
 	case errors.Is(err, httpx.ErrBadGateway):
@@ -253,15 +259,35 @@ func (h *handler) difficultyAssessmentSettings(ctx context.Context) (*difficulty
 }
 
 // failAssessment keeps configuration errors (40001/40002) intact and turns
-// unexpected upstream or parse failures into 50200.
+// upstream/parse failures into a precise 50200 message so the edit page can
+// tell the administrator what to fix.
 func (h *handler) failAssessment(c *gin.Context, err error) {
 	var appErr *httpx.AppError
-	if errors.As(err, &appErr) {
+	if errors.As(err, &appErr) && appErr.Code != httpx.ErrBadGateway.Code {
 		httpx.Fail(c, err)
 		return
 	}
 	slog.Warn("problem: AI difficulty reassessment failed", "err", err)
-	httpx.Fail(c, httpx.ErrBadGateway)
+	httpx.Fail(c, assessmentAPIError(err))
+}
+
+func assessmentAPIError(err error) *httpx.AppError {
+	message := "AI 服务调用失败，请检查平台模型的接口地址、Token 与网络后重试"
+	switch {
+	case errors.Is(err, ai.ErrAssessmentTimeout), errors.Is(err, context.DeadlineExceeded):
+		message = "AI 难度评估超时（模型响应超过设定时间），请稍后重试或在定时任务设置中调大 AI 评估超时"
+	case errors.Is(err, ai.ErrAssessmentTruncated):
+		message = "AI 推理占满了输出额度，未返回最终评分；请关闭该模型的思考模式或调大输出上限后重试"
+	case errors.Is(err, ai.ErrAssessmentEmpty):
+		message = "AI 未返回评分内容（可能被内容过滤），请重试或更换平台模型"
+	case errors.Is(err, ai.ErrAssessmentFormat):
+		message = "AI 返回的难度评分格式无效（需要 JSON: difficulty/confidence/reason），请重试或更换平台模型"
+	case errors.Is(err, ai.ErrAssessmentUpstream):
+		message = "AI 服务调用失败，请检查平台模型的接口地址、Token 与网络后重试"
+	}
+	appErr := *httpx.ErrBadGateway
+	appErr.Message = message
+	return &appErr
 }
 
 // DifficultyHistoryItem is the manager-facing history row. It mirrors the

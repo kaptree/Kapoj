@@ -42,7 +42,8 @@ type anthropicChatResponse struct {
 	} `json:"content"`
 }
 
-// errEmptyContent is returned when Anthropic answers without any text block.
+// errEmptyContent is returned when an upstream response has no usable text
+// content (Anthropic without a text block, or OpenAI with an empty message).
 var errEmptyContent = errors.New("upstream returned no text content")
 
 // anthropicMessagesURL resolves the Messages endpoint. A base URL ending in

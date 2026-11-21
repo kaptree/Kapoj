@@ -24,6 +24,9 @@ type decodedBody struct {
 	Messages    []decodedMessage `json:"messages"`
 	Temperature float64          `json:"temperature"`
 	MaxTokens   int              `json:"max_tokens"`
+	Thinking    *struct {
+		Type string `json:"type"`
+	} `json:"thinking"`
 }
 
 func TestOpenAIClientSendsAuthAndParsesContent(t *testing.T) {
@@ -60,6 +63,72 @@ func TestOpenAIClientSendsAuthAndParsesContent(t *testing.T) {
 	assert.Equal(t, "complete this", gotBody.Messages[1].Content)
 	assert.Equal(t, 0.2, gotBody.Temperature)
 	assert.Equal(t, 128, gotBody.MaxTokens)
+}
+
+func TestOpenAIClientDisablesThinkingOnlyWhenRequested(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		disabled bool
+		want     string
+	}{
+		{"disabled", true, "disabled"},
+		{"default", false, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotBody decodedBody
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				require.NoError(t, json.NewDecoder(r.Body).Decode(&gotBody))
+				_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`))
+			}))
+			defer srv.Close()
+
+			c := ai.NewOpenAIClient(5 * time.Second)
+			_, err := c.Chat(context.Background(), ai.ChatRequest{
+				BaseURL: srv.URL, APIKey: "sk-test", Model: "m",
+				DisableThinking: tc.disabled,
+			})
+			require.NoError(t, err)
+			if tc.want == "" {
+				assert.Nil(t, gotBody.Thinking)
+				return
+			}
+			require.NotNil(t, gotBody.Thinking)
+			assert.Equal(t, tc.want, gotBody.Thinking.Type)
+		})
+	}
+}
+
+func TestOpenAIClientRejectsTruncatedAndEmptyContent(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			"truncated",
+			`{"choices":[{"message":{"content":""},"finish_reason":"length"}]}`,
+			"truncated",
+		},
+		{
+			"empty",
+			`{"choices":[{"message":{"content":"  "},"finish_reason":"stop"}]}`,
+			"no text content",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer srv.Close()
+
+			c := ai.NewOpenAIClient(5 * time.Second)
+			_, err := c.Chat(context.Background(), ai.ChatRequest{
+				BaseURL: srv.URL, APIKey: "sk-test", Model: "m",
+			})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
 }
 
 func TestOpenAIClientRejectsCompletionBaseURL(t *testing.T) {

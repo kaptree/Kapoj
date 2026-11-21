@@ -1921,6 +1921,7 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 - `GET/POST /api/admin/ai/models`、`PUT/DELETE /api/admin/ai/models/:id`、`POST /api/admin/ai/models/:id/test`、`PUT /api/admin/ai/platform-model`。字段：`name`（唯一显示名）、`protocol`（`openai`/`anthropic`，默认 openai）、`baseUrl`、`modelName`、`apiKey`、`enabled`。OpenAI 兼容地址填到 `/v1`，不能以 `/chat/completions` 结尾；Anthropic 地址填域名或 `/v1`，不能带 `/messages`。列表/详情只返回 `apiKeyMasked`，不返回明文或密文。
 - 首次新增必须提供 token；更新时 `apiKey` 为空表示保留原密文。连通性测试按协议请求 OpenAI `{baseUrl}/chat/completions` 或 Anthropic `{baseUrl}/v1/messages`，记录 `lastTestAt/lastTestOk/lastTestError/lastTestLatencyMs`；上游失败仍返回 200 + `{ok:false}`，只有缺密钥（40002）或模型不存在（40400）返回错误。当前选中的模型不能删除；`modelId=null` 取消选择（响应/设置视图字段为 `platformModelId`）；未启用模型不能选择。
 - AI 初评只在平台 AI 已启用、密钥已配置、已选择启用模型且 `difficulty_settings.ai_assess_enabled=true` 时调用；失败/超时回退 `default_score`，不阻塞创建。显式重评失败不改题目，成功也不改变 `difficultyAuto`。
+- 难度评估对 DeepSeek（模型名以 `deepseek` 开头或域名为 `api.deepseek.com`/`*.deepseek.com`）发送 `thinking: {type:"disabled"}`，避免默认思考模式的 `reasoning_content` 占满 512 输出额度、导致最终 JSON 为空；其他 OpenAI 兼容服务不会收到该字段。显式重评的 50200 会区分超时、输出被截断、空内容、格式无效和上游失败，并在 `message` 中给出对应处理建议。
 - 密钥轮换会同步重加密 `ai_platform_models` 的 token；`POST /api/admin/ai/key/reset` 清空平台 token 并取消选择，保留模型元数据。未配置密钥时平台模型接口返回 40002。
 
 **难度设置**（`GET/PUT /api/admin/difficulty/settings`，需 `system.jobs.manage`）

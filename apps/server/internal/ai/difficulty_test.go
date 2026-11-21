@@ -270,6 +270,33 @@ func TestAssessDifficultyUsesPlatformProtocol(t *testing.T) {
 	}
 }
 
+func TestAssessDifficultyThinkingMode(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		baseURL   string
+		modelName string
+		want      bool
+	}{
+		{"deepseek host", "https://api.deepseek.com", "any-model", true},
+		{"deepseek model", "https://platform.example/v1", "deepseek-flash", true},
+		{"other provider", "https://platform.example/v1", "platform-chat", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &fakeChatClient{fn: func(ai.ChatRequest) (string, error) {
+				return `{"difficulty":50,"confidence":0.5,"reason":"x"}`, nil
+			}}
+			svc, g, model := newServiceWithPlatformModelAndDB(t, client)
+			require.NoError(t, g.Model(&ai.PlatformModel{}).Where("id = ?", model.ID).
+				Updates(map[string]any{"base_url": tc.baseURL, "model_name": tc.modelName}).Error)
+
+			_, err := svc.AssessDifficulty(context.Background(), ai.DifficultyAssessmentInput{Title: "x"})
+			require.NoError(t, err)
+			require.Len(t, client.calls, 1)
+			assert.Equal(t, tc.want, client.calls[0].DisableThinking)
+		})
+	}
+}
+
 func TestAssessDifficultyMissingPlatformModel(t *testing.T) {
 	ctx := context.Background()
 

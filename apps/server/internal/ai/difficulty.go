@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"net/url"
 	"strings"
 
 	"gorm.io/gorm"
@@ -69,9 +70,11 @@ var errDifficultyFormat = errors.New("ai: invalid difficulty assessment response
 // Assessment failure categories. Callers that fall back to a default score
 // use these to persist a human-readable reason instead of a generic error.
 var (
-	ErrAssessmentTimeout  = errors.New("ai: difficulty assessment timed out")
-	ErrAssessmentUpstream = errors.New("ai: difficulty assessment upstream failed")
-	ErrAssessmentFormat   = errors.New("ai: difficulty assessment output invalid")
+	ErrAssessmentTimeout   = errors.New("ai: difficulty assessment timed out")
+	ErrAssessmentUpstream  = errors.New("ai: difficulty assessment upstream failed")
+	ErrAssessmentFormat    = errors.New("ai: difficulty assessment output invalid")
+	ErrAssessmentTruncated = errors.New("ai: difficulty assessment output was truncated")
+	ErrAssessmentEmpty     = errors.New("ai: difficulty assessment returned empty content")
 )
 
 // Assessment system prompt: 1-100 rubric, JSON-only output, and an explicit
@@ -132,14 +135,24 @@ func (s *Service) AssessDifficulty(ctx context.Context, in DifficultyAssessmentI
 	req.Messages = difficultyAssessmentMessages(in)
 	req.Temperature = difficultyAssessmentTemperature
 	req.MaxTokens = difficultyAssessmentMaxTokens
+	// DeepSeek models enable chain-of-thought by default. It can consume the
+	// whole output budget before emitting any content, so score with thinking
+	// disabled; other OpenAI-compatible providers must not receive the field.
+	req.DisableThinking = isDeepSeekChat(req)
 
 	out, err := s.client.Chat(ctx, req)
 	if err != nil {
 		slog.Warn("ai: chat completion failed", "operation", "difficulty", "err", err)
-		if errors.Is(err, context.DeadlineExceeded) {
+		switch {
+		case errors.Is(err, context.DeadlineExceeded):
 			return nil, fmt.Errorf("%w: %w", httpx.ErrBadGateway, ErrAssessmentTimeout)
+		case errors.Is(err, errUpstreamTruncated):
+			return nil, fmt.Errorf("%w: %w", httpx.ErrBadGateway, ErrAssessmentTruncated)
+		case errors.Is(err, errEmptyContent):
+			return nil, fmt.Errorf("%w: %w", httpx.ErrBadGateway, ErrAssessmentEmpty)
+		default:
+			return nil, fmt.Errorf("%w: %w", httpx.ErrBadGateway, ErrAssessmentUpstream)
 		}
-		return nil, fmt.Errorf("%w: %w", httpx.ErrBadGateway, ErrAssessmentUpstream)
 	}
 	assessment, err := parseDifficultyAssessment(out)
 	if err != nil {
@@ -147,6 +160,21 @@ func (s *Service) AssessDifficulty(ctx context.Context, in DifficultyAssessmentI
 		return nil, fmt.Errorf("%w: %w", httpx.ErrBadGateway, ErrAssessmentFormat)
 	}
 	return assessment, nil
+}
+
+// isDeepSeekChat reports whether req targets a DeepSeek model, either by the
+// documented API host or by the model id prefix. DeepSeek's thinking mode is
+// on by default and counts reasoning tokens against max_tokens.
+func isDeepSeekChat(req ChatRequest) bool {
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(req.Model)), "deepseek") {
+		return true
+	}
+	parsed, err := url.Parse(strings.TrimSpace(req.BaseURL))
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	return host == "api.deepseek.com" || strings.HasSuffix(host, ".deepseek.com")
 }
 
 // resolvePlatformChat loads the selected platform model and returns a
