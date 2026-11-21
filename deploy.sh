@@ -21,6 +21,8 @@
 set -euo pipefail
 
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(pwd)"
+ENV_FILE="$ROOT/.env"
 
 # ---------- 常量 ----------
 BASE_COMPOSE="docker/docker-compose.yml"
@@ -212,10 +214,10 @@ PYEOF
 # 从 .env 读取部署入口设置，供 summary/wait_entry/status 使用；
 # --domain 与 .env 不一致时更新这两个键（脚本唯一受支持的 .env 写路径，用户显式意图）。
 load_entry_settings() {
-  [ -f .env ] || return 0
+  [ -f "$ENV_FILE" ] || return 0
   local env_domain env_site
-  env_domain=$(grep -E '^KAPOJ_DOMAIN=' .env | head -1 | cut -d= -f2-)
-  env_site=$(grep -E '^KAPOJ_SITE_ADDRESS=' .env | head -1 | cut -d= -f2-)
+  env_domain=$(grep -E '^KAPOJ_DOMAIN=' "$ENV_FILE" | head -1 | cut -d= -f2-)
+  env_site=$(grep -E '^KAPOJ_SITE_ADDRESS=' "$ENV_FILE" | head -1 | cut -d= -f2-)
   if [ -n "$DOMAIN" ] && [ "$DOMAIN" != "$env_domain" ]; then
     validate_domain "$DOMAIN"
     set_env_key KAPOJ_DOMAIN "$DOMAIN"
@@ -234,7 +236,7 @@ load_entry_settings() {
 }
 
 gen_env() {
-  if [ -f .env ]; then
+  if [ -f "$ENV_FILE" ]; then
     ok "检测到根目录 .env，保留现有配置（不覆盖任何密钥）"
     return
   fi
@@ -251,7 +253,7 @@ gen_env() {
     die "检测到非交互终端且未提供 --domain/--yes。请使用：sudo bash deploy.sh --yes（仅 HTTP）或 sudo bash deploy.sh --domain <域名>（自动 HTTPS）。"
   fi
   step "生成统一配置文件 .env"
-  ( umask 077 && cp .env.example .env && chmod 600 .env )
+  ( umask 077 && cp .env.example "$ENV_FILE" && chmod 600 "$ENV_FILE" )
   if [ -n "$DOMAIN" ]; then
     validate_domain "$DOMAIN"
   elif [ "$FLAG_YES" -eq 0 ]; then
@@ -272,18 +274,18 @@ gen_env() {
   set_env_key KAPOJ_JWT_SECRET         "$(openssl rand -base64 48)"
   set_env_key KAPOJ_AI_ENCRYPTION_KEY  "$(openssl rand -base64 32)"
   set_env_key KAPOJ_MAIL_ENCRYPTION_KEY "$(openssl rand -base64 32)"
-  cur_trusted=$(grep -E '^KAPOJ_TRUSTED_PROXIES=' .env | head -1 | cut -d= -f2-)
+  cur_trusted=$(grep -E '^KAPOJ_TRUSTED_PROXIES=' "$ENV_FILE" | head -1 | cut -d= -f2-)
   if [ -z "$cur_trusted" ]; then
     set_env_key KAPOJ_TRUSTED_PROXIES "172.16.0.0/12"
   fi
-  chmod 600 .env
+  chmod 600 "$ENV_FILE"
   # 占位符守卫：任何密钥仍为模板默认值/空值时大声警告（不该出现，出现即说明生成中断）
   local bad=""
-  if grep -q '^POSTGRES_PASSWORD=change-me' .env; then bad+="POSTGRES_PASSWORD "; fi
-  if grep -q '^MINIO_ROOT_PASSWORD=change-me' .env; then bad+="MINIO_ROOT_PASSWORD "; fi
-  if grep -q '^KAPOJ_JWT_SECRET=change-me' .env; then bad+="KAPOJ_JWT_SECRET "; fi
-  if [ -z "$(grep -E '^KAPOJ_AI_ENCRYPTION_KEY=' .env | head -1 | cut -d= -f2-)" ]; then bad+="KAPOJ_AI_ENCRYPTION_KEY "; fi
-  if [ -z "$(grep -E '^KAPOJ_MAIL_ENCRYPTION_KEY=' .env | head -1 | cut -d= -f2-)" ]; then bad+="KAPOJ_MAIL_ENCRYPTION_KEY "; fi
+  if grep -q '^POSTGRES_PASSWORD=change-me' "$ENV_FILE"; then bad+="POSTGRES_PASSWORD "; fi
+  if grep -q '^MINIO_ROOT_PASSWORD=change-me' "$ENV_FILE"; then bad+="MINIO_ROOT_PASSWORD "; fi
+  if grep -q '^KAPOJ_JWT_SECRET=change-me' "$ENV_FILE"; then bad+="KAPOJ_JWT_SECRET "; fi
+  if [ -z "$(grep -E '^KAPOJ_AI_ENCRYPTION_KEY=' "$ENV_FILE" | head -1 | cut -d= -f2-)" ]; then bad+="KAPOJ_AI_ENCRYPTION_KEY "; fi
+  if [ -z "$(grep -E '^KAPOJ_MAIL_ENCRYPTION_KEY=' "$ENV_FILE" | head -1 | cut -d= -f2-)" ]; then bad+="KAPOJ_MAIL_ENCRYPTION_KEY "; fi
   if [ -n "$bad" ]; then
     warn "警告：.env 中以下密钥仍为占位/空值：$bad—— 请立即修改或删除 .env 后重跑 install！"
   fi
@@ -295,8 +297,30 @@ validate_domain() {
     || die "域名格式不合法：$1（应为小写域名，如 oj.example.com）"
 }
 
-set_env_key() { # $1=键 $2=值 —— 首次生成 .env 时使用
-  sed -i.bak "s|^$1=.*|$1=$2|" .env && rm -f .env.bak
+set_env_key() { # $1=键 $2=值
+  if grep -q "^$1=" "$ENV_FILE" 2>/dev/null; then
+    sed -i.bak "s|^$1=.*|$1=$2|" "$ENV_FILE" && rm -f "$ENV_FILE.bak"
+  else
+    printf '%s=%s\n' "$1" "$2" >> "$ENV_FILE"
+  fi
+}
+
+env_get() { # $1=键
+  grep -E "^$1=" "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- || true
+}
+
+ensure_env_symlink() {
+  local link="$ROOT/docker/.env"
+  if [ -L "$link" ]; then
+    return 0
+  fi
+  if [ -e "$link" ]; then
+    warn "$link 已存在且不是软链，保留用户文件不动"
+    return 0
+  fi
+  mkdir -p "$ROOT/docker"
+  ln -s ../.env "$link"
+  ok "已创建 $link -> ../.env"
 }
 
 # ---------- 构建/启动/镜像 ----------
@@ -518,5 +542,9 @@ main() {
     restart) need_root restart; cmd_restart ;;
   esac
 }
+
+if [ "${KAPOJ_DEPLOY_LIB_ONLY:-0}" = "1" ]; then
+  return 0 2>/dev/null || exit 0
+fi
 
 main "$@"
