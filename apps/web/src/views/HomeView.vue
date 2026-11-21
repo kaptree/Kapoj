@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import Button from 'primevue/button'
+import Tag from 'primevue/tag'
 
 import type { SiteLink } from '@/api/types'
 import CompanionAvatar from '@/components/companion/CompanionAvatar.vue'
@@ -554,7 +555,18 @@ onBeforeUnmount(() => {
             <li v-for="submission in homeData.submissions.value" :key="submission.id">
               <RouterLink :to="submissionRoute(submission.problemId)" class="recent-list__row">
                 <span class="recent-list__main">
-                  <span class="recent-list__title">{{ submission.problemTitle }}</span>
+                  <span class="recent-list__title-row">
+                    <span class="recent-list__title">{{ submission.problemTitle }}</span>
+                    <Tag
+                      v-if="submission.agentId != null"
+                      value="Agent"
+                      severity="info"
+                      class="recent-list__agent"
+                    />
+                    <span v-if="submission.agentName" class="recent-list__agent-name">
+                      {{ submission.agentName }}
+                    </span>
+                  </span>
                   <span class="recent-list__time">{{ formatDateTime(submission.createdAt) }}</span>
                 </span>
                 <AppStatusTag :status="submission.status" />
@@ -1377,12 +1389,36 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
+.recent-list__title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .recent-list__title {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   color: var(--kapoj-text);
   font-size: 12px;
   font-weight: 500;
   line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-list__agent {
+  flex: 0 0 auto;
+}
+
+.recent-list__agent-name {
+  flex: 0 1 auto;
+  max-width: 80px;
+  overflow: hidden;
+  color: var(--kapoj-text-muted);
+  font-family: var(--kapoj-font-mono);
+  font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

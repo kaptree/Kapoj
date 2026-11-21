@@ -725,6 +725,46 @@ func (q *failingQueue) Enqueue(context.Context, int64) error {
 	return errors.New("judge queue unavailable")
 }
 
+type recordingPublisher struct {
+	ids []int64
+}
+
+func (p *recordingPublisher) Publish(_ context.Context, submissionID int64) {
+	p.ids = append(p.ids, submissionID)
+}
+
+func TestAgentSubmitPublishesSubmissionEvent(t *testing.T) {
+	pub := &recordingPublisher{}
+	f := newAgentFixtureWithDeps(t, noopQueue{}, nil, agent.WithPublisher(pub))
+	ctx := context.Background()
+	owner := f.user("publisher-owner", "active")
+	view := f.create(owner, "Publisher Agent")
+	p := f.seedProblem(seedProblemOpts{Slug: "publisher-problem", Testcases: 1})
+	attempt := f.seedLiveAttempt(view.ID, p.ID, 0)
+
+	result, err := f.svc.Submit(ctx, view.ID, attempt.ID, agent.SubmissionInput{
+		Language: submission.LanguageCPP, Code: "int main(){}",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []int64{result.SubmissionID}, pub.ids)
+}
+
+func TestAgentSubmitEnqueueFailureStillPublishes(t *testing.T) {
+	pub := &recordingPublisher{}
+	f := newAgentFixtureWithDeps(t, &failingQueue{}, nil, agent.WithPublisher(pub))
+	ctx := context.Background()
+	owner := f.user("publisher-fail", "active")
+	view := f.create(owner, "Publisher Fail Agent")
+	p := f.seedProblem(seedProblemOpts{Slug: "publisher-fail-problem", Testcases: 1})
+	attempt := f.seedLiveAttempt(view.ID, p.ID, 0)
+
+	_, err := f.svc.Submit(ctx, view.ID, attempt.ID, agent.SubmissionInput{
+		Language: submission.LanguageCPP, Code: "int main(){}",
+	})
+	require.Error(t, err)
+	require.Len(t, pub.ids, 1)
+}
+
 func TestAgentSubmitWithoutQueueDoesNotConsumeAttempt(t *testing.T) {
 	f := newAgentFixtureWithDeps(t, nil, nil)
 	ctx := context.Background()

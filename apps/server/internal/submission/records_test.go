@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/kaptree/kapoj/apps/server/internal/contest"
+	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/submission"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
@@ -40,6 +41,17 @@ func insertContest(t *testing.T, g *gorm.DB, start, end time.Time) int64 {
 		`INSERT INTO contests (title, description_md, start_time, end_time, mode, is_public, register_type, created_at, updated_at)
 		 VALUES ('Contest', '', ?, ?, 'icpc', true, 'open', now(), now()) RETURNING id`,
 		start, end,
+	).Scan(&id).Error)
+	return id
+}
+
+func insertAgentRecord(t *testing.T, g *gorm.DB, userID, problemID, agentID int64, language, code, status string, created time.Time) int64 {
+	t.Helper()
+	var id int64
+	require.NoError(t, g.Raw(
+		`INSERT INTO submissions (user_id, problem_id, agent_id, language, code, status, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+		userID, problemID, agentID, language, code, status, created,
 	).Scan(&id).Error)
 	return id
 }
@@ -442,6 +454,50 @@ func TestSubmissionLiveContestUsesPermission(t *testing.T) {
 		assert.True(t, d.CodeHidden)
 		assert.Empty(t, d.Code)
 	}
+}
+
+func TestAgentSubmissionDetailVisibility(t *testing.T) {
+	e := newRecordsEnv(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	agentSub := insertAgentRecord(t, e.db, e.alice, e.problem1.ID, 501, "cpp", "agent-secret", "accepted", now)
+	insertRecord(t, e.db, e.bob, e.problem1.ID, "cpp", "human-ac", "accepted", nil, now)
+	otherAgentSub := insertAgentRecord(t, e.db, e.alice, e.problem2.ID, 501, "cpp", "agent-secret-2", "accepted", now)
+	insertAgentRecord(t, e.db, e.bob, e.problem2.ID, 502, "cpp", "bob-agent-ac", "accepted", now)
+
+	owner, err := e.svc.Detail(ctx, submission.Viewer{UserID: e.alice}, agentSub)
+	require.NoError(t, err)
+	assert.False(t, owner.CodeHidden)
+	assert.Equal(t, "agent-secret", owner.Code)
+
+	acViewer, err := e.svc.Detail(ctx, submission.Viewer{UserID: e.bob}, agentSub)
+	require.NoError(t, err)
+	assert.False(t, acViewer.CodeHidden)
+	assert.Equal(t, "agent-secret", acViewer.Code)
+
+	guest, err := e.svc.Detail(ctx, submission.Viewer{}, agentSub)
+	require.NoError(t, err)
+	assert.True(t, guest.CodeHidden)
+	assert.Empty(t, guest.Code)
+
+	// Bob's Agent AC on problem2 does not count as Bob's own human AC.
+	blocked, err := e.svc.Detail(ctx, submission.Viewer{UserID: e.bob}, otherAgentSub)
+	require.NoError(t, err)
+	assert.True(t, blocked.CodeHidden)
+	assert.Empty(t, blocked.Code)
+}
+
+func TestAgentSubmissionRejudgeReturnsClearError(t *testing.T) {
+	e := newRecordsEnv(t)
+	id := insertAgentRecord(t, e.db, e.alice, e.problem1.ID, 501, "cpp", "code", "accepted", time.Now())
+
+	_, err := e.svc.Rejudge(context.Background(), submission.Viewer{CanRejudge: true}, id)
+	var appErr *httpx.AppError
+	require.ErrorAs(t, err, &appErr)
+	assert.Equal(t, 400, appErr.Status)
+	assert.Equal(t, 40001, appErr.Code)
+	assert.Equal(t, "Agent 提交不支持重测", appErr.Message)
 }
 
 func TestHasAccepted(t *testing.T) {

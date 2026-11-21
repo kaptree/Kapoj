@@ -1,7 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
 import Paginator from 'primevue/paginator'
-import Textarea from 'primevue/textarea'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -13,12 +13,14 @@ import {
   updateMyAgent,
 } from '@/api/agents'
 import { ApiError } from '@/api/http'
+import { getSubmission } from '@/api/submissions'
 import type {
   AgentAttemptView,
   AgentRatingRow,
   AgentTokenView,
   AgentView,
   MyAgentView,
+  SubmissionDetail,
 } from '@/api/types'
 import { formatDateTime } from '@/utils/format'
 import AgentSettingsView from './AgentSettingsView.vue'
@@ -36,6 +38,19 @@ vi.mock('@/api/agents', () => ({
   generateAgentToken: vi.fn(),
   revokeAgentToken: vi.fn(),
   getMyAgentRatingHistory: vi.fn(),
+}))
+vi.mock('@/api/submissions', () => ({
+  getSubmission: vi.fn(),
+  rejudgeSubmission: vi.fn(),
+}))
+vi.mock('@/components/MarkdownEditor.vue', () => ({
+  default: {
+    name: 'MarkdownEditor',
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template:
+      '<textarea data-test="agent-intro-editor" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
 }))
 
 function emptyView(): MyAgentView {
@@ -83,6 +98,7 @@ function ratingRow(overrides: Partial<AgentRatingRow> = {}): AgentRatingRow {
     ratingAfter: 1512,
     delta: 12,
     solveTimeMs: 65_000,
+    submissionId: null,
     createdAt: '2026-11-04T08:00:00Z',
     ...overrides,
   }
@@ -106,10 +122,50 @@ function attemptView(overrides: Partial<AgentAttemptView> = {}): AgentAttemptVie
   }
 }
 
+const routes = [
+  { path: '/settings/agent', component: { template: '<div />' } },
+  { path: '/users/:id', name: 'user-profile', component: { template: '<div />' } },
+  { path: '/problems/:id', name: 'problem-detail', component: { template: '<div />' } },
+]
+
 async function mountPage() {
-  const wrapper = mount(AgentSettingsView, { global: { plugins: [PrimeVue] } })
+  const router = createRouter({ history: createMemoryHistory(), routes })
+  await router.push('/settings/agent')
+  await router.isReady()
+  const wrapper = mount(AgentSettingsView, {
+    global: { plugins: [router, PrimeVue] },
+  })
   await flushPromises()
   return wrapper
+}
+
+function submissionDetail(overrides: Partial<SubmissionDetail> = {}): SubmissionDetail {
+  return {
+    id: 42,
+    userId: 7,
+    username: 'alice',
+    nickname: 'Alice',
+    agentId: null,
+    agentName: '',
+    equippedBadges: [],
+    equippedTitle: null,
+    problemId: 3,
+    problemTitle: '两数之和',
+    problemSlug: 'two-sum',
+    language: 'cpp',
+    status: 'accepted',
+    timeUsedMs: 100,
+    cpuUsedMs: 80,
+    memoryUsedKb: 1024,
+    score: 100,
+    codeLength: 13,
+    createdAt: '2026-11-04T08:00:00Z',
+    code: 'int main() {}',
+    codeHidden: false,
+    answerHidden: false,
+    judgeResult: [],
+    ...overrides,
+  }
 }
 
 function setInput(wrapper: Awaited<ReturnType<typeof mountPage>>, selector: string, value: string) {
@@ -138,8 +194,10 @@ beforeEach(() => {
   vi.mocked(generateAgentToken).mockReset()
   vi.mocked(revokeAgentToken).mockReset()
   vi.mocked(getMyAgentRatingHistory).mockReset()
+  vi.mocked(getSubmission).mockReset()
   vi.mocked(getMyAgent).mockResolvedValue(emptyView())
   vi.mocked(getMyAgentRatingHistory).mockResolvedValue({ total: 0, items: [] })
+  vi.mocked(getSubmission).mockResolvedValue(submissionDetail())
   document.body.innerHTML = ''
 })
 
@@ -180,7 +238,7 @@ describe('AgentSettingsView', () => {
 
     setInput(wrapper, '#agent-name', '  新 Agent  ')
     setInput(wrapper, '#agent-model-name', 'gpt-5.1')
-    await wrapper.findComponent(Textarea).setValue('  外部 Agent  ')
+    await wrapper.find('[data-test="agent-intro-editor"]').setValue('  外部 Agent  ')
     await submitForm(wrapper)
 
     expect(createAgent).toHaveBeenCalledWith({
@@ -428,13 +486,13 @@ describe('AgentSettingsView', () => {
     expect((wrapper.find('#agent-model-name').element as HTMLInputElement).value).toBe(
       'deepseek-chat',
     )
-    expect((wrapper.find('#agent-model-intro').element as HTMLTextAreaElement).value).toBe(
-      '用于测试的外部 Agent',
-    )
+    expect(
+      (wrapper.find('[data-test="agent-intro-editor"]').element as HTMLTextAreaElement).value,
+    ).toBe('用于测试的外部 Agent')
 
     setInput(wrapper, '#agent-name', '改名 Agent')
     setInput(wrapper, '#agent-model-name', 'claude-sonnet')
-    await wrapper.findComponent(Textarea).setValue('新的简介')
+    await wrapper.find('[data-test="agent-intro-editor"]').setValue('新的简介')
     await submitForm(wrapper)
 
     expect(updateMyAgent).toHaveBeenCalledWith({
@@ -450,6 +508,24 @@ describe('AgentSettingsView', () => {
     wrapper.unmount()
   })
 
+  it('submits markdown intro source unchanged', async () => {
+    vi.mocked(getMyAgent).mockResolvedValue({
+      agent: agentView(),
+      token: null,
+      currentAttempt: null,
+    })
+    vi.mocked(updateMyAgent).mockResolvedValue(agentView({ modelIntro: '## 新简介' }))
+
+    const wrapper = await mountPage()
+    await wrapper.find('[data-test="agent-intro-editor"]').setValue('## 新简介\n\n- 列表')
+    await submitForm(wrapper)
+
+    expect(updateMyAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ modelIntro: '## 新简介\n\n- 列表' }),
+    )
+    wrapper.unmount()
+  })
+
   it('shows validation and server errors in Chinese', async () => {
     const wrapper = await mountPage()
 
@@ -461,13 +537,13 @@ describe('AgentSettingsView', () => {
 
     setInput(wrapper, '#agent-name', '重复的 Agent')
     setInput(wrapper, '#agent-model-name', 'gpt-5.1')
-    await wrapper.findComponent(Textarea).setValue('x'.repeat(501))
+    await wrapper.find('[data-test="agent-intro-editor"]').setValue('x'.repeat(2001))
     await submitForm(wrapper)
 
     expect(createAgent).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('模型简介不能超过 500 个字符')
+    expect(wrapper.text()).toContain('模型简介不能超过 2000 个字符')
 
-    await wrapper.findComponent(Textarea).setValue('合法简介')
+    await wrapper.find('[data-test="agent-intro-editor"]').setValue('合法简介')
     vi.mocked(createAgent).mockRejectedValue(new ApiError(400, 40001, 'Agent 名称已存在'))
     await submitForm(wrapper)
 
@@ -545,6 +621,28 @@ describe('AgentSettingsView', () => {
     expect(instructions.text()).toContain('/agent/submissions/:submissionId')
     expect(instructions.text()).not.toContain('kapoj_agent_prefix_only')
 
+    wrapper.unmount()
+  })
+
+  it('opens the linked submission from the rating history', async () => {
+    vi.mocked(getMyAgent).mockResolvedValue({
+      agent: agentView(),
+      token: null,
+      currentAttempt: null,
+    })
+    vi.mocked(getMyAgentRatingHistory).mockResolvedValue({
+      total: 1,
+      items: [ratingRow({ submissionId: 42 })],
+    })
+
+    const wrapper = await mountPage()
+    const link = wrapper.find('[data-test="rating-submission-link"]')
+    expect(link.exists()).toBe(true)
+    await link.trigger('click')
+    await flushPromises()
+
+    expect(getSubmission).toHaveBeenCalledWith(42)
+    expect(document.body.textContent).toContain('int main() {}')
     wrapper.unmount()
   })
 

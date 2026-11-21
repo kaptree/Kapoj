@@ -870,6 +870,19 @@ func TestMigrateCreatesAgentSchema(t *testing.T) {
 	require.NotNil(t, tokenPrefix.MaxLength)
 	assert.EqualValues(t, 24, *tokenPrefix.MaxLength, "token_prefix 应为 varchar(24)")
 
+	var modelIntro struct {
+		DataType  string
+		MaxLength *int64 `gorm:"column:max_length"`
+	}
+	require.NoError(t, g.Raw(`
+		SELECT data_type, character_maximum_length AS max_length
+		FROM information_schema.columns
+		WHERE table_schema = current_schema()
+		  AND table_name = 'agents' AND column_name = 'model_intro'`).Scan(&modelIntro).Error)
+	assert.Equal(t, "character varying", modelIntro.DataType)
+	require.NotNil(t, modelIntro.MaxLength)
+	assert.EqualValues(t, 2000, *modelIntro.MaxLength, "model_intro 应为 varchar(2000)")
+
 	var historyNullables []struct {
 		ColumnName string `gorm:"column:column_name"`
 		IsNullable string `gorm:"column:is_nullable"`

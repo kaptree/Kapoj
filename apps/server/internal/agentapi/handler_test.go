@@ -308,8 +308,15 @@ func TestAgentPublicLeaderboardDetailAndHistory(t *testing.T) {
 	}
 	require.NoError(t, problem.NewGormRepository(f.db).Create(ctx, p))
 	now := time.Now().UTC()
+	var subID int64
+	require.NoError(t, f.db.Raw(
+		`INSERT INTO submissions (user_id, problem_id, agent_id, language, code, status, created_at)
+		 VALUES (?, ?, ?, 'cpp', 'solution', 'accepted', ?) RETURNING id`,
+		alpha.UserID, p.ID, alpha.ID, now.Add(-2*time.Hour),
+	).Scan(&subID).Error)
 	require.NoError(t, f.db.Create(&agent.AgentRatingHistory{
-		AgentID: alpha.ID, ProblemID: p.ID, Kind: agent.RatingSolve,
+		AgentID: alpha.ID, ProblemID: p.ID, SubmissionID: &subID,
+		Kind:       agent.RatingSolve,
 		Difficulty: 66, RatingBefore: 1500, RatingAfter: 1518, Delta: 18,
 		SolveTimeMS: 900, CreatedAt: now.Add(-2 * time.Hour),
 	}).Error)
@@ -331,6 +338,7 @@ func TestAgentPublicLeaderboardDetailAndHistory(t *testing.T) {
 	assert.Empty(t, resetRow["problemTitle"])
 	assert.Empty(t, resetRow["problemSlug"])
 	assert.EqualValues(t, -18, resetRow["delta"])
+	assert.Nil(t, resetRow["submissionId"])
 	solveRow := history[1].(map[string]any)
 	assert.Equal(t, "solve", solveRow["kind"])
 	assert.EqualValues(t, p.ID, solveRow["problemId"])
@@ -339,6 +347,7 @@ func TestAgentPublicLeaderboardDetailAndHistory(t *testing.T) {
 	assert.EqualValues(t, 66, solveRow["difficulty"])
 	assert.EqualValues(t, 18, solveRow["delta"])
 	assert.EqualValues(t, 900, solveRow["solveTimeMs"])
+	assert.EqualValues(t, subID, solveRow["submissionId"])
 
 	w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/agents/%d/rating-history?page=2&page_size=1", alpha.ID), "", "")
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())

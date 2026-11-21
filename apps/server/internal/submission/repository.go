@@ -32,6 +32,7 @@ type ListRow struct {
 	Submission
 	Username         string
 	Nickname         string
+	AgentName        string     `gorm:"column:agent_name"`
 	ProblemTitle     string     `gorm:"column:problem_title"`
 	ProblemSlug      string     `gorm:"column:problem_slug"`
 	ProblemIsPublic  bool       `gorm:"column:problem_is_public"`
@@ -177,7 +178,7 @@ func (r *gormRepository) List(ctx context.Context, f ListFilter, offset, limit i
 		Joins("JOIN users AS u ON u.id = s.user_id").
 		Joins("JOIN problems AS p ON p.id = s.problem_id").
 		Joins("LEFT JOIN contests AS c ON c.id = s.contest_id").
-		Where("s.agent_id IS NULL")
+		Joins("LEFT JOIN agents AS ag ON ag.id = s.agent_id")
 	if f.ProblemID != 0 {
 		q = q.Where("s.problem_id = ?", f.ProblemID)
 	}
@@ -213,9 +214,11 @@ func (r *gormRepository) List(ctx context.Context, f ListFilter, offset, limit i
 		return nil, 0, err
 	}
 	var rows []ListRow
-	err := q.Select(`s.id, s.user_id, s.problem_id, s.contest_id, s.language, s.status,
+	err := q.Select(`s.id, s.user_id, s.problem_id, s.contest_id, s.agent_id,
+		s.language, s.status,
 		s.time_used_ms, s.memory_used_kb, s.score, s.created_at, s.judged_at,
-		u.username, u.nickname, p.title AS problem_title, p.slug AS problem_slug,
+		u.username, u.nickname, ag.name AS agent_name,
+		p.title AS problem_title, p.slug AS problem_slug,
 		p.is_public AS problem_is_public,
 		c.start_time AS contest_start_time, c.end_time AS contest_end_time`).
 		Order("s.id DESC").Offset(offset).Limit(limit).Scan(&rows).Error
@@ -225,13 +228,15 @@ func (r *gormRepository) List(ctx context.Context, f ListFilter, offset, limit i
 func (r *gormRepository) FindDetail(ctx context.Context, id int64) (*DetailRow, error) {
 	var row DetailRow
 	err := r.db.WithContext(ctx).Table("submissions AS s").
-		Select(`s.*, u.username, u.nickname, p.title AS problem_title, p.slug AS problem_slug,
+		Select(`s.*, u.username, u.nickname, ag.name AS agent_name,
+			p.title AS problem_title, p.slug AS problem_slug,
 			p.is_public AS problem_is_public,
 			c.start_time AS contest_start_time, c.end_time AS contest_end_time`).
 		Joins("JOIN users AS u ON u.id = s.user_id").
 		Joins("JOIN problems AS p ON p.id = s.problem_id").
 		Joins("LEFT JOIN contests AS c ON c.id = s.contest_id").
-		Where("s.id = ? AND s.agent_id IS NULL", id).Scan(&row).Error
+		Joins("LEFT JOIN agents AS ag ON ag.id = s.agent_id").
+		Where("s.id = ?", id).Scan(&row).Error
 	if err != nil {
 		return nil, err
 	}

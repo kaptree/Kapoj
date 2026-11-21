@@ -255,9 +255,11 @@ func (s *Service) Submit(
 	if s.queue != nil {
 		if err := s.queue.Enqueue(ctx, result.SubmissionID); err != nil {
 			s.markSubmissionSystemError(ctx, result.SubmissionID, now)
+			s.publish(ctx, result.SubmissionID)
 			return nil, err
 		}
 	}
+	s.publish(ctx, result.SubmissionID)
 	return result, nil
 }
 

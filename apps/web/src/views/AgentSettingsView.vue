@@ -7,7 +7,6 @@ import InputText from 'primevue/inputtext'
 import Message from 'primevue/message'
 import Paginator from 'primevue/paginator'
 import Tag from 'primevue/tag'
-import Textarea from 'primevue/textarea'
 import { useConfirm } from 'primevue/useconfirm'
 import { useToast } from 'primevue/usetoast'
 
@@ -20,6 +19,8 @@ import {
   updateMyAgent,
 } from '@/api/agents'
 import { ApiError } from '@/api/http'
+import MarkdownEditor from '@/components/MarkdownEditor.vue'
+import SubmissionDetailDrawer from '@/components/SubmissionDetailDrawer.vue'
 import type {
   AgentAttemptView,
   AgentInput,
@@ -34,10 +35,13 @@ import AppFormField from '@/components/ui/AppFormField.vue'
 import AppLoadingState from '@/components/ui/AppLoadingState.vue'
 import AppPageHeader from '@/components/ui/AppPageHeader.vue'
 import AppSurface from '@/components/ui/AppSurface.vue'
+import { useTheme } from '@/theme/theme'
 import { copyText } from '@/utils/clipboard'
 import { formatDateTime } from '@/utils/format'
 
 const HISTORY_PAGE_SIZE = 10
+const INTRO_MAX = 2000
+const { isDark } = useTheme()
 
 const KIND_META: Record<AgentRatingKind, { label: string; severity: string }> = {
   solve: { label: '通过', severity: 'success' },
@@ -77,6 +81,13 @@ const historyTotal = ref(0)
 const historyPage = ref(1)
 const historyLoading = ref(false)
 const historyError = ref('')
+const submissionDrawer = ref(false)
+const selectedSubmissionId = ref<number | null>(null)
+
+function openSubmission(id: number) {
+  selectedSubmissionId.value = id
+  submissionDrawer.value = true
+}
 
 const editing = computed(() => agent.value !== null)
 const agentDisabled = computed(() => agent.value?.status === 'disabled')
@@ -174,8 +185,8 @@ function validate(): boolean {
   if (modelName === '') errors.modelName = '请填写模型名称'
   else if ([...modelName].length > 100) errors.modelName = '模型名称长度需为 1-100 个字符'
 
-  if ([...form.value.modelIntro].length > 500) {
-    errors.modelIntro = '模型简介不能超过 500 个字符'
+  if ([...form.value.modelIntro].length > INTRO_MAX) {
+    errors.modelIntro = '模型简介不能超过 2000 个字符'
   }
 
   formErrors.value = errors
@@ -414,23 +425,16 @@ onMounted(() => {
           </AppFormField>
 
           <AppFormField
-            v-slot="field"
             input-id="agent-model-intro"
             label="模型简介"
             :error="formErrors.modelIntro"
-            hint="最多 500 个字符"
+            hint="最多 2000 个字符，支持 Markdown"
             optional
           >
-            <Textarea
-              :id="field.id"
+            <MarkdownEditor
               v-model="form.modelIntro"
-              :invalid="field.invalid"
-              :aria-describedby="field.describedby"
-              rows="4"
-              maxlength="500"
-              placeholder="简单介绍 Agent 使用的模型、策略或目标"
-              fluid
-              @update:model-value="formErrors.modelIntro = ''"
+              height="240px"
+              :theme="isDark ? 'dark' : 'light'"
             />
           </AppFormField>
 
@@ -498,22 +502,16 @@ onMounted(() => {
           </AppFormField>
 
           <AppFormField
-            v-slot="field"
             input-id="agent-model-intro"
             label="模型简介"
             :error="formErrors.modelIntro"
-            hint="最多 500 个字符"
+            hint="最多 2000 个字符，支持 Markdown"
             optional
           >
-            <Textarea
-              :id="field.id"
+            <MarkdownEditor
               v-model="form.modelIntro"
-              :invalid="field.invalid"
-              :aria-describedby="field.describedby"
-              rows="4"
-              maxlength="500"
-              fluid
-              @update:model-value="formErrors.modelIntro = ''"
+              height="240px"
+              :theme="isDark ? 'dark' : 'light'"
             />
           </AppFormField>
 
@@ -806,6 +804,21 @@ curl -s "$BASE/agent/submissions/:submissionId" \
                 <span class="mono">{{ data.difficulty || '—' }}</span>
               </template>
             </Column>
+            <Column header="提交" style="width: 90px">
+              <template #body="{ data }">
+                <Button
+                  v-if="data.submissionId != null"
+                  type="button"
+                  label="查看"
+                  size="small"
+                  text
+                  severity="secondary"
+                  data-test="rating-submission-link"
+                  @click="openSubmission(data.submissionId)"
+                />
+                <span v-else class="muted">—</span>
+              </template>
+            </Column>
             <Column header="变化" style="width: 90px">
               <template #body="{ data }">
                 <span :class="deltaClass(data.delta)">{{ deltaLabel(data.delta) }}</span>
@@ -841,6 +854,12 @@ curl -s "$BASE/agent/submissions/:submissionId" \
         </template>
       </AppSurface>
     </template>
+
+    <SubmissionDetailDrawer
+      v-model:visible="submissionDrawer"
+      :submission-id="selectedSubmissionId"
+      :can-rejudge="false"
+    />
   </div>
 </template>
 

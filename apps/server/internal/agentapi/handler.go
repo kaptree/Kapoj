@@ -69,7 +69,11 @@ func (h *publicHandler) ratingHistory(c *gin.Context) {
 		return
 	}
 	page, size := httpx.ParsePage(c.Request.URL.RawQuery)
-	result, err := h.svc.RatingHistory(c.Request.Context(), id, page, size)
+	viewerID := int64(0)
+	if claims, ok := middleware.CurrentClaims(c); ok && claims != nil {
+		viewerID = claims.UserID
+	}
+	result, err := h.svc.RatingHistory(c.Request.Context(), id, viewerID, page, size)
 	if err != nil {
 		httpx.Fail(c, err)
 		return

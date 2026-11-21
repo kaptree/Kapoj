@@ -190,6 +190,9 @@ func (s *Service) Rejudge(ctx context.Context, v Viewer, id int64) (*Submission,
 		}
 		return nil, err
 	}
+	if sub.AgentID != nil {
+		return nil, httpx.ErrValidation("Agent 提交不支持重测")
+	}
 	if !sub.Status.Terminal() {
 		return nil, httpx.ErrValidation("提交仍在评测中，不能重测")
 	}

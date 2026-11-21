@@ -44,6 +44,8 @@ function item(overrides: Partial<SubmissionListItem> = {}): SubmissionListItem {
     userId: 7,
     username: 'alice',
     nickname: 'Alice',
+    agentId: null,
+    agentName: '',
     equippedBadges: [],
     equippedTitle: null,
     problemId: 3,
@@ -148,6 +150,18 @@ describe('SubmissionsView', () => {
     expect(wrapper.text()).toContain('1024 KB')
     expect(wrapper.find('a[href="/users/7"]').exists()).toBe(true)
     expect(wrapper.find('a[href="/problems/3"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('tags Agent submissions and shows the agent name', async () => {
+    vi.mocked(listSubmissions).mockResolvedValue({
+      total: 1,
+      items: [item({ agentId: 11, agentName: 'Arena Agent' })],
+    })
+    const { wrapper } = await mountPage()
+
+    expect(wrapper.text()).toContain('Agent')
+    expect(wrapper.text()).toContain('Arena Agent')
     wrapper.unmount()
   })
 

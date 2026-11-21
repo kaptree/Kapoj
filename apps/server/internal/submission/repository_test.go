@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	agentpkg "github.com/kaptree/kapoj/apps/server/internal/agent"
 	"github.com/kaptree/kapoj/apps/server/internal/problem"
 	"github.com/kaptree/kapoj/apps/server/internal/submission"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
@@ -76,12 +77,11 @@ func TestRepositoryMarkSystemErrorOnlyMovesOpenSubmissions(t *testing.T) {
 	assert.Empty(t, gotDone.ErrorMessage)
 }
 
-// TestHumanSubmissionQueriesExcludeAgent pins the boundary between human and
-// Agent submissions: one user submits a wrong answer while their Agent solves
-// the same problem. The human views, AC lookup, activity counters and problem
-// counters must all ignore the Agent row, while human rows keep behaving as
-// before.
-func TestHumanSubmissionQueriesExcludeAgent(t *testing.T) {
+// TestHumanStatsExcludeAgent pins the boundary between human and Agent
+// submissions: one user submits a wrong answer while their Agent solves the
+// same problem. Public records include both rows, but AC lookup, activity
+// counters and problem counters must ignore the Agent row.
+func TestHumanStatsExcludeAgent(t *testing.T) {
 	g := testutil.PG(t)
 	ctx := context.Background()
 	repo := submission.NewGormRepository(g)
@@ -96,7 +96,13 @@ func TestHumanSubmissionQueriesExcludeAgent(t *testing.T) {
 	}
 	require.NoError(t, repo.Create(ctx, human))
 
-	agentID := int64(11)
+	now := time.Now()
+	agentRow := &agentpkg.Agent{
+		UserID: 7, Name: "repo-agent", ModelName: "test-model",
+		Status: agentpkg.StatusActive, Rating: 1500, CreatedAt: now, UpdatedAt: now,
+	}
+	require.NoError(t, g.Create(agentRow).Error)
+	agentID := agentRow.ID
 	agent := &submission.Submission{
 		UserID: 7, ProblemID: p.ID, AgentID: &agentID, Language: submission.LanguageGo,
 		Code: "package main", Status: submission.StatusAccepted,
@@ -119,14 +125,25 @@ func TestHumanSubmissionQueriesExcludeAgent(t *testing.T) {
 		ProblemID: p.ID, ViewerID: 7, CanSeeHidden: true,
 	}, 0, 20)
 	require.NoError(t, err)
-	assert.EqualValues(t, 1, total, "the public list hides Agent submissions")
-	require.Len(t, rows, 1)
-	assert.Equal(t, human.ID, rows[0].ID)
+	assert.EqualValues(t, 2, total, "the public list includes Agent submissions")
+	require.Len(t, rows, 2)
+	assert.Equal(t, agent.ID, rows[0].ID)
+	require.NotNil(t, rows[0].AgentID)
+	assert.Equal(t, agentID, *rows[0].AgentID)
+	assert.Equal(t, "repo-agent", rows[0].AgentName)
+	assert.Nil(t, rows[1].AgentID)
+	assert.Empty(t, rows[1].AgentName)
 
-	_, err = repo.FindDetail(ctx, agent.ID)
-	assert.ErrorIs(t, err, submission.ErrNotFound)
+	agentDetail, err := repo.FindDetail(ctx, agent.ID)
+	require.NoError(t, err)
+	require.NotNil(t, agentDetail.AgentID)
+	assert.Equal(t, agentID, *agentDetail.AgentID)
+	assert.Equal(t, "repo-agent", agentDetail.AgentName)
+	assert.Equal(t, "package main", agentDetail.Code)
+
 	detail, err := repo.FindDetail(ctx, human.ID)
 	require.NoError(t, err)
+	assert.Nil(t, detail.AgentID)
 	assert.Equal(t, human.ID, detail.ID)
 
 	accepted, err := repo.HasAccepted(ctx, 7, p.ID)
