@@ -207,6 +207,7 @@ func TestProfileIsPublicAndHidesEmail(t *testing.T) {
 	assert.Equal(t, []any{}, data["equippedBadges"])
 	assert.Contains(t, data, "equippedTitle")
 	assert.Nil(t, data["equippedTitle"])
+	assert.Equal(t, "cyan", data["level"].(map[string]any)["key"])
 }
 
 func TestProfileIncludesEquippedBadgesAndTitle(t *testing.T) {
@@ -338,6 +339,7 @@ func TestMeIncludesPermissions(t *testing.T) {
 	assert.Equal(t, "内容管理员", role["name"])
 	assert.NotZero(t, role["id"])
 
+	assert.Equal(t, "cyan", data["level"].(map[string]any)["key"])
 	permissions := meResponseStringSlice(t, data["permissions"])
 	assert.Contains(t, permissions, "problem.view_hidden")
 	assert.Contains(t, permissions, "problem.publish")
