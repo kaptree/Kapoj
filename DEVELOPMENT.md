@@ -141,7 +141,7 @@ kapoj/
 - **删除策略**：已有提交记录的题目、比赛不做物理删除，改为下线（`is_public=false`）或归档。
 - **接口前缀**：业务接口统一挂在 `/api` 下（如 `/api/auth/login`），`/health` 不加前缀。本文档各模块「关键接口」表中的路径省略了 `/api`。
 - **字段命名**：接口 JSON 字段使用 camelCase（如 `avatarUrl`、`createdAt`），数据库列使用 snake_case。
-- **请求体大小**：JSON 请求默认上限 1 MiB；题目创建/更新因为题面与样例可能较大，单独放宽到 4 MiB；测试数据上传接口上限 40 MiB（单个输入/输出文件 16 MiB，checker 256 KiB）。题包、图片等上传接口在各自里程碑单独放宽。
+- **请求体大小**：JSON 请求默认上限 1 MiB；题目创建/更新与内联测试点因为题面、样例可能较大，放宽到 6 MiB；checker/附件/题面图片等 `uploads` 组上限 40 MiB（checker 256 KiB、附件 20 MiB、题面图片 5 MiB）；单个测试点上传、批量上传与题包导入使用 `imports` 组，外层硬上限 2 GiB + 16 MiB。测试点单文件默认 16 MiB、批量/单题总量默认 200 MiB，可在“评测设置”调整（见 §4.2）；题包 zip/解压上限单独见 §7。
 
 **错误码**（M0 已实现，见 `apps/server/internal/httpx/errors.go`；新模块在此表追加）：
 
@@ -383,6 +383,24 @@ submissions (
 | runtime_error         | 运行时错误（RE）                   |
 | compile_error         | 编译错误（CE）                     |
 | system_error          | 评测系统内部错误（SE），可重新评测 |
+
+```sql
+-- 评测与测试数据大小设置（2026-11-21）：
+judge_settings (
+  id,                                      -- 单例，固定为 1
+  output_floor_bytes,                      -- judge 批量输出下限
+  output_slack_bytes,                      -- 期望输出之外的余量
+  max_output_bytes,                        -- judge 批量输出上限，同时是标准答案读取上限
+  max_input_file_bytes,                    -- 后续单个输入文件上限
+  max_output_file_bytes,                   -- 后续单个输出文件上限
+  max_batch_total_bytes,                   -- 后续批量上传总量上限
+  max_problem_total_bytes,                 -- 后续单题导入测试数据总量上限
+  updated_by, updated_at
+)
+-- 默认值 1/1/16/16/16/200/200 MiB，与改造前硬编码完全一致；
+-- server 与 judge 读取同一行，修改后下一次提交/上传生效，无需重启；
+-- 迁移 0006 建表并插入默认行；行缺失时 server 懒创建，judge 回退默认值。
+```
 
 ### 3.4 比赛
 
@@ -876,7 +894,7 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 - 沙盒：一次传统题提交只创建编译容器 1 个 + 运行容器 1 个；全部测试点在运行容器内依次执行，输入按轮覆盖 `/work/input.txt`，编译产物与 wrapper 只传输一次。`--network none`、`--read-only`、`--cap-drop ALL`、`--pids-limit`、`--cpus 1`、`--memory/--memory-swap` 不变，`/work`、`/tmp`、`/out` 使用 tmpfs。源码、编译产物、输入通过 `docker exec` + tar/cat 流传输，不使用宿主机 bind mount，因此 judge 自身在容器中也能运行。
 - 批量执行：新增 `sandbox.RunBatch`；每轮先清理 `/out` 测量文件、`/tmp` 与 `/dev/shm` 残留和上一轮 UID 65532 进程，再写入本轮输入并执行 wrapper。单轮 RE/TLE/MLE/OOM 只产生该轮结果，`RunBatch` 默认继续后续轮次；pipeline 仍保留“第一个非 AC 后停止后续测试点”的既有语义（通过逐轮回调提前结束）。
 - 计时防篡改：运行容器的 wrapper 以 root 启动，`/out`、`/work` 归 root 且选手进程不可写；选手程序通过 `setpriv` 降权到 UID 65532，只有 `/tmp` 与 Docker 默认的 `/dev/shm` 可写，两者均每轮清理。墙钟、CPU 时间、内存峰值、OOM 计数由 root wrapper 写入；必需的墙钟/内存/OOM/exit 测量缺失或无法解析视为系统错误，不当作 0；`cpu_ms` 缺失或不可用时回退墙钟并记录一次 warn。每轮用 `timeout --signal=KILL` 执行用户程序，外层 context 以题目限制 + 3 秒宽限兜底；`docker exec` 失败会清理残留进程后重试一次，仍失败则返回基础设施错误并删除运行容器。
-- 资源：编译超时 30 秒、编译内存 1 GiB；运行时间上限为题目限制 + 3 秒容器宽限，实际耗时在容器内测量；提交输出上限以 1 MiB 为下限，按该题测试点期望输出的最大值加 1 MiB 余量提升（上限 16 MiB），避免大输出题目把正确答案误判为“输出超过限制”。墙钟记录在 `time_ms`；CPU 时间读取 cgroup v2 `cpu.stat` 的 `usage_usec` 每轮差值写入 `cpu_ms`，pipeline 以 CPU 时间判定 TLE，墙钟保留展示与诊断。cgroup v1 或读取失败时回退墙钟，并只记录一次 warn。内存峰值每轮优先写 `memory.peak=0` 后读取 cgroup v2 峰值；Docker 默认把 `/sys/fs/cgroup` 以只读挂载，此时由 root wrapper 每 10ms 采样 `memory.current` 作为本轮近似峰值。OOM 通过 `memory.events` 的 `oom_kill` 逐轮差值判定；若 OOM killer 同时杀死 root wrapper，wrapper 预先写入的 `/out/oom_before` 与当前 `memory.events` 会在 exec 137 后用于恢复 OOM 结果，避免误判为系统错误。若内核不提供 cgroup v2，内存峰值记为 0，但 OOM 仍通过退出码识别；Java/Python/Go/C++ 的 OOM 堆栈（如 `OutOfMemoryError`、`MemoryError`、`std::bad_alloc`）也会判定为 MLE。
+- 资源：编译超时 30 秒、编译内存 1 GiB；运行时间上限为题目限制 + 3 秒容器宽限，实际耗时在容器内测量；提交输出上限默认以 1 MiB 为下限，按该题测试点期望输出的最大值加 1 MiB 余量提升（默认上限 16 MiB），避免大输出题目把正确答案误判为“输出超过限制”；三个值均可在“系统 → 评测设置”调整，见下方「评测与测试数据大小设置」。墙钟记录在 `time_ms`；CPU 时间读取 cgroup v2 `cpu.stat` 的 `usage_usec` 每轮差值写入 `cpu_ms`，pipeline 以 CPU 时间判定 TLE，墙钟保留展示与诊断。cgroup v1 或读取失败时回退墙钟，并只记录一次 warn。内存峰值每轮优先写 `memory.peak=0` 后读取 cgroup v2 峰值；Docker 默认把 `/sys/fs/cgroup` 以只读挂载，此时由 root wrapper 每 10ms 采样 `memory.current` 作为本轮近似峰值。OOM 通过 `memory.events` 的 `oom_kill` 逐轮差值判定；若 OOM killer 同时杀死 root wrapper，wrapper 预先写入的 `/out/oom_before` 与当前 `memory.events` 会在 exec 137 后用于恢复 OOM 结果，避免误判为系统错误。若内核不提供 cgroup v2，内存峰值记为 0，但 OOM 仍通过退出码识别；Java/Python/Go/C++ 的 OOM 堆栈（如 `OutOfMemoryError`、`MemoryError`、`std::bad_alloc`）也会判定为 MLE。
 - 结论：编译失败 `compile_error`；CPU 时间超限 `time_limit_exceeded`；OOM `memory_limit_exceeded`；非零退出 `runtime_error`；输出超限或文本比对失败 `wrong_answer`；全部通过 `accepted`。系统原因（Docker/存储/DB/checker 编译失败）重试，耗尽后 `system_error`。`submissions.cpu_time_ms` 保存所有执行测试点的最大 CPU 时间，`judge_result_json[].cpuMs` 保存单点 CPU 时间。
 - 特判：checker 以 C++ 编译，argv 为 `<checker> <输入> <选手输出> <标准答案>`；退出 0 通过，退出 1 答案错误，其他退出码（含信号、126/127）或输出超限属于系统错误；checker 超时/OOM/编译失败也属于系统错误。checker 编译诊断不写入日志或 `error_message`，避免泄露判题逻辑。
 - 超时与重试：任务在 Asynq 中设置 10 分钟超时，最多重试 3 次；judge 的 `ShutdownTimeout` 为 2 分钟，进程启动与关闭时都会按实例标签清扫容器。实例标签取 `KAPOJ_JUDGE_INSTANCE`（默认主机名），多实例部署时必须各不相同。
@@ -885,6 +903,38 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 - 前端提交页：`/problems/:id/submit` 使用 Monaco（本地 worker、无 CDN），支持 c/cpp/python3/java/go，代码草稿按题目与语言保存在浏览器本地；提交后跳转测评记录。
 - 统计：`submit_count` 创建提交时递增；`accept_count` 仅在首次把提交从 `judging` 改为 `accepted` 时递增。
 - 已知限制：M1 不评测交互题；Java 堆上限按题内存减 64 MB（最低 16 MB）；wall timeout 仍作为挂起程序的硬保护，CPU 时间不可用时 TLE 回退墙钟；Docker socket 等价于宿主机 root 权限，生产需独立评测主机或 rootless Docker。传统题的测试点共用运行容器；special judge 的 checker 仍按测试点单独运行（用户程序已批量执行）。cgroup 只读时内存峰值为采样近似值，不是内核 `memory.peak` 的精确值。
+
+**评测与测试数据大小设置（2026-11-21）**
+
+- 新增单例表 `judge_settings`（`id=1`），server 与 judge 共同读取；修改后**无需重启** server/judge，下一次提交与下一次上传/导入即使用新值。
+- 管理入口：`/admin/judge`（导航“系统 → 评测设置”），API 为 `GET/PUT /api/admin/judge/settings`，权限 `system.settings.manage`（`super_admin` 绕过）。详见 §4.7。
+- 字段、默认值与范围（PUT 为整行替换，必须提交全部 7 个字段；时间与操作者由服务端写入）：
+
+| 字段 | 默认值 | 范围 | 作用 |
+|------|--------|------|------|
+| `output_floor_bytes` | 1 MiB | 1 KiB–64 MiB | judge 批量 stdout 下限 |
+| `output_slack_bytes` | 1 MiB | 0–64 MiB，且 ≤ `max_output_bytes` | 期望输出之外的余量 |
+| `max_output_bytes` | 16 MiB | 1–64 MiB，且 ≥ `output_floor_bytes` | judge 批量 stdout 上限，同时是标准答案读取上限 |
+| `max_input_file_bytes` | 16 MiB | 1–256 MiB | 后续单个输入文件上限（单点/批量/导入） |
+| `max_output_file_bytes` | 16 MiB | 1–64 MiB，且 ≤ `max_output_bytes` | 后续单个输出文件上限（单点/批量/导入） |
+| `max_batch_total_bytes` | 200 MiB | 1–2048 MiB | 后续批量上传的输入+输出总量上限 |
+| `max_problem_total_bytes` | 200 MiB | 1–2048 MiB | Hydro/kapOJ 题包导入时单题测试数据总量上限 |
+
+- **默认兼容**：默认值逐项等于改造前的硬编码常量（1/1/16/16/16/200/200 MiB），升级后未修改设置时行为不变。迁移 `0006_judge_settings` 建表并插入默认行；行缺失时 server 在事务内懒创建，judge 直接回退内存默认值。
+- **judge 输出上限公式**（每次非 objective 评测读取一次设置，再为整批测试点计算一次）：
+
+  ```text
+  expected = max(本批测试点 output_size，忽略 <= 0 的点)
+  limit    = clamp(max(output_floor_bytes, expected + output_slack_bytes),
+                   output_floor_bytes,
+                   max(max_output_bytes, output_floor_bytes))
+  ```
+
+  即期望输出越大，批量 stdout 上限越高，直到 `max_output_bytes` 封顶；`output_size <= 0` 的点不参与提升。若库中存在 `max_output_bytes < output_floor_bytes` 的异常数据，judge 将上限退回 `output_floor_bytes`，保证仍可评测。
+- **标准答案读取**：judge 用 `max_output_bytes` 作为单个期望答案文件的读取上限；该值非正时回退默认 16 MiB。读取超限属于基础设施错误，提交会重试并最终可能变为 `system_error`，不会静默判 WA。`max_output_file_bytes <= max_output_bytes` 的校验可保证按当前设置新上传的答案能被读取。
+- **仅影响后续**：已有测试数据不会因调低上传限制而被重新校验或删除；已有答案也不会被改写。若管理员把 `max_output_bytes` 降到已有答案大小以下，这些题目的后续评测会因答案读取超限而失败，需要重新调高或重新上传更小的答案。
+- **不受影响**：objective 题在读取设置前直接判定；special judge 的 checker 输出上限仍固定 4 KiB；时间/内存限制、测试点数量、checker 大小、题包 zip/解压上限均未改变。
+- **持久化字段**：`updated_by` 记录最后修改者的用户 ID，`updated_at` 记录 UTC 时间；PUT 与审计在同一事务内，审计失败会回滚设置更新。
 
 **Codex 提示词（代码测评沙盒）**
 
@@ -981,6 +1031,14 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 - 测试数据在线编辑：新增 `GET/PUT /problems/:id/testcases/:tid/content` 与 `POST /problems/:id/testcases/online`；单文件上限 2 MiB，允许空输入/输出；更新先写新文件，DB 成功后删除旧文件。
 - 批量上传：`POST /problems/:id/testcases/batch`（multipart `files`，1–100 对）按 basename 配对 `.in` + `.out`/`.ans`，同名 `.out` 优先；任意一对不完整则整批失败并清理文件。
 - 导入：`POST /problems/import/hydro` 支持 `.in/.ans`、同名 `.out` 优先、`conflictPolicy=ask|skip|overwrite`、`overwriteSlugs`/`skipSlugs`；覆盖保留数字 ID/创建者/提交统计，替换题面与测试数据并强制下线；无权限覆盖他人题目返回 failed。
+
+**实现状态（评测设置接入测试数据上传/导入，2026-11-21）**
+
+- 单个测试点上传（`POST /problems/:id/testcases`）的输入/输出分别使用 `max_input_file_bytes`/`max_output_file_bytes`；批量上传（`POST /problems/:id/testcases/batch`）单文件同上限，批次输入+输出总量使用 `max_batch_total_bytes`；Hydro/kapOJ 题包导入的单文件使用输入/输出上限，单题测试数据总量使用 `max_problem_total_bytes`。错误文案会显示当前配置值（如“输入文件不能超过 1 MiB”）。
+- 上传限制在每个操作开始时读取一次，单个请求内保持一致；provider 缺失或读取失败时回退改造前的默认值（16/16/200/200 MiB），上传继续可用并记录 warn。
+- 请求体分组：JSON 1 MiB；题目创建/更新与内联测试点 6 MiB；checker/附件/题面图片等 `uploads` 组 40 MiB；单个测试点上传、批量上传与题包导入使用 `imports` 组，外层硬上限 **2 GiB + 16 MiB**。外层上限只防超大请求，实际生效的是后台配置值。
+- 未改变：内联测试点在线编辑仍固定 2 MiB/文件；checker 仍 256 KiB；附件仍 20 MiB、题面图片 5 MiB；每批 1–100 对、题包题数/条目/单题测试点数量上限不变；题包 zip 大小与解压上限仍由 `/admin/site` →「题库导入」的 `problem_import_settings` 控制，不迁移到评测设置。
+- 已有测试数据不追溯校验；调低限制只拦截之后的上传/导入。
 
 **实现状态（题目难度 1–100、平台 AI 模型与定时任务，2026-11-18）**
 
@@ -1262,6 +1320,8 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 > `agent.manage`（第 41 个权限码，Agent 擂台新增，分组「Agent」）用于查看 Agent 列表、停用/恢复与重置 Rating；默认只授予 `super_admin`，不自动授予其他内置角色。管理写操作审计 action=`agent.manage`、target=`agent`。语义见 §6.10。
 >
 > Phase B（2026-11-14）新增 `problem.manage_all`（分组「题库」）与内置角色 `problem_author`（出题人）；`content_admin` 增加 `problem.manage_all`。未持有 `problem.manage_all` 的题目管理权限按题目 `created_by` 限制为本人题目。后续新增 `submission.rejudge`、`system.backup.manage`、`system.jobs.manage`、`site.settings.manage`、`mail.settings.manage`、`guest.growth.view` 与 `agent.manage`；权限目录总数以 `rbac.AllPermissions()`（当前 45）为准。
+>
+> `system.settings.manage`（既有权限码，分组「管理后台」）自 2026-11-21 起用于“系统 → 评测设置”页面与 `GET/PUT /api/admin/judge/settings`；不新增权限码，默认仅 `super_admin` 可用，写审计 action=`system.settings.manage`、target=`judge_settings`。
 
 **内置角色（7 个，均由首次 Seed 创建，`is_system=true`）**
 
@@ -1323,7 +1383,10 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 | GET | `/api/admin/ai/key` | `ai.settings.manage` | AI 加密密钥状态 `{configured,source,masked,fingerprint}`（不含完整密钥） |
 | POST | `/api/admin/ai/key/generate` | `ai.settings.manage` | 生成并轮换密钥；完整密钥仅一次性返回 |
 | PUT | `/api/admin/ai/key` | `ai.settings.manage` | 手动填写密钥；已有密钥时轮换重加密 |
+| GET | `/api/admin/judge/settings` | `system.settings.manage` | 评测输出与测试数据大小设置；首次读取懒创建默认行 |
+| PUT | `/api/admin/judge/settings` | `system.settings.manage` | 整体更新设置；校验范围与字段关系；与审计同事务（评测设置） |
 
+- **评测设置（2026-11-21）**：管理页 `/admin/judge`（导航“系统 → 评测设置”），只有 `system.settings.manage` 显示保存操作；默认仅 `super_admin` 拥有该权限。GET 返回 7 个字节字段与 `updatedAt`，PUT 必须提交全部 7 个字段（整行替换），范围/关系错误返回 40001 中文文案。PUT 在更新事务内写审计 action=`system.settings.manage`、target=`judge_settings`、summary 含各字段 MiB 值，审计失败回滚。字段、默认值、范围、公式与生效时机见 §4.2「评测与测试数据大小设置」。
 - **保护规则**：系统角色不可删除、code/name 不可改；`super_admin` 权限不可修改；只有 super 能授予/移除/封禁/解封 super；禁止封禁自己（40001）；禁止移除/封禁最后一个 active super（40001）。角色/权限变更、用户角色分配、封禁/解封、管理员编辑用户在同一事务内写审计，失败回滚。
 - 自定义角色 code 创建后不可修改（`^[a-z][a-z0-9_]{2,63}$`），权限用 code 整体替换、重复去重、非法 code 返回 40001。
 - `POST /api/admin/users/:id/coins`（`user.coins.adjust`）在 RBAC-C 迁移到 `adminapi`，调整与审计在同一事务内完成，审计失败回滚。
@@ -1339,7 +1402,7 @@ revoked_session:<sessionId> = "1"          TTL=refreshTTL（吊销墓碑，阻�
 - **legacy role 不再授权**：RBAC-C 完成后，任何管理授权不再调用 `RequireRole` 或读取 `claims.Role`；`users.role`/JWT role 仅保留展示/兼容。
 **RBAC-D 管理后台前端（2026-11-07）**
 
-- 新增统一 `/admin` 管理壳 `AdminLayout.vue` 与 `AdminNav.vue`：独立于 `DefaultLayout`，桌面侧栏 + 移动 Drawer，菜单按权限过滤；`/admin` 父路由 `requiresAuth` + `anyPermission: ADMIN_ACCESS_PERMISSIONS`，子路由 `''`（概览）、`users`（`user.read`）、`roles`（`role.read`）、`audit`（`admin.audit.view`）、`gamification`（任一 `gamification.*.manage`）。
+- 新增统一 `/admin` 管理壳 `AdminLayout.vue` 与 `AdminNav.vue`：独立于 `DefaultLayout`，桌面侧栏 + 移动 Drawer，菜单按权限过滤；`/admin` 父路由 `requiresAuth` + `anyPermission: ADMIN_ACCESS_PERMISSIONS`，子路由 `''`（概览）、`users`（`user.read`）、`roles`（`role.read`）、`audit`（`admin.audit.view`）、`gamification`（任一 `gamification.*.manage`）；系统组在具备对应权限时显示“评测设置”`/admin/judge`（`system.settings.manage`）。
 - 新增仪表盘 `AdminDashboardView`（`admin.dashboard.view` 才请求 `/admin/stats`，`admin.audit.view` 才显示最近审计）、用户管理 `AdminUsersView`（编辑/角色/封禁/金币，动作按权限显隐）、角色权限矩阵 `AdminRolesView`（系统角色保护、`super_admin` 权限不可改）、审计日志 `AdminAuditView`（actor/action/targetType/日期筛选与分页）。
 - 权限基础：`apps/web/src/permissions.ts` 定义全部前端权限码常量与 `ADMIN_ACCESS_PERMISSIONS`；`auth.can/canAny/isSuperAdmin`；路由 meta 改为 `permission`/`anyPermission`（移除 `roles`）；守卫未登录跳登录、无权限跳 `/forbidden`。
 - 现有入口迁移：`AppNav`/`UserMenu` 的“管理后台”入口改为 `/admin`，显示条件 `auth.canAny(ADMIN_ACCESS_PERMISSIONS)`；题库/比赛/游戏化页面按钮与 tab 全部改用 `auth.can/canAny`；游戏化管理 `GamificationAdminView` 按四个 `gamification.*.manage` 权限生成 tab。
@@ -2112,10 +2175,10 @@ problem/
 
 **实现状态（M5-6 已完成）**
 
-- 接口：`POST /api/problems/import/hydro`（multipart，字段 `file`），需登录且拥有 `problem.create`；路由 body 上限 210 MiB（200 MiB 文件 + multipart 开销）。
+- 接口：`POST /api/problems/import/hydro`（multipart，字段 `file`），需登录且拥有 `problem.create`；路由 body 上限为当前题包上限 + 16 MiB（默认 200 MiB + 16 MiB，最大 2048 MiB + 16 MiB）。
 - 格式与映射：zip 内每个含 `problem.yaml` 的目录视为一道题；`problem.yaml` 只取 `title`（trim 后 1–100 字符）与 `tag`（字符串数组，走 `normalizeTags`）；`problem_zh.md`（缺失/为空回退 `problem.md`）整体作为 `statement_md`（≤100,000 字符，不拆分 input/output/samples）；`testdata/` 下同名 `.in`/`.out` 成对映射为测试数据（score=10，按文件名数字优先再字典序排序）；slug=`hydro-` + 文件夹名净化（小写、非 `[a-z0-9-]` 替换为 `-`、去首尾 `-`，需满足 2–63 位 slug 规则）。`gen.py`/`std.cpp`/`additional_file/` 等非测试数据忽略，不执行题包内脚本。
 - 默认值：导入题目 `is_public=false`（下线）、`created_by`=上传者、`source='HydroOJ'`、`type='traditional'`、`difficulty=50`（HydroOJ 不提供可评估难度，`problem.yaml` 的 difficulty 仍不解析）、`difficulty_prior=50`、`difficulty_prior_source='default'`、`difficulty_source='import'`、`difficulty_auto=true`，并写一条 `problem_difficulty_history(source='import', old_score=0/覆盖前分数, created_by=导入者)`；时间/内存默认 1000ms/256MB。
-- 限制：题包文件 ≤200 MiB、解压总量 ≤1 GiB、条目 ≤5000、题目文件夹 ≤100、单题测试点 ≤500、单个测试文件 ≤16 MiB、单题测试数据 ≤200 MiB、`problem.yaml` ≤1 MiB、题面 ≤100,000 字符。防 zip slip：拒绝绝对路径、反斜杠、`.`/`..` 路径段、符号链接、加密条目、非常规文件，忽略 `__MACOSX/` 与隐藏文件；实际解压字节按读取计数校验，防止伪造 `UncompressedSize64`。整包损坏/加密/无题目文件夹/超限返回 40001，body 超 210 MiB 由中间件返回 413。
+- 限制：题包文件 ≤ 站点设置“题库导入”上限（默认 200 MiB，最大 2048 MiB）、解压总量 = max(1 GiB, 2 × 包上限)、条目 ≤5000、题目文件夹 ≤100、单题测试点 ≤500；单个输入/输出文件与单题测试数据总量使用“评测设置”（默认 16/16/200 MiB，见 §4.2）、`problem.yaml` ≤1 MiB、题面 ≤100,000 字符。防 zip slip：拒绝绝对路径、反斜杠、`.`/`..` 路径段、符号链接、加密条目、非常规文件，忽略 `__MACOSX/` 与隐藏文件；实际解压字节按读取计数校验，防止伪造 `UncompressedSize64`。整包损坏/加密/无题目文件夹/超限返回 40001，body 超当前包上限 + 16 MiB 由中间件返回 413。
 - 部分成功：题包可解析且至少发现一个题目文件夹时返回 200，`imported`/`failed` 逐题结果；slug 冲突（`题目标识已存在：hydro-xxxx`）、缺文件、非法 slug、测试数据不配对等单题失败进入 `failed`，不阻断其他题；若整包级错误（如实际解压超限）发生在已导入部分题目之后，回滚本次已导入题目及其测试文件再返回 40001，不残留部分数据。每个成功题目 best-effort 写 `problem.create` 审计。
 - 作者摘要：`GET /problems/:id` 公开返回可选 `author {id, username, nickname}`（所有能看到该题的用户，不含 email）；`created_by <= 0` 或用户不存在时省略 author；仅 GET 详情填充，POST/PUT 可省略。
 - Phase B（2026-11-14）：测试数据支持 `.in/.ans` 与 `.in/.out`，同名 `.out` 优先并写入 `warnings`；导入新增 `conflictPolicy=ask|skip|overwrite`、`overwriteSlugs`、`skipSlugs`。`ask` 有冲突时只返回 `conflicts` 不写库；`overwrite` 保留数字 ID、创建者、提交记录与统计，替换题面/测试数据并强制下线；无权限覆盖他人题目进入 `failed`。导入结果增加 `conflicts/skipped/warnings` 与 `imported[].overwritten`。
