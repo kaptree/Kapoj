@@ -240,7 +240,9 @@ test.describe.serial('core flow smoke', () => {
       acBalance = coins.balance
 
       await page.locator('.user-menu__trigger').click()
-      await expect(page.locator('.user-menu__coins strong')).toHaveText(String(acBalance))
+      await expect(page.locator('.user-menu__coins strong')).toHaveText(
+        acBalance.toLocaleString('zh-CN'),
+      )
       await page.keyboard.press('Escape')
 
       const summary = await apiData<ActivitySummary>(

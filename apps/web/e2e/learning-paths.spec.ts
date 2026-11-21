@@ -24,10 +24,12 @@ const secondPassword = process.env.E2E_SECOND_PASSWORD ?? 'correct-horse'
 const runId = Date.now().toString()
 const slugPrefix = `e2e-lp-${runId}`
 const codeMarker = `// e2e-lp-${runId}`
-function containerExists(name: string): boolean {
+function containerRunning(name: string): boolean {
   try {
-    execSync(`docker inspect ${name}`, { stdio: 'ignore' })
-    return true
+    const state = execSync(`docker inspect -f '{{.State.Running}}' ${name}`, {
+      encoding: 'utf8',
+    }).trim()
+    return state === 'true'
   } catch {
     return false
   }
@@ -40,7 +42,7 @@ function containerExists(name: string): boolean {
  * ran the backend on 18080).
  */
 function defaultPsqlCommand(): string {
-  if (new URL(apiURL).port === '18080' && containerExists('kapoj-e2e-postgres-1')) {
+  if (new URL(apiURL).port === '18080' && containerRunning('kapoj-e2e-postgres-1')) {
     return 'docker exec kapoj-e2e-postgres-1 psql -U kapoj -d kapoj'
   }
   return 'docker exec kapoj-postgres-1 psql -U kapoj -d kapoj'

@@ -1,6 +1,5 @@
 .git
-.env
-.env.e2e
+.env*
 **/node_modules
 **/dist
 **/coverage

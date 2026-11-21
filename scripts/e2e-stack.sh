@@ -195,9 +195,15 @@ up() {
   ensure_env
   load_env
   pull_images
-  "${COMPOSE[@]}" up -d --build
+  if ! "${COMPOSE[@]}" up -d --build; then
+    echo "hint: run 'bash scripts/e2e-stack.sh down -v' before retrying" >&2
+    return 1
+  fi
   wait_health
-  seed
+  if ! seed; then
+    echo "hint: run 'bash scripts/e2e-stack.sh down -v' before retrying" >&2
+    return 1
+  fi
   local elapsed=$((SECONDS - start))
   echo "e2e stack ready in ${elapsed}s"
   if [ "$elapsed" -gt 600 ]; then

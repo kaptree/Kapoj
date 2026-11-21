@@ -38,13 +38,13 @@ E2E_API_URL=http://127.0.0.1:18080 E2E_BASE_URL=http://127.0.0.1:15173 \
 | Web          | `http://127.0.0.1:15173`                                   |
 | PostgreSQL   | `127.0.0.1:15433`                                          |
 | Redis        | `127.0.0.1:16380`                                          |
-| MinIO        | `19000`（S3）/ `19001`（控制台）                           |
+| MinIO        | `127.0.0.1:19000`（S3）/ `127.0.0.1:19001`（控制台）       |
 | 数据         | 命名卷 `kapoj-e2e_e2e-pgdata` / `kapoj-e2e_e2e-minio-data` |
 | 密钥         | 仓库根 `.env.e2e`（自动生成、`0600`、已忽略）              |
 
 首次 `up` 会拉取评测镜像并构建 server/judge/web，目标 ≤ 10 分钟；本地后续运行复用 Docker、pnpm 与镜像缓存。`down` 使用 `down -v`，删除 e2e 数据库和 MinIO 卷；不会修改主 `.env` 或宿主 `minio-data`。
 
-项目名和端口固定，一台 Docker 主机同时只能运行一个 e2e 栈。切换 worktree 或删除 `.env.e2e` 后，如果旧命名卷仍在，PostgreSQL 会因密码不匹配而启动失败；先运行 `bash scripts/e2e-stack.sh down -v` 再重新 `up`。
+项目名和端口固定，一台 Docker 主机同时只能运行一个 e2e 栈。切换 worktree 或删除 `.env.e2e` 后，如果旧命名卷仍在，PostgreSQL 会因密码不匹配而启动失败；先运行 `bash scripts/e2e-stack.sh down` 再重新 `up`（`down` 已包含 `-v`）。
 
 ## 种子账号与邮箱验证
 
