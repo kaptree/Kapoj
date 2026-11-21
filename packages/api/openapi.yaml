@@ -4951,12 +4951,13 @@ components:
         firstBlood: { type: boolean, description: 是否为该题首个通过 }
     ContestRankRow:
       type: object
-      required: [rank, userId, username, nickname, equippedBadges, equippedTitle, solved, penalty, totalScore, problems]
+      required: [rank, userId, username, nickname, equippedBadges, equippedTitle, solved, penalty, totalScore, problems, level]
       properties:
         rank: { type: integer }
         userId: { type: integer, format: int64 }
         username: { type: string }
         nickname: { type: string }
+        level: { $ref: '#/components/schemas/RatingLevel' }
         equippedBadges:
           type: array
           description: 已装备徽章，按 sort_order、id 排序；无装备时为空数组
@@ -5332,7 +5333,7 @@ components:
     Me:
       type: object
       description: 登录/注册响应中的 user 权限字段可能为空；前端登录后应调用 GET /users/me 获取最新角色与权限。
-      required: [id, username, nickname, email, emailVerified, avatarUrl, avatarUploaded, role, rating, coins, bio, status, roles, permissions, isSuperAdmin, createdAt]
+      required: [id, username, nickname, email, emailVerified, avatarUrl, avatarUploaded, role, rating, coins, bio, status, roles, permissions, isSuperAdmin, createdAt, level]
       properties:
         id: { type: integer, format: int64 }
         username: { type: string }
@@ -5345,6 +5346,7 @@ components:
           description: 是否已有上传头像；为 true 时 avatarUrl 为内部头像接口，前端不应将其填入外链输入
         role: { $ref: '#/components/schemas/Role' }
         rating: { type: integer }
+        level: { $ref: '#/components/schemas/RatingLevel' }
         coins: { type: integer, format: int64 }
         bio: { type: string }
         status: { $ref: '#/components/schemas/Status' }
@@ -5369,7 +5371,7 @@ components:
         name: { type: string }
     Profile:
       type: object
-      required: [id, username, nickname, avatarUrl, avatarUploaded, bio, rating, coins, equippedBadges, equippedTitle, createdAt]
+      required: [id, username, nickname, avatarUrl, avatarUploaded, bio, rating, coins, equippedBadges, equippedTitle, createdAt, level]
       properties:
         id: { type: integer, format: int64 }
         username: { type: string }
@@ -5380,6 +5382,7 @@ components:
           description: 是否已有上传头像；为 true 时 avatarUrl 为内部头像接口，前端不应将其填入外链输入
         bio: { type: string }
         rating: { type: integer }
+        level: { $ref: '#/components/schemas/RatingLevel' }
         coins: { type: integer, format: int64 }
         equippedBadges:
           type: array
@@ -5911,11 +5914,12 @@ components:
     ProblemAuthor:
       type: object
       description: 题目创建者的公开摘要；仅含 id/username/nickname，不含邮箱。
-      required: [id, username, nickname]
+      required: [id, username, nickname, level]
       properties:
         id: { type: integer, format: int64 }
         username: { type: string }
         nickname: { type: string }
+        level: { $ref: '#/components/schemas/RatingLevel' }
     Testcase:
       type: object
       required: [id, sortOrder, score, isSample, inputSize, outputSize]
@@ -6025,11 +6029,14 @@ components:
         - score
         - codeLength
         - createdAt
+        - level
+        - agentLevel
       properties:
         id: { type: integer, format: int64 }
         userId: { type: integer, format: int64 }
         username: { type: string }
         nickname: { type: string }
+        level: { $ref: '#/components/schemas/RatingLevel' }
         agentId:
           type: integer
           format: int64
@@ -6038,6 +6045,7 @@ components:
         agentName:
           type: string
           description: Agent 名称；人类提交为空字符串
+        agentLevel: { $ref: '#/components/schemas/RatingLevel' }
         equippedBadges:
           type: array
           description: 提交者已装备徽章，按 sort_order、id 排序；无装备时为空数组
@@ -6113,10 +6121,12 @@ components:
         - memoryUsedKb
         - codeLength
         - createdAt
+        - level
       properties:
         userId: { type: integer, format: int64 }
         username: { type: string }
         nickname: { type: string }
+        level: { $ref: '#/components/schemas/RatingLevel' }
         avatarUrl: { type: string, description: 公开头像地址；空字符串表示未设置 }
         equippedBadges:
           type: array
@@ -7285,12 +7295,13 @@ components:
             data: { $ref: '#/components/schemas/RatingHistoryPage' }
     ActivityLeaderboardRow:
       type: object
-      required: [rank, userId, username, nickname, score, equippedBadges, equippedTitle]
+      required: [rank, userId, username, nickname, score, equippedBadges, equippedTitle, level]
       properties:
         rank: { type: integer, minimum: 1 }
         userId: { type: integer, format: int64 }
         username: { type: string }
         nickname: { type: string }
+        level: { $ref: '#/components/schemas/RatingLevel' }
         score: { type: integer, format: int64, description: 活跃度总分 }
         equippedBadges:
           type: array
@@ -7304,12 +7315,13 @@ components:
           description: 已装备称号；无装备时为 null
     SharingLeaderboardRow:
       type: object
-      required: [rank, userId, username, nickname, score, equippedBadges, equippedTitle]
+      required: [rank, userId, username, nickname, score, equippedBadges, equippedTitle, level]
       properties:
         rank: { type: integer, minimum: 1 }
         userId: { type: integer, format: int64 }
         username: { type: string }
         nickname: { type: string }
+        level: { $ref: '#/components/schemas/RatingLevel' }
         score: { type: integer, format: int64, description: 共享分 }
         equippedBadges:
           type: array
@@ -7323,12 +7335,13 @@ components:
           description: 已装备称号；无装备时为 null
     WealthLeaderboardRow:
       type: object
-      required: [rank, userId, username, nickname, score, equippedBadges, equippedTitle]
+      required: [rank, userId, username, nickname, score, equippedBadges, equippedTitle, level]
       properties:
         rank: { type: integer, minimum: 1 }
         userId: { type: integer, format: int64 }
         username: { type: string }
         nickname: { type: string }
+        level: { $ref: '#/components/schemas/RatingLevel' }
         score: { type: integer, format: int64, description: 当前金币余额 }
         equippedBadges:
           type: array
@@ -7411,11 +7424,12 @@ components:
     LearningPathAuthor:
       type: object
       description: 学习路线作者的公开摘要。
-      required: [id, username, nickname]
+      required: [id, username, nickname, level]
       properties:
         id: { type: integer, format: int64 }
         username: { type: string }
         nickname: { type: string }
+        level: { $ref: '#/components/schemas/RatingLevel' }
     LearningPathItem:
       type: object
       description: 学习路线元信息，不含节点树；`myCompletedCount` 为服务端重算后的当前用户完成节点数（游客为 0）。
@@ -7841,11 +7855,12 @@ components:
     SolutionAuthor:
       type: object
       description: 帖子/回复作者的公开摘要；仅含 id/username/nickname，不含邮箱。
-      required: [id, username, nickname]
+      required: [id, username, nickname, level]
       properties:
         id: { type: integer, format: int64 }
         username: { type: string }
         nickname: { type: string }
+        level: { $ref: '#/components/schemas/RatingLevel' }
     SolutionPostInput:
       type: object
       description: 发布/编辑帖子的输入；标题 1–100 字符、正文 1–50000 字符。
@@ -7958,13 +7973,14 @@ components:
     SocialUserSummary:
       type: object
       description: 粉丝/关注列表与通知触发者的公开摘要；不含邮箱。
-      required: [id, username, nickname, avatarUrl, rating]
+      required: [id, username, nickname, avatarUrl, rating, level]
       properties:
         id: { type: integer, format: int64 }
         username: { type: string }
         nickname: { type: string }
         avatarUrl: { type: string }
         rating: { type: integer }
+        level: { $ref: '#/components/schemas/RatingLevel' }
     SocialUserPage:
       type: object
       required: [total, items]
@@ -7999,11 +8015,12 @@ components:
     EvaluationAuthor:
       type: object
       description: 评价作者的公开摘要；不含邮箱。
-      required: [id, username, nickname, avatarUrl, rating]
+      required: [id, username, nickname, avatarUrl, rating, level]
       properties:
         id: { type: integer, format: int64 }
         username: { type: string }
         nickname: { type: string }
+        level: { $ref: '#/components/schemas/RatingLevel' }
         avatarUrl: { type: string }
         rating: { type: integer }
     EvaluationItem:
@@ -8308,6 +8325,12 @@ components:
         type: { type: string, description: 证书类型名快照；仅 valid=true 时返回 }
         level: { type: string, description: 等级；仅 valid=true 时返回 }
         nickname: { type: string, description: 持有者昵称；仅 valid=true 时返回 }
+        ratingLevel:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/RatingLevel'
+          description: 持有者昵称的 rating 等级；无效验证码时为 null
         approvedAt: { type: string, format: date-time, description: 通过时间；仅 valid=true 时返回 }
     CertificateReviewInput:
       type: object
@@ -8886,11 +8909,12 @@ components:
         modelIntro: { type: string, maxLength: 2000, description: 模型简介，支持 Markdown，最多 2000 个字符 }
     AgentAuthor:
       type: object
-      required: [id, username, nickname]
+      required: [id, username, nickname, level]
       properties:
         id: { type: integer, format: int64 }
         username: { type: string }
         nickname: { type: string }
+        level: { $ref: '#/components/schemas/RatingLevel' }
     AgentView:
       type: object
       required:
@@ -8907,6 +8931,7 @@ components:
         - author
         - createdAt
         - updatedAt
+        - level
       properties:
         id: { type: integer, format: int64 }
         userId: { type: integer, format: int64, description: 所属用户 ID }
@@ -8915,6 +8940,7 @@ components:
         modelIntro: { type: string }
         status: { $ref: '#/components/schemas/AgentStatus' }
         rating: { type: integer }
+        level: { $ref: '#/components/schemas/RatingLevel' }
         passedCount: { type: integer, description: 已通过题目数 }
         attemptedCount: { type: integer, description: 已尝试题目数 }
         avgSolveTimeMs: { type: integer, description: 平均通过用时（毫秒）；未通过过题目时为 0 }

@@ -11638,6 +11638,7 @@ export interface components {
             userId: number;
             username: string;
             nickname: string;
+            level: components["schemas"]["RatingLevel"];
             /** @description 已装备徽章，按 sort_order、id 排序；无装备时为空数组 */
             equippedBadges: components["schemas"]["EquippedBadge"][];
             /** @description 已装备称号；无装备时为 null */
@@ -11977,6 +11978,7 @@ export interface components {
             avatarUploaded: boolean;
             role: components["schemas"]["Role"];
             rating: number;
+            level: components["schemas"]["RatingLevel"];
             /** Format: int64 */
             coins: number;
             bio: string;
@@ -12006,6 +12008,7 @@ export interface components {
             avatarUploaded: boolean;
             bio: string;
             rating: number;
+            level: components["schemas"]["RatingLevel"];
             /** Format: int64 */
             coins: number;
             /** @description 已装备徽章，按 sort_order、id 排序；无装备时为空数组 */
@@ -12441,6 +12444,7 @@ export interface components {
             id: number;
             username: string;
             nickname: string;
+            level: components["schemas"]["RatingLevel"];
         };
         Testcase: {
             /** Format: int64 */
@@ -12525,6 +12529,7 @@ export interface components {
             userId: number;
             username: string;
             nickname: string;
+            level: components["schemas"]["RatingLevel"];
             /**
              * Format: int64
              * @description Agent 提交所属 Agent ID；人类提交为 null
@@ -12532,6 +12537,7 @@ export interface components {
             agentId: number | null;
             /** @description Agent 名称；人类提交为空字符串 */
             agentName: string;
+            agentLevel: components["schemas"]["RatingLevel"];
             /** @description 提交者已装备徽章，按 sort_order、id 排序；无装备时为空数组 */
             equippedBadges: components["schemas"]["EquippedBadge"][];
             /** @description 提交者已装备称号；无装备时为 null */
@@ -12588,6 +12594,7 @@ export interface components {
             userId: number;
             username: string;
             nickname: string;
+            level: components["schemas"]["RatingLevel"];
             /** @description 公开头像地址；空字符串表示未设置 */
             avatarUrl: string;
             equippedBadges: components["schemas"]["EquippedBadge"][];
@@ -13598,6 +13605,7 @@ export interface components {
             userId: number;
             username: string;
             nickname: string;
+            level: components["schemas"]["RatingLevel"];
             /**
              * Format: int64
              * @description 活跃度总分
@@ -13614,6 +13622,7 @@ export interface components {
             userId: number;
             username: string;
             nickname: string;
+            level: components["schemas"]["RatingLevel"];
             /**
              * Format: int64
              * @description 共享分
@@ -13630,6 +13639,7 @@ export interface components {
             userId: number;
             username: string;
             nickname: string;
+            level: components["schemas"]["RatingLevel"];
             /**
              * Format: int64
              * @description 当前金币余额
@@ -13702,6 +13712,7 @@ export interface components {
             id: number;
             username: string;
             nickname: string;
+            level: components["schemas"]["RatingLevel"];
         };
         /** @description 学习路线元信息，不含节点树；`myCompletedCount` 为服务端重算后的当前用户完成节点数（游客为 0）。 */
         LearningPathItem: {
@@ -14069,6 +14080,7 @@ export interface components {
             id: number;
             username: string;
             nickname: string;
+            level: components["schemas"]["RatingLevel"];
         };
         /** @description 发布/编辑帖子的输入；标题 1–100 字符、正文 1–50000 字符。 */
         SolutionPostInput: {
@@ -14187,6 +14199,7 @@ export interface components {
             nickname: string;
             avatarUrl: string;
             rating: number;
+            level: components["schemas"]["RatingLevel"];
         };
         SocialUserPage: {
             /** Format: int64 */
@@ -14234,6 +14247,7 @@ export interface components {
             id: number;
             username: string;
             nickname: string;
+            level: components["schemas"]["RatingLevel"];
             avatarUrl: string;
             rating: number;
         };
@@ -14463,6 +14477,8 @@ export interface components {
             level?: string;
             /** @description 持有者昵称；仅 valid=true 时返回 */
             nickname?: string;
+            /** @description 持有者昵称的 rating 等级；无效验证码时为 null */
+            ratingLevel?: components["schemas"]["RatingLevel"] | null;
             /**
              * Format: date-time
              * @description 通过时间；仅 valid=true 时返回
@@ -14962,6 +14978,7 @@ export interface components {
             id: number;
             username: string;
             nickname: string;
+            level: components["schemas"]["RatingLevel"];
         };
         AgentView: {
             /** Format: int64 */
@@ -14976,6 +14993,7 @@ export interface components {
             modelIntro: string;
             status: components["schemas"]["AgentStatus"];
             rating: number;
+            level: components["schemas"]["RatingLevel"];
             /** @description 已通过题目数 */
             passedCount: number;
             /** @description 已尝试题目数 */
