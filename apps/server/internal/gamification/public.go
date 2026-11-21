@@ -1,6 +1,10 @@
 package gamification
 
-import "context"
+import (
+	"context"
+
+	"github.com/kaptree/kapoj/apps/server/internal/ratinglevel"
+)
 
 // BadgeSummary 是公开身份中展示的已装备徽章。
 type BadgeSummary struct {
@@ -18,13 +22,14 @@ type TitleSummary struct {
 
 // Identity 是用户对外展示的装备身份；无装备时徽章为空切片、称号为 nil。
 type Identity struct {
-	Badges []BadgeSummary `json:"equippedBadges"`
-	Title  *TitleSummary  `json:"equippedTitle"`
+	Badges []BadgeSummary    `json:"equippedBadges"`
+	Title  *TitleSummary     `json:"equippedTitle"`
+	Level  ratinglevel.Level `json:"level"`
 }
 
 // emptyIdentity 返回可直接序列化为空数组的公开身份。
 func emptyIdentity() Identity {
-	return Identity{Badges: []BadgeSummary{}}
+	return Identity{Badges: []BadgeSummary{}, Level: ratinglevel.LevelFor(0)}
 }
 
 // Identities 批量返回用户公开身份。结果包含每个正数输入用户；无装备用户的
@@ -44,6 +49,23 @@ func (s *Service) Identities(ctx context.Context, userIDs []int64) (map[int64]Id
 	}
 	if len(ids) == 0 {
 		return identities, nil
+	}
+
+	var ratings []struct {
+		ID     int64
+		Rating int
+	}
+	if err := s.repo.db.WithContext(ctx).Table("users").
+		Select("id, rating").Where("id IN ?", ids).Scan(&ratings).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range ratings {
+		identity, ok := identities[row.ID]
+		if !ok {
+			continue
+		}
+		identity.Level = ratinglevel.LevelFor(row.Rating)
+		identities[row.ID] = identity
 	}
 
 	badges, err := s.repo.equippedBadges(ctx, ids)

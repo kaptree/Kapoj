@@ -928,8 +928,8 @@ func TestSubmissionStatsEndpointExposesMetricsOnly(t *testing.T) {
 	f := newFx(t)
 	id := f.publish("submission-stats", nil)
 	require.NoError(t, f.db.Exec(
-		`INSERT INTO users (id, username, nickname, email, password_hash, avatar_url, created_at, updated_at)
-		 VALUES (11, 'metric-user', '指标用户', 'metric@example.com', 'x', 'https://example.com/avatar.png', now(), now())`,
+		`INSERT INTO users (id, username, nickname, email, password_hash, avatar_url, rating, created_at, updated_at)
+		 VALUES (11, 'metric-user', '指标用户', 'metric@example.com', 'x', 'https://example.com/avatar.png', 1600, now(), now())`,
 	).Error)
 	require.NoError(t, f.db.Exec(
 		`INSERT INTO submissions (user_id, problem_id, language, code, status, time_used_ms, memory_used_kb, code_length, created_at)
@@ -958,6 +958,7 @@ func TestSubmissionStatsEndpointExposesMetricsOnly(t *testing.T) {
 	assert.Equal(t, "https://example.com/avatar.png", item["avatarUrl"])
 	assert.EqualValues(t, 11, item["codeLength"])
 	assert.Equal(t, "accepted", item["status"])
+	assert.Equal(t, "blue", item["level"].(map[string]any)["key"])
 	assert.Equal(t, []any{}, item["equippedBadges"])
 	_, hasID := item["id"]
 	assert.False(t, hasID, "must not expose submission IDs")

@@ -405,6 +405,7 @@ func TestRanklistEquippedIdentity(t *testing.T) {
 	p1, p2 := f.problem("sum"), f.problem("product")
 	userToken := f.token("user")
 	userID := f.ids["user"]
+	require.NoError(t, f.db.Exec(`UPDATE users SET rating = 2600 WHERE id = ?`, userID).Error)
 	f.equipIdentity(t, userID, []string{"徽章一", "徽章二"}, "卷王")
 
 	for _, mode := range []string{"icpc", "ioi", "oi"} {
@@ -432,6 +433,7 @@ func TestRanklistEquippedIdentity(t *testing.T) {
 			title := row["equippedTitle"].(map[string]any)
 			assert.Equal(t, "卷王", title["name"])
 			assert.Equal(t, "#7C3AED", title["color"])
+			assert.Equal(t, "black_red", row["level"].(map[string]any)["key"])
 			if mode == "oi" {
 				assert.Equal(t, true, data["selfOnly"])
 			}

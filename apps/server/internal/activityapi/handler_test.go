@@ -199,6 +199,7 @@ func TestActivityLeaderboardsPublicAndEquippedIdentity(t *testing.T) {
 	decorated := f.user("decorated", "active")
 	plain := f.user("plain", "active")
 	banned := f.user("banned", "banned")
+	require.NoError(t, f.db.Exec(`UPDATE users SET rating = 1600 WHERE id = ?`, decorated).Error)
 
 	now := time.Now().In(time.Local)
 	for _, log := range []activity.ActivityLog{
@@ -232,7 +233,7 @@ func TestActivityLeaderboardsPublicAndEquippedIdentity(t *testing.T) {
 	assert.Equal(t, []any{}, row["equippedBadges"])
 	assert.Contains(t, row, "equippedTitle")
 	assert.Nil(t, row["equippedTitle"])
-	assert.NotContains(t, row, "level")
+	assert.Equal(t, "blue", row["level"].(map[string]any)["key"])
 	assert.NotContains(t, row, "email")
 	assert.NotContains(t, row, "role")
 
@@ -271,6 +272,7 @@ func TestActivityLeaderboardsPublicAndEquippedIdentity(t *testing.T) {
 	plainRow := items[1].(map[string]any)
 	assert.Equal(t, []any{}, plainRow["equippedBadges"])
 	assert.Nil(t, plainRow["equippedTitle"])
+	assert.Equal(t, "cyan", plainRow["level"].(map[string]any)["key"])
 
 	w, resp = f.do(http.MethodGet, "/api/leaderboard/sharing", "")
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
@@ -281,7 +283,7 @@ func TestActivityLeaderboardsPublicAndEquippedIdentity(t *testing.T) {
 	assert.EqualValues(t, decorated, sharingRow["userId"])
 	assert.EqualValues(t, 40, sharingRow["score"])
 	assert.Len(t, sharingRow["equippedBadges"].([]any), 1)
-	assert.NotContains(t, sharingRow, "level")
+	assert.Equal(t, "blue", sharingRow["level"].(map[string]any)["key"])
 	assert.EqualValues(t, 20, items[1].(map[string]any)["score"])
 
 	w, resp = f.do(http.MethodGet, "/api/leaderboard/activity?page=2&page_size=1", "")
@@ -299,6 +301,7 @@ func TestWealthLeaderboardPublicAndEquippedIdentity(t *testing.T) {
 	plain := f.user("plain", "active")
 	banned := f.user("banned", "banned")
 	zero := f.user("zero", "active")
+	require.NoError(t, f.db.Exec(`UPDATE users SET rating = 1600 WHERE id = ?`, decorated).Error)
 	for userID, coins := range map[int64]int{
 		decorated: 500,
 		plain:     120,
@@ -339,7 +342,7 @@ func TestWealthLeaderboardPublicAndEquippedIdentity(t *testing.T) {
 	assert.EqualValues(t, 7, badges[0].(map[string]any)["id"])
 	title := row["equippedTitle"].(map[string]any)
 	assert.EqualValues(t, 9, title["id"])
-	assert.NotContains(t, row, "level")
+	assert.Equal(t, "blue", row["level"].(map[string]any)["key"])
 	assert.NotContains(t, row, "email")
 	assert.NotContains(t, row, "role")
 

@@ -131,8 +131,10 @@ func TestHumanStatsExcludeAgent(t *testing.T) {
 	require.NotNil(t, rows[0].AgentID)
 	assert.Equal(t, agentID, *rows[0].AgentID)
 	assert.Equal(t, "repo-agent", rows[0].AgentName)
+	assert.Equal(t, 1500, rows[0].AgentRating)
 	assert.Nil(t, rows[1].AgentID)
 	assert.Empty(t, rows[1].AgentName)
+	assert.Zero(t, rows[1].AgentRating)
 
 	agentDetail, err := repo.FindDetail(ctx, agent.ID)
 	require.NoError(t, err)

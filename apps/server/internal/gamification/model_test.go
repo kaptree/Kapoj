@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
+	"github.com/kaptree/kapoj/apps/server/internal/ratinglevel"
 	"github.com/kaptree/kapoj/apps/server/internal/testutil"
 )
 
@@ -102,12 +103,14 @@ func TestIdentityJSONFields(t *testing.T) {
 			{ID: 1, Name: "早鸟", ImageURL: "/api/badges/1/image"},
 		},
 		Title: &gamification.TitleSummary{ID: 3, Name: "卷王", Color: "#7C3AED"},
+		Level: ratinglevel.LevelFor(1500),
 	}
 	raw, err := json.Marshal(identity)
 	require.NoError(t, err)
 	assert.JSONEq(t, `{
 		"equippedBadges": [{"id": 1, "name": "早鸟", "imageUrl": "/api/badges/1/image"}],
-		"equippedTitle": {"id": 3, "name": "卷王", "color": "#7C3AED"}
+		"equippedTitle": {"id": 3, "name": "卷王", "color": "#7C3AED"},
+		"level": {"key": "cyan", "name": "青名", "color": "#03A89E", "accentColor": ""}
 	}`, string(raw))
 }
 

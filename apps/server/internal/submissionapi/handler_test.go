@@ -465,6 +465,7 @@ func TestSubmissionEquippedIdentity(t *testing.T) {
 	f := newFx(t)
 	f.seedUser(t, 2001, "equippeduser", "装备用户")
 	f.seedUser(t, 2002, "plainuser", "普通用户")
+	require.NoError(t, f.db.Exec(`UPDATE users SET rating = 1600 WHERE id = 2001`).Error)
 	p := f.problem(t, "identity", true, problem.TypeTraditional, 1)
 	equipped := f.record(t, 2001, p.ID, "cpp", "accepted", "code1", nil)
 	plain := f.record(t, 2002, p.ID, "cpp", "accepted", "code2", nil)
@@ -482,6 +483,7 @@ func TestSubmissionEquippedIdentity(t *testing.T) {
 	title := item["equippedTitle"].(map[string]any)
 	assert.Equal(t, "卷王", title["name"])
 	assert.Equal(t, "#7C3AED", title["color"])
+	assert.Equal(t, "blue", item["level"].(map[string]any)["key"])
 
 	w, resp = f.do(http.MethodGet, "/api/submissions?userId=2002", "", nil)
 	require.Equal(t, http.StatusOK, w.Code)
@@ -490,18 +492,21 @@ func TestSubmissionEquippedIdentity(t *testing.T) {
 	item = items[0].(map[string]any)
 	assert.Equal(t, []any{}, item["equippedBadges"])
 	assert.Nil(t, item["equippedTitle"])
+	assert.Equal(t, "cyan", item["level"].(map[string]any)["key"])
 
 	w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/submissions/%d", equipped), "", nil)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	data := resp["data"].(map[string]any)
 	assert.Len(t, data["equippedBadges"], 2)
 	assert.Equal(t, "卷王", data["equippedTitle"].(map[string]any)["name"])
+	assert.Equal(t, "blue", data["level"].(map[string]any)["key"])
 
 	w, resp = f.do(http.MethodGet, fmt.Sprintf("/api/submissions/%d", plain), "", nil)
 	require.Equal(t, http.StatusOK, w.Code)
 	data = resp["data"].(map[string]any)
 	assert.Equal(t, []any{}, data["equippedBadges"])
 	assert.Nil(t, data["equippedTitle"])
+	assert.Equal(t, "cyan", data["level"].(map[string]any)["key"])
 }
 
 func TestSubmissionListMixedEquippedIdentity(t *testing.T) {

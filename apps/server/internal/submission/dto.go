@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
+	"github.com/kaptree/kapoj/apps/server/internal/ratinglevel"
 )
 
 // Created is returned by POST /submissions.
@@ -24,8 +25,10 @@ type ListItem struct {
 	Nickname       string                      `json:"nickname"`
 	AgentID        *int64                      `json:"agentId"`
 	AgentName      string                      `json:"agentName"`
+	AgentLevel     ratinglevel.Level           `json:"agentLevel"`
 	EquippedBadges []gamification.BadgeSummary `json:"equippedBadges"`
 	EquippedTitle  *gamification.TitleSummary  `json:"equippedTitle"`
+	Level          ratinglevel.Level           `json:"level"`
 	ProblemID      int64                       `json:"problemId"`
 	ProblemTitle   string                      `json:"problemTitle"`
 	ProblemSlug    string                      `json:"problemSlug"`
@@ -55,10 +58,15 @@ type Detail struct {
 
 func toListItem(row ListRow) ListItem {
 	s := row.Submission
+	agentLevel := ratinglevel.LevelFor(0)
+	if s.AgentID != nil {
+		agentLevel = ratinglevel.LevelFor(row.AgentRating)
+	}
 	return ListItem{
 		ID: s.ID, UserID: s.UserID, Username: row.Username, Nickname: row.Nickname,
-		AgentID: s.AgentID, AgentName: row.AgentName,
+		AgentID: s.AgentID, AgentName: row.AgentName, AgentLevel: agentLevel,
 		EquippedBadges: []gamification.BadgeSummary{}, EquippedTitle: nil,
+		Level:     ratinglevel.LevelFor(0),
 		ProblemID: s.ProblemID, ProblemTitle: row.ProblemTitle, ProblemSlug: row.ProblemSlug,
 		ContestID: s.ContestID, Language: s.Language, Status: s.Status,
 		TimeUsedMS: s.TimeUsedMS, CPUUsedMS: s.CPUUsedMS, MemoryUsedKB: s.MemoryUsedKB, Score: s.Score,

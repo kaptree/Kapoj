@@ -11,6 +11,7 @@ import (
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
 	"github.com/kaptree/kapoj/apps/server/internal/middleware"
+	"github.com/kaptree/kapoj/apps/server/internal/ratinglevel"
 )
 
 // IdentityLookup batch-loads public equipped identities; gamification.Service
@@ -53,6 +54,7 @@ type LeaderboardRow struct {
 	activity.LeaderboardRow
 	EquippedBadges []gamification.BadgeSummary `json:"equippedBadges"`
 	EquippedTitle  *gamification.TitleSummary  `json:"equippedTitle"`
+	Level          ratinglevel.Level           `json:"level"`
 }
 
 func (h *handler) activityLeaderboard(c *gin.Context) {
@@ -84,6 +86,7 @@ func (h *handler) leaderboard(
 		rows[i] = LeaderboardRow{
 			LeaderboardRow: item,
 			EquippedBadges: []gamification.BadgeSummary{},
+			Level:          ratinglevel.LevelFor(0),
 		}
 		userIDs = append(userIDs, item.UserID)
 	}
@@ -103,6 +106,7 @@ func (h *handler) leaderboard(
 				rows[i].EquippedBadges = identity.Badges
 			}
 			rows[i].EquippedTitle = identity.Title
+			rows[i].Level = identity.Level
 		}
 	}
 

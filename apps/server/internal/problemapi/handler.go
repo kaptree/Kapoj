@@ -549,6 +549,7 @@ func (h *handler) decorateMetricIdentities(ctx context.Context, items []problem.
 		identity := found[items[i].UserID]
 		items[i].EquippedBadges = identity.Badges
 		items[i].EquippedTitle = identity.Title
+		items[i].Level = identity.Level
 	}
 	return nil
 }

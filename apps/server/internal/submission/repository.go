@@ -33,6 +33,7 @@ type ListRow struct {
 	Username         string
 	Nickname         string
 	AgentName        string     `gorm:"column:agent_name"`
+	AgentRating      int        `gorm:"column:agent_rating"`
 	ProblemTitle     string     `gorm:"column:problem_title"`
 	ProblemSlug      string     `gorm:"column:problem_slug"`
 	ProblemIsPublic  bool       `gorm:"column:problem_is_public"`
@@ -217,7 +218,7 @@ func (r *gormRepository) List(ctx context.Context, f ListFilter, offset, limit i
 	err := q.Select(`s.id, s.user_id, s.problem_id, s.contest_id, s.agent_id,
 		s.language, s.status,
 		s.time_used_ms, s.memory_used_kb, s.score, s.created_at, s.judged_at,
-		u.username, u.nickname, ag.name AS agent_name,
+		u.username, u.nickname, ag.name AS agent_name, ag.rating AS agent_rating,
 		p.title AS problem_title, p.slug AS problem_slug,
 		p.is_public AS problem_is_public,
 		c.start_time AS contest_start_time, c.end_time AS contest_end_time`).
@@ -228,7 +229,7 @@ func (r *gormRepository) List(ctx context.Context, f ListFilter, offset, limit i
 func (r *gormRepository) FindDetail(ctx context.Context, id int64) (*DetailRow, error) {
 	var row DetailRow
 	err := r.db.WithContext(ctx).Table("submissions AS s").
-		Select(`s.*, u.username, u.nickname, ag.name AS agent_name,
+		Select(`s.*, u.username, u.nickname, ag.name AS agent_name, ag.rating AS agent_rating,
 			p.title AS problem_title, p.slug AS problem_slug,
 			p.is_public AS problem_is_public,
 			c.start_time AS contest_start_time, c.end_time AS contest_end_time`).

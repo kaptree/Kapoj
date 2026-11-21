@@ -7,6 +7,7 @@ import (
 
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
 	"github.com/kaptree/kapoj/apps/server/internal/httpx"
+	"github.com/kaptree/kapoj/apps/server/internal/ratinglevel"
 )
 
 // StatusCount is one slice of a problem's visible submission distribution.
@@ -25,6 +26,7 @@ type SubmissionMetric struct {
 	AvatarURL      string                      `json:"avatarUrl"`
 	EquippedBadges []gamification.BadgeSummary `json:"equippedBadges"`
 	EquippedTitle  *gamification.TitleSummary  `json:"equippedTitle"`
+	Level          ratinglevel.Level           `json:"level"`
 	Language       string                      `json:"language"`
 	Status         string                      `json:"status"`
 	TimeUsedMS     int                         `json:"timeUsedMs"`
@@ -133,6 +135,7 @@ func (s *Service) SubmissionStats(
 			UserID: row.UserID, Username: row.Username, Nickname: row.Nickname,
 			AvatarURL:      row.AvatarURL,
 			EquippedBadges: []gamification.BadgeSummary{}, EquippedTitle: nil,
+			Level:    ratinglevel.LevelFor(0),
 			Language: row.Language, Status: row.Status,
 			TimeUsedMS: row.TimeUsedMS, MemoryUsedKB: row.MemoryUsedKB,
 			CodeLength: row.CodeLength, CreatedAt: row.CreatedAt,

@@ -362,6 +362,7 @@ func (h *handler) ranklist(c *gin.Context) {
 			}
 			list.Rows[i].EquippedBadges = identity.Badges
 			list.Rows[i].EquippedTitle = identity.Title
+			list.Rows[i].Level = identity.Level
 		}
 	}
 	httpx.OK(c, list)

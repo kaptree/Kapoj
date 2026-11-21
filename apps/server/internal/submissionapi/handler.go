@@ -104,6 +104,7 @@ func (h *handler) decorateItems(ctx context.Context, items []submission.ListItem
 		}
 		items[i].EquippedBadges = identity.Badges
 		items[i].EquippedTitle = identity.Title
+		items[i].Level = identity.Level
 	}
 	return nil
 }

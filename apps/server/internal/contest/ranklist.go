@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/kaptree/kapoj/apps/server/internal/gamification"
+	"github.com/kaptree/kapoj/apps/server/internal/ratinglevel"
 )
 
 type RankSubmission struct {
@@ -37,6 +38,7 @@ type RankRow struct {
 	Nickname         string                      `json:"nickname"`
 	EquippedBadges   []gamification.BadgeSummary `json:"equippedBadges"`
 	EquippedTitle    *gamification.TitleSummary  `json:"equippedTitle"`
+	Level            ratinglevel.Level           `json:"level"`
 	Solved           int                         `json:"solved"`
 	Penalty          int                         `json:"penalty"`
 	TotalScore       int                         `json:"totalScore"`
@@ -98,7 +100,8 @@ func (s *Service) Ranklist(ctx context.Context, v Viewer, id int64) (*Ranklist, 
 		cells := make([]RankCell, len(problems))
 		states[p.UserID] = &rankState{row: RankRow{
 			UserID: p.UserID, Username: p.Username, Nickname: p.Nickname,
-			EquippedBadges: []gamification.BadgeSummary{}, Problems: cells,
+			EquippedBadges: []gamification.BadgeSummary{}, Level: ratinglevel.LevelFor(0),
+			Problems: cells,
 		}}
 		registerAt[p.UserID] = p.RegisterTime
 		order = append(order, p.UserID)

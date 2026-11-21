@@ -11,5 +11,5 @@ import (
 func TestEmptyIdentityMarshalsEmptyBadges(t *testing.T) {
 	raw, err := json.Marshal(emptyIdentity())
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"equippedBadges":[],"equippedTitle":null}`, string(raw))
+	assert.JSONEq(t, `{"equippedBadges":[],"equippedTitle":null,"level":{"key":"gray","name":"灰名","color":"#808080","accentColor":""}}`, string(raw))
 }

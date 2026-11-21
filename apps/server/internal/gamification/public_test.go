@@ -123,7 +123,24 @@ func TestIdentitiesBatch(t *testing.T) {
 
 	raw, err := json.Marshal(got[third.ID])
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"equippedBadges":[],"equippedTitle":null}`, string(raw))
+	assert.JSONEq(t, `{"equippedBadges":[],"equippedTitle":null,"level":{"key":"cyan","name":"青名","color":"#03A89E","accentColor":""}}`, string(raw))
+}
+
+func TestIdentitiesIncludesRatingLevel(t *testing.T) {
+	svc, g := newPublicEnv(t)
+	ctx := context.Background()
+
+	cyan := publicUser(t, g, "identity-cyan")
+	dark := publicUser(t, g, "identity-black-red")
+	require.NoError(t, g.Model(&user.User{}).Where("id = ?", cyan.ID).Update("rating", 1500).Error)
+	require.NoError(t, g.Model(&user.User{}).Where("id = ?", dark.ID).Update("rating", 2600).Error)
+
+	got, err := svc.Identities(ctx, []int64{cyan.ID, dark.ID})
+	require.NoError(t, err)
+	assert.Equal(t, "cyan", got[cyan.ID].Level.Key)
+	assert.Equal(t, "#03A89E", got[cyan.ID].Level.Color)
+	assert.Equal(t, "black_red", got[dark.ID].Level.Key)
+	assert.Equal(t, "#FF0000", got[dark.ID].Level.AccentColor)
 }
 
 func TestIdentitiesOrderAndInactive(t *testing.T) {
