@@ -275,8 +275,8 @@ let adminApi: APIRequestContext
 let userApi: APIRequestContext
 let adminToken = ''
 let problemId = 0
-let userSession: { accessToken: string; user: { id: number } }
-let userHeaders: { Authorization: string }
+let userSession = { accessToken: '', user: { id: 0 } }
+let userHeaders = { Authorization: '' }
 let acBalance = 0
 
 async function apiData<T>(res: Awaited<ReturnType<APIRequestContext['get']>>): Promise<T> {
