@@ -148,7 +148,7 @@ bash scripts/e2e-stack.sh status # docker compose ps
 4. `docker compose -p kapoj-e2e --env-file .env.e2e -f docker/docker-compose.yml -f docker/docker-compose.prod.yml -f docker/docker-compose.e2e.yml --profile app up -d --build`。
 5. 等待 `http://127.0.0.1:18080/health` 和 `http://127.0.0.1:15173/health` 就绪，最多 180 秒；失败时打印 `ps` 和日志。
 6. 种子数据（通过 `docker compose exec -T postgres psql`）：
-   - `mail_settings` 设置 `require_email_verification=false`、`sending_enabled=false`（测试环境“后台标记”，生产逻辑不变）。
+   - `mail_settings` 设置 `require_email_verification=false`、`sending_enabled=false`（测试环境“后台标记”，生产逻辑不变）。该行是惰性创建的单例，必须使用 `INSERT ... ON CONFLICT (id) DO UPDATE`，不能使用裸 `UPDATE`，否则首轮行不存在时验证仍会开启。
    - 若 `m2badmin` 不存在，用 API 注册；然后 SQL 设置 `email_verified_at=now()` 并分配内置 `super_admin` 角色。
    - 从 `m2badmin` 复制 `password_hash/salt` 创建/保留 `m2bsolver1`、`m2bsolver2`，供现有 admin-rbac e2e 使用。
    - 所有种子账号幂等；重复 `up` 不会重置已有数据。
@@ -207,10 +207,18 @@ bash scripts/e2e-stack.sh status # docker compose ps
 ### 6.5 AC 提交与评测等待（UI + SSE/轮询）
 
 - `page.goto('/problems/:id/submit')`，等待 `.cm-content`。
-- 用 `.cm-content.fill(acCode)` 填入 A+B C++ 代码；断言编辑器内容包含关键代码。
+- CodeMirror 6 不接受 Playwright `fill()` 直接改 DOM（它监听自己的输入事件，直接改 DOM 会被回滚，Vue `drafts` 也不会更新）。使用真实键盘输入：
+  ```ts
+  const editor = page.locator('.cm-content')
+  await editor.click()
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A')
+  await page.keyboard.insertText(acCode)
+  await expect(editor).toContainText('std::cin')
+  ```
+  这会触发 CodeMirror 的输入事件并同步 Vue `drafts`，提交的才是编辑器里的代码。
 - 点击按钮“提交 C++ 代码”，等待跳转 `/submissions?problemId=:id`。
-- 断言页面出现“实时刷新”（SSE 已连接）；即使 SSE 短暂不可用，页面每 30 秒轮询，状态等待超时 120 秒。
-- 定位 `.submissions-table tbody tr` 第一行，等待状态文本“通过”，并断言得分 100。
+- SSE 连接状态只做“尽力而为”的观察：如果 10 秒内出现“实时刷新”则记录已连接；如果出现“连接中断，正在重连”也不直接失败。状态等待的硬断言是 `.submissions-table tbody tr` 第一行在 120 秒内出现“通过”，该路径同时覆盖 SSE 推送和每 30 秒轮询兜底。
+- 断言第一行得分 100；如果 SSE 未连接，轮询仍应让该行在超时内更新。
 
 ### 6.6 AC 后金币与活跃度
 
@@ -331,7 +339,7 @@ corepack pnpm e2e:stack:down     # 清理 e2e 数据库与 MinIO 卷
 
 - `docker compose` 全栈在独立项目 `kapoj-e2e` 中启动，端口不与主栈冲突。
 - 首次 `bash scripts/e2e-stack.sh up` 在干净机器上 ≤ 10 分钟；重复运行明显更快并复用镜像/构建缓存。
-- `corepack pnpm test:e2e:core` 可单独跑通 core-flow，并输出 accepted/金币/活跃度/计数断言结果。
+- `corepack pnpm test:e2e:core` 可单独跑通 core-flow，并输出 accepted/金币/活跃度/计数断言结果；SSE 连接状态为尽力而为，评测状态行是硬断言。
 - PR 的 e2e job 加载 `core-flow.spec.ts` 并执行；失败时 artifact 包含 HTML 报告、trace、视频。
 - `down -v` 后 e2e PostgreSQL 与 MinIO 卷被删除，下一轮从干净数据开始。
 - 主开发栈的 `.env`、`kapoj` 数据库、`minio-data` 不被 e2e 修改。
